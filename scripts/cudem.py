@@ -27,7 +27,6 @@ import sys
 import os
 import re
 import math
-import time
 import glob
 
 import random
