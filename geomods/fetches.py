@@ -346,7 +346,14 @@ class dc:
                                 odate = int( dc['Year'][:4] )
                             except: odate = 1900
 
-                            out_s = [obbox, dc['Dataset Name'], dc['ID #'], odate, dc['Metadata'], dc['https'], ld.split("_")[0]]
+                            out_s = [obbox, 
+                                     dc['Dataset Name'], 
+                                     dc['ID #'], 
+                                     odate, 
+                                     dc['Metadata'], 
+                                     dc['https'], 
+                                     ld.split("_")[0]]
+
                             self._surveys.append(out_s)
 
             if len(self._surveys) > 0:
