@@ -50,7 +50,6 @@ usage: gdal_chunk.py [ file ]
  Examples:
  %% gdal_chunk.py input.tif --chunk 1000
 
-Report bugs to <matthew.love@colorado.edu>
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>''' %(_version)
 
 if __name__ == '__main__':

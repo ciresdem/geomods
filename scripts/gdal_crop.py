@@ -49,7 +49,6 @@ usage: gdal_crop.py [ file ]
  Examples:
  %% gdal_crop.py input.tif
 
-Report bugs to <matthew.love@colorado.edu>
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>''' %(_version)
 
 if __name__ == '__main__':    

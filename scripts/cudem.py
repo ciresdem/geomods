@@ -68,7 +68,6 @@ usage: cudem.py [ -hvIER [ args ] ]
  % cudem.py -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27
  % cudem.py --datalist input.datalist --increment 0.000277777 --region input_tiles_ply.shp
 
-Report bugs to <matthew dot love at colorado dot edu>
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''
 
 ## data is 2 col file with 'err dist'

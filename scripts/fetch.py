@@ -91,7 +91,6 @@ Examples:
  %% fetch.py nos charts -R -90.75/-88.1/28.7/31.25 -f "Date > 2000"
  %% fetch.py --update
 
-Report bugs to <matthew dot love at colorado dot edu>
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>''' %(_version, '\n  '.join(fetch_desc(fetch_infos)))
 
 
