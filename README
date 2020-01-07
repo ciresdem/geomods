@@ -1,11 +1,21 @@
 [ g e o m o d s ]
 
+Geomods is a set of Python modules and scripts for utilizing geographic data and Digital Elevation Models.
+
 Installation:
 
  % sudo python setup.py install
 
+Modules:
+
+ - datalists - MBSystem style datalists
+ - regions - Geographic regions
+ - fetches - Data fetching
+ - gdalfun - GDAL related functions
+
 Scripts:
 
- - cudem.py
- - fetch.py
- - gdal_crop.py
+ - cudem.py - Generate a Digital Elevation Model.
+ - fetch.py - Fetch elevation data from various sources.
+ - gdal_chunk.py - Split a gdal grid into chunks.
+ - gdal_crop.py - Crop a gdal grid by it's nodata value.
