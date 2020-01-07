@@ -21,11 +21,20 @@
 
 import sys
 import os
+import math
 
-import numpy as np
-import osgeo.ogr as ogr
-import osgeo.gdal as gdal
-from gdalconst import *
+try:
+    import numpy as np
+except ImportError:
+    print 'NumPy must be installed'
+    sys.exit(-1)
+try:
+    import osgeo.ogr as ogr
+    import osgeo.gdal as gdal
+    from gdalconst import *
+except ImportError:
+    print 'GDAL must be installed'
+    sys.exit(-1)
 
 GDAL_OPTS = ["COMPRESS=LZW", "INTERLEAVE=PIXEL", "TILED=YES",\
         "SPARSE_OK=TRUE", "BIGTIFF=YES" ]
