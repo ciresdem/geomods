@@ -220,7 +220,7 @@ class dc:
 
         self.pb = callback
         self._index = False
-        self._want_proc = False
+        self._want_proc = True
 
         if os.path.exists(self._ref_vector): 
             self.has_vector = True

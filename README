@@ -2,6 +2,15 @@
 
 Geomods is a set of Python modules and scripts for utilizing geographic data and Digital Elevation Models.
 
+Dependencies:
+ - Python
+ - GDAL and GDAL-Python
+ - NumPy
+
+: For DEM generation:
+ - GMT
+ - MBSystem
+
 Installation:
 
  % sudo python setup.py install
