@@ -346,7 +346,8 @@ class dc:
                                 odate = int( dc['Year'][:4] )
                             except: odate = 1900
 
-                            self._surveys.append([obbox, dc['Dataset Name'], dc['ID #'], odate, dc['Metadata'], dc['https'], ld.split("_")[0]])
+                            out_s = [obbox, dc['Dataset Name'], dc['ID #'], odate, dc['Metadata'], dc['https'], ld.split("_")[0]]
+                            self._surveys.append(out_s)
 
             if len(self._surveys) > 0:
                 update_ref_vector(self._ref_vector, self._surveys, self.has_vector)
@@ -789,7 +790,8 @@ class usace:
     def fetch_results(self):
         try:
             for feature in self._survey_list['features']:
-                fetch_file(feature['attributes']['SOURCEDATALOCATION'], os.path.join(self._outdir, os.path.basename(feature['attributes']['SOURCEDATALOCATION'])))
+                fetch_file(feature['attributes']['SOURCEDATALOCATION'], \
+                           os.path.join(self._outdir, os.path.basename(feature['attributes']['SOURCEDATALOCATION'])))
         except: self._status = -1
 
 ## =============================================================================
@@ -924,7 +926,8 @@ class ngs:
                 if not os.path.exists(self._outdir):
                     os.makedirs(self._outdir)
 
-                outfile = open(os.path.join(self._outdir, "ngs_results_%s.csv" %( datetime.datetime.now().strftime('%d%Y'))), 'w')
+                dt_now_str = datetime.datetime.now().strftime('%d%Y')
+                outfile = open(os.path.join(self._outdir, "ngs_results_%s.csv" %(dt_now_str)), 'w')
             
                 outcsv = csv.writer(outfile)
                 outcsv.writerow(r[0].keys())
