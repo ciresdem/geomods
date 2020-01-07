@@ -27,7 +27,6 @@
 import os
 import sys
 
-import gdal
 from geomods import gdalfun
 
 _version = '0.0.2'
