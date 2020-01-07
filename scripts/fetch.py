@@ -67,8 +67,7 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ''' %(_version)
 
-_usage = '''
-Fetch geographic elevation data.
+_usage = '''fetch.py (%s): Fetch geographic elevation data.
 
 usage: fetch.py [ -fhlpRuv [ args ] ] module(s) ...
 
@@ -92,9 +91,8 @@ Examples:
  %% fetch.py nos charts -R -90.75/-88.1/28.7/31.25 -f "Date > 2000"
  %% fetch.py --update
 
-fetch.py v.%s 
 Report bugs to <matthew dot love at colorado dot edu>
-CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>''' %('\n  '.join(fetch_desc(fetch_infos)), _version)
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>''' %(_version, '\n  '.join(fetch_desc(fetch_infos)))
 
 
 ## =============================================================================

@@ -153,10 +153,10 @@ def chunks(src_fn, n_chunk = 10):
 
             srcwin = (this_x_origin, this_y_origin, this_x_size, this_y_size)
 
-            # this_geo_x_origin = gt[0] + this_x_origin * gt[1] + this_y_origin * gt[2]
-            # this_geo_y_origin = gt[3] + this_x_origin * gt[4] + this_y_origin * gt[5]
+            this_geo_x_origin = gt[0] + this_x_origin * gt[1] + this_y_origin * gt[2]
+            this_geo_y_origin = gt[3] + this_x_origin * gt[4] + this_y_origin * gt[5]
 
-            this_geo_x_origin, this_geo_y_origin = _pixel2geo(this_x_origin, this_y_origin, gt)
+            #this_geo_x_origin, this_geo_y_origin = _pixel2geo(this_x_origin, this_y_origin, gt)
 
             dst_gt = [this_geo_x_origin, gt[1], 0.0, this_geo_y_origin, 0.0, gt[5]]
 
@@ -186,12 +186,11 @@ def chunks(src_fn, n_chunk = 10):
 def crop(src_fn):
     '''Crop `src_fn` GDAL file by it's NoData value.
     Returns cropped array.'''
-
+    
     src_ds = gdal.Open(src_fn)
 
     if srcds is None:
-        status = -1
-        return status
+        return None
 
     ds_config = _gather_infos(src_ds)
     ds_arr = src_ds.GetRasterBand(1).ReadAsArray()

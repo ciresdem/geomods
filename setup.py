@@ -34,5 +34,6 @@ setup(
     scripts=[
         'scripts/fetch.py',
         'scripts/cudem.py',
+        'scripts/gdal_chunk.py',
         'scripts/gdal_crop.py' ]
 )

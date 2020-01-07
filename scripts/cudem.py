@@ -53,14 +53,14 @@ try:
 except ImportError:
     has_arcpy = False
 
-from regions import region
-from datalists import datalist
-import gdalfun
-from clis import *
+from geomods.regions import region
+from geomods.datalists import datalist
+import geomods.gdalfun as gdalfun
+import geomods.clis as clis
 
-cudem_version = '0.1.0'
+_version = '0.1.0'
 
-usage = '''cudem.py - process DEMs
+usage = '''cudem.py: process DEMs
 
 usage: cudem.py [ -hvIER [ args ] ]
 
@@ -74,39 +74,38 @@ CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''
 ## data is 2 col file with 'err dist'
 def err2coeff(data):
     try: 
-        my_data = np.loadtxt( data, delimiter=' ' )
-    except:
-        sys.exit( 2 )
+        my_data = np.loadtxt(data, delimiter=' ')
+    except: sys.exit(2)
 
     error=my_data[:,0]
     distance=my_data[:,1]
         
-    max_int_dist = np.max( distance )
+    max_int_dist = np.max(distance)
     nbins = 10
 
     coeff_guess=[0, 0.1, 0.2]
-    n, _ = np.histogram( distance, bins = nbins )
+    n, _ = np.histogram(distance, bins = nbins)
 
     # want at least 2 values in each bin?
     while 0 or 1 in n:
         nbins -= 1
-        n, _ = np.histogram( distance, bins = nbins )
+        n, _ = np.histogram(distance, bins = nbins)
 
-    serror, _ = np.histogram( distance, bins = nbins, weights = error )
-    serror2, _ = np.histogram( distance, bins = nbins, weights = error**2 )
+    serror, _ = np.histogram(distance, bins = nbins, weights = error)
+    serror2, _ = np.histogram(distance, bins = nbins, weights = error**2)
 
     mean = serror / n
-    std = np.sqrt( serror2 / n - mean * mean )
+    std = np.sqrt(serror2 / n - mean * mean)
 
-    ydata = np.insert( std, 0, 0 )
+    ydata = np.insert(std, 0, 0)
     
     bins_orig=( _[1:] + _[:-1] ) / 2
-    xdata = np.insert( bins_orig, 0, 0 )
+    xdata = np.insert(bins_orig, 0, 0)
 
-    fitfunc = lambda p, x: p[0] + p[1] * ( abs( x ) ** p[2] )
-    errfunc = lambda p, x, y: y - fitfunc( p, x )
+    fitfunc = lambda p, x: p[0] + p[1] * (abs(x) ** p[2])
+    errfunc = lambda p, x, y: y - fitfunc(p, x)
     
-    out, cov, infodict, mesg, ier = optimize.leastsq( errfunc, coeff_guess, args = ( xdata, ydata ), full_output = True )
+    out, cov, infodict, mesg, ier = optimize.leastsq(errfunc, coeff_guess, args = ( xdata, ydata ), full_output = True)
     return out
 
 ## =============================================================================
@@ -124,42 +123,42 @@ class dem:
     def __init__(self, idatalist, iregion, iinc = "0.000277777", oname = None):
         self.status = 0
         self.dem = {}
-        self.inc = float( iinc )
+        self.inc = float(iinc)
         self.datalist = idatalist
         self.region = iregion
-        self.proc_region = self.region.buffer( 10 * self.inc )
-        self.dist_region = self.region.buffer( 6 * self.inc )
+        self.proc_region = self.region.buffer(10 * self.inc)
+        self.dist_region = self.region.buffer(6 * self.inc)
         self.max_prox = self.max_num = None
         self.oname = oname
         if self.oname is None: 
-            self.oname = os.path.basename( self.datalist._path ).split( '.' )[0]
+            self.oname = os.path.basename(self.datalist._path).split('.')[0]
 
     ## 'Validate' the DEM (check if all files in `dem` exist)
     def _valid_p(self):
         for key in self.dem:
             if not os.path.exists( self.dem[key] ):
-                return( False )
-        return( True )
+                return(False)
+        return(True)
 
     ## Remove keys to DEM filenames if they don't exist
     def _rectify(self):
         for key in self.dem:
-            if not os.path.exists( self.dem[key] ):
+            if not os.path.exists(self.dem[key]):
                 del self.dem[key]
                 
     ## Set a key/value in the `dem` dictionary
-    def _set_dem( self, key, value ):
+    def _set_dem(self, key, value):
         self.dem[key] = value
 
     ## Print out the key/value pairs from the `dem` dictionary
     def _print_dem(self):
         for key in self.dem:
-            print( key, self.dem[key] )
+            print(key, self.dem[key])
 
     ## Remove file associated with key
     def _dem_remove(self, key):
         try: 
-            os.remove( self.dem[key] )
+            os.remove(self.dem[key])
             return 0
         except: return -1
 
@@ -167,11 +166,11 @@ class dem:
     def grd2tif(self, src_grd):
         '''Convert the grd file to tif using GMT'''
 
-        if os.path.exists( src_grd ):
-            grd2tif_cmd = ( 'gmt grdconvert %s %s.tif=gd+n-9999:GTiff -V' 
-                            %( src_grd, os.path.basename( src_grd ).split( '.' )[0] ))
+        if os.path.exists(src_grd):
+            grd2tif_cmd = ('gmt grdconvert %s %s.tif=gd+n-9999:GTiff -V' 
+                            %( src_grd, os.path.basename( src_grd ).split('.')[0]))
             
-            out, self.status = run_cmd( grd2tif_cmd, "converting grd to tif" )
+            out, self.status = run_cmd(grd2tif_cmd, "converting grd to tif")
         else: self.status = -1
 
         return self.status
@@ -179,33 +178,33 @@ class dem:
     def grdinfo(self, src_grd):
         '''Return an info list of `src_grd`'''
 
-        if not os.path.exists( src_grd ):
+        if not os.path.exists(src_grd):
             self.status = -1
             return self.status
         else:
-            grdinfo_cmd = ( 'gmt grdinfo %s -C' %( src_grd ))
-            out, self.status = run_cmd( grdinfo_cmd, "snarfing info from grid" )
+            grdinfo_cmd = ('gmt grdinfo %s -C' %(src_grd))
+            out, self.status = run_cmd(grdinfo_cmd, "snarfing info from grid")
             return out.split()
 
     def grdcut(self, src_grd, src_region, dst_grd):
         '''Cut `src_grd` to `src_region` '''
 
-        if os.path.exists( src_grd ):
-            self.cut_cmd1 = ( 'gmt grdcut %s -G%s %s -V' 
-                              %( src_grd, dst_grd, src_region.gmt ))
+        if os.path.exists(src_grd):
+            self.cut_cmd1 = ('gmt grdcut %s -G%s %s -V' 
+                              %(src_grd, dst_grd, src_region.gmt))
 
     def grd2xyz(self, src_grd, dst_xyz, region = None, mask = None):
         '''Convert `src_grd` to xyz possibly using a nodata mask and/or a region'''
 
         if mask:
-            self.grdmask_cmd = ( 'gmt grdmath %s NOT %s = tmp.grd' %( mask, src_grd ))
-            out, self.status = run_cmd( self.grdmask_cmd, "masking DEM" )
+            self.grdmask_cmd = ('gmt grdmath %s NOT %s = tmp.grd' %(mask, src_grd))
+            out, self.status = run_cmd(self.grdmask_cmd, "masking DEM")
             src_grd = 'tmp.grd'
 
         if region and region._valid:
-            self.grd2xyz_cmd = ( 'gmt grd2xyz %s %s -s > %s' %( src_grd, region.gmt, dst_xyz ))
+            self.grd2xyz_cmd = ('gmt grd2xyz %s %s -s > %s' %(src_grd, region.gmt, dst_xyz))
         else:
-            self.grd2xyz_cmd = ( 'gmt grd2xyz %s -s > %s' %( igrid, dst_xyz ))
+            self.grd2xyz_cmd = ('gmt grd2xyz %s -s > %s' %( igrid, dst_xyz))
             
         out, self.status = run_cmd(self.grd2xyz_cmd, "converting grd to xyz")
 
@@ -419,34 +418,34 @@ def main():
         dem_alg = 'gmt'
 
     ## check platform
-    tw = prog_bar( 'checking platform' )
+    tw = clis.prog_bar( 'checking platform' )
     platform = sys.platform
     tw.pm = 'checking platform - %s' %( platform )
     tw._end( status )
 
     ## check for installed software
-    tw = prog_bar( 'checking for GMT' )
+    tw = clis.prog_bar( 'checking for GMT' )
     if cmd_exists( 'gmt' ): 
-        gmt_vers, status = run_cmd( 'gmt --version' )
+        gmt_vers, status = clis.run_cmd( 'gmt --version' )
         tw.pm = 'checking for GMT - %s' %( gmt_vers.rstrip() )
     else: status = -1
     tw._end( status )
 
-    tw = prog_bar( 'checking for MBSystem' )
+    tw = clis.prog_bar( 'checking for MBSystem' )
     if cmd_exists( 'mbgrid' ): 
-        mbs_vers, status = run_cmd( 'mbgrid -version' )
+        mbs_vers, status = clis.run_cmd( 'mbgrid -version' )
         tw.pm = 'checking for MBSystem - %s' %( mbs_vers.split( '\n' )[3].rstrip().split()[2] )
     else: status = -1
     tw._end( status )
 
-    tw = prog_bar( 'checking for GDAL command-line' )
+    tw = clis.prog_bar( 'checking for GDAL command-line' )
     if cmd_exists( 'gdal-config' ): 
-        gdal_vers, status = run_cmd( 'gdal-config --version' )
+        gdal_vers, status = clis.run_cmd( 'gdal-config --version' )
         tw.pm = 'checking for GDAL command-line - %s' %( gdal_vers.rstrip() )
     else: status = -1
     tw._end( status )
 
-    tw = prog_bar( 'checking for GDAL python bindings' )
+    tw = clis.prog_bar( 'checking for GDAL python bindings' )
     if has_gdalpy: 
         status = 0
         gdal_vers = gdal.__version__
@@ -455,14 +454,14 @@ def main():
     tw._end( status )
 
     if platform != 'linux2':
-        tw = prog_bar( 'checking for arcpy python bindings' )
+        tw = clis.prog_bar( 'checking for arcpy python bindings' )
         if has_arcpy: 
             status = 0
         else: status = -1
         tw._end( status )
 
     ## process input region(s)
-    tw = prog_bar( "processing region(s)" )
+    tw = clis.prog_bar( "processing region(s)" )
     try: 
         these_regions = [region( iregion )]
     except:
@@ -506,7 +505,7 @@ def main():
             this_surf.surface()
             this_surf.num()
 
-        tw = prog_bar( "validating DEM" )
+        tw = clis.prog_bar( "validating DEM" )
 
         this_surf._rectify()
         if this_surf._valid_p():
@@ -520,7 +519,7 @@ def main():
         ## Interpolation Uncertainty
         if do_unc:
         
-            tw = prog_bar( "preparing for interpolation uncertainty" )._end( status )
+            tw = clis.prog_bar( "preparing for interpolation uncertainty" )._end( status )
             status = this_surf.proximity()
     
             for sub_region in this_region.split( 4 ):

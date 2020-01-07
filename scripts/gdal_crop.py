@@ -30,14 +30,13 @@ import sys
 import gdal
 from geomods import gdalfun
 
-_version = "0.0.4"
+_version = '0.0.4'
 
-_license = """
+_license = '''
 version %s
-    """ %(_version)
+    ''' %(_version)
 
-_usage = """
-gdal_crop.py (%s): crop a gdal grid by the nodata value
+_usage = '''gdal_crop.py (%s): crop a gdal grid by the nodata value
 
 usage: gdal_crop.py [ file ]
 
@@ -51,7 +50,7 @@ usage: gdal_crop.py [ file ]
  %% gdal_crop.py input.tif
 
 Report bugs to <matthew.love@colorado.edu>
-CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>""" %(_version)
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>''' %(_version)
 
 if __name__ == '__main__':    
     elev = None
@@ -84,9 +83,9 @@ if __name__ == '__main__':
         sys.exit(1)
 
     if not os.path.exists(elev):
-        print("Error: %s is not a valid file" %(elev))
+        print('Error: %s is not a valid file' %(elev))
     else:
-        output_name=elev[:-4]+"_crop.tif"
+        output_name=elev[:-4] + '_crop.tif'
 
         out_array, out_config = gdalfun.crop(elev)
         outsize = out_array.shape
