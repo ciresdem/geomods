@@ -97,13 +97,13 @@ def err2coeff(data):
 
     ydata = np.insert(std, 0, 0)
     
-    bins_orig=( _[1:] + _[:-1] ) / 2
+    bins_orig=(_[1:] + _[:-1]) / 2
     xdata = np.insert(bins_orig, 0, 0)
 
     fitfunc = lambda p, x: p[0] + p[1] * (abs(x) ** p[2])
     errfunc = lambda p, x, y: y - fitfunc(p, x)
     
-    out, cov, infodict, mesg, ier = optimize.leastsq(errfunc, coeff_guess, args = ( xdata, ydata ), full_output = True)
+    out, cov, infodict, mesg, ier = optimize.leastsq(errfunc, coeff_guess, args = (xdata, ydata), full_output = True)
     return out
 
 ## =============================================================================
@@ -134,7 +134,7 @@ class dem:
     ## 'Validate' the DEM (check if all files in `dem` exist)
     def _valid_p(self):
         for key in self.dem:
-            if not os.path.exists( self.dem[key] ):
+            if not os.path.exists(self.dem[key]):
                 return(False)
         return(True)
 
@@ -166,7 +166,7 @@ class dem:
 
         if os.path.exists(src_grd):
             grd2tif_cmd = ('gmt grdconvert %s %s.tif=gd+n-9999:GTiff -V' 
-                            %( src_grd, os.path.basename( src_grd ).split('.')[0]))
+                            %(src_grd, os.path.basename(src_grd).split('.')[0]))
             
             out, self.status = run_cmd(grd2tif_cmd, "converting grd to tif")
         else: self.status = -1
@@ -202,7 +202,7 @@ class dem:
         if region and region._valid:
             self.grd2xyz_cmd = ('gmt grd2xyz %s %s -s > %s' %(src_grd, region.gmt, dst_xyz))
         else:
-            self.grd2xyz_cmd = ('gmt grd2xyz %s -s > %s' %( igrid, dst_xyz))
+            self.grd2xyz_cmd = ('gmt grd2xyz %s -s > %s' %(igrid, dst_xyz))
             
         out, self.status = run_cmd(self.grd2xyz_cmd, "converting grd to xyz")
 
@@ -216,39 +216,39 @@ class dem:
     def surface(self):
         '''Generate a DEM with GMT surface'''
 
-        dem_cmd = ( 'cat %s | gmt blockmean %s -I%s -r -V | gmt surface %s -I%s -G%s_p.grd -T.35 -Z1.2 -r -V -Lud -Lld' 
-                    %(self.datalist._echo_datafiles( ' ' ), self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname ))
-        dem_cmd1 = ( 'gmt grdcut %s_p.grd -G%s.grd %s -V' 
-                     %( self.oname, self.oname, self.dist_region.gmt ))
+        dem_cmd = ('cat %s | gmt blockmean %s -I%s -r -V | gmt surface %s -I%s -G%s_p.grd -T.35 -Z1.2 -r -V -Lud -Lld' 
+                    %(self.datalist._echo_datafiles(' '), self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
+        dem_cmd1 = ('gmt grdcut %s_p.grd -G%s.grd %s -V' 
+                     %(self.oname, self.oname, self.dist_region.gmt))
 
-        out, self.status = run_cmd( dem_cmd, 'generating DEM surface' )
-        out, self.status = run_cmd( dem_cmd1, 'cutting DEM surface' )
+        out, self.status = run_cmd(dem_cmd, 'generating DEM surface')
+        out, self.status = run_cmd(dem_cmd1, 'cutting DEM surface')
 
-        if os.path.exists( '%s_p.grd' %( self.oname )):
-            os.remove( '%s_p.grd' %( self.oname ))
+        if os.path.exists('%s_p.grd' %(self.oname)):
+            os.remove('%s_p.grd' %(self.oname))
 
-        self.grd2tif( self.dem['grd'] )
+        self.grd2tif(self.dem['grd'])
 
-        self.dem['dem-grd'] = ( '%s.grd' %( self.oname ))
-        self.dem['dem'] = ( '%s.tif' %( self.oname ))
+        self.dem['dem-grd'] = ('%s.grd' %(self.oname))
+        self.dem['dem'] = ('%s.tif' %(self.oname))
 
         return self.status
 
     def num(self):
         '''Generate a num and num-msk grid with GMT'''
 
-        num_cmd0 = ( 'cat %s | gmt xyz2grd %s -I%s -r -V -G%s_num.grd -An'
-                     %( self.datalist._echo_datafiles( ' ' ), self.dist_region.gmt, self.inc, self.oname ))
-        num_cmd1 = ('gmt grdmath %s_num.grd 0 MUL 1 ADD 0 AND = %s_num_msk.tif=gd+n-9999:GTiff -V' %( self.oname, self.oname ))
+        num_cmd0 = ('cat %s | gmt xyz2grd %s -I%s -r -V -G%s_num.grd -An'
+                     %(self.datalist._echo_datafiles(' '), self.dist_region.gmt, self.inc, self.oname))
+        num_cmd1 = ('gmt grdmath %s_num.grd 0 MUL 1 ADD 0 AND = %s_num_msk.tif=gd+n-9999:GTiff -V' %(self.oname, self.oname))
 
-        out, self.status = run_cmd( num_cmd0, "generating num grid" )
-        out, self.status = run_cmd( num_cmd1, "generating num mask grid" )
+        out, self.status = run_cmd(num_cmd0, "generating num grid")
+        out, self.status = run_cmd(num_cmd1, "generating num mask grid")
 
-        self.grd2tif( '%s_num.grd' %( self.oname ))
+        self.grd2tif('%s_num.grd' %(self.oname))
 
-        self.dem['num'] = '%s_num.tif' %( self.oname )
-        self.dem['num-grd'] = '%s_num.grd' %( self.oname )
-        self.dem['num-msk'] = '%s_num_msk.tif' %(self.oname )
+        self.dem['num'] = '%s_num.tif' %(self.oname)
+        self.dem['num-grd'] = '%s_num.grd' %(self.oname)
+        self.dem['num-msk'] = '%s_num_msk.tif' %(self.oname)
 
         self.max_num = int(self.grdinfo(self.dem['num'])[6])
 
@@ -257,34 +257,34 @@ class dem:
     def mbgrid(self, extras = False):
         '''Generate a DEM and num grid with MBSystem'''
 
-        mbgrid_cmd = ( 'mbgrid -I%s %s -E%s/%s/degrees! -O%s -A2 -G3 -F1 -N -C10/3 -S0 -X0.1 -T35 -M' 
-                       %( self.datalist._path, self.dist_region.gmt, self.inc, self.inc, self.oname ))
+        mbgrid_cmd = ('mbgrid -I%s %s -E%s/%s/degrees! -O%s -A2 -G3 -F1 -N -C10/3 -S0 -X0.1 -T35 -M' 
+                       %(self.datalist._path, self.dist_region.gmt, self.inc, self.inc, self.oname))
 
-        out, self.status = run_cmd( mbgrid_cmd, 'generating DEM and num grid' )
+        out, self.status = run_cmd(mbgrid_cmd, 'generating DEM and num grid')
 
-        self.dem['dem-grd'] = '%s.grd' %( self.oname )
-        self.dem['num-grd'] = '%s_num.grd' %( self.oname )
+        self.dem['dem-grd'] = '%s.grd' %(self.oname)
+        self.dem['num-grd'] = '%s_num.grd' %(self.oname)
 
-        self.grd2tif( self.dem['dem-grd'] )
-        self.dem['dem'] = '%s.tif' %( self.oname )
+        self.grd2tif(self.dem['dem-grd'])
+        self.dem['dem'] = '%s.tif' %(self.oname)
 
         self.grd2tif(self.dem['num-grd'])
-        self.dem['num'] = '%s_num.tif' %( self.oname )
+        self.dem['num'] = '%s_num.tif' %(self.oname)
 
         try:
-            os.remove( '%s.cmd' %( self.dem['dem-grd'] ))
-            os.remove( '%s.cmd' %( self.dem['num-grd'] ))
-            os.remove( '%s.mb-1' %( self.oname ))
-            os.remove( '%s_sd.grd' %( self.oname ))
-            os.remove( '%s_sd.grd.cmd' %( self.oname ))
+            os.remove('%s.cmd' %(self.dem['dem-grd']))
+            os.remove('%s.cmd' %(self.dem['num-grd']))
+            os.remove('%s.mb-1' %(self.oname))
+            os.remove('%s_sd.grd' %(self.oname))
+            os.remove('%s_sd.grd.cmd' %(self.oname))
         except: pass
 
-        self.max_num = int( self.grdinfo( self.dem['num-grd'] )[6] )
+        self.max_num = int(self.grdinfo(self.dem['num-grd'])[6])
         
-        num_msk_cmd = ( 'gmt grdmath %s 0 MUL 1 ADD 0 AND = %s_num_msk.tif=gd+n-9999:GTiff' %( self.dem['num'], self.oname ))
-        out, self.status = run_cmd( num_msk_cmd, 'generating num mask grid' )
+        num_msk_cmd = ('gmt grdmath %s 0 MUL 1 ADD 0 AND = %s_num_msk.tif=gd+n-9999:GTiff' %(self.dem['num'], self.oname))
+        out, self.status = run_cmd(num_msk_cmd, 'generating num mask grid')
 
-        self.dem['num-msk'] = ( '%s_num_msk.tif' %( self.oname ))
+        self.dem['num-msk'] = ('%s_num_msk.tif' %(self.oname))
 
         return self.status
 
@@ -296,18 +296,18 @@ class dem:
             self.status = -1
             return self.status
 
-        slope_cmd0 = ( 'gmt grdgradient -fg %s -S%s_pslp.grd -D -R%s -V' 
-                       %( self.dem['dem-grd'], self.oname, self.dem['dem-grd'] ))
-        slope_cmd1 = ( 'gmt grdmath %s_pslp.grd ATAN PI DIV 180 MUL = %s_slp.tif=gd+n-9999:GTiff'
-                       %( self.oname, self.oname ))
+        slope_cmd0 = ('gmt grdgradient -fg %s -S%s_pslp.grd -D -R%s -V' 
+                       %(self.dem['dem-grd'], self.oname, self.dem['dem-grd']))
+        slope_cmd1 = ('gmt grdmath %s_pslp.grd ATAN PI DIV 180 MUL = %s_slp.tif=gd+n-9999:GTiff'
+                       %(self.oname, self.oname))
 
-        out, self.status = run_cmd( slope_cmd0, "generating DEM gradient" )
-        out, self.status = run_cmd( slope_cmd1, "generating DEM slope" )
+        out, self.status = run_cmd(slope_cmd0, "generating DEM gradient")
+        out, self.status = run_cmd(slope_cmd1, "generating DEM slope")
 
-        if os.path.exists( '%s_pslp.grd' %( self.oname )):
-            os.remove( '%s_pslp.grd' %( self.oname ))
+        if os.path.exists('%s_pslp.grd' %(self.oname)):
+            os.remove('%s_pslp.grd' %(self.oname))
 
-        self.dem['slope'] = ( '%s_slp.tif' %( self.oname ))
+        self.dem['slope'] = ('%s_slp.tif' %(self.oname))
 
         return self.status
 
@@ -319,11 +319,11 @@ class dem:
             self.status = -1
             return self.status
 
-        self.dem['prox'] = ( '%s_prox.tif' %( self.oname ))
+        self.dem['prox'] = ('%s_prox.tif' %(self.oname))
 
-        gdalfun.proximity( self.dem['num-msk'], self.dem['prox'] )
+        gdalfun.proximity(self.dem['num-msk'], self.dem['prox'])
         
-        self.max_prox = self.grdinfo( self.dem['prox'] )[6]
+        self.max_prox = self.grdinfo(self.dem['prox'])[6]
         print self.max_prox
 
         return self.status
@@ -350,45 +350,45 @@ def main():
         
     ## parse command line arguments.
     i = 1
-    while i < len( argv ):
+    while i < len(argv):
         arg = argv[i]
 
         if arg == '--region' or arg == '-R':
-            iregion = str( argv[i + 1] )
+            iregion = str(argv[i + 1])
             i = i + 1
         elif arg[:2] == '-R':
-            iregion = str( arg[2:] )
+            iregion = str(arg[2:])
 
         elif arg == '--datalist' or arg == '-I':
-            idatalist = str( argv[i + 1] )
+            idatalist = str(argv[i + 1])
             i = i + 1
         elif arg[:2] == '-I':
-            idatalist = str( arg[2:] )
+            idatalist = str(arg[2:])
 
         elif arg == '--increment' or arg == '-E':
-            iinc = str( argv[i + 1] )
+            iinc = str(argv[i + 1])
             i = i + 1
         elif arg[:2] == '-E':
-            iinc = str( arg[2:] )
+            iinc = str(arg[2:])
 
         elif arg == '--grid' or arg == '-G':
-            igrid = str( argv[i + 1] )
+            igrid = str(argv[i + 1])
             i = i + 1
         elif arg[:2] == '-G':
-            igrid = str( arg[2:] )
+            igrid = str(arg[2:])
 
         elif arg == '--alogrithm' or arg == '-A':
-            dem_alg = str( argv[i + 1] )
+            dem_alg = str(argv[i + 1])
             i = i + 1
         elif arg[:2] == '-A':
-            dem_alg = str( arg[2:] )
+            dem_alg = str(arg[2:])
 
         elif arg == '--uncertainty' or arg == '-u':
             do_unc = True
 
         elif arg[0] == '-':
-            print( usage )
-            sys.exit( 0 )
+            print(usage)
+            sys.exit(0)
 
         elif idatalist is None:
             idatalist = arg
@@ -397,18 +397,18 @@ def main():
             iregion = arg
 
         else:
-            print( usage )
-            sys.exit( 1 )
+            print(usage)
+            sys.exit(1)
 
         i = i + 1
 
     if iregion is None:
-        print( usage )
-        sys.exit( 1 )
-        #iregion = raw_input( 'input region: ' )
+        print(usage)
+        sys.exit(1)
+        #iregion = raw_input('input region: ')
 
     #if idatalist is None:
-        #idatalist = raw_input( 'input datalist: ' )
+        #idatalist = raw_input('input datalist: ')
         #print(usage)
         #sys.exit(1)
 
@@ -416,59 +416,59 @@ def main():
         dem_alg = 'gmt'
 
     ## check platform
-    tw = clis.prog_bar( 'checking platform' )
+    tw = clis.prog_bar('checking platform')
     platform = sys.platform
-    tw.pm = 'checking platform - %s' %( platform )
-    tw._end( status )
+    tw.pm = 'checking platform - %s' %(platform)
+    tw._end(status)
 
     ## check for installed software
-    tw = clis.prog_bar( 'checking for GMT' )
-    if cmd_exists( 'gmt' ): 
-        gmt_vers, status = clis.run_cmd( 'gmt --version' )
-        tw.pm = 'checking for GMT - %s' %( gmt_vers.rstrip() )
+    tw = clis.prog_bar('checking for GMT')
+    if cmd_exists('gmt'): 
+        gmt_vers, status = clis.run_cmd('gmt --version')
+        tw.pm = 'checking for GMT - %s' %(gmt_vers.rstrip())
     else: status = -1
-    tw._end( status )
+    tw._end(status)
 
-    tw = clis.prog_bar( 'checking for MBSystem' )
-    if cmd_exists( 'mbgrid' ): 
-        mbs_vers, status = clis.run_cmd( 'mbgrid -version' )
-        tw.pm = 'checking for MBSystem - %s' %( mbs_vers.split( '\n' )[3].rstrip().split()[2] )
+    tw = clis.prog_bar('checking for MBSystem')
+    if cmd_exists('mbgrid'): 
+        mbs_vers, status = clis.run_cmd('mbgrid -version')
+        tw.pm = 'checking for MBSystem - %s' %(mbs_vers.split('\n')[3].rstrip().split()[2])
     else: status = -1
-    tw._end( status )
+    tw._end(status)
 
-    tw = clis.prog_bar( 'checking for GDAL command-line' )
-    if cmd_exists( 'gdal-config' ): 
-        gdal_vers, status = clis.run_cmd( 'gdal-config --version' )
-        tw.pm = 'checking for GDAL command-line - %s' %( gdal_vers.rstrip() )
+    tw = clis.prog_bar('checking for GDAL command-line')
+    if cmd_exists('gdal-config'): 
+        gdal_vers, status = clis.run_cmd('gdal-config --version')
+        tw.pm = 'checking for GDAL command-line - %s' %(gdal_vers.rstrip())
     else: status = -1
-    tw._end( status )
+    tw._end(status)
 
-    tw = clis.prog_bar( 'checking for GDAL python bindings' )
+    tw = clis.prog_bar('checking for GDAL python bindings')
     if has_gdalpy: 
         status = 0
         gdal_vers = gdal.__version__
-        tw.pm = 'checking for GDAL python bindings - %s' %( gdal_vers )
+        tw.pm = 'checking for GDAL python bindings - %s' %(gdal_vers)
     else: status = -1
-    tw._end( status )
+    tw._end(status)
 
     if platform != 'linux2':
-        tw = clis.prog_bar( 'checking for arcpy python bindings' )
+        tw = clis.prog_bar('checking for arcpy python bindings')
         if has_arcpy: 
             status = 0
         else: status = -1
-        tw._end( status )
+        tw._end(status)
 
     ## process input region(s)
-    tw = clis.prog_bar( "processing region(s)" )
+    tw = clis.prog_bar("processing region(s)")
     try: 
-        these_regions = [region( iregion )]
+        these_regions = [region(iregion)]
     except:
-        if os.path.exists( iregion ):
-            _poly = ogr.Open( iregion )
-            _player = _poly.GetLayer( 0 )
+        if os.path.exists(iregion):
+            _poly = ogr.Open(iregion)
+            _player = _poly.GetLayer(0)
             for pf in _player:
                 _pgeom = pf.GetGeometryRef()
-                these_regions.append( region( "/".join( map( str, _pgeom.GetEnvelope() ))))
+                these_regions.append(region("/".join(map(str, _pgeom.GetEnvelope()))))
 
     if len(these_regions) == 0:
         status = -1
@@ -476,23 +476,23 @@ def main():
     for this_region in these_regions:
         if not this_region._valid: 
             status = -1
-    tw.pm = 'processing %s region(s)' %( len( these_regions ))
-    tw._end( status )
+    tw.pm = 'processing %s region(s)' %(len(these_regions))
+    tw._end(status)
 
     if status == -1:
-        print( usage )
-        sys.exit( 1 )
+        print(usage)
+        sys.exit(1)
 
     for this_region in these_regions:
         
         ## process input datalist
-        this_datalist = datalist( idatalist, this_region )
+        this_datalist = datalist(idatalist, this_region)
         if not this_datalist._valid:
             break
 
         ## process DEM
         ## generate DEM and Num grid using full region
-        this_surf = dem( this_datalist, this_region, iinc )
+        this_surf = dem(this_datalist, this_region, iinc)
 
         ## MBSystem mbgrid
         if dem_alg == 'mbgrid':
@@ -503,7 +503,7 @@ def main():
             this_surf.surface()
             this_surf.num()
 
-        tw = clis.prog_bar( "validating DEM" )
+        tw = clis.prog_bar("validating DEM")
 
         this_surf._rectify()
         if this_surf._valid_p():
@@ -512,43 +512,43 @@ def main():
         else:
             status = -1
             
-        tw._end( status )
+        tw._end(status)
 
         ## Interpolation Uncertainty
         if do_unc:
         
-            tw = clis.prog_bar( "preparing for interpolation uncertainty" )._end( status )
+            tw = clis.prog_bar("preparing for interpolation uncertainty")._end(status)
             status = this_surf.proximity()
     
-            for sub_region in this_region.split( 4 ):
+            for sub_region in this_region.split(4):
                 sub_count += 1
             
                 ## Extract XYZ data for sub-region and randomly sample
-                status = this_surf.grd2xyz(this_surf.dem['dem-grd'], '%s.xyz' %( this_surf.oname ), region=sub_region.buffer(10*float(iinc)), mask=this_surf.dem['num-grd'])
+                status = this_surf.grd2xyz(this_surf.dem['dem-grd'], '%s.xyz' %(this_surf.oname), region=sub_region.buffer(10*float(iinc)), mask=this_surf.dem['num-grd'])
 
-                sub_xyz = np.loadtxt( this_surf.dem['xyz'], delimiter = ' ' )
+                sub_xyz = np.loadtxt(this_surf.dem['xyz'], delimiter = ' ')
                 
-                np.random.shuffle( sub_xyz )
-                sx_len = len( sub_xyz )
-                sx_len_pct = int( sx_len * .5 )
+                np.random.shuffle(sub_xyz)
+                sx_len = len(sub_xyz)
+                sx_len_pct = int(sx_len * .5)
 
-                np.savetxt( 'sub_%d_rest.xyz' %( sub_count ), sub_xyz[sx_len_pct:], '%f', ' ' )
+                np.savetxt('sub_%d_rest.xyz' %(sub_count), sub_xyz[sx_len_pct:], '%f', ' ')
                 
-                sub_datalist =  datalist( 'sub_%d.datalist' %( sub_count ), sub_region )
-                sub_datalist._append_datafile( 'sub_%d_rest.xyz' %( sub_count ), 168, 1 )
+                sub_datalist =  datalist('sub_%d.datalist' %(sub_count), sub_region)
+                sub_datalist._append_datafile('sub_%d_rest.xyz' %(sub_count), 168, 1)
                 sub_datalist._reset()
 
                 ## Generate the random-sample DEM            
-                sub_surf = dem( sub_datalist, sub_region, iinc )
+                sub_surf = dem(sub_datalist, sub_region, iinc)
                 sub_surf.mbgrid()
             
                 status = sub_surf.proximity()
             
                 ## Query the random-sample DEM with the withheld data
-                sub_xyd = gdalfun.query( sub_xyz[:sx_len_pct], sub_surf.dem['tif'], 'xyd' )
+                sub_xyd = gdalfun.query(sub_xyz[:sx_len_pct], sub_surf.dem['tif'], 'xyd')
 
                 ## Query the random-sample proximity grid with the withheld data
-                sub_dp = gdalfun.query( sub_xyd, sub_surf.dem['prox'], 'zg' )
+                sub_dp = gdalfun.query(sub_xyd, sub_surf.dem['prox'], 'zg')
                 #print np.max(sub_dp[:,1])
             
                 ## Cleanup
