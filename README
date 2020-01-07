@@ -6,5 +6,6 @@ Installation:
 
 Scripts:
 
+ - cudem.py
  - fetch.py
  - gdal_crop.py
