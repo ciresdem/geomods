@@ -33,5 +33,6 @@ setup(
     #install_requires=['numpy', 'gdal', 'ogr'], #external packages as dependencies
     scripts=[
         'scripts/fetch.py',
+        'scripts/cudem.py',
         'scripts/gdal_crop.py' ]
 )
