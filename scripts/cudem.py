@@ -29,7 +29,6 @@ import re
 import math
 import time
 import glob
-import subprocess
 
 import random
 import numpy as np

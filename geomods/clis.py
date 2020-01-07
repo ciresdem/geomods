@@ -22,6 +22,8 @@
 import os
 import sys
 
+import subprocess
+
 _license = '''
 Copyright (c) 2012 - 2020 Matthew Love <matthew.love@colorado.edu>
 
