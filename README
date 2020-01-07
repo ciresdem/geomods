@@ -1,1 +1,10 @@
-# geomods
+[ g e o m o d s ]
+
+Installation:
+
+ % sudo python setup.py install
+
+Scripts:
+
+ - fetch.py
+ - gdal_crop.py
