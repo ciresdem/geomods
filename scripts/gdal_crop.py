@@ -53,8 +53,7 @@ usage: gdal_crop.py [ file ]
 Report bugs to <matthew.love@colorado.edu>
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>""" %(_version)
 
-if __name__ == '__main__':
-    
+if __name__ == '__main__':    
     elev = None
     split_value = 0
 
@@ -89,7 +88,7 @@ if __name__ == '__main__':
     else:
         output_name=elev[:-4]+"_crop.tif"
 
-        out_array, out_config = gdalfun.gdal_crop(elev)
+        out_array, out_config = gdalfun.crop(elev)
         outsize = out_array.shape
 
         #Export Tif

@@ -66,7 +66,7 @@ _version = '0.1.6'
 ## Generic fetching functions, etc.
 ##
 ## =============================================================================
-r_headers = { 'User-Agent': 'GeoMods: fetches v%s' %(_version) }
+r_headers = { 'User-Agent': 'GeoMods: Fetches v%s' %(_version) }
 
 namespaces = {'gmd': 'http://www.isotc211.org/2005/gmd', 
               'gmi': 'http://www.isotc211.org/2005/gmi', 
