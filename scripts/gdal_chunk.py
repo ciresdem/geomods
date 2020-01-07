@@ -54,8 +54,9 @@ usage: gdal_chunk.py [ file ]
 Report bugs to <matthew.love@colorado.edu>
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>''' %(_version)
 
-if __name__ == '__main__':    
+if __name__ == '__main__':
     src_fn = None
+    chunk_value = 1000
 
     i = 1
     while i < len(sys.argv):
@@ -64,7 +65,7 @@ if __name__ == '__main__':
         if arg == '-c' or arg == '-chunk' or arg == '--chunk':
             try:
                 chunk_value = int(sys.argv[i + 1])
-            except: chunk_value = 1000
+            except: pass
             i = i + 1
 
         elif arg == '-help' or arg == '--help' or arg == '-h':
