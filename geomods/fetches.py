@@ -74,8 +74,8 @@ namespaces = {'gmd': 'http://www.isotc211.org/2005/gmd',
               'gml': 'http://www.isotc211.org/2005/gml'}
 
 def fetch_file(src_url, dst_fn, params = None):
-    if not os.path.exists( os.path.dirname(dst_fn)):
-        os.makedirs( os.path.dirname(dst_fn))
+    if not os.path.exists(os.path.dirname(dst_fn)):
+        os.makedirs(os.path.dirname(dst_fn))
 
     req = requests.get(src_url, stream = True, params = params)
 
@@ -146,7 +146,7 @@ def bounds2geom(bounds):
           [bounds[3], bounds[0]],
           [bounds[2], bounds[0]]]
 
-    return ogr.CreateGeometryFromWkt( create_polygon(b1))
+    return ogr.CreateGeometryFromWkt(create_polygon(b1))
 
 def addf_ref_vector(ogr_layer, survey):
     #try:
@@ -172,7 +172,7 @@ def update_ref_vector(src_vec, surveys, update=True):
         layer = ds.GetLayer()
     else:
         ds = ogr.GetDriverByName('GMT').CreateDataSource(src_vec)
-        layer = ds.CreateLayer('%s' %( os.path.basename(src_vec).split('.')[0]), None, ogr.wkbPolygon)
+        layer = ds.CreateLayer('%s' %(os.path.basename(src_vec).split('.')[0]), None, ogr.wkbPolygon)
         layer.CreateField(ogr.FieldDefn('Name', ogr.OFTString))
         layer.CreateField(ogr.FieldDefn('ID', ogr.OFTString))
         layer.CreateField(ogr.FieldDefn('Date', ogr.OFTInteger))
@@ -255,16 +255,16 @@ class dc:
 
                     for tile in dc_csv:
                         try:
-                            tb = [float( tile[1] ), float( tile[2] ), float( tile[3] ), float( tile[4] )]
-                            tile_geom = bounds2geom( tb )
-                            if tile_geom.Intersects( self._boundsGeom ):
-                                self._results.append( os.path.join( surv_url, tile[0] ))
+                            tb = [float(tile[1]), float(tile[2]), float(tile[3]), float(tile[4])]
+                            tile_geom = bounds2geom(tb)
+                            if tile_geom.Intersects(self._boundsGeom):
+                                self._results.append(os.path.join(surv_url, tile[0]))
                         except: pass
 
                 elif 'raster' in surv_dt:
                     ## Raster data has a tileindex shapefile to get extent
                     sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
-                    fetch_file(surv_url + sshpz, os.path.join( '.', sshpz))
+                    fetch_file(surv_url + sshpz, os.path.join('.', sshpz))
 
                     zip_ref = zipfile.ZipFile(sshpz)
                     zip_ref.extractall('dc_tile_index')
@@ -321,7 +321,7 @@ class dc:
                 dc = {}
                 for j, cell in enumerate(cells):
                     cl = cell.xpath('a')
-                    if len( cl ) > 0:
+                    if len(cl) > 0:
                         if cols[j] == 'Dataset Name':
                             dc[cols[j]] = cell.text_content()
                             dc['Metadata'] = cl[0].get('href')
@@ -343,7 +343,7 @@ class dc:
                             obbox = bounds2geom([float(wl.text), float(el.text), float(sl.text), float(nl.text)])
                 
                             try: 
-                                odate = int( dc['Year'][:4] )
+                                odate = int(dc['Year'][:4])
                             except: odate = 1900
 
                             out_s = [obbox, 
@@ -367,7 +367,7 @@ class dc:
             gmt2 = layer = None
 
     def print_results(self):
-        if len( self._results ) == 0:
+        if len(self._results) == 0:
             self._status = -1
         else:
             for row in self._results:
@@ -387,7 +387,7 @@ class dc:
                     surv_dir = row.split('/')[-3:][0]
 
                 surv_fn = row.split('/')[-2:][1]
-                outf = os.path.join( self._outdir, surv_dir, surv_fn)
+                outf = os.path.join(self._outdir, surv_dir, surv_fn)
 
                 fetch_file(row, outf)
 
@@ -399,7 +399,7 @@ class dc:
                     os.makedirs('xyz')
                     os.rename(outf_bn + '.txt', os.path.join('xyz', outf_bn + '.xyz'))
 
-                    sdatalist = geomods.datalists.datalist( os.path.join('xyz', '%s.datalist' %(surv_dir)))
+                    sdatalist = geomods.datalists.datalist(os.path.join('xyz', '%s.datalist' %(surv_dir)))
                     sdatalist._append_datafile('%s' %(outf_bn + '.xyz'), 168, 1)
                     sdatalist._reset()
 
@@ -491,7 +491,7 @@ class nos:
             if self.has_vector:
                 layer.SetAttributeFilter('ID = "%s"' %(sid))
 
-            if len( layer ) == 0:
+            if len(layer) == 0:
                 xml_url = xml_catalog + survey
                 s_entry = self._parse_nos_xml(xml_url, sid)
 
@@ -536,7 +536,7 @@ class nos:
     def fetch_results(self):
         try:
             for row in self._results:
-                fetch_file( row, os.path.join(self._outdir, os.path.basename(row)))
+                fetch_file(row, os.path.join(self._outdir, os.path.basename(row)))
         except: self._status = -1
 
 ## =============================================================================
@@ -595,7 +595,7 @@ class charts:
             if update:
                 layer.SetAttributeFilter('Name = "%s"' %(title))
 
-            if len( layer ) == 0:
+            if len(layer) == 0:
                 polygon = chart.find('.//{*}Polygon', namespaces = namespaces)
                 if polygon is not None:
                     nodes = polygon.findall('.//{*}pos', namespaces = namespaces)
@@ -633,7 +633,7 @@ class charts:
             self.chart_xml = fetch_nos_xml(self._dt_xml[self._checks])
             self._parse_charts_xml(self.has_vector)
             
-            if len( self._chart_feats ) > 0:
+            if len(self._chart_feats) > 0:
                 update_ref_vector(self._ref_vector, self._chart_feats, self.has_vector)
 
             if os.path.exists(self._ref_vector): 
@@ -697,7 +697,7 @@ class tnm:
     def fetch_results(self):
         try:
             for i in self._dataset_results['items']:
-                fetch_file( i['downloadURL'], os.path.join(self._outdir, os.path.basename( i['downloadURL'])))
+                fetch_file(i['downloadURL'], os.path.join(self._outdir, os.path.basename(i['downloadURL'])))
         except: self._status = -1
 
 ## =============================================================================
@@ -757,10 +757,10 @@ class mb:
                 if not os.path.exists(dst_dn):
                     os.makedirs(dst_dn)
 
-                data_url = self._mb_data_url + '/'.join( r.split('/')[3:])
+                data_url = self._mb_data_url + '/'.join(r.split('/')[3:])
                 dst_fn = r.split(' ')[0].split('/')[-1:][0]
                 
-                fetch_file(data_url.split( ' ' )[0], os.path.join(dst_dn, dst_fn))
+                fetch_file(data_url.split(' ')[0], os.path.join(dst_dn, dst_fn))
         except: self._status = -1
 
 ## =============================================================================
@@ -939,7 +939,7 @@ class ngs:
                 outcsv = csv.writer(outfile)
                 outcsv.writerow(r[0].keys())
                 for row in r:
-                    outcsv.writerow( row.values() )
+                    outcsv.writerow(row.values())
 
                 outfile.close()
         except: self._status = -1
