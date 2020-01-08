@@ -105,48 +105,47 @@ class prog_bar:
         self.opl = len(prog_message)
         self.opm = prog_message 
         self.pm = self.opm
-        self.colors = True
-
-        self.cyan = '\033[96m'
-        self.green = '\033[92m'
-        self.red2 = '\033[91m'
-        self.red = '\x1b[31m'
-        self.NC2 = '\033[00m'
-        self.NC = '\x1b[00m'
-
-        self.spinner = ['\\', '|', '/', '~', '']
 
         self._clear_stderr()
 
-        sys.stderr.write('\r[%s] %-40s\r' % (" " * self.tw, self.opm))
+        sys.stderr.write('\r[{}] {:40}\r'.format(" " * self.tw, self.opm))
         sys.stderr.flush()
+
+        self.add_one = lambda x: x + 1
+        self.sub_one = lambda x: x - 1
+        self.spin_way = self.add_one
+
+    def _switch_way(self):
+        if self.spin_way == self.add_one:
+            self.spin_way = self.sub_one
+        else: self.spin_way = self.add_one
 
     def _terminal_size(self):
         return os.popen('stty size', 'r').read().split()
 
     def _clear_stderr(self):
-        sys.stderr.write('\r%s\r' %(' ' * int(self._terminal_size()[1])))
+        sys.stderr.write('\r{}\r'.format(' ' * int(self._terminal_size()[1])))
         sys.stderr.flush()
 
     def _update(self):
-        self.pc = (self.count % (self.tw + 1))
-        #pm = '%s%s' %(self.opm, self.pm)
-        #pm = self.opm + self.pm + (' ' * (self.opl - (len(self.opm) + len(self.pm)))) #+ ('\b' * ( self.opl - ( len( self.opm ) + len( self.pm )))) 
-        #self.opl = len(pm)
-
+        self.pc = (self.count % self.tw)
         self._clear_stderr()
-        #sys.stderr.write('\r[%-4s] %-20s' %(self.green + ('*' * self.pc) + self.red + self.spinner[self.pc] + self.NC + (' ' * ((self.tw - 1) - self.pc)), pm ))
-        sys.stderr.write('\r[%-4s] %-40s\r' %(self.green + ('*' * self.pc) + self.red + self.spinner[self.pc] + self.NC + (' ' * ((self.tw - 1) - self.pc)), self.pm ))
+
+        sys.stderr.write('\r[{:4}] {:40}\r'.format('#'.rjust(self.pc+1), self.pm))
         sys.stderr.flush()
-        self.count += 1
+
+        if self.count == self.tw - 1: self.spin_way = self.sub_one
+        if self.count == 0: self.spin_way = self.add_one
+
+        self.count = self.spin_way(self.count)
 
     def _end(self, status):
         self._clear_stderr()
 
         if status != 0:
-            sys.stderr.write('\r[%sFAIL%s] %-40s\n' %(self.red, self.NC, self.opm))
+            sys.stderr.write('\r[fail] {:40}\n'.format(self.opm))
         else:
-            sys.stderr.write('\r[ %sOK%s ] %-40s \n' %(self.green, self.NC, self.opm))
+            sys.stderr.write('\r[{:^4}] {:40}\n'.format('ok', self.opm))
 
         sys.stderr.flush()
 

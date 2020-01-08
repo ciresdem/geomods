@@ -558,7 +558,7 @@ def main():
                 dem_nt.start()
                 dem_t.start()
                 while True:
-                    time.sleep(5)
+                    time.sleep(3)
                     tw._update()
                     if not dem_t.is_alive() and not dem_nt.is_alive():
                         break

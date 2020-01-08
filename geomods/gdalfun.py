@@ -302,6 +302,8 @@ def dump(src_gdal, dst_xyz):
             if band_str not in nodata:
                 dst_fh.write(line)
 
+    srcds = None
+
 def proximity(self, src_fn, dst_fn):
     '''Compute a proximity grid via GDAL'''
 
