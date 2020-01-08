@@ -7,9 +7,11 @@ Dependencies:
  - GDAL and GDAL-Python
  - NumPy
 
-: For DEM generation:
+: For DEM generation and data processing:
  - GMT
  - MBSystem
+ - LASTools
+ - Bounds
 
 Installation:
 

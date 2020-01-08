@@ -482,7 +482,7 @@ class nos:
         el = xml_doc.find('.//gmd:eastBoundLongitude/gco:Decimal', namespaces = namespaces)
         sl = xml_doc.find('.//gmd:southBoundLatitude/gco:Decimal', namespaces = namespaces)
         nl = xml_doc.find('.//gmd:northBoundLatitude/gco:Decimal', namespaces = namespaces)
-        if wl is not None:
+        if wl is not None and el is not None and sl is not None and nl is not None:
             obbox = bounds2geom([float(wl.text), float(el.text), float(sl.text), float(nl.text)])
 
         odt = '0000'        
@@ -496,13 +496,16 @@ class nos:
 
         dfs = xml_doc.findall('.//gmd:MD_Format/gmd:name/gco:CharacterString', namespaces = namespaces)
         dus = xml_doc.findall('.//gmd:onLine/gmd:CI_OnlineResource/gmd:linkage/gmd:URL', namespaces = namespaces)
-        for i,j in enumerate(dus):
-            for dt in dts:
-                if dfs[i].text in dts:
-                    xml_dsu.append(j.text)
-                    xml_dsf = dfs[i].text
+        if dus is not None:
+            for i,j in enumerate(dus):
+                if dfs is not None:
+                    for dt in dts:
+                        if dfs[i].text in dts:
+                            xml_dsu.append(j.text)
+                            xml_dsf = dfs[i].text
 
-        return [obbox, title.text, sid, odt, xml_url, ','.join(xml_dsu), xml_dsf]
+            return [obbox, title.text, sid, odt, xml_url, ','.join(xml_dsu), xml_dsf]
+        return [None]
 
     def _scan_directory(self, nosdir):
         if self.has_vector:
