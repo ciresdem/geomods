@@ -31,6 +31,7 @@ import lxml.etree
 
 import zipfile
 import csv
+import threading
 
 try:
     import numpy as np
@@ -233,10 +234,9 @@ class dc:
         self.stop = callback
         self.region = extent
 
-
     def _log_survey(self, surv_url):
         with open(self._log_fn, 'a') as local_file:
-            local_file.write(surv_url)
+            local_file.write(surv_url + "\n")
                 
     def search_gmt(self, filters=[]):
         '''Search for data in the reference vector file'''
@@ -460,7 +460,9 @@ class dc:
                             try:
                                 surv_t = surv_fn.split('.')[1]
                             except: surv_t = ''
-                            self.proc_data(surv_dir, surv_fn, outf, surv_t)
+                            t = threading.Thread(target = self.proc_data, args = (surv_dir, surv_fn, outf, surv_t))
+                            t.start()
+                            #self.proc_data(surv_dir, surv_fn, outf, surv_t)
 
 ## =============================================================================
 ##

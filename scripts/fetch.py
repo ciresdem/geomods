@@ -296,7 +296,10 @@ def main():
                                 pb._update()
                                 if not fl_fetch.is_alive():
                                     break
-                        except (KeyboardInterrupt, SystemExit): stop_threads = True
+                        except (KeyboardInterrupt, SystemExit): 
+                            stop_threads = True
+                            pb.pm = 'shutting down processes.'
+                            pb._update()
 
                         pb._end(fl._status)
 
