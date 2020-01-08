@@ -26,7 +26,6 @@ setup(
     description = 'Modules and scripts for utilizing geographic data Digital Elevation Models',
     license = 'MIT',
     author = 'CIRES DEM Team',
-    author_email = 'matthew.love@colorado.edu',
     url = 'http://ciresgroups.colorado.edu/coastalDEM',
     packages = ['geomods'],  #same as name
     package_data = {'geomods': ['data/*.gmt']},
