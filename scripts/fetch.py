@@ -78,12 +78,12 @@ FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TOR
 ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ''' %(_version)
 
-_usage = '''fetch.py (%s): Fetch geographic elevation data.
+_usage = '''fetch.py ({}): Fetch geographic elevation data.
 
 usage: fetch.py [ -fhlpRuv [ args ] ] module(s) ...
 
 Modules:
-  %s
+  {}
 
 Options:
   -R, --region\t\tSpecifies the desired region to search;
@@ -99,10 +99,11 @@ Options:
   --version\t\tPrint the version information
 
 Examples:
- %% fetch.py nos charts -R -90.75/-88.1/28.7/31.25 -f "Date > 2000"
  %% fetch.py --update
+ %% fetch.py nos charts -R -90.75/-88.1/28.7/31.25 -f "Date > 2000"
+ %% fetch.py dc -R tiles.shp -p
 
-CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>''' %(_version, '\n  '.join(fetch_desc(fetch_infos)))
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version, '\n  '.join(fetch_desc(fetch_infos)))
 
 
 ## =============================================================================
@@ -159,6 +160,10 @@ def main():
 
         i = i + 1
 
+    if extent is None and want_update is False:
+        print(_usage)
+        sys.exit(1)
+
     ## if no fetch source is specified, fetch from them all.
     if len(fetch_class) == 0:
         fetch_class = fetch_infos.keys()
@@ -186,7 +191,7 @@ def main():
 
     tw = geomods.clis.prog_bar('checking for LASTools')
     if geomods.clis.cmd_exists('las2txt'): 
-        last_vers, status = geomods.clis.run_cmd('las2txt -version')
+        last_vers, status = geomods.clis.run_cmd('las2txt -version -stdout')
         tw.opm = 'checking for LASTools - %s' %(last_vers)
     else: status = -1
     tw._end(status)
@@ -231,10 +236,6 @@ def main():
 
             pb._end(status)
         sys.exit(status)
-
-    if extent is None:
-        print(_usage)
-        sys.exit(1)
 
     ## process input region(s)
     tw = geomods.clis.prog_bar("processing region(s)")
@@ -287,9 +288,8 @@ def main():
                     else:
                         pb = geomods.clis.prog_bar('fetching %s data in region (%d/%d): %s' 
                                                    %(fc, rn + 1, len(these_regions), this_region.region_string))
-                        stop_threads = False
                         try:
-                            fl_fetch = threading.Thread(target = fl.fetch_results)
+                            fl_fetch = threading.Thread(target = fl.fetch_results, args = ())
                             fl_fetch.start()
                             while True:
                                 time.sleep(5)

@@ -55,18 +55,35 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEAL
 ## =============================================================================
 cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ["PATH"].split(os.pathsep))
 
-def run_cmd(cmd, prog_message = None):
+def run_cmd(cmd, prog_message = None, verbose = False):
     'Run a command with or without a progress bar.'
 
     p = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE)
     
     if prog_message:
         tw = prog_bar(prog_message)
+
         while p.poll() != 0:
+            if verbose:
+                l = p.stderr.readline()
+                print(l.strip())
+
             tw._update()
             time.sleep(2)
 
+        if verbose:
+            l = p.stderr.read().strip()
+            if l: print(l)
+
         tw._end(p.returncode)
+
+    elif verbose:
+        while p.poll() is None:
+            l = p.stderr.readline()
+            print(l.strip())
+
+        l = p.stderr.read().strip()
+        if l: print(l)
 
     out, err = p.communicate()
     return out, p.returncode

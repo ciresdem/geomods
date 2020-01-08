@@ -214,7 +214,7 @@ class dc:
 
         self._ref_vector = os.path.join(fetchdata, 'dc.gmt')
         self._outdir = os.path.join(os.getcwd(), 'dc')
-        self._log_fn = 'fetch_%s.log' %(datetime.datetime.now().strftime('%d%Y'))
+        self._log_fn = 'fetch_dc_%s.log' %(datetime.datetime.now().strftime('%d%Y'))
 
         self._status = 0
         self._surveys = []
@@ -281,7 +281,9 @@ class dc:
                             self.stop = lambda: True
                             break
 
-                        ti = os.listdir('dc_tile_index')
+                        if os.path.exists('dc_tile_index'):
+                            ti = os.listdir('dc_tile_index')
+
                         ts = None
 
                         for i in ti:
@@ -407,8 +409,9 @@ class dc:
 
         elif surv_t == 'tif' or surv_t == 'img':
             ## Convert to XYZ
-            out, self._status = clis.run_cmd('gmt gmtset IO_COL_SEPARATOR=space')
-            out, self._status = clis.run_cmd('gmt grd2xyz %s -s > %s' %(outf, outf_xyz))
+            #out, self._status = clis.run_cmd('gmt gmtset IO_COL_SEPARATOR=space')
+            #out, self._status = clis.run_cmd('gmt grd2xyz %s -s > %s' %(outf, outf_xyz))
+            gdalfun.dump(outf, outf_xyz)
 
         ## Move processed xyz file to xyz directory
         os.rename(outf_xyz, os.path.join(xyz_dir, '%s_%s.xyz' %(outf_bn, self.region.fn)))
