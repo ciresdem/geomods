@@ -25,7 +25,18 @@ import sys
 import time
 import threading
 
-import osgeo.ogr as ogr
+try:
+    import osgeo.ogr as ogr
+    import osgeo.gdal as gdal
+    has_gdalpy = True
+except ImportError:
+    try:
+        import ogr
+        import gdal
+        has_gdalpy = True
+    except ImportError:
+        has_gdalpy = False
+
 import geomods
 
 _version = '0.1.0'
@@ -151,6 +162,50 @@ def main():
     if len(fetch_class) == 0:
         fetch_class = fetch_infos.keys()
 
+    ## check platform
+    tw = geomods.clis.prog_bar('checking platform')
+    platform = sys.platform
+    tw.opm = 'checking platform - %s' %(platform)
+    tw._end(status)
+
+    ## check for installed software
+    tw = geomods.clis.prog_bar('checking for GMT')
+    if geomods.clis.cmd_exists('gmt'): 
+        gmt_vers, status = geomods.clis.run_cmd('gmt --version')
+        tw.opm = 'checking for GMT - %s' %(gmt_vers.rstrip())
+    else: status = -1
+    tw._end(status)
+
+    tw = geomods.clis.prog_bar('checking for MBSystem')
+    if geomods.clis.cmd_exists('mbgrid'): 
+        mbs_vers, status = geomods.clis.run_cmd('mbgrid -version')
+        tw.opm = 'checking for MBSystem - %s' %(mbs_vers.split('\n')[3].rstrip().split()[2])
+    else: status = -1
+    tw._end(status)
+
+    tw = geomods.clis.prog_bar('checking for LASTools')
+    if geomods.clis.cmd_exists('las2txt'): 
+        last_vers, status = geomods.clis.run_cmd('las2txt -version')
+        tw.opm = 'checking for LASTools - %s' %(last_vers)
+    else: status = -1
+    tw._end(status)
+
+    tw = geomods.clis.prog_bar('checking for GDAL command-line')
+    if geomods.clis.cmd_exists('gdal-config'): 
+        gdal_vers, status = geomods.clis.run_cmd('gdal-config --version')
+        tw.opm = 'checking for GDAL command-line - %s' %(gdal_vers.rstrip())
+    else: status = -1
+    tw._end(status)
+
+    tw = geomods.clis.prog_bar('checking for GDAL python bindings')
+    if has_gdalpy: 
+        status = 0
+        gdal_vers = gdal.__version__
+        tw.opm = 'checking for GDAL python bindings - %s' %(gdal_vers)
+    else: status = -1
+    tw._end(status)
+
+
     ## print the available fields for filtering
     if len(f) > 0 and f[0] == '?':
         for fc in fetch_class:
@@ -201,11 +256,11 @@ def main():
         if not this_region._valid: 
             status = -1
 
-    tw.pm = 'processing %s region(s)' %(len(these_regions))
+    tw.opm = 'processing %d region(s)' %(len(these_regions))
     tw._end(status)
 
     ## fetch some data
-    for this_region in these_regions:
+    for rn, this_region in enumerate(these_regions):
         for fc in fetch_class:
             pb = geomods.clis.prog_bar('initializing %s for region: %s' %(fc, this_region.region_string))
             fl = fetch_infos[fc][0](this_region.buffer(5, percentage = True), pb)
@@ -219,10 +274,12 @@ def main():
                     while True:
                         time.sleep(3)
                         pb._update()
-                        if not fl_search.is_alive():
+                        if not fl_search.is_alive() or fl._status == -1:
                             break
                 except (KeyboardInterrupt, SystemExit):
                     fl._status = -1
+                    pb._end(-1)
+                    sys.exit()
 
             pb._end(fl._status)
 
@@ -230,19 +287,21 @@ def main():
                 if want_list: 
                     fl.print_results()
                 else:
-                    pb = geomods.clis.prog_bar('fetching %s data in region: %s' %(fc, this_region.region_string))
+                    pb = geomods.clis.prog_bar('fetching %s data in region: %s (%d/%d)' %(fc, this_region.region_string, rn, len(these_regions)))
 
                     try:
                         fl_fetch = threading.Thread(target = fl.fetch_results)
                         fl_fetch.start()
 
                         while True:
-                            time.sleep(3)
+                            time.sleep(5)
                             pb._update()
-                            if not fl_fetch.is_alive():
+                            if not fl_fetch.is_alive() or fl._status == -1:
                                 break
                     except (KeyboardInterrupt, SystemExit):
                         fl._status = -1
+                        pb._end(-1)
+                        sys.exit()
 
                     pb._end(fl._status)
 

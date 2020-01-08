@@ -226,6 +226,7 @@ class dc:
             self.has_vector = True
         else: self.has_vector = False
 
+        self.region = extent
         if extent is not None: 
             self._boundsGeom = bounds2geom(extent.region)
         else: self._status = -1
@@ -381,16 +382,30 @@ class dc:
         if not os.path.exists(xyz_dir):
             os.makedirs(xyz_dir)
             
+        ## Convert to XYZ
         out, self._status = clis.run_cmd('las2txt %s -keep_class 2' %(outf), 'converting %s to XYZ' %(surv_fn))
         outf_bn = os.path.basename(outf).split('.')[0]
+
+        outf_txt = os.path.join(self._outdir, surv_dir, outf_bn + '.txt')
+        outf_xyz = os.path.join(self._outdir, surv_dir, outf_bn + '.xyz')
+
+        ## Blockmedian the data
+        out, self._status = clis.run_cmd('gmt gmtset IO_COL_SEPARATOR=space')
+        out, self._status = clis.run_cmd('gmt blockmedian %s -I.1111111s %s -r > %s' %(outf_txt, self.region.gmt, outf_xyz), 'blocking xyz data %s' %(os.path.basename(outf_xyz)))
         
-        os.rename(os.path.join(self._outdir, surv_dir, outf_bn + '.txt'), os.path.join(xyz_dir, outf_bn + '.xyz'))
+        os.rename(outf_xyz, os.path.join(xyz_dir, '%s_%s.xyz' %(outf_bn, self.region.fn)))
+        outf_xyz = os.path.join(xyz_dir, '%s_%s.xyz' %(outf_bn, self.region.fn))
+        os.remove(outf_txt)
+        os.remove(outf)
         
         ## Add xyz file to datalist
         sdatalist = datalists.datalist(os.path.join(xyz_dir, '%s.datalist' %(surv_dir)))
-        sdatalist._append_datafile('%s' %(outf_bn + '.xyz'), 168, 1)
+        sdatalist._append_datafile('%s' %(os.path.basename(outf_xyz)), 168, 1)
         sdatalist._reset()
 
+        ## Generate .inf file
+        out, self._status = clis.run_cmd('mbdatalist -O -I%s' %(os.path.join(xyz_dir, '%s.datalist' %(surv_dir))), 'generating .inf file for %s' %(os.path.basename(outf_xyz)))
+        
     def fetch_results(self):
         '''Fetch and possibly process the found fetch results.'''
 
