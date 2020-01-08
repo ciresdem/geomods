@@ -25,7 +25,7 @@ setup(
     version='1.1',
     description='Modules and scripts for utilizing geographic data Digital Elevation Models',
     license='MIT',
-    author='Matthew Love',
+    author='CIRES DEM Team',
     author_email='matthew.love@colorado.edu',
     url='http://ciresgroups.colorado.edu/coastalDEM',
     packages=['geomods'],  #same as name
