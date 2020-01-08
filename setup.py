@@ -21,17 +21,17 @@
 from setuptools import setup
 
 setup(
-    name='geomods',
-    version='1.1',
-    description='Modules and scripts for utilizing geographic data Digital Elevation Models',
-    license='MIT',
-    author='CIRES DEM Team',
-    author_email='matthew.love@colorado.edu',
-    url='http://ciresgroups.colorado.edu/coastalDEM',
-    packages=['geomods'],  #same as name
-    package_data={'geomods': ['data/*.gmt']},
+    name = 'geomods',
+    version = '1.1',
+    description = 'Modules and scripts for utilizing geographic data Digital Elevation Models',
+    license = 'MIT',
+    author = 'CIRES DEM Team',
+    author_email = 'matthew.love@colorado.edu',
+    url = 'http://ciresgroups.colorado.edu/coastalDEM',
+    packages = ['geomods'],  #same as name
+    package_data = {'geomods': ['data/*.gmt']},
     #install_requires=['numpy', 'gdal', 'ogr'], #external packages as dependencies
-    scripts=[
+    scripts = [
         'scripts/fetch.py',
         'scripts/cudem.py',
         'scripts/gdal_chunk.py',
