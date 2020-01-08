@@ -204,7 +204,7 @@ def update_ref_vector(src_vec, surveys, update=True):
 ##
 ## =============================================================================
 class dc:
-    def __init__(self, extent = None, callback = None):
+    def __init__(self, extent = None, callback = lambda: True):
         '''Fetch elevation data from the Digital Coast'''
 
         self._dc_htdata_url = 'https://coast.noaa.gov/htdata/'
@@ -213,25 +213,32 @@ class dc:
 
         self._ref_vector = os.path.join(fetchdata, 'dc.gmt')
         self._outdir = os.path.join(os.getcwd(), 'dc')
+        self._log_fn = 'fetch_%s.log' %(datetime.datetime.now().strftime('%d%Y'))
 
         self._status = 0
         self._surveys = []
         self._results = []
 
-        self.pb = callback
         self._index = False
         self._want_proc = True
 
-        if os.path.exists(self._ref_vector): 
-            self.has_vector = True
-        else: self.has_vector = False
-
-        self.region = extent
         if extent is not None: 
             self._boundsGeom = bounds2geom(extent.region)
         else: self._status = -1
+
+        if os.path.exists(self._ref_vector): 
+            self._has_vector = True
+        else: self._has_vector = False
+
+        self.stop = callback
+        self.region = extent
+
+
+    def _log_survey(self, surv_url):
+        with open(self._log_fn, 'a') as local_file:
+            local_file.write(surv_url)
                 
-    def search_gmt(self, filters=[], stop = lambda: False):
+    def search_gmt(self, filters=[]):
         '''Search for data in the reference vector file'''
 
         gmt1 = ogr.Open(self._ref_vector)
@@ -240,7 +247,7 @@ class dc:
         for filt in filters:
             layer.SetAttributeFilter('%s' %(filt))
         for feature1 in layer:
-            if not stop():
+            if not self.stop():
                 geom = feature1.GetGeometryRef()
                 if self._boundsGeom.Intersects(geom):
                     surv_url = feature1.GetField('Data')
@@ -265,10 +272,14 @@ class dc:
                         ## Raster data has a tileindex shapefile to get extent
                         sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
                         fetch_file(surv_url + sshpz, os.path.join('.', sshpz))
-
-                        zip_ref = zipfile.ZipFile(sshpz)
-                        zip_ref.extractall('dc_tile_index')
-                        zip_ref.close()
+                        
+                        try:
+                            zip_ref = zipfile.ZipFile(sshpz)
+                            zip_ref.extractall('dc_tile_index')
+                            zip_ref.close()
+                        except BadZipFile:
+                            self.stop = lambda: True
+                            break
 
                         ti = os.listdir('dc_tile_index')
                         ts = None
@@ -294,13 +305,14 @@ class dc:
                             ts = os.remove(os.path.join('dc_tile_index/', i))
                         os.removedirs(os.path.join('.', 'dc_tile_index'))
                         os.remove(os.path.join('.', sshpz))
+        gmt1 = layer = None
 
     def _update(self):
         '''Update the DC reference vector after scanning
         the relevant metadata from Digital Coast.'''
 
         for ld in self._dc_dirs:
-            if self.has_vector:
+            if self._has_vector:
                 gmt2 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
                 layer = gmt2.GetLayer()
             else: layer = []
@@ -317,97 +329,60 @@ class dc:
             for i in tr[0]: cols.append(i.text_content())
 
             for i in range(1, len(tr)):
-                cells = tr[i].getchildren()
-                dc = {}
-                for j, cell in enumerate(cells):
-                    cl = cell.xpath('a')
-                    if len(cl) > 0:
-                        if cols[j] == 'Dataset Name':
-                            dc[cols[j]] = cell.text_content()
-                            dc['Metadata'] = cl[0].get('href')
-                        else: dc[cols[j]] = cl[0].get('href')
-                    else: dc[cols[j]] = cell.text_content()
+                if not self.stop():
+                    cells = tr[i].getchildren()
+                    dc = {}
+                    for j, cell in enumerate(cells):
+                        cl = cell.xpath('a')
+                        if len(cl) > 0:
+                            if cols[j] == 'Dataset Name':
+                                dc[cols[j]] = cell.text_content()
+                                dc['Metadata'] = cl[0].get('href')
+                            else: dc[cols[j]] = cl[0].get('href')
+                        else: dc[cols[j]] = cell.text_content()
 
-                if self.has_vector: 
-                    layer.SetAttributeFilter('ID = "%s"' %(dc['ID #']))
+                    if self._has_vector: 
+                        layer.SetAttributeFilter('ID = "%s"' %(dc['ID #']))
 
-                if len(layer) == 0:
-                    if 'Metadata' in dc.keys():
-                        xml_doc = fetch_nos_xml(dc['Metadata'])
+                    if len(layer) == 0:
+                        if 'Metadata' in dc.keys():
+                            xml_doc = fetch_nos_xml(dc['Metadata'])
 
-                        wl = xml_doc.find('.//gmd:westBoundLongitude/gco:Decimal', namespaces = namespaces)
-                        el = xml_doc.find('.//gmd:eastBoundLongitude/gco:Decimal', namespaces = namespaces)
-                        sl = xml_doc.find('.//gmd:southBoundLatitude/gco:Decimal', namespaces = namespaces)
-                        nl = xml_doc.find('.//gmd:northBoundLatitude/gco:Decimal', namespaces = namespaces)
-                        if wl is not None:
-                            obbox = bounds2geom([float(wl.text), float(el.text), float(sl.text), float(nl.text)])
-                
-                            try: 
-                                odate = int(dc['Year'][:4])
-                            except: odate = 1900
+                            wl = xml_doc.find('.//gmd:westBoundLongitude/gco:Decimal', namespaces = namespaces)
+                            el = xml_doc.find('.//gmd:eastBoundLongitude/gco:Decimal', namespaces = namespaces)
+                            sl = xml_doc.find('.//gmd:southBoundLatitude/gco:Decimal', namespaces = namespaces)
+                            nl = xml_doc.find('.//gmd:northBoundLatitude/gco:Decimal', namespaces = namespaces)
+                            if wl is not None:
+                                obbox = bounds2geom([float(wl.text), float(el.text), float(sl.text), float(nl.text)])
 
-                            out_s = [obbox, 
-                                     dc['Dataset Name'], 
-                                     dc['ID #'], 
-                                     odate, 
-                                     dc['Metadata'], 
-                                     dc['https'], 
-                                     ld.split("_")[0]]
+                                try: 
+                                    odate = int(dc['Year'][:4])
+                                except: odate = 1900
 
-                            self._surveys.append(out_s)
+                                out_s = [obbox, 
+                                         dc['Dataset Name'], 
+                                         dc['ID #'], 
+                                         odate, 
+                                         dc['Metadata'], 
+                                         dc['https'], 
+                                         ld.split("_")[0]]
+
+                                self._surveys.append(out_s)
 
             if len(self._surveys) > 0:
-                update_ref_vector(self._ref_vector, self._surveys, self.has_vector)
+                update_ref_vector(self._ref_vector, self._surveys, self._has_vector)
 
             if os.path.exists(self._ref_vector): 
-                self.has_vector = True
-            else: self.has_vector = False
+                self._has_vector = True
+            else: self._has_vector = False
 
             self._surveys = []
             gmt2 = layer = None
 
-    def print_results(self):
-        if len(self._results) == 0:
-            self._status = -1
-        else:
-            for row in self._results:
-                print(row)
-
-    def proc_las(self, surv_dir, surv_fn, outf):
-        '''Process a fetched laz file to xyz and add it to its datalist.
-        uses `las2txt` from lastools'''
-
-        xyz_dir = os.path.join(self._outdir, surv_dir, 'xyz')
-        
-        if not os.path.exists(xyz_dir):
-            os.makedirs(xyz_dir)
-            
-        ## Convert to XYZ
-        out, self._status = clis.run_cmd('las2txt %s -keep_class 2' %(outf))#, 'converting %s to XYZ' %(surv_fn))
-        outf_bn = os.path.basename(outf).split('.')[0]
-
-        outf_txt = os.path.join(self._outdir, surv_dir, outf_bn + '.txt')
-        outf_xyz = os.path.join(self._outdir, surv_dir, outf_bn + '.xyz')
-
-        ## Blockmedian the data
-        out, self._status = clis.run_cmd('gmt gmtset IO_COL_SEPARATOR=space')
-        out, self._status = clis.run_cmd('gmt blockmedian %s -I.1111111s %s -r > %s' %(outf_txt, self.region.gmt, outf_xyz))#, 'blocking xyz data %s' %(os.path.basename(outf_xyz)))
-        
-        os.rename(outf_xyz, os.path.join(xyz_dir, '%s_%s.xyz' %(outf_bn, self.region.fn)))
-        outf_xyz = os.path.join(xyz_dir, '%s_%s.xyz' %(outf_bn, self.region.fn))
-        os.remove(outf_txt)
-        os.remove(outf)
-        
-        ## Add xyz file to datalist
-        sdatalist = datalists.datalist(os.path.join(xyz_dir, '%s.datalist' %(surv_dir)))
-        sdatalist._append_datafile('%s' %(os.path.basename(outf_xyz)), 168, 1)
-        sdatalist._reset()
-
-        ## Generate .inf file
-        out, self._status = clis.run_cmd('mbdatalist -O -I%s' %(os.path.join(xyz_dir, '%s.datalist' %(surv_dir))))#, 'generating .inf file for %s' %(os.path.basename(outf_xyz)))
-
-    def proc_gdal(self, surv_dir, surv_fn, outf):
-        '''Process a fetched gdal file to xyz and add it to its datalist.'''
+    def proc_data(self, surv_dir, surv_fn, outf, surv_t):
+        '''Process a fetched file to xyz and add it to its datalist.
+        uses `las2txt` from lastools for las/laz files and
+        grd2xyz from GMT for raster files.'''
 
         xyz_dir = os.path.join(self._outdir, surv_dir, 'xyz')
         
@@ -416,11 +391,26 @@ class dc:
 
         outf_bn = os.path.basename(outf).split('.')[0]            
         outf_xyz = os.path.join(self._outdir, surv_dir, outf_bn + '.xyz')
+            
+        if surv_t == 'las' or surv_t == 'laz':
+            ## Convert to XYZ
+            out, self._status = clis.run_cmd('las2txt -parse xyz -keep_class 2 29 %s' %(outf))
+            outf_bn = os.path.basename(outf).split('.')[0]
 
-        ## Convert to XYZ
-        out, self._status = clis.run_cmd('gmt gmtset IO_COL_SEPARATOR=space')
-        out, self._status = clis.run_cmd('gmt grd2xyz %s -s > %s' %(outf, outf_xyz))
-        
+            outf_txt = os.path.join(self._outdir, surv_dir, outf_bn + '.txt')
+
+            ## Blockmedian the data
+            out, self._status = clis.run_cmd('gmt gmtset IO_COL_SEPARATOR=space')
+            out, self._status = clis.run_cmd('gmt blockmedian %s -I.1111111s %s -r > %s' %(outf_txt, self.region.gmt, outf_xyz))
+
+            os.remove(outf_txt)
+
+        elif surv_t == 'tif' or surv_t == 'img':
+            ## Convert to XYZ
+            out, self._status = clis.run_cmd('gmt gmtset IO_COL_SEPARATOR=space')
+            out, self._status = clis.run_cmd('gmt grd2xyz %s -s > %s' %(outf, outf_xyz))
+
+        ## Move processed xyz file to xyz directory
         os.rename(outf_xyz, os.path.join(xyz_dir, '%s_%s.xyz' %(outf_bn, self.region.fn)))
         outf_xyz = os.path.join(xyz_dir, '%s_%s.xyz' %(outf_bn, self.region.fn))
         os.remove(outf)
@@ -431,17 +421,27 @@ class dc:
         sdatalist._reset()
 
         ## Generate .inf file
-        out, self._status = clis.run_cmd('mbdatalist -O -I%s' %(os.path.join(xyz_dir, '%s.datalist' %(surv_dir))))#, 'generating .inf file for %s' %(os.path.basename(outf_xyz)))
+        out, self._status = clis.run_cmd('mbdatalist -O -I%s' %(os.path.join(xyz_dir, '%s.datalist' %(surv_dir))))
+
+    def print_results(self):
+        '''print the fetch results as a list of urls suitable 
+        for use in `wget`, etc.'''
         
-    def fetch_results(self, stop = lambda: False):
+        if len(self._results) == 0:
+            self._status = -1
+        else:
+            for row in self._results:
+                print(row)
+        
+    def fetch_results(self):
         '''Fetch and possibly process the found fetch results.'''
 
         if len(self._results) == 0:
             self._status = -1
         else:
-            #try:
             for row in self._results:
-                if not stop():
+                if not self.stop():
+                    ## Parse the result row
                     surv_dir = row.split('/')[-2:][0]
                     if surv_dir == '.':
                         surv_dir = row.split('/')[-3:][0]
@@ -449,24 +449,18 @@ class dc:
                     surv_fn = row.split('/')[-2:][1]
                     outf = os.path.join(self._outdir, surv_dir, surv_fn)
 
-                    print('%-79s' %(surv_fn))
+                    ## Fetch and Log
                     fetch_file(row, outf)
-
+                    print('%-79s' %(surv_fn))
+                    self._log_survey(row)
+                    
+                    ## Process the data if wanted
                     if self._want_proc:
-                        ## Process the lidar data
                         if os.path.exists(outf):
                             try:
                                 surv_t = surv_fn.split('.')[1]
                             except: surv_t = ''
-                            if surv_t == 'laz' or surv_t == 'las':
-                                self.proc_las(surv_dir, surv_fn, outf)
-                            elif surv_t == 'tif' or surv_t == 'img':
-                                self.proc_gdal(surv_dir, surv_fn, outf)
-
-                    ## Process the raster data
-                    ## GDALCHUNK
-                    ## GDAL2XYZ
-                #except: self._status = -1
+                            self.proc_data(surv_dir, surv_fn, outf, surv_t)
 
 ## =============================================================================
 ##
@@ -476,7 +470,7 @@ class dc:
 ##
 ## =============================================================================
 class nos:
-    def __init__(self, extent = None, callback = None):
+    def __init__(self, extent = None, callback = lambda: True):
         self._nos_xml_url = lambda nd: 'https://data.noaa.gov/waf/NOAA/NESDIS/NGDC/MGG/NOS/%siso_u/xml/' %(nd)
         self._nos_directories = ["B00001-B02000/", "D00001-D02000/", "F00001-F02000/", \
                                  "H00001-H02000/", "H02001-H04000/", "H04001-H06000/", \
@@ -488,14 +482,14 @@ class nos:
         self._ref_vector = os.path.join(fetchdata, 'nos.gmt')
 
         if os.path.exists(self._ref_vector): 
-            self.has_vector = True
-        else: self.has_vector = False
+            self._has_vector = True
+        else: self._has_vector = False
 
         self._status = 0
         self._surveys = []
         self._xml_results = []
         self._results = []
-        self.pb = callback
+        self.stop = callback
 
         if extent is not None: 
             self._bounds = bounds2geom(extent.region)
@@ -503,8 +497,11 @@ class nos:
 
     def _parse_nos_xml(self, xml_url, sid):        
         xml_doc = fetch_nos_xml(xml_url)
+        title = 'Unknown'
 
-        title = xml_doc.find('.//gmd:title/gco:CharacterString', namespaces = namespaces)
+        title_ = xml_doc.find('.//gmd:title/gco:CharacterString', namespaces = namespaces)
+        if title is not None:
+            title = title_.text
 
         obbox = None
         wl = xml_doc.find('.//gmd:westBoundLongitude/gco:Decimal', namespaces = namespaces)
@@ -533,34 +530,34 @@ class nos:
                             xml_dsu.append(j.text)
                             xml_dsf = dfs[i].text
 
-            return [obbox, title.text, sid, odt, xml_url, ','.join(xml_dsu), xml_dsf]
+            return [obbox, title, sid, odt, xml_url, ','.join(xml_dsu), xml_dsf]
         return [None]
 
     def _scan_directory(self, nosdir):
-        if self.has_vector:
+        if self._has_vector:
             gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
             layer = gmt1.GetLayer()
         else: layer = []
 
-        if self.pb: self.pb.pm = ': %s' %(nosdir)
+        print('%-79s' %(nosdir))
 
         xml_catalog = self._nos_xml_url(nosdir)
         page = fetch_html(xml_catalog)
         rows = page.xpath('//a[contains(@href, ".xml")]/@href')
 
         for survey in rows:
-            sid = survey[:-4]
+            if not self.stop():
+                sid = survey[:-4]
 
-            if self.has_vector:
-                layer.SetAttributeFilter('ID = "%s"' %(sid))
+                if self._has_vector:
+                    layer.SetAttributeFilter('ID = "%s"' %(sid))
 
-            if len(layer) == 0:
-                xml_url = xml_catalog + survey
-                s_entry = self._parse_nos_xml(xml_url, sid)
+                if len(layer) == 0:
+                    xml_url = xml_catalog + survey
+                    s_entry = self._parse_nos_xml(xml_url, sid)
 
-                if s_entry[0]:
-                    self._surveys.append(s_entry)
-
+                    if s_entry[0]:
+                        self._surveys.append(s_entry)
         gmt1 = layer = None
 
     def search_gmt(self, filters=[]):
@@ -571,26 +568,25 @@ class nos:
             layer.SetAttributeFilter('%s' %(filt))
 
         for feature in layer:
-            geom = feature.GetGeometryRef()
-            if geom.Intersects(self._bounds):
-                fldata = feature.GetField('Data').split(',')
+            if not self.stop():
+                geom = feature.GetGeometryRef()
+                if geom.Intersects(self._bounds):
+                    fldata = feature.GetField('Data').split(',')
 
-                for i in fldata:
-                    self._results.append(i)
+                    for i in fldata:
+                        self._results.append(i)
 
     def _update(self):
         for j in self._nos_directories:
-            self._scan_directory(j)
-            update_ref_vector(self._ref_vector, self._surveys, self.has_vector)
+            if not self.stop():
+                self._scan_directory(j)
+                update_ref_vector(self._ref_vector, self._surveys, self._has_vector)
 
-            if os.path.exists(self._ref_vector): 
-                self.has_vector = True
-            else: self.has_vector = False
+                if os.path.exists(self._ref_vector): 
+                    self._has_vector = True
+                else: self._has_vector = False
 
-            self._surveys = []
-
-        if self.has_vector:
-            self._status = -1
+                self._surveys = []
 
     def print_results(self):
         for row in self._results:
@@ -599,7 +595,8 @@ class nos:
     def fetch_results(self):
         try:
             for row in self._results:
-                fetch_file(row, os.path.join(self._outdir, os.path.basename(row)))
+                if not self.stop():
+                    fetch_file(row, os.path.join(self._outdir, os.path.basename(row)))
         except: self._status = -1
 
 ## =============================================================================
@@ -618,8 +615,8 @@ class charts:
         self._ref_vector = os.path.join(fetchdata, 'charts.gmt')
 
         if os.path.exists(self._ref_vector): 
-            self.has_vector = True
-        else: self.has_vector = False
+            self._has_vector = True
+        else: self._has_vector = False
 
         self._dt_xml = { 'ENC':self._enc_data_catalog,
                          'RNC':self._rnc_data_catalog }
@@ -694,14 +691,14 @@ class charts:
         for dt in self._dt_xml.keys():
             self._checks = dt
             self.chart_xml = fetch_nos_xml(self._dt_xml[self._checks])
-            self._parse_charts_xml(self.has_vector)
+            self._parse_charts_xml(self._has_vector)
             
             if len(self._chart_feats) > 0:
-                update_ref_vector(self._ref_vector, self._chart_feats, self.has_vector)
+                update_ref_vector(self._ref_vector, self._chart_feats, self._has_vector)
 
             if os.path.exists(self._ref_vector): 
-                self.has_vector = True
-            else: self.has_vector = False
+                self._has_vector = True
+            else: self._has_vector = False
 
             self._chart_feats = []
 
@@ -990,7 +987,6 @@ class ngs:
     def fetch_results(self):
         try:
             r = self._results.json()
-            #r = json.loads( self._results.content )
 
             if len(r) > 0:
                 if not os.path.exists(self._outdir):

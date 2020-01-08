@@ -116,6 +116,7 @@ def main():
     want_list = False
     want_update = False
     want_proc = False
+    stop_threads = False
     f = []
     i = 1
     fetch_class = []
@@ -205,7 +206,6 @@ def main():
     else: status = -1
     tw._end(status)
 
-
     ## print the available fields for filtering
     if len(f) > 0 and f[0] == '?':
         for fc in fetch_class:
@@ -218,17 +218,16 @@ def main():
     if want_update: 
         for fc in fetch_class:
             pb = geomods.clis.prog_bar('updating %s reference vector' %(fc))
-            fl = fetch_infos[fc][0](None, pb)
+            fl = fetch_infos[fc][0](None, lambda: stop_threads)
             try:
                 fl_update = threading.Thread(target = fl._update)
                 fl_update.start()
-
                 while True:
                     time.sleep(5)
                     pb._update()
                     if not fl_update.is_alive():
                         break
-            except: status = -1
+            except (KeyboardInterrupt, SystemExit): stop_threads = True
 
             pb._end(status)
         sys.exit(status)
@@ -261,57 +260,45 @@ def main():
 
     ## fetch some data
     for rn, this_region in enumerate(these_regions):
-        for fc in fetch_class:
-            pb = geomods.clis.prog_bar('initializing %s for region (%d/%d): %s' %(fc, rn + 1, len(these_regions), this_region.region_string))
-            fl = fetch_infos[fc][0](this_region.buffer(5, percentage = True), False)
-            #pb._update()
+        if not stop_threads:
+            for fc in fetch_class:
+                pb = geomods.clis.prog_bar('initializing %s for region (%d/%d): %s' 
+                                           %(fc, rn + 1, len(these_regions), 
+                                             this_region.region_string))
+                fl = fetch_infos[fc][0](this_region.buffer(5, percentage = True), lambda: stop_threads)
 
-            if 'search_gmt' in dir(fl):
-                stop_threads = False
-                try:
-                    fl_search = threading.Thread(target = fl.search_gmt, args = (f, lambda: stop_threads))
-                    fl_search.start()
-
-                    while True:
-                        time.sleep(3)
-                        pb._update()
-                        if not fl_search.is_alive():
-                            break
-                except (KeyboardInterrupt, SystemExit):
-                    pb._end(-1)
-                    stop_threads = True
-                    sys.exit()
-
-            pb._end(fl._status)
-
-            if fl._status == 0:
-                if want_list: 
-                    fl.print_results()
-                else:
-                    pb = geomods.clis.prog_bar('fetching %s data in region (%d/%d): %s' %(fc, rn + 1, len(these_regions), this_region.region_string))
+                if 'search_gmt' in dir(fl):
                     stop_threads = False
                     try:
-                        fl_fetch = threading.Thread(target = fl.fetch_results, args = (lambda: stop_threads,))
-                        fl_fetch.start()
-
+                        fl_search = threading.Thread(target = fl.search_gmt, args = (f))
+                        fl_search.start()
                         while True:
-                            time.sleep(5)
+                            time.sleep(3)
                             pb._update()
-                            if not fl_fetch.is_alive():
+                            if not fl_search.is_alive():
                                 break
-                    except (KeyboardInterrupt, SystemExit):
-                        pb._end(-1)
-                        pb.pm = 'shutting fetch down'
-                        stop_threads = True
-                        # pb = geomods.clis.prog_bar('shutting fetch down')
-                        # while True:
-                        #     time.sleep(1)
-                        #     pb._update()
-                        #     if not fl_fetch.is_alive():
-                        #         pb._end(0)
-                        sys.exit()
+                    except (KeyboardInterrupt, SystemExit): stop_threads = True
 
-                    pb._end(fl._status)
+                pb._end(fl._status)
+
+                if fl._status == 0:
+                    if want_list: 
+                        fl.print_results()
+                    else:
+                        pb = geomods.clis.prog_bar('fetching %s data in region (%d/%d): %s' 
+                                                   %(fc, rn + 1, len(these_regions), this_region.region_string))
+                        stop_threads = False
+                        try:
+                            fl_fetch = threading.Thread(target = fl.fetch_results)
+                            fl_fetch.start()
+                            while True:
+                                time.sleep(5)
+                                pb._update()
+                                if not fl_fetch.is_alive():
+                                    break
+                        except (KeyboardInterrupt, SystemExit): stop_threads = True
+
+                        pb._end(fl._status)
 
 if __name__ == '__main__':
     main()
