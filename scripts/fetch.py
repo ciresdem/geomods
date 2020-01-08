@@ -207,44 +207,44 @@ def main():
     ## fetch some data
     for this_region in these_regions:
         for fc in fetch_class:
-            pb = geomods.clis.prog_bar('initializing %s' %(fc))
-            fl = fetch_infos[fc][0](this_region, pb)
+            pb = geomods.clis.prog_bar('initializing %s for region: %s' %(fc, this_region.region_string))
+            fl = fetch_infos[fc][0](this_region.buffer(5, percentage = True), pb)
             pb._update()
 
-            #try: 
-            fl.search_gmt(f)
-            #except: pass
-            pb._end(fl._status)
+            if 'search_gmt' in dir(fl):
+                try:
+                    fl_search = threading.Thread(target = fl.search_gmt, args = [f])
+                    fl_search.start()
 
-            pb = geomods.clis.prog_bar('fetching %s data' %(fc))
-
-            if want_list: 
-                fl.print_results()
-            else:
-                fl_fetch = threading.Thread(target = fl.fetch_results)
-                fl_fetch.start()
-
-                while True:
-                    time.sleep(5)
-                    pb._update()
-                    if not fl_fetch.is_alive():
-                        break
+                    while True:
+                        time.sleep(3)
+                        pb._update()
+                        if not fl_search.is_alive():
+                            break
+                except (KeyboardInterrupt, SystemExit):
+                    fl._status = -1
 
             pb._end(fl._status)
 
-            if want_proc:
-                pb = geomods.clis.prog_bar('processing %s data' %(fc))
-                fl_proc = threading.Thread(target = fl.proc_results)
+            if fl._status == 0:
+                if want_list: 
+                    fl.print_results()
+                else:
+                    pb = geomods.clis.prog_bar('fetching %s data in region: %s' %(fc, this_region.region_string))
 
-                fl_proc.start()
+                    try:
+                        fl_fetch = threading.Thread(target = fl.fetch_results)
+                        fl_fetch.start()
 
-                while True:
-                    time.sleep(5)
-                    pb._update()
-                    if not fl_proc.is_alive():
-                        break
+                        while True:
+                            time.sleep(3)
+                            pb._update()
+                            if not fl_fetch.is_alive():
+                                break
+                    except (KeyboardInterrupt, SystemExit):
+                        fl._status = -1
 
-                pb._end(fl._status)
+                    pb._end(fl._status)
 
 if __name__ == '__main__':
     main()

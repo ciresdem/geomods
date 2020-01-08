@@ -249,7 +249,6 @@ class dc:
                 if 'lidar' in surv_dt:
 
                     ## Lidar data has a minmax.csv file to get extent
-
                     scsv = suh.xpath('//a[contains(@href, ".csv")]/@href')[0]
                     dc_csv = fetch_csv(surv_url + scsv)
 
@@ -373,6 +372,25 @@ class dc:
             for row in self._results:
                 print(row)
 
+    def proc_las(self, surv_dir, surv_fn, outf):
+        '''Process a fetched laz file to xyz and add it to its datalist.
+        uses `las2txt` from lastools'''
+
+        xyz_dir = os.path.join(self._outdir, surv_dir, 'xyz')
+        
+        if not os.path.exists(xyz_dir):
+            os.makedirs(xyz_dir)
+            
+        out, self._status = clis.run_cmd('las2txt %s -keep_class 2' %(outf), 'converting %s to XYZ' %(surv_fn))
+        outf_bn = os.path.basename(outf).split('.')[0]
+        
+        os.rename(os.path.join(self._outdir, surv_dir, outf_bn + '.txt'), os.path.join(xyz_dir, outf_bn + '.xyz'))
+        
+        ## Add xyz file to datalist
+        sdatalist = datalists.datalist(os.path.join(xyz_dir, '%s.datalist' %(surv_dir)))
+        sdatalist._append_datafile('%s' %(outf_bn + '.xyz'), 168, 1)
+        sdatalist._reset()
+
     def fetch_results(self):
         '''Fetch and possibly process the found fetch results.'''
 
@@ -381,7 +399,6 @@ class dc:
         else:
             #try:
             for row in self._results:
-                print row
                 surv_dir = row.split('/')[-2:][0]
                 if surv_dir == '.':
                     surv_dir = row.split('/')[-3:][0]
@@ -392,18 +409,17 @@ class dc:
                 fetch_file(row, outf)
 
                 if self._want_proc:
-                    ## Lidar
-                    out, self._status = clis.run_cmd('las2txt %s -keep_class 2' %(outf), 'converting data to XYZ')
-                    outf_bn = os.path.basename(outf, 'laz')
+                    ## Process the lidar data
+                    if os.path.exists(outf):
+                        try:
+                            surv_t = surv_fn.split('.')[1]
+                        except: surv_t = ''
+                        if surv_t == 'laz' or surv_t == 'las':
+                            self.proc_las(surv_dir, surv_fn, outf)
+                        elif surv_t == 'tif' or surv_t == 'img':
+                            pass
 
-                    os.makedirs('xyz')
-                    os.rename(outf_bn + '.txt', os.path.join('xyz', outf_bn + '.xyz'))
-
-                    sdatalist = geomods.datalists.datalist(os.path.join('xyz', '%s.datalist' %(surv_dir)))
-                    sdatalist._append_datafile('%s' %(outf_bn + '.xyz'), 168, 1)
-                    sdatalist._reset()
-
-                    ## Raster
+                    ## Process the raster data
                     ## GDALCHUNK
                     ## GDAL2XYZ
                 #except: self._status = -1

@@ -67,9 +67,18 @@ class region:
                        ew, abs( int( self.east )), abs( int( self.east * 100 ) % 100 )))
 
     ## Process Region
-    def buffer(self, bv):
+    def buffer(self, bv, percentage = False):
+        if percentage: bv = self.pct(bv)
+
         region_b = [self.region[0]-bv, self.region[1] + bv, self.region[2] - bv, self.region[3] + bv]
+
         return region("/".join( map( str, region_b )))
+
+    def pct(self, pctv):
+        ewp = (self.east - self.west) * (pctv * .01)
+        nsp = (self.north - self.south) * (pctv * .01)
+
+        return (ewp + nsp) / 2
 
     ## Split Region
     def split(self, sv):

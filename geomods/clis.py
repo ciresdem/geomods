@@ -99,24 +99,37 @@ class prog_bar:
 
         self.spinner = ['\\', '|', '/', '~', '']
 
-        sys.stderr.write('\r[%s] %s' % (" " * self.tw, self.opm))
+        self._clear_stderr()
+
+        sys.stderr.write('\r[%s] %-40s\r' % (" " * self.tw, self.opm))
+        sys.stderr.flush()
+
+    def _terminal_size(self):
+        return os.popen('stty size', 'r').read().split()
+
+    def _clear_stderr(self):
+        sys.stderr.write('\r%s\r' %(' ' * int(self._terminal_size()[1])))
         sys.stderr.flush()
 
     def _update(self):
         self.pc = (self.count % (self.tw + 1))
         pm = '%s%s' %(self.opm, self.pm)
-        pm = self.opm + self.pm + (' ' * (self.opl - (len(self.opm) + len(self.pm)))) #+ ('\b' * ( self.opl - ( len( self.opm ) + len( self.pm )))) 
-        self.opl = len(pm)
+        #pm = self.opm + self.pm + (' ' * (self.opl - (len(self.opm) + len(self.pm)))) #+ ('\b' * ( self.opl - ( len( self.opm ) + len( self.pm )))) 
+        #self.opl = len(pm)
 
-        sys.stderr.write('\r[%-4s] %s' %(self.green + ('*' * self.pc) + self.red + self.spinner[self.pc] + self.NC + (' ' * ((self.tw - 1) - self.pc)), pm ))
+        self._clear_stderr()
+        #sys.stderr.write('\r[%-4s] %-20s' %(self.green + ('*' * self.pc) + self.red + self.spinner[self.pc] + self.NC + (' ' * ((self.tw - 1) - self.pc)), pm ))
+        sys.stderr.write('\r[%-4s] %-40s\r' %(self.green + ('*' * self.pc) + self.red + self.spinner[self.pc] + self.NC + (' ' * ((self.tw - 1) - self.pc)), pm ))
         sys.stderr.flush()
         self.count += 1
 
     def _end(self, status):
+        self._clear_stderr()
+
         if status != 0:
-            sys.stderr.write('\r[%sFAIL%s] %s\n' %(self.red, self.NC, self.opm))
+            sys.stderr.write('\r[%sFAIL%s] %-40s\n' %(self.red, self.NC, self.opm))
         else:
-            sys.stderr.write('\r[ %sOK%s ] %s \n' %(self.green, self.NC, self.opm))
+            sys.stderr.write('\r[ %sOK%s ] %-40s \n' %(self.green, self.NC, self.opm))
 
         sys.stderr.flush()
 
