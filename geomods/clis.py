@@ -87,7 +87,7 @@ class prog_bar:
         self.pc = self.count % self.tw
         self.opl = len(prog_message)
         self.opm = prog_message 
-        self.pm = ''
+        self.pm = self.opm
         self.colors = True
 
         self.cyan = '\033[96m'
@@ -113,13 +113,13 @@ class prog_bar:
 
     def _update(self):
         self.pc = (self.count % (self.tw + 1))
-        pm = '%s%s' %(self.opm, self.pm)
+        #pm = '%s%s' %(self.opm, self.pm)
         #pm = self.opm + self.pm + (' ' * (self.opl - (len(self.opm) + len(self.pm)))) #+ ('\b' * ( self.opl - ( len( self.opm ) + len( self.pm )))) 
         #self.opl = len(pm)
 
         self._clear_stderr()
         #sys.stderr.write('\r[%-4s] %-20s' %(self.green + ('*' * self.pc) + self.red + self.spinner[self.pc] + self.NC + (' ' * ((self.tw - 1) - self.pc)), pm ))
-        sys.stderr.write('\r[%-4s] %-40s\r' %(self.green + ('*' * self.pc) + self.red + self.spinner[self.pc] + self.NC + (' ' * ((self.tw - 1) - self.pc)), pm ))
+        sys.stderr.write('\r[%-4s] %-40s\r' %(self.green + ('*' * self.pc) + self.red + self.spinner[self.pc] + self.NC + (' ' * ((self.tw - 1) - self.pc)), self.pm ))
         sys.stderr.flush()
         self.count += 1
 

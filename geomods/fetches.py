@@ -231,7 +231,7 @@ class dc:
             self._boundsGeom = bounds2geom(extent.region)
         else: self._status = -1
                 
-    def search_gmt(self, filters=[]):
+    def search_gmt(self, filters=[], stop = lambda: False):
         '''Search for data in the reference vector file'''
 
         gmt1 = ogr.Open(self._ref_vector)
@@ -239,61 +239,61 @@ class dc:
 
         for filt in filters:
             layer.SetAttributeFilter('%s' %(filt))
-
         for feature1 in layer:
-            geom = feature1.GetGeometryRef()
-            if self._boundsGeom.Intersects(geom):
-                surv_url = feature1.GetField('Data')
-                surv_dt = feature1.GetField('Datatype')
-                suh = fetch_html(surv_url)
+            if not stop():
+                geom = feature1.GetGeometryRef()
+                if self._boundsGeom.Intersects(geom):
+                    surv_url = feature1.GetField('Data')
+                    surv_dt = feature1.GetField('Datatype')
+                    suh = fetch_html(surv_url)
 
-                if 'lidar' in surv_dt:
+                    if 'lidar' in surv_dt:
 
-                    ## Lidar data has a minmax.csv file to get extent
-                    scsv = suh.xpath('//a[contains(@href, ".csv")]/@href')[0]
-                    dc_csv = fetch_csv(surv_url + scsv)
+                        ## Lidar data has a minmax.csv file to get extent
+                        scsv = suh.xpath('//a[contains(@href, ".csv")]/@href')[0]
+                        dc_csv = fetch_csv(surv_url + scsv)
 
-                    for tile in dc_csv:
-                        try:
-                            tb = [float(tile[1]), float(tile[2]), float(tile[3]), float(tile[4])]
-                            tile_geom = bounds2geom(tb)
-                            if tile_geom.Intersects(self._boundsGeom):
-                                self._results.append(os.path.join(surv_url, tile[0]))
-                        except: pass
+                        for tile in dc_csv:
+                            try:
+                                tb = [float(tile[1]), float(tile[2]), float(tile[3]), float(tile[4])]
+                                tile_geom = bounds2geom(tb)
+                                if tile_geom.Intersects(self._boundsGeom):
+                                    self._results.append(os.path.join(surv_url, tile[0]))
+                            except: pass
 
-                elif 'raster' in surv_dt:
-                    ## Raster data has a tileindex shapefile to get extent
-                    sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
-                    fetch_file(surv_url + sshpz, os.path.join('.', sshpz))
+                    elif 'raster' in surv_dt:
+                        ## Raster data has a tileindex shapefile to get extent
+                        sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
+                        fetch_file(surv_url + sshpz, os.path.join('.', sshpz))
 
-                    zip_ref = zipfile.ZipFile(sshpz)
-                    zip_ref.extractall('dc_tile_index')
-                    zip_ref.close()
+                        zip_ref = zipfile.ZipFile(sshpz)
+                        zip_ref.extractall('dc_tile_index')
+                        zip_ref.close()
 
-                    ti = os.listdir('dc_tile_index')
-                    ts = None
+                        ti = os.listdir('dc_tile_index')
+                        ts = None
 
-                    for i in ti:
-                        if ".shp" in i:
-                            ts = os.path.join('dc_tile_index/', i)
+                        for i in ti:
+                            if ".shp" in i:
+                                ts = os.path.join('dc_tile_index/', i)
 
-                    if ts is not None:
-                        shp1 = ogr.Open(ts)
-                        slay1 = shp1.GetLayer(0)
+                        if ts is not None:
+                            shp1 = ogr.Open(ts)
+                            slay1 = shp1.GetLayer(0)
 
-                        for sf1 in slay1:
-                            geom = sf1.GetGeometryRef()
-                            
-                            if geom.Intersects(self._boundsGeom):
-                                tile_url = sf1.GetField('URL').strip()
-                                self._results.append(tile_url)
+                            for sf1 in slay1:
+                                geom = sf1.GetGeometryRef()
 
-                        shp1 = slay1 = None
+                                if geom.Intersects(self._boundsGeom):
+                                    tile_url = sf1.GetField('URL').strip()
+                                    self._results.append(tile_url)
 
-                    for i in ti:
-                        ts = os.remove(os.path.join('dc_tile_index/', i))
-                    os.removedirs(os.path.join('.', 'dc_tile_index'))
-                    os.remove(os.path.join('.', sshpz))
+                            shp1 = slay1 = None
+
+                        for i in ti:
+                            ts = os.remove(os.path.join('dc_tile_index/', i))
+                        os.removedirs(os.path.join('.', 'dc_tile_index'))
+                        os.remove(os.path.join('.', sshpz))
 
     def _update(self):
         '''Update the DC reference vector after scanning
@@ -383,7 +383,7 @@ class dc:
             os.makedirs(xyz_dir)
             
         ## Convert to XYZ
-        out, self._status = clis.run_cmd('las2txt %s -keep_class 2' %(outf), 'converting %s to XYZ' %(surv_fn))
+        out, self._status = clis.run_cmd('las2txt %s -keep_class 2' %(outf))#, 'converting %s to XYZ' %(surv_fn))
         outf_bn = os.path.basename(outf).split('.')[0]
 
         outf_txt = os.path.join(self._outdir, surv_dir, outf_bn + '.txt')
@@ -391,7 +391,7 @@ class dc:
 
         ## Blockmedian the data
         out, self._status = clis.run_cmd('gmt gmtset IO_COL_SEPARATOR=space')
-        out, self._status = clis.run_cmd('gmt blockmedian %s -I.1111111s %s -r > %s' %(outf_txt, self.region.gmt, outf_xyz), 'blocking xyz data %s' %(os.path.basename(outf_xyz)))
+        out, self._status = clis.run_cmd('gmt blockmedian %s -I.1111111s %s -r > %s' %(outf_txt, self.region.gmt, outf_xyz))#, 'blocking xyz data %s' %(os.path.basename(outf_xyz)))
         
         os.rename(outf_xyz, os.path.join(xyz_dir, '%s_%s.xyz' %(outf_bn, self.region.fn)))
         outf_xyz = os.path.join(xyz_dir, '%s_%s.xyz' %(outf_bn, self.region.fn))
@@ -404,9 +404,36 @@ class dc:
         sdatalist._reset()
 
         ## Generate .inf file
-        out, self._status = clis.run_cmd('mbdatalist -O -I%s' %(os.path.join(xyz_dir, '%s.datalist' %(surv_dir))), 'generating .inf file for %s' %(os.path.basename(outf_xyz)))
+        out, self._status = clis.run_cmd('mbdatalist -O -I%s' %(os.path.join(xyz_dir, '%s.datalist' %(surv_dir))))#, 'generating .inf file for %s' %(os.path.basename(outf_xyz)))
+
+    def proc_gdal(self, surv_dir, surv_fn, outf):
+        '''Process a fetched gdal file to xyz and add it to its datalist.'''
+
+        xyz_dir = os.path.join(self._outdir, surv_dir, 'xyz')
         
-    def fetch_results(self):
+        if not os.path.exists(xyz_dir):
+            os.makedirs(xyz_dir)
+
+        outf_bn = os.path.basename(outf).split('.')[0]            
+        outf_xyz = os.path.join(self._outdir, surv_dir, outf_bn + '.xyz')
+
+        ## Convert to XYZ
+        out, self._status = clis.run_cmd('gmt gmtset IO_COL_SEPARATOR=space')
+        out, self._status = clis.run_cmd('gmt grd2xyz %s -s > %s' %(outf, outf_xyz))
+        
+        os.rename(outf_xyz, os.path.join(xyz_dir, '%s_%s.xyz' %(outf_bn, self.region.fn)))
+        outf_xyz = os.path.join(xyz_dir, '%s_%s.xyz' %(outf_bn, self.region.fn))
+        os.remove(outf)
+        
+        ## Add xyz file to datalist
+        sdatalist = datalists.datalist(os.path.join(xyz_dir, '%s.datalist' %(surv_dir)))
+        sdatalist._append_datafile('%s' %(os.path.basename(outf_xyz)), 168, 1)
+        sdatalist._reset()
+
+        ## Generate .inf file
+        out, self._status = clis.run_cmd('mbdatalist -O -I%s' %(os.path.join(xyz_dir, '%s.datalist' %(surv_dir))))#, 'generating .inf file for %s' %(os.path.basename(outf_xyz)))
+        
+    def fetch_results(self, stop = lambda: False):
         '''Fetch and possibly process the found fetch results.'''
 
         if len(self._results) == 0:
@@ -414,25 +441,27 @@ class dc:
         else:
             #try:
             for row in self._results:
-                surv_dir = row.split('/')[-2:][0]
-                if surv_dir == '.':
-                    surv_dir = row.split('/')[-3:][0]
+                if not stop():
+                    surv_dir = row.split('/')[-2:][0]
+                    if surv_dir == '.':
+                        surv_dir = row.split('/')[-3:][0]
 
-                surv_fn = row.split('/')[-2:][1]
-                outf = os.path.join(self._outdir, surv_dir, surv_fn)
+                    surv_fn = row.split('/')[-2:][1]
+                    outf = os.path.join(self._outdir, surv_dir, surv_fn)
 
-                fetch_file(row, outf)
+                    print('%-79s' %(surv_fn))
+                    fetch_file(row, outf)
 
-                if self._want_proc:
-                    ## Process the lidar data
-                    if os.path.exists(outf):
-                        try:
-                            surv_t = surv_fn.split('.')[1]
-                        except: surv_t = ''
-                        if surv_t == 'laz' or surv_t == 'las':
-                            self.proc_las(surv_dir, surv_fn, outf)
-                        elif surv_t == 'tif' or surv_t == 'img':
-                            pass
+                    if self._want_proc:
+                        ## Process the lidar data
+                        if os.path.exists(outf):
+                            try:
+                                surv_t = surv_fn.split('.')[1]
+                            except: surv_t = ''
+                            if surv_t == 'laz' or surv_t == 'las':
+                                self.proc_las(surv_dir, surv_fn, outf)
+                            elif surv_t == 'tif' or surv_t == 'img':
+                                self.proc_gdal(surv_dir, surv_fn, outf)
 
                     ## Process the raster data
                     ## GDALCHUNK
