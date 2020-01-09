@@ -31,6 +31,7 @@ except ImportError:
 try:
     import osgeo.ogr as ogr
     import osgeo.gdal as gdal
+    import osgeo.osr as osr
     from gdalconst import *
 except ImportError:
     print 'GDAL must be installed'

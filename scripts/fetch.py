@@ -102,6 +102,7 @@ Examples:
  %% fetch.py --update
  %% fetch.py nos charts -R -90.75/-88.1/28.7/31.25 -f "Date > 2000"
  %% fetch.py dc -R tiles.shp -p
+ %% fetch.py dc -R tiles.shp -p -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version, '\n  '.join(fetch_desc(fetch_infos)))
 
@@ -160,10 +161,6 @@ def main():
 
         i = i + 1
 
-    if extent is None and want_update is False:
-        print(_usage)
-        sys.exit(1)
-
     ## if no fetch source is specified, fetch from them all.
     if len(fetch_class) == 0:
         fetch_class = fetch_infos.keys()
@@ -216,7 +213,11 @@ def main():
         for fc in fetch_class:
             fl = fetch_infos[fc][0](None, None)
             if fl._ref_vector is not None:
-                print('%s: %s' %(fc, geomods.gdalfun.ogr_get_fields(fl._ref_vector)))
+                print('%s: %s' %(fc, geomods.gdalfun._ogr_get_fields(fl._ref_vector)))
+        sys.exit(1)
+
+    if extent is None and want_update is False:
+        print(_usage)
         sys.exit(1)
 
     ## update the reference vector
@@ -267,7 +268,6 @@ def main():
                                            %(fc, rn + 1, len(these_regions), 
                                              this_region.region_string))
                 fl = fetch_infos[fc][0](this_region.buffer(5, percentage = True), lambda: stop_threads)
-
                 if 'search_gmt' in dir(fl):
                     stop_threads = False
                     try:

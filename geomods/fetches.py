@@ -87,7 +87,7 @@ def fetch_file(src_url, dst_fn, params = None):
 def fetch_req(src_url, params = None, tries = 3):
     if tries <= 0: return None
     try:
-        return requests.get(src_url, stream = True, params = params, timeout = 2)
+        return requests.get(src_url, stream = True, params = params, timeout = 1)
     except: return fetch_req(src_url, params = params, tries = tries - 1)
 
 def fetch_nos_xml(src_url):
@@ -244,7 +244,7 @@ class dc:
         gmt1 = ogr.Open(self._ref_vector)
         layer = gmt1.GetLayer(0)
 
-        for filt in filters:
+        for filt in [filters]:
             layer.SetAttributeFilter('%s' %(filt))
         for feature1 in layer:
             if not self.stop():
@@ -381,50 +381,51 @@ class dc:
             self._surveys = []
             gmt2 = layer = None
 
-    def proc_data(self, surv_dir, surv_fn, outf, surv_t):
+    def proc_data(self, s_dir, s_fn, o_fn, s_t):
         '''Process a fetched file to xyz and add it to its datalist.
         uses `las2txt` from lastools for las/laz files and
         grd2xyz from GMT for raster files.'''
 
-        xyz_dir = os.path.join(self._outdir, surv_dir, 'xyz')
+        status = 0
+        xyz_dir = os.path.join(self._outdir, s_dir, 'xyz')
         
         if not os.path.exists(xyz_dir):
             os.makedirs(xyz_dir)
 
-        outf_bn = os.path.basename(outf).split('.')[0]            
-        outf_xyz = os.path.join(self._outdir, surv_dir, outf_bn + '.xyz')
+        o_fn_bn = os.path.basename(o_fn).split('.')[0]            
+        o_fn_p_xyz = os.path.join(self._outdir, s_dir, '{}.xyz'.format(o_fn_bn))
+        o_fn_xyz = os.path.join(xyz_dir, '{}_{}.xyz'.format(o_fn_bn, self.region.fn))
             
-        if surv_t == 'las' or surv_t == 'laz':
+        if s_t == 'las' or s_t == 'laz':
             ## Convert to XYZ
-            out, self._status = clis.run_cmd('las2txt -parse xyz -keep_class 2 29 %s' %(outf))
-            outf_bn = os.path.basename(outf).split('.')[0]
+            out, status = clis.run_cmd('las2txt -parse xyz -keep_class 2 29 -i {}'.format(o_fn), False, False)
+            o_fn_bn = os.path.basename(o_fn).split('.')[0]
 
-            outf_txt = os.path.join(self._outdir, surv_dir, outf_bn + '.txt')
+            o_fn_txt = os.path.join(self._outdir, s_dir, '{}.txt'.format(o_fn_bn))
 
             ## Blockmedian the data
-            out, self._status = clis.run_cmd('gmt gmtset IO_COL_SEPARATOR=space')
-            out, self._status = clis.run_cmd('gmt blockmedian %s -I.1111111s %s -r > %s' %(outf_txt, self.region.gmt, outf_xyz))
+            out, status = clis.run_cmd('gmt gmtset IO_COL_SEPARATOR=space')
+            out, status = clis.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}'.format(o_fn_txt, self.region.gmt, o_fn_p_xyz))
 
-            os.remove(outf_txt)
+            os.remove(o_fn_txt)
 
-        elif surv_t == 'tif' or surv_t == 'img':
+        elif s_t == 'tif' or s_t == 'img':
             ## Convert to XYZ
-            #out, self._status = clis.run_cmd('gmt gmtset IO_COL_SEPARATOR=space')
-            #out, self._status = clis.run_cmd('gmt grd2xyz %s -s > %s' %(outf, outf_xyz))
-            gdalfun.dump(outf, outf_xyz)
+            gdalfun.dump(o_fn, o_fn_p_xyz)
 
-        ## Move processed xyz file to xyz directory
-        os.rename(outf_xyz, os.path.join(xyz_dir, '%s_%s.xyz' %(outf_bn, self.region.fn)))
-        outf_xyz = os.path.join(xyz_dir, '%s_%s.xyz' %(outf_bn, self.region.fn))
-        os.remove(outf)
+        if status == 0:
+            ## Move processed xyz file to xyz directory
+            os.rename(o_fn_p_xyz, o_fn_xyz)
         
-        ## Add xyz file to datalist
-        sdatalist = datalists.datalist(os.path.join(xyz_dir, '%s.datalist' %(surv_dir)))
-        sdatalist._append_datafile('%s' %(os.path.basename(outf_xyz)), 168, 1)
-        sdatalist._reset()
+            ## Add xyz file to datalist
+            sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_dir)))
+            sdatalist._append_datafile('%s' %(os.path.basename(o_fn_xyz)), 168, 1)
+            sdatalist._reset()
 
-        ## Generate .inf file
-        out, self._status = clis.run_cmd('mbdatalist -O -I%s' %(os.path.join(xyz_dir, '%s.datalist' %(surv_dir))))
+            ## Generate .inf file
+            out, self._status = clis.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_dir))))
+
+            os.remove(o_fn)
 
     def print_results(self):
         '''print the fetch results as a list of urls suitable 
@@ -465,7 +466,6 @@ class dc:
                             except: surv_t = ''
                             t = threading.Thread(target = self.proc_data, args = (surv_dir, surv_fn, outf, surv_t))
                             t.start()
-                            #self.proc_data(surv_dir, surv_fn, outf, surv_t)
 
 ## =============================================================================
 ##
@@ -505,7 +505,7 @@ class nos:
         title = 'Unknown'
 
         title_ = xml_doc.find('.//gmd:title/gco:CharacterString', namespaces = namespaces)
-        if title is not None:
+        if title_ is not None:
             title = title_.text
 
         obbox = None

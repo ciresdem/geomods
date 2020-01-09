@@ -42,7 +42,8 @@ usage: gdal_chunk.py [ file ]
   file\t\tThe input grid file-name
 
  Options:
-  -c, --chunk\tThe chunk size (number of pixels squared)
+  -c, --chunk\tThe chunk size
+      output will be in chunks of `chunk X chunk` cells.
 
   --help\tPrint the usage text
   --version\tPrint the version information
