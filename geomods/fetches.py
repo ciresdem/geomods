@@ -58,7 +58,9 @@ import datalists
 import gdalfun
 import clis
 
-_version = '0.1.6'
+_version = '0.1.7'
+
+gdal.PushErrorHandler('CPLQuietErrorHandler')
 
 ## =============================================================================
 ##
@@ -78,17 +80,20 @@ def fetch_file(src_url, dst_fn, params = None):
     if not os.path.exists(os.path.dirname(dst_fn)):
         os.makedirs(os.path.dirname(dst_fn))
 
-    req = requests.get(src_url, stream = True, params = params)
+    req = requests.get(src_url, stream = True, params = params, headers = r_headers)
 
-    with open(dst_fn, 'wb') as local_file:
-        for chunk in req.iter_content(chunk_size = 50000):
-            local_file.write(chunk)
+    if req:
+        with open(dst_fn, 'wb') as local_file:
+            for chunk in req.iter_content(chunk_size = 50000):
+                local_file.write(chunk)
+        return(0)
+    else: return(-1)
 
 def fetch_req(src_url, params = None, tries = 3):
-    if tries <= 0: return None
+    if tries <= 0: return(None)
     try:
-        return requests.get(src_url, stream = True, params = params, timeout = 1)
-    except: return fetch_req(src_url, params = params, tries = tries - 1)
+        return(requests.get(src_url, stream = True, params = params, timeout = 1, headers = r_headers))
+    except: return(fetch_req(src_url, params = params, tries = tries - 1))
 
 def fetch_nos_xml(src_url):
     results = lxml.etree.fromstring('<?xml version="1.0"?><!DOCTYPE _[<!ELEMENT _ EMPTY>]><_/>'.encode('utf-8'))
@@ -98,24 +103,21 @@ def fetch_nos_xml(src_url):
         results = lxml.etree.fromstring(req.text.encode('utf-8'))
     except: pass
 
-    return results
+    return(results)
         
 def fetch_html(src_url):
-    results = lh.document_fromstring('<html></html>')
 
-    try:
-        req = fetch_req(src_url)
-        results = lh.document_fromstring(req.text)
-    except: pass
-
-    return results
+    req = fetch_req(src_url)
+    if req:
+        return(lh.document_fromstring(req.text))
+    else: return(None)
 
 def fetch_csv(src_url):
 
     req = fetch_req(src_url)
-    csv_results = csv.reader(req.text.split('\n'), delimiter = ',')
-
-    return list(csv_results)
+    if req:
+        return(list(csv.reader(req.text.split('\n'), delimiter = ',')))
+    else: return(None)
 
 ## =============================================================================
 ##
@@ -138,7 +140,7 @@ def create_polygon(coords):
     poly = ogr.Geometry(ogr.wkbPolygon)
     poly.AddGeometry(ring)
         
-    return poly.ExportToWkt()
+    return(poly.ExportToWkt())
 
 def bounds2geom(bounds):
     b1 = [[bounds[2], bounds[0]],
@@ -147,7 +149,7 @@ def bounds2geom(bounds):
           [bounds[3], bounds[0]],
           [bounds[2], bounds[0]]]
 
-    return ogr.CreateGeometryFromWkt(create_polygon(b1))
+    return(ogr.CreateGeometryFromWkt(create_polygon(b1)))
 
 def addf_ref_vector(ogr_layer, survey):
     #try:
@@ -253,60 +255,63 @@ class dc:
                     surv_url = feature1.GetField('Data')
                     surv_dt = feature1.GetField('Datatype')
                     suh = fetch_html(surv_url)
+                    if suh is None: self._status = -1
+                    
+                    if self._status == 0:
+                        if 'lidar' in surv_dt:
 
-                    if 'lidar' in surv_dt:
+                            ## Lidar data has a minmax.csv file to get extent
+                            scsv = suh.xpath('//a[contains(@href, ".csv")]/@href')[0]
+                            dc_csv = fetch_csv(surv_url + scsv)
 
-                        ## Lidar data has a minmax.csv file to get extent
-                        scsv = suh.xpath('//a[contains(@href, ".csv")]/@href')[0]
-                        dc_csv = fetch_csv(surv_url + scsv)
+                            for tile in dc_csv:
+                                try:
+                                    tb = [float(tile[1]), float(tile[2]), float(tile[3]), float(tile[4])]
+                                    tile_geom = bounds2geom(tb)
+                                    if tile_geom.Intersects(self._boundsGeom):
+                                        self._results.append(os.path.join(surv_url, tile[0]))
+                                except: pass
 
-                        for tile in dc_csv:
+                        elif 'raster' in surv_dt:
+                            ## Raster data has a tileindex shapefile to get extent
+                            sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
+                            fetch_file(surv_url + sshpz, os.path.join('.', sshpz))
+
                             try:
-                                tb = [float(tile[1]), float(tile[2]), float(tile[3]), float(tile[4])]
-                                tile_geom = bounds2geom(tb)
-                                if tile_geom.Intersects(self._boundsGeom):
-                                    self._results.append(os.path.join(surv_url, tile[0]))
-                            except: pass
+                                zip_ref = zipfile.ZipFile(sshpz)
+                                zip_ref.extractall('dc_tile_index')
+                                zip_ref.close()
+                            except BadZipFile:
+                                self.stop = lambda: True
+                                break
 
-                    elif 'raster' in surv_dt:
-                        ## Raster data has a tileindex shapefile to get extent
-                        sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
-                        fetch_file(surv_url + sshpz, os.path.join('.', sshpz))
-                        
-                        try:
-                            zip_ref = zipfile.ZipFile(sshpz)
-                            zip_ref.extractall('dc_tile_index')
-                            zip_ref.close()
-                        except BadZipFile:
-                            self.stop = lambda: True
-                            break
+                            if os.path.exists('dc_tile_index'):
+                                ti = os.listdir('dc_tile_index')
 
-                        if os.path.exists('dc_tile_index'):
-                            ti = os.listdir('dc_tile_index')
+                            ts = None
 
-                        ts = None
+                            for i in ti:
+                                if ".shp" in i:
+                                    ts = os.path.join('dc_tile_index/', i)
 
-                        for i in ti:
-                            if ".shp" in i:
-                                ts = os.path.join('dc_tile_index/', i)
+                            if ts is not None:
+                                shp1 = ogr.Open(ts)
+                                slay1 = shp1.GetLayer(0)
 
-                        if ts is not None:
-                            shp1 = ogr.Open(ts)
-                            slay1 = shp1.GetLayer(0)
+                                for sf1 in slay1:
+                                    geom = sf1.GetGeometryRef()
 
-                            for sf1 in slay1:
-                                geom = sf1.GetGeometryRef()
+                                    if geom.Intersects(self._boundsGeom):
+                                        tile_url = sf1.GetField('URL').strip()
+                                        self._results.append(tile_url)
 
-                                if geom.Intersects(self._boundsGeom):
-                                    tile_url = sf1.GetField('URL').strip()
-                                    self._results.append(tile_url)
+                                shp1 = slay1 = None
 
-                            shp1 = slay1 = None
-
-                        for i in ti:
-                            ts = os.remove(os.path.join('dc_tile_index/', i))
-                        os.removedirs(os.path.join('.', 'dc_tile_index'))
-                        os.remove(os.path.join('.', sshpz))
+                            for i in ti:
+                                ts = os.remove(os.path.join('dc_tile_index/', i))
+                            os.removedirs(os.path.join('.', 'dc_tile_index'))
+                            os.remove(os.path.join('.', sshpz))
+        if len(self._results) == 0: self._status = -1
         gmt1 = layer = None
 
     def _update(self):
@@ -384,8 +389,9 @@ class dc:
     def proc_data(self, s_dir, s_fn, o_fn, s_t):
         '''Process a fetched file to xyz and add it to its datalist.
         uses `las2txt` from lastools for las/laz files and
-        grd2xyz from GMT for raster files.'''
+        gdal (geomods.gdalfun) for raster files.'''
 
+        pb = clis.prog_bar('processing {} to XYZ'.format(s_fn))
         status = 0
         xyz_dir = os.path.join(self._outdir, s_dir, 'xyz')
         
@@ -399,18 +405,21 @@ class dc:
         if s_t == 'las' or s_t == 'laz':
             ## Convert to XYZ
             out, status = clis.run_cmd('las2txt -parse xyz -keep_class 2 29 -i {}'.format(o_fn), False, False)
-            o_fn_bn = os.path.basename(o_fn).split('.')[0]
+            if status == 0:
+                o_fn_bn = os.path.basename(o_fn).split('.')[0]
 
-            o_fn_txt = os.path.join(self._outdir, s_dir, '{}.txt'.format(o_fn_bn))
+                o_fn_txt = os.path.join(self._outdir, s_dir, '{}.txt'.format(o_fn_bn))
 
-            ## Blockmedian the data
-            out, status = clis.run_cmd('gmt gmtset IO_COL_SEPARATOR=space')
-            out, status = clis.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}'.format(o_fn_txt, self.region.gmt, o_fn_p_xyz))
+                ## Blockmedian the data
+                out, status = clis.run_cmd('gmt gmtset IO_COL_SEPARATOR=space')
+                out, status = clis.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}'.format(o_fn_txt, self.region.gmt, o_fn_p_xyz))
 
-            os.remove(o_fn_txt)
+                os.remove(o_fn_txt)
+            else:
+                print('...fail')
 
         elif s_t == 'tif' or s_t == 'img':
-            ## Convert to XYZ
+            ## Convert to XYZ (chunk first?)
             gdalfun.dump(o_fn, o_fn_p_xyz)
 
         if status == 0:
@@ -423,9 +432,10 @@ class dc:
             sdatalist._reset()
 
             ## Generate .inf file
-            out, self._status = clis.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_dir))))
+            out, status = clis.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_dir))))
 
             os.remove(o_fn)
+        pb._end(status)
 
     def print_results(self):
         '''print the fetch results as a list of urls suitable 
@@ -454,13 +464,25 @@ class dc:
                     outf = os.path.join(self._outdir, surv_dir, surv_fn)
 
                     ## Fetch and Log
-                    fetch_file(row, outf)
-                    print('%-79s' %(surv_fn))
-                    self._log_survey(row)
+                    #sys.stderr.write('\rfetches: downlaoding {} to {}'.format(surv_fn, surv_dir))
+                    pb = clis.prog_bar('fetching {}'.format(row))
+                    self._status = fetch_file(row, outf)
                     
-                    ## Process the data if wanted
-                    if self._want_proc:
-                        if os.path.exists(outf):
+                    if self._status == 0 and os.path.exists(outf):
+                    
+                        ## validate downloaded file...
+                        if open(outf, 'rb').read(4) == 'LASF':
+                            self._status = 0
+                        elif gdal.Open(outf, gdal.GA_ReadOnly):
+                            self._status = 0
+                        else: self._status = -1
+                        
+                        #sys.stderr.write('\rfetches: downlaoding {} to {}...ok\n'.format(surv_fn, surv_dir).ljust(79))
+                        pb._end(self._status)
+                        self._log_survey(row)
+                    
+                        ## Process the data if wanted
+                        if self._want_proc:
                             try:
                                 surv_t = surv_fn.split('.')[1]
                             except: surv_t = ''
@@ -535,8 +557,8 @@ class nos:
                             xml_dsu.append(j.text)
                             xml_dsf = dfs[i].text
 
-            return [obbox, title, sid, odt, xml_url, ','.join(xml_dsu), xml_dsf]
-        return [None]
+            return([obbox, title, sid, odt, xml_url, ','.join(xml_dsu), xml_dsf])
+        return([None])
 
     def _scan_directory(self, nosdir):
         if self._has_vector:
@@ -544,7 +566,7 @@ class nos:
             layer = gmt1.GetLayer()
         else: layer = []
 
-        print('%-79s' %(nosdir))
+        print('{:79}'.format(nosdir))
 
         xml_catalog = self._nos_xml_url(nosdir)
         page = fetch_html(xml_catalog)
@@ -555,7 +577,7 @@ class nos:
                 sid = survey[:-4]
 
                 if self._has_vector:
-                    layer.SetAttributeFilter('ID = "%s"' %(sid))
+                    layer.SetAttributeFilter('ID = "{}"'.format(sid))
 
                 if len(layer) == 0:
                     xml_url = xml_catalog + survey
@@ -570,7 +592,7 @@ class nos:
         layer = gmt1.GetLayer()
 
         for filt in filters:
-            layer.SetAttributeFilter('%s' %(filt))
+            layer.SetAttributeFilter('{}'.format(filt))
 
         for feature in layer:
             if not self.stop():
@@ -658,7 +680,7 @@ class charts:
                 cd = cd.text
 
             if update:
-                layer.SetAttributeFilter('Name = "%s"' %(title))
+                layer.SetAttributeFilter('Name = "{}"'.format(title))
 
             if len(layer) == 0:
                 polygon = chart.find('.//{*}Polygon', namespaces = namespaces)
@@ -683,12 +705,12 @@ class charts:
         layer = ds.GetLayer(0)
 
         for filt in filters:
-            layer.SetAttributeFilter("%s" %(filt))
+            layer.SetAttributeFilter('{}'.format(filt))
 
         for feature1 in layer:
             geom = feature1.GetGeometryRef()
             if self._boundsGeom.Intersects(geom):
-                self._results.append(feature1.GetField("Data"))
+                self._results.append(feature1.GetField('Data'))
 
         ds = layer = None
 
@@ -941,7 +963,7 @@ class srtm_cgiar:
         layer = gmt1.GetLayer()
 
         for filt in filters:
-            layer.SetAttributeFilter('%s' %(filt))
+            layer.SetAttributeFilter('{}'.format(filt))
 
         for feature in layer:
             geom = feature.GetGeometryRef()
@@ -950,16 +972,16 @@ class srtm_cgiar:
                 geo_env = geom.GetEnvelope()
                 srtm_lon = int(math.ceil(abs((-180 - geo_env[1]) / 5)))
                 srtm_lat = int(math.ceil(abs((60 - geo_env[3]) / 5)))
-                self._results.append('srtm_%02d_%02d.zip' %(srtm_lon, srtm_lat))
+                self._results.append('srtm_{:2}_{:2}.zip'.format(srtm_lon, srtm_lat))
 
     def print_results(self):
         for row in self._results:
-            print('%s%s' %(self._srtm_dl_url, row))
+            print('{}{}'.format(self._srtm_dl_url, row))
 
     def fetch_results(self):
         try:
             for row in self._results:
-                fetch_file('%s%s' %(self._srtm_dl_url, row), os.path.join(self._outdir, os.path.basename(row)))
+                fetch_file('{}{}'.format(self._srtm_dl_url, row), os.path.join(self._outdir, os.path.basename(row)))
         except: self._status = -1
 
 ## =============================================================================
@@ -971,7 +993,7 @@ class srtm_cgiar:
 ## =============================================================================
 class ngs:
     def __init__(self, extent = None, callback = None):
-        self._ngs_search_url = "http://geodesy.noaa.gov/api/nde/bounds?"
+        self._ngs_search_url = 'http://geodesy.noaa.gov/api/nde/bounds?'
         self._outdir = os.path.join(os.getcwd(), 'ngs')
         self._ref_vector = None
 
@@ -998,7 +1020,7 @@ class ngs:
                     os.makedirs(self._outdir)
 
                 dt_now_str = datetime.datetime.now().strftime('%d%Y')
-                outfile = open(os.path.join(self._outdir, "ngs_results_%s.csv" %(dt_now_str)), 'w')
+                outfile = open(os.path.join(self._outdir, 'ngs_results_{}.csv'.format(dt_now_str)), 'w')
             
                 outcsv = csv.writer(outfile)
                 outcsv.writerow(r[0].keys())

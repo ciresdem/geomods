@@ -19,7 +19,7 @@
 ##
 ### Code:
 
-_version = '0.0.1'
+_version = '0.0.2'
 
 ## =============================================================================
 ##
@@ -30,9 +30,9 @@ _version = '0.0.1'
 ##
 ## =============================================================================
 class region:
-    def __init__( self, region_string ):
+    def __init__(self, region_string):
         self.region_string = region_string
-        self.region = map( float, region_string.split( "/" ))
+        self.region = map( float, region_string.split('/'))
         self._reset()
 
     def _reset(self):
@@ -47,24 +47,24 @@ class region:
 
     ## 'Validate' Region
     def _valid_p(self):
-        if self.west < self.east and self.south < self.north: return( True )
-        else: return( False )
+        if self.west < self.east and self.south < self.north: return(True)
+        else: return(False)
 
     ## Format region
     def _format_gmt(self):
-        self.gmt = "-R" + "/".join( map( str, self.region ))
+        self.gmt = '-R' + '/'.join(map(str, self.region))
 
     def _format_bbox(self):
-        self.bbox = ','.join( [str( self.west ), str( self.south ), str( self.east ), str( self.north )] )
+        self.bbox = ','.join([str(self.west), str(self.south), str(self.east), str(self.north)])
 
     def _format_fn(self):
-        if self.north < 0: ns = "s"
-        else: ns = "n"
-        if self.east < 0: ew = "w"
-        else: ew = "e"
-        self.fn = ( "%s%02dx%02d_%s%03dx%02d" 
-                    %( ns, abs( int( self.north )), abs( int( self.north * 100 ) % 100 ), 
-                       ew, abs( int( self.east )), abs( int( self.east * 100 ) % 100 )))
+        if self.north < 0: ns = 's'
+        else: ns = 'n'
+        if self.east < 0: ew = 'w'
+        else: ew = 'e'
+        self.fn = ('{}{:4}x{:2}_{}{:3}x{:2}\
+        '.format(ns, abs(int(self.north)), abs(int(self.north * 100) % 100), 
+                 ew, abs(int(self.east)), abs(int(self.east * 100) % 100)))
 
     ## Process Region
     def buffer(self, bv, percentage = False):
@@ -72,41 +72,41 @@ class region:
 
         region_b = [self.region[0]-bv, self.region[1] + bv, self.region[2] - bv, self.region[3] + bv]
 
-        return region("/".join( map( str, region_b )))
+        return(region("/".join(map(str, region_b))))
 
     def pct(self, pctv):
         ewp = (self.east - self.west) * (pctv * .01)
         nsp = (self.north - self.south) * (pctv * .01)
 
-        return (ewp + nsp) / 2
+        return((ewp + nsp) / 2)
 
     ## Split Region
     def split(self, sv):
         
         split_regions = []
         
-        ew = ( self.east - self.west ) / sv
-        ns = ( self.north - self.south ) / sv
+        ew = (self.east - self.west) / sv
+        ns = (self.north - self.south) / sv
 
         ewo = self.west
         ewn = self.west+ew
         nso = self.south
         nsn = self.south+ew
 
-        for i in range( 1, sv + 1 ):
+        for i in range(1, sv + 1):
 
             region_sub = [ewo, ewn, nso, nsn]
-            split_regions.append( region( "/".join( map( str, region_sub ))))
+            split_regions.append(region('/'.join(map(str, region_sub))))
 
             ewo = ewn
-            ewn +=  ew
+            ewn += ew
             nso = nsn
             nsn += ns
 
-        return split_regions
+        return(split_regions)
 
     def regions_intersect_p(self, region_a, region_b):
-        "Return True if region_a and region_b intersect."
+        '''Return True if region_a and region_b intersect.'''
 
         region_c = [0, 0, 0, 0]
         if region_a.west > region_b.west: 
@@ -125,6 +125,6 @@ class region:
             region_c[3] = region_a.north
         else: region_c[3] = region_b.north
 
-        return region( "/".join( map( str, region_c )))._valid
+        return(region('/'.join(map(str, region_c)))._valid)
 
 ### End

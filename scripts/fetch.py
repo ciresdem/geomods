@@ -188,8 +188,9 @@ def main():
 
     tw = geomods.clis.prog_bar('checking for LASTools')
     if geomods.clis.cmd_exists('las2txt'): 
-        last_vers, status = geomods.clis.run_cmd('las2txt -version -stdout')
-        tw.opm = 'checking for LASTools - %s' %(last_vers)
+        status = 0
+        #last_vers, status = geomods.clis.run_cmd('las2txt -version')
+        #tw.opm = 'checking for LASTools - %s' %(last_vers)
     else: status = -1
     tw._end(status)
 

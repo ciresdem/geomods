@@ -22,7 +22,7 @@
 import os
 import regions
 
-_version = '0.0.1'
+_version = '0.0.2'
 
 ## =============================================================================
 ##
@@ -53,7 +53,8 @@ class datalist:
 
         self.region = iregion
         self._path = idatalist
-        self._path_dirname = os.path.dirname( self._path )
+        self._path_dirname = os.path.dirname(self._path)
+        self._path_basename = os.epath.basename(self._path)
         self._reset()
 
     ## Reload the datalist
@@ -61,19 +62,19 @@ class datalist:
         self.datalist = []
         self.datafiles = []
         self._load()
-        self._proc( self.datafiles )
+        self._proc(self.datafiles)
         self._valid = self._valid_p()
 
     ## 'Validate' the datalist (does it have datafiles?)
     def _valid_p(self):
-        if len( self.datafiles ) > 0: return( True )
-        else: return( False )
+        if len(self.datafiles) > 0: return(True)
+        else: return(False)
 
     ## Read MBSystem .inf file and extract minmax info
     def _read_inf(self, path_i):
         minmax = [0, 0, 0, 0]
-        if os.path.exists( path_i ):
-            self.iob = open( path_i )
+        if os.path.exists(path_i):
+            self.iob = open(path_i)
             for il in self.iob:
                 til = il.split()
                 if len( til ) > 1:
@@ -85,16 +86,16 @@ class datalist:
                             minmax[2] = til[2]
                             minmax[3] = til[5]
 
-        try: oregion = region( '/'.join( minmax ))
+        try: oregion = region('/'.join(minmax))
         except: oregion = False
-        return oregion
+        return(oregion)
                      
     ## Load and Process a datalist file.
     def _load(self):
-        fob = open( self._path, 'r' )
+        fob = open(self._path, 'r')
         for dl in fob:
             if dl[0] != '#' and dl[0] != '':
-                self.datalist.append( dl.split( ' ' ))
+                self.datalist.append( dl.split(' '))
         fob.close()
 
     ## Recurse through the datalist and gather xyz data
@@ -102,42 +103,42 @@ class datalist:
 
         for i in self.datalist:
             dpath = i[0]
-            dformat = int( i[1] )
+            dformat = int(i[1])
 
             if len(i) > 2: 
                 dweight = i[2]
             else: dweight = 1
 
             if dformat == -1:
-                d = datalist( dpath, self.region )
-                d._proc( datafiles )
+                d = datalist(dpath, self.region)
+                d._proc(datafiles)
             elif dformat == 168:
                 usable = True
-                path_d = os.path.join( self._path_dirname, dpath )
-                if not os.path.exists( path_d ): usable = False
-                dinf = self._read_inf( path_d + '.inf' )
+                path_d = os.path.join(self._path_dirname, dpath)
+                if not os.path.exists(path_d): usable = False
+                dinf = self._read_inf(path_d + '.inf')
 
                 if self.region and dinf:
-                    usable = regions.regions_intersect_p( self.region, dinf )
+                    usable = regions.regions_intersect_p(self.region, dinf)
 
                 if usable:
-                    datafiles.append( path_d )
+                    datafiles.append(path_d)
 
     ## Add XYZ data to datalist
     def _append_datafile(self, dfile, dformat, weight):
-        with open( self._path, 'a' ) as outfile:
-            outfile.write( '%s %s %s\n' %( dfile, dformat, weight ))
+        with open(self._path, 'a') as outfile:
+            outfile.write('{} {} {}\n'.format(dfile, dformat, weight))
 
     ## Process XYZ data
-    def _echo_datafiles( self, osep='/n' ):
-        return osep.join( self.datafiles )      
+    def _echo_datafiles(self, osep='/n'):
+        return(osep.join(self.datafiles))
 
     ## Catenate the xyz data from the datalist
     def _cat(self, dst_xyz):
-        with open( dst_xyz, 'w' ) as outfile:
+        with open(dst_xyz, 'w') as outfile:
             for fn in self.datafiles:
                 with open(fn) as infile:
                     for line in infile:
-                        outfile.write( line )
+                        outfile.write(line)
 
 ### End

@@ -50,7 +50,7 @@ def _ogr_get_fields(src_ogr):
         fdefn = ldefn.GetFieldDefn(n)
         schema.append(fdefn.name)
     
-    return schema
+    return(schema)
 
 def _gather_infos(src_ds):
     '''Gather information from `src_ds` GDAL dataset.'''
@@ -65,7 +65,7 @@ def _gather_infos(src_ds):
     ds_config['dt'] = src_ds.GetRasterBand(1).DataType
     ds_config['ndv'] = src_ds.GetRasterBand(1).GetNoDataValue()
 
-    return ds_config
+    return(ds_config)
 
 def _con_dec(x, dec):
     '''Return a float string with n decimals
@@ -75,7 +75,7 @@ def _con_dec(x, dec):
         return
 
     fstr = "%." + str( dec ) + "f"
-    return fstr % x
+    return(fstr % x)
 
 def _geo2pixel(geo_x, geo_y, geoTransform):
     '''Convert a geographic x,y value to a pixel location of geoTransform'''
@@ -86,20 +86,20 @@ def _geo2pixel(geo_x, geo_y, geoTransform):
     else:
         pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt( geoTransform))
 
-    return int(pixel_x), int(pixel_y)
+    return(int(pixel_x), int(pixel_y))
 
 def _pixel2geo(pixel_x, pixel_y, geoTransform):
     '''Convert a pixel location to geographic coordinates given geoTransform'''
 
     geo_x, geo_y = _apply_gt(pixel_x, pixel_y, geoTransform)
 
-    return geo_x, geo_y
+    return(geo_x, geo_y)
 
 def _apply_gt(in_x, in_y, geoTransform):
     out_x = geoTransform[0] + in_x * geoTransform[1] + in_y * geoTransform[2]
     out_y = geoTransform[3] + in_x * geoTransform[4] + in_y * geoTransform[5]
 
-    return out_x, out_y
+    return(out_x, out_y)
 
 def _invert_gt(geoTransform):
     det = geoTransform[1] * geoTransform[5] - geoTransform[2] * geoTransform[4]
@@ -117,7 +117,7 @@ def _invert_gt(geoTransform):
     outGeoTransform[0] = (geoTransform[2] * geoTransform[3] - geoTransform[0] * geoTransform[5]) * invDet
     outGeoTransform[3] = (-geoTransform[1] * geoTransform[3] + geoTransform[0] * geoTransform[4]) * invDet
 
-    return outGeoTransform 
+    return(outGeoTransform)
 
 def chunks(src_fn, n_chunk = 10):
     '''split `src_fn` GDAL file into chunks with `n_chunk` cells squared.'''
@@ -135,7 +135,7 @@ def chunks(src_fn, n_chunk = 10):
         band = src_ds.GetRasterBand(band_num)
         if band is None:
             status = -1
-            return status
+            return(status)
         bands.append(band)
 
     gt = ds_config['geoT']
@@ -173,7 +173,7 @@ def chunks(src_fn, n_chunk = 10):
             for band in bands:
                 band_data = band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])    
                 
-                dst_fn = '%s_chnk%sx%s.tif' %(src_fn.split('.')[0], x_i_chunk, i_chunk)
+                dst_fn = '{}_chnk{}x{}.tif'.format(src_fn.split('.')[0], x_i_chunk, i_chunk)
 
                 ods = gdal.GetDriverByName('GTiff').Create(dst_fn, this_x_size, this_y_size, 1, ds_config['dt'])
                 ods.SetGeoTransform(dst_gt)
@@ -200,7 +200,7 @@ def crop(src_fn):
     src_ds = gdal.Open(src_fn)
 
     if srcds is None:
-        return None
+        return(None)
 
     ds_config = _gather_infos(src_ds)
     ds_arr = src_ds.GetRasterBand(1).ReadAsArray()
@@ -229,7 +229,7 @@ def crop(src_fn):
     dst_geoT = [dst_x_origin, GeoT[1], 0.0, dst_y_origin, 0.0, GeoT[5]]
     ds_config['geoT'] = dst_geoT
     
-    return out_array, ds_config
+    return(out_array, ds_config)
 
 def dump(src_gdal, dst_xyz):
     '''Dump `src_gdal` GDAL file to ASCII XYZ
@@ -248,14 +248,14 @@ def dump(src_gdal, dst_xyz):
 
     if srcds is None:
         status = -1
-        return status
+        return(status)
 
     bands = []
     for band_num in band_nums: 
         band = srcds.GetRasterBand(band_num)
         if band is None:
             status = -1
-            return status
+            return(status)
         bands.append(band)
 
     gt = srcds.GetGeoTransform()
@@ -375,17 +375,17 @@ def query(src_xyz, src_grd, out_form):
             if g != dsnodata:
                 d = z - g
                 m = z + g
-                c = _con_dec( math.fabs(float(d / (g + 0.00000001) * 100)), 2)
-                s = _con_dec( math.fabs(d / (z + (g + 0.00000001))), 4)
+                c = _con_dec(math.fabs(float(d / (g + 0.00000001) * 100)), 2)
+                s = _con_dec(math.fabs(d / (z + (g + 0.00000001))), 4)
                     
             d = _con_dec(d, 4)
 
             outs = []
             for i in out_form:
                 outs.append(vars()[i])
-            xyzl.append(np.array( outs, dtype = dsdt))
+            xyzl.append(np.array(outs, dtype = dsdt))
 
     dsband = ds = None
-    return np.array(xyzl, dtype = dsdt)
+    return(np.array(xyzl, dtype = dsdt))
 
 ### End

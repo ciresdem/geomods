@@ -56,7 +56,7 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEAL
 cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ["PATH"].split(os.pathsep))
 
 def run_cmd(cmd, prog_message = False, verbose = False):
-    'Run a command with or without a progress bar.'
+    '''Run a command with or without a progress bar.'''
 
     p = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)
     

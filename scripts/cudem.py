@@ -57,27 +57,27 @@ import geomods
 
 _version = '0.1.0'
 
-usage = '''cudem.py ({}): Process and generate Digital Elevation Models
+usage = '''cudem.py ({}): Process and generate Digital Elevation Models and derivatives
 
 usage: cudem.py [ -hvAIER [ args ] ]
 
 Options:
-  -R, --region\t\tSpecifies the desired region to search;
+  -R, --region\t\tSpecifies the desired region;
 \t\t\tThis can either be a GMT-style region ( -R xmin/xmax/ymin/ymax )
 \t\t\tor an OGR-compatible vector file with regional polygons. 
 \t\t\tIf a vector file is supplied it will search each region found therein.
   -I, --datalsit\tThe input datalist.
   -E, --increment\tThe desired cell-size in native units.
       note: use at least 7 digits precision with WGS84 units
-  -A, --algoritm\tThe desired gridding algorithm
-\t\t\tCurrent options: 'mbgrid', 'gmt-surface'
+  -M, --module\t\tThe desired cudem module
+\t\t\tCurrent options: 'mbgrid', 'gmt-surface', 'spatial-metadata'
 
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
 
  Examples:
- % cudem.py -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27
- % cudem.py --datalist input.datalist --increment 0.000277777 --region input_tiles_ply.shp
+ % cudem.py -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 -M gmt-surface
+ % cudem.py --datalist input.datalist --increment 0.000277777 --region input_tiles_ply.shp -M spatial-metadata
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version)
 
@@ -121,7 +121,7 @@ def err2coeff(data):
     errfunc = lambda p, x, y: y - fitfunc(p, x)
     
     out, cov, infodict, mesg, ier = optimize.leastsq(errfunc, coeff_guess, args = (xdata, ydata), full_output = True)
-    return out
+    return(out)
 
 def dem_interpolation_uncertainty(dem_surface):
     status = 0
@@ -197,7 +197,7 @@ class dem:
         self.max_prox = self.max_num = None
         self.oname = oname
         if self.oname is None: 
-            self.oname = os.path.basename(self.datalist._path).split('.')[0]
+            self.oname = self.datalist._path_basename.split('.')[0]
 
     ## 'Validate' the DEM (check if all files in `dem` exist)
     def _valid_p(self):
@@ -225,32 +225,32 @@ class dem:
     def _dem_remove(self, key):
         try: 
             os.remove(self.dem[key])
-            return 0
-        except: return -1
+            return(0)
+        except: return(-1)
 
     ## Generic Functions
-    def grd2tif(self, src_grd):
+    def grd2tif(self, src_grd, verbose = False):
         '''Convert the grd file to tif using GMT'''
 
         if os.path.exists(src_grd):
             grd2tif_cmd = ('gmt grdconvert {} {}.tif=gd+n-9999:GTiff -V\
             '.format(src_grd, os.path.basename(src_grd).split('.')[0]))
             
-            out, self.status = geomods.clis.run_cmd(grd2tif_cmd, False, True)
+            out, self.status = geomods.clis.run_cmd(grd2tif_cmd, False, verbose)
         else: self.status = -1
 
-        return self.status
+        return(self.status)
 
-    def grdinfo(self, src_grd):
+    def grdinfo(self, src_grd, verbose = False):
         '''Return an info list of `src_grd`'''
 
         if not os.path.exists(src_grd):
             self.status = -1
-            return self.status
+            return(self.status)
         else:
             grdinfo_cmd = ('gmt grdinfo {} -C'.format(src_grd))
-            out, self.status = geomods.clis.run_cmd(grdinfo_cmd, False, True)
-            return out.split()
+            out, self.status = geomods.clis.run_cmd(grdinfo_cmd, False, verbose)
+            return(out.split())
 
     def grdcut(self, src_grd, src_region, dst_grd):
         '''Cut `src_grd` to `src_region` '''
@@ -279,7 +279,7 @@ class dem:
                 if os.path.exists('tmp.grd'):
                     os.remove('tmp.grd')
 
-        return self.status
+        return(self.status)
         
     ## DEM Et Cetra
     def surface(self):
@@ -306,9 +306,9 @@ class dem:
                 
                 self.dem['dem'] = ('{}.tif'.format(self.oname))
                 
-        return self.status
+        return(self.status)
 
-    def num(self):
+    def num(self, verbose = False):
         '''Generate a num and num-msk grid with GMT'''
 
         num_cmd0 = ('cat {} | gmt xyz2grd -V {} -I{} -r -G{}_num.grd -An\
@@ -317,9 +317,9 @@ class dem:
         num_cmd1 = ('gmt grdmath -V {}_num.grd 0 MUL 1 ADD 0 AND = {}_num_msk.tif=gd+n-9999:GTiff\
         '.format(self.oname, self.oname))
 
-        out, self.status = geomods.clis.run_cmd(num_cmd0, False, True)
+        out, self.status = geomods.clis.run_cmd(num_cmd0, False, verbose)
         if self.status == 0:
-            out, self.status = geomods.clis.run_cmd(num_cmd1, False, True)
+            out, self.status = geomods.clis.run_cmd(num_cmd1, False, verbose)
 
             if self.status == 0:
                 self.grd2tif('{}_num.grd'.format(self.oname))
@@ -330,7 +330,7 @@ class dem:
 
                 self.max_num = int(self.grdinfo(self.dem['num'])[6])
 
-        return self.status   
+        return(self.status)
 
     def mbgrid(self, extras = False):
         '''Generate a DEM and num grid with MBSystem'''
@@ -369,7 +369,7 @@ class dem:
             if self.status == 0:
                 self.dem['num-msk'] = ('{}_num_msk.tif'.format(self.oname))
 
-        return self.status
+        return(self.status)
 
     def slope(self):
         '''Generate a Slope grid from the DEM with GMT'''
@@ -395,7 +395,7 @@ class dem:
 
                 self.dem['slope'] = ('{}_slp.tif'.format(self.oname))
 
-        return self.status
+        return(self.status)
 
     def proximity(self):
         '''Generate a Proximity grid with GDAL'''
@@ -412,89 +412,94 @@ class dem:
             self.max_prox = self.grdinfo(self.dem['prox'])[6]
             print(self.max_prox)
 
-        return self.status
+        return(self.status)
 
     def spatial_metadata(self):
-        '''Geneate spatial metadata'''
+        '''Geneate spatial metadata from a datalist'''
 
         ## initialize output vector
-        ## fields incl: 'name' 'title' 'agency' 'date' 'type' 'res' 'hdatum' 'vdatum' 'url'
-
+        v_fields = ['Name', 'Agency', 'Date', 'Type', 'Resolution', 'HDatum', 'VDatum', 'URL']
+        t_fields = [ogr.OFTString, ogr.OFTString, ogr.OFTInteger, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString]
+    
         dst_vec = '{}_sm_ply.shp'.format(self.oname)
         dst_layername = os.path.basename(dst_vec).split('.')[0]
 
+        shps = glob.glob('{}_sm_ply.*'.format(self.oname))
+        if len(shps) > 0:
+            for sh in shps:
+                os.remove(sh)
+
         ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource(dst_vec)
-        layer = ds.CreateLayer('{}'.format(os.path.basename(dst_vec).split('.')[0]), None, ogr.wkbMultiPolygon)
-        defn = layer.GetLayerDefn()
 
-        layer.CreateField(ogr.FieldDefn('Name', ogr.OFTString))
-        layer.CreateField(ogr.FieldDefn('Agency', ogr.OFTString))
-        layer.CreateField(ogr.FieldDefn('Date', ogr.OFTInteger))
-        layer.CreateField(ogr.FieldDefn('Type', ogr.OFTString))
-        layer.CreateField(ogr.FieldDefn('Resolution', ogr.OFTString))
-        layer.CreateField(ogr.FieldDefn('HDatum', ogr.OFTString))
-        layer.CreateField(ogr.FieldDefn('VDatum', ogr.OFTString))
-        layer.CreateField(ogr.FieldDefn('URL', ogr.OFTString))
+        if ds is None:
+            self.status = -1
 
-        for feature in layer:
-            layer.SetFeature(feature)
+        if self.status == 0:
+            layer = ds.CreateLayer('{}'.format(os.path.basename(dst_vec).split('.')[0]), None, ogr.wkbMultiPolygon)
+            defn = layer.GetLayerDefn()
+
+            for i, f in enumerate(v_fields):
+                layer.CreateField(ogr.FieldDefn('{}'.format(f), t_fields[i]))
+            
+            for feature in layer:
+                layer.SetFeature(feature)
     
-        for dl in self.datalist.datalist:
-            print dl
-            this_datalist = geomods.datalists.datalist(dl[0], self.dist_region)
-            this_dem = dem(this_datalist, self.region, str(self.inc))
-            print this_dem.oname
+            for dl in self.datalist.datalist:
+                if not self.stop():
+                    this_datalist = geomods.datalists.datalist(dl[0], self.dist_region)
+                    this_dem = dem(this_datalist, self.region, str(self.inc))
 
-            this_dem.num()
+                    if len(dl) < 8: 
+                        o_v_fields = [this_dem.oname, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
+                    else: o_v_fields = [this_dem.oname, dl[3], int(dl[4]), dl[5], dl[6], dl[7], dl[8], dl[9].strip()]
 
-            src_ds = gdal.Open(this_dem.dem['num-msk'])
-            srcband = src_ds.GetRasterBand(1)
+                    ## Generate mask
+                    this_dem.num(verbose = False)
 
-            ## polygonize num mask.
+                    if self.status == 0:
+                        src_ds = gdal.Open(this_dem.dem['num-msk'])
+                        srcband = src_ds.GetRasterBand(1)
 
-            tm_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(this_dem.oname))
-            tmp_layer = ds.CreateLayer('{}_poly'.format(this_dem.oname), None, ogr.wkbMultiPolygon)
+                        ## polygonize mask.
+                        tm_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(this_dem.oname))
+                        tmp_layer = ds.CreateLayer('{}_poly'.format(this_dem.oname), None, ogr.wkbMultiPolygon)
+                        tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
 
-            tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
-            
-            result = gdal.Polygonize(srcband, None, tmp_layer, 0, [], callback = None)
-            src_ds = srcband = None
+                        result = gdal.Polygonize(srcband, None, tmp_layer, 0, [], callback = None)
+                        multi = ogr.Geometry(ogr.wkbMultiPolygon)
+                        src_ds = srcband = None
 
-            multi = ogr.Geometry(ogr.wkbMultiPolygon)
+                        for i in tmp_layer:
+                            tmp_layer.SetFeature(i)
+                            if i.GetField('DN') == 0:
+                                tmp_layer.DeleteFeature(i.GetFID())
+                            elif i.GetField('DN') == 1:
+                                i.geometry().CloseRings()
+                                wkt = i.geometry().ExportToWkt()
+                                multi.AddGeometryDirectly(ogr.CreateGeometryFromWkt(wkt))
+                                tmp_layer.DeleteFeature(i.GetFID())
 
-            for i in tmp_layer:
-                tmp_layer.SetFeature(i)
-                if i.GetField('DN') == 0:
-                    tmp_layer.DeleteFeature(i.GetFID())
-                elif i.GetField('DN') == 1:
-                    i.geometry().CloseRings()
-                    wkt = i.geometry().ExportToWkt()
-                    multi.AddGeometryDirectly(ogr.CreateGeometryFromWkt(wkt))
-                    tmp_layer.DeleteFeature(i.GetFID())
+                        #ds.ExecuteSQL('repack {}'.format(this_dem.oname))
+                        union = multi.UnionCascaded()
+                        out_feat = ogr.Feature(defn)
+                        out_feat.SetGeometry(union)
 
-            #ds.ExecuteSQL('repack {}'.format(this_dem.oname))
+                        for i, f in enumerate(v_fields):
+                            out_feat.SetField(f, o_v_fields[i])
 
-            union = multi.UnionCascaded()
+                        layer.CreateFeature(out_feat)
+                        tmp_ds = tmp_layer = None
 
-            out_feat = ogr.Feature(defn)
-            out_feat.SetGeometry(union)
-            out_feat.SetField('Name', this_dem.oname)
-            out_feat.SetField('Agency', dl[3])
-            out_feat.SetField('Date', int(dl[4]))
-            out_feat.SetField('Type', dl[5])
-            out_feat.SetField('Resolution', dl[6])
-            out_feat.SetField('HDatum', dl[7])
-            out_feat.SetField('VDatum', dl[8])
-            out_feat.SetField('URL', dl[9])
+                        #try:
+                        #    ogr.GetDriverByName('ESRI Shapefile').DeleteDataSource('{}_poly.shp'.format(this_dem.oname))
+                        #except:
+                        shps = glob.glob('{}_poly.*'.format(this_dem.oname))
+                        if len(shps) > 0:
+                            for sh in shps:
+                                os.remove(sh)
+                    geomods.clis.prog_bar('processing {}'.format(this_dem.oname))._end(self.status)
 
-            layer.CreateFeature(out_feat)
-            
-            tmp_ds = tmp_layer = None
-            
-            ogr.GetDriverByName('ESRI Shapefile').DeleteDataSource('{}_poly.shp'.format(this_dem.oname))
-
-            #ds.ExecuteSQL('repack tmp1')
-        ds = src_ds = layer = None
+        ds = layer = None
 
 ## =============================================================================
 ##
@@ -512,8 +517,8 @@ def main():
     do_unc = False
     stop_threads = False
 
-    dem_alg = 'mbgrid'
-    dem_algs = ['mbgrid', 
+    dem_mod = 'mbgrid'
+    dem_mods = ['mbgrid', 
                 'gmt-surface',
                 'spatial-metadata']
 
@@ -548,11 +553,11 @@ def main():
         elif arg[:2] == '-G':
             igrid = str(arg[2:])
 
-        elif arg == '--alogrithm' or arg == '-A':
-            dem_alg = str(argv[i + 1])
+        elif arg == '--module' or arg == '-M':
+            dem_mod = str(argv[i + 1])
             i = i + 1
-        elif arg[:2] == '-A':
-            dem_alg = str(arg[2:])
+        elif arg[:2] == '-M':
+            dem_mod = str(arg[2:])
 
         elif arg == '--uncertainty' or arg == '-u':
             do_unc = True
@@ -583,8 +588,8 @@ def main():
         #print(usage)
         #sys.exit(1)
 
-    if dem_alg not in dem_algs:
-        dem_alg = 'gmt'
+    if dem_mod not in dem_mods:
+        dem_mod = 'gmt'
 
     ## check platform
     tw = geomods.clis.prog_bar('checking platform')
@@ -663,16 +668,15 @@ def main():
         ## ==============================================
         ##
         ## Process Digital Elevation Model
-        ## using `dem_alg` gridding function
+        ## using `dem_mod` gridding function
         ## generate DEM and Num grid using full region
         ##
         ## ==============================================
-        tw = geomods.clis.prog_bar("generating Digital Elevation Model using {}".format(dem_alg))
-
+        tw = geomods.clis.prog_bar("generating Digital Elevation Model using {}".format(dem_mod))
         this_surf = dem(this_datalist, this_region, iinc, callback = lambda: stop_threads)
 
         ## MBSystem mbgrid
-        if dem_alg == 'mbgrid':
+        if dem_mod == 'mbgrid':
             try:
                 dem_t = threading.Thread(target = this_surf.mbgrid, args = ())
                 dem_t.start()
@@ -684,7 +688,7 @@ def main():
             except (KeyboardInterrupt, SystemExit): this_surf.status = -1
 
         ## GMT surface
-        elif dem_alg == 'gmt-surface':
+        elif dem_mod == 'gmt-surface':
             try:
                 dem_t = threading.Thread(target = this_surf.surface, args = ())
                 dem_nt = threading.Thread(target = this_surf.num, args = ())
@@ -698,25 +702,43 @@ def main():
             except (KeyboardInterrupt, SystemExit): this_surf.status = -1
 
         ## Validate output DEM
-        tw = geomods.clis.prog_bar('validating DEM')
+        if dem_mod == 'gmt-surface' or dem_mod == 'mbgrid':
+            tw = geomods.clis.prog_bar('validating DEM')
 
-        this_surf._rectify()
-        if this_surf._valid_p():
-            if 'dem' not in this_surf.dem.keys() or 'num' not in this_surf.dem.keys():
-                status = -1
-        else:
-            status = -1
-            
-        tw._end(status)
+            this_surf._rectify()
+            if this_surf._valid_p():
+                if 'dem' not in this_surf.dem.keys() or 'num' not in this_surf.dem.keys():
+                    status = -1
+            else: status = -1
+            tw._end(status)
 
         ## Spatial Metadata
-        if dem_alg == 'spatial-metadata':
-            this_surf.spatial_metadata()
-
-        tw._end(this_surf.status)
+        if dem_mod == 'spatial-metadata':
+            tw = geomods.clis.prog_bar("generating Spatial Metadta using {}".format(this_datalist._path_basename))
+            try:
+                dem_sm = threading.Thread(target = this_surf.spatial_metadata, args = ())
+                dem_sm.start()
+                while True:
+                    time.sleep(5)
+                    tw._update()
+                    if not dem_sm.is_alive():
+                        break
+            except (KeyboardInterrupt, SystemExit): stop_threads = True
+            tw._end(this_surf.status)
 
         ## Analyze the uncertainty
-        if do_unc: dem_interpolation_uncertainty(this_surf)        
+        if dem_mod == 'uncertainty':
+            ## Check for a valid dem-set
+            this_surf._rectify()
+            if this_surf._valid_p():
+                if 'dem' not in this_surf.dem.keys() or 'num' not in this_surf.dem.keys():
+                    status = -1
+            else: status = -1            
+            ## source data uncertainty
+            ## Vdatum uncertainty
+            ## interpolation uncertainty
+            if status == 0:
+                dem_interpolation_uncertainty(this_surf)        
             
 if __name__ == '__main__':
     main()
