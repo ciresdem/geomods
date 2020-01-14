@@ -780,7 +780,7 @@ class charts:
 
         if status == 0:
             ## transform process xyz file to NAVD88 using vdatum
-            if len(this_vd.vdatum_paths) > 0:
+            if len(self.this_vd.vdatum_paths) > 0:
                 self.this_vd.ivert = 'mllw'
                 self.this_vd.overt = 'navd88'
                 self.this_vd.ds_dir = os.path.relpath(os.path.join(xyz_dir, 'result'))
