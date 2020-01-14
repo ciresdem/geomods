@@ -52,9 +52,9 @@ def run_cmd(cmd, verbose = False, prog = None):
             if prog is not None:
                 prog.update()
 
-        #l = p.stderr.read()
+        l = p.stderr.read()
         _progress()._clear_stderr()
-        #if l: sys.stderr.write('{}\n'.format(l.strip()))
+        if l: sys.stderr.write('{}\n'.format(l.strip()))
 
     out, err = p.communicate()
 

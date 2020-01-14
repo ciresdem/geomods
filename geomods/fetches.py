@@ -31,6 +31,7 @@ import lxml.etree
 
 import zipfile
 import csv
+import json
 import threading
 
 try:
@@ -647,6 +648,9 @@ class charts:
         self._results = []
         self._chart_feats = []
 
+        self._want_proc = True
+
+        self.region = extent
         if extent is not None: 
             self._boundsGeom = bounds2geom(extent.region)
         else: self._status = -1
@@ -723,15 +727,91 @@ class charts:
 
             self._chart_feats = []
 
+    def proc_data(self, s_dir, s_fn, o_fn, s_t):
+        '''Process a fetched file to xyz and add it to its datalist.'''
+
+        status = 0
+        xyz_dir = os.path.join(self._outdir, s_dir, 'xyz')
+        
+        if not os.path.exists(xyz_dir):
+            os.makedirs(xyz_dir)
+
+        o_fn_bn = os.path.basename(o_fn).split('.')[0]
+        o_fn_p_xyz = os.path.join(self._outdir, s_dir, '{}.xyz'.format(o_fn_bn))
+        o_fn_xyz = os.path.join(xyz_dir, '{}_{}.xyz'.format(o_fn_bn, self.region.fn))
+
+        if s_t == 'ENCs':
+            ## extract ZIP
+            #try:
+            zip_ref = zipfile.ZipFile(o_fn)
+            zip_ref.extractall(os.path.join(s_dir, 'enc'))
+            zip_ref.close()
+            #sys.exit(1)
+            #except BadZipFile: pass
+
+            s_fn_000 = os.path.join(s_dir, 'enc/ENC_ROOT/', o_fn_bn, '{}.000'.format(o_fn_bn))
+
+            ds_000 = ogr.Open(s_fn_000)
+            layer_s = ds_000.GetLayerByName('SOUNDG')
+            if layer_s is not None:
+                o_xyz = open(o_fn_p_xyz, 'w')
+                for f in layer_s:
+                    g = json.loads(f.GetGeometryRef().ExportToJson())
+                    for xyz in g['coordinates']:
+                        xyz_l = '{} {} {}\n'.format(xyz[0], xyz[1], xyz[2]*-1)
+                        o_xyz.write(xyz_l)
+                        #o_xyz.write('{}\n'.format(' '.join(map(str, xyz))))
+                o_xyz.close()
+            else: status = -1
+
+            if os.path.exists(o_fn_p_xyz):
+                ## Blockmedian the data
+                out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
+                out, status = utils.run_cmd('gmt gmtselect {} {} -V > {}'.format(o_fn_p_xyz, self.region.gmt, o_fn_xyz), True, 'extracting data using gmt gmtselect')
+            else: status = -1
+
+        else: status = -1
+
+        if status == 0:
+            ## Move processed xyz file to xyz directory
+            os.remove(o_fn_p_xyz)
+
+            if os.stat(o_fn_xyz).st_size == 0:
+                os.remove(o_fn_xyz)
+            else:
+                ## Add xyz file to datalist
+                sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_t)))
+                sdatalist._append_datafile('{}'.format(os.path.basename(o_fn_xyz)), 168, 1)
+                sdatalist._reset()
+
+                ## Generate .inf file
+                out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_t))), False, None)
+
+        os.remove(o_fn)
+
+
     def print_results(self):
         for row in self._results:
             print(row)
 
     def fetch_results(self):
-        try:
-            for row in self._results:
-                fetch_file(row, os.path.join(self._outdir, os.path.basename(row)))
-        except: self._status = -1
+        #try:
+        for row in self._results:
+            ## Parse the result row
+
+            fetch_file(row, os.path.join(self._outdir, os.path.basename(row)))
+                    
+            ## Process the data if wanted
+            if self._want_proc:
+                outf = os.path.join(self._outdir, os.path.basename(row))
+                surv_dir = self._outdir
+                surv_fn = os.path.basename(outf)
+                surv_t = row.split('/')[-2]
+                
+                t = threading.Thread(target = self.proc_data, args = (surv_dir, surv_fn, outf, surv_t))
+                t.start()
+                #self.proc_data(surv_dir, surv_fn, outf, 'ENC')
+        #except: self._status = -1
 
 ## =============================================================================
 ##
