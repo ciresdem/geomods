@@ -505,7 +505,7 @@ class dem:
 
                     if len(dl) < 8: 
                         o_v_fields = [this_dem.oname, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
-                    eles: o_v_fields = [this_dem.oname, dl[3], int(dl[4]), dl[5], dl[6], dl[7], dl[8], dl[9].strip()]
+                    else: o_v_fields = [this_dem.oname, dl[3], int(dl[4]), dl[5], dl[6], dl[7], dl[8], dl[9].strip()]
                     
                     ## GDAL
                     if self.verbose:
