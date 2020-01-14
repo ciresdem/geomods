@@ -28,15 +28,11 @@ import os
 import sys
 
 import gdal
-from geomods import gdalfun
+import geomods
 
 _version = '0.0.4'
 
-_license = '''
-version %s
-    ''' %(_version)
-
-_usage = '''gdal_crop.py (%s): crop a gdal grid by the nodata value
+_usage = '''gdal_crop.py ({}): crop a gdal grid by the nodata value
 
 usage: gdal_crop.py [ file ]
 
@@ -49,7 +45,7 @@ usage: gdal_crop.py [ file ]
  Examples:
  %% gdal_crop.py input.tif
 
-CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>''' %(_version)
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version)
 
 if __name__ == '__main__':    
     elev = None
@@ -64,8 +60,7 @@ if __name__ == '__main__':
             sys.exit(1)
 
         elif arg == '-version' or arg == '--version':
-            print('gdal_crop.py v.%s' %(_version))
-            print(_license)
+            print('gdal_crop.py, version {}\n{}'.format(_version, geomods._license))
             sys.exit(1)
 
         elif elev is None:
@@ -86,7 +81,7 @@ if __name__ == '__main__':
     else:
         output_name=elev[:-4] + '_crop.tif'
 
-        out_array, out_config = gdalfun.crop(elev)
+        out_array, out_config = geomods.gdalfun.crop(elev)
         outsize = out_array.shape
 
         #Export Tif
@@ -95,4 +90,6 @@ if __name__ == '__main__':
         ods.SetProjection(out_config['proj'])
         ods.GetRasterBand(1).SetNoDataValue(out_config['ndv'])
         ods.GetRasterBand(1).WriteArray(out_array)
+
+        ods = None
 ### End

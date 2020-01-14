@@ -40,6 +40,8 @@ except ImportError:
 GDAL_OPTS = ["COMPRESS=LZW", "INTERLEAVE=PIXEL", "TILED=YES",\
         "SPARSE_OK=TRUE", "BIGTIFF=YES" ]
 
+_known_delims = [' ', ',', '\t', '/', ':']
+
 def _ogr_get_fields(src_ogr):
     schema = []
     source = ogr.Open(src_ogr)
@@ -163,10 +165,10 @@ def chunks(src_fn, n_chunk = 10):
 
             srcwin = (this_x_origin, this_y_origin, this_x_size, this_y_size)
 
-            this_geo_x_origin = gt[0] + this_x_origin * gt[1] + this_y_origin * gt[2]
-            this_geo_y_origin = gt[3] + this_x_origin * gt[4] + this_y_origin * gt[5]
+            #this_geo_x_origin = gt[0] + this_x_origin * gt[1] + this_y_origin * gt[2]
+            #this_geo_y_origin = gt[3] + this_x_origin * gt[4] + this_y_origin * gt[5]
 
-            #this_geo_x_origin, this_geo_y_origin = _pixel2geo(this_x_origin, this_y_origin, gt)
+            this_geo_x_origin, this_geo_y_origin = _pixel2geo(this_x_origin, this_y_origin, gt)
 
             dst_gt = [this_geo_x_origin, gt[1], 0.0, this_geo_y_origin, 0.0, gt[5]]
 
@@ -387,5 +389,146 @@ def query(src_xyz, src_grd, out_form):
 
     dsband = ds = None
     return(np.array(xyzl, dtype = dsdt))
+
+def xyz2gdal(src_xyz, dst_gdal, extent, cellsize,
+             dst_format='GTiff', zvalue='d', xloc=0, yloc=1, zloc=2, 
+             delim=' ', verbose=False, overwrite=False):
+    '''Create a GDAL supported grid from xyz data'''
+
+    dst_nodata=-9999
+    
+    ## Set the rows and columns for the output grid
+    ysize = extent[3] - extent[2]
+    xsize = extent[1] - extent[0]
+    xcount = int(xsize / cellsize) + 1
+    ycount = int(ysize / cellsize) + 1
+
+    ## Create the output GDAL Raster
+    if dst_format == "AAIGrid":
+        driver = gdal.GetDriverByName("MEM")
+    else: driver = gdal.GetDriverByName(dst_format)
+
+    dst_ds = driver.Create(dst_gdal, xcount, ycount, 1, gdal.GDT_Float32)
+    if dst_ds is None: sys.exit("geomods: failed to open output file...%s" %(outfile))
+
+    dst_gt = (extent[0], cellsize,0, extent[3], 0, (cellsize * -1.))
+    dst_ds.SetGeoTransform(dst_gt)
+
+    dst_band = dst_ds.GetRasterBand(1)
+    dst_band.SetNoDataValue(dst_nodata)
+
+    if zvalue == 'z': sumArray = np.zeros( (ycount, xcount) )
+    ptArray = np.zeros( (ycount, xcount) )
+    
+    pointnum = 0
+    for xyz in src_xyz:
+        if pointnum == 0:
+            for i in _known_delims:
+                try:
+                    this_xyz = xyz.split(i)
+                    x = float(this_xyz[int(xloc)].strip())
+                    y = float(this_xyz[int(yloc)].strip())
+                    z = float(this_xyz[int(zloc)].strip())
+                    delim = i
+                    break
+                except: pass
+        else:
+            this_xyz = xyz.split(delim)
+            x = float(this_xyz[int(xloc)].strip())
+            y = float(this_xyz[int(yloc)].strip())
+            z = float(this_xyz[int(zloc)].strip())
+
+        ## Determine which cell to apply this count
+        if x > extent[0] and x < extent[1]:
+            if y > extent[2] and y < extent[3]:
+                xpos, ypos = _geo2pixel(x, y, dst_gt)
+
+                if zvalue == 'z': sumArray[ypos, xpos] += float(z)
+                if zvalue == 'd' or zvalue == 'z': 
+                    ptArray[ypos, xpos] += 1
+                else: ptArray[ypos, xpos] = 1
+        pointnum += 1
+        #sys.stderr.write('{}\b'.format(pointnum))
+
+    if zvalue == 'z':
+        outarray = sumArray / ptArray
+    elif zvalue == 'd': outarray = ptArray
+    else: outarray = ptArray
+
+    outarray[np.isnan(outarray)] = dst_nodata
+
+    dst_band.WriteArray(outarray)
+
+    if dst_format == "AAIGrid":
+        driver = gdal.GetDriverByName(dst_format)
+        dst_ds_aai = driver.CreateCopy(dst_gdal, dst_ds)
+    
+    dst_ds = dst_ds_aai = None
+
+def xyz_gmask(src_xyz, dst_gdal, extent, cellsize,
+              dst_format='GTiff', xloc=0, yloc=1, zloc=2, 
+              delim=' ', verbose=False, overwrite=False):
+    '''Create a num grid'''
+
+    dst_nodata=-9999
+    
+    ## Set the rows and columns for the output grid
+    ysize = extent[3] - extent[2]
+    xsize = extent[1] - extent[0]
+    xcount = int(xsize / cellsize) + 1
+    ycount = int(ysize / cellsize) + 1
+
+    ## Create the output GDAL Raster
+    if dst_format == "AAIGrid":
+        driver = gdal.GetDriverByName("MEM")
+    else: driver = gdal.GetDriverByName(dst_format)
+
+    dst_ds = driver.Create(dst_gdal, xcount, ycount, 1, gdal.GDT_Int32)
+    if dst_ds is None: sys.exit("geomods: failed to open output file...%s" %(outfile))
+
+    dst_gt = (extent[0], cellsize,0, extent[3], 0, (cellsize * -1.))
+    dst_ds.SetGeoTransform(dst_gt)
+
+    dst_band = dst_ds.GetRasterBand(1)
+    dst_band.SetNoDataValue(dst_nodata)
+
+    ptArray = np.zeros( (ycount, xcount) )
+
+    if verbose:
+        print('geomods: processing xyz data...')
+
+    pointnum = 0
+    for xyz in src_xyz:
+        if pointnum == 0:
+            for i in _known_delims:
+                try:
+                    this_xyz = xyz.split(i)
+                    x = float(this_xyz[xloc].strip())
+                    y = float(this_xyz[yloc].strip())
+                    delim = i
+                    pointnum = 1
+                    break
+                except: pass
+        else:
+            this_xyz = xyz.split(delim)
+            x = float(this_xyz[xloc].strip())
+            y = float(this_xyz[yloc].strip())
+
+        if x > extent[0] and x < extent[1]:
+            if y > extent[2] and y < extent[3]:
+                xpos, ypos = _geo2pixel(x, y, dst_gt)
+                ptArray[ypos, xpos] = 1
+    if verbose:
+        sys.stderr.write('ok\n')
+
+    ptArray[np.isnan(ptArray)] = dst_nodata
+
+    dst_band.WriteArray(ptArray)
+
+    if dst_format == "AAIGrid":
+        driver = gdal.GetDriverByName(dst_format)
+        dst_ds_aai = driver.CreateCopy(dst_gdal, dst_ds)
+    
+    dst_ds = dst_ds_aai = dst_band = ptArray = None
 
 ### End

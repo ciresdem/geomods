@@ -56,7 +56,7 @@ except ImportError:
 import regions
 import datalists
 import gdalfun
-import clis
+import utils
 
 _version = '0.1.7'
 
@@ -246,8 +246,10 @@ class dc:
         gmt1 = ogr.Open(self._ref_vector)
         layer = gmt1.GetLayer(0)
 
-        for filt in [filters]:
-            layer.SetAttributeFilter('%s' %(filt))
+        if len(filters) > 0:
+            for filt in [filters]:
+                layer.SetAttributeFilter('{}'.format(filt))
+
         for feature1 in layer:
             if not self.stop():
                 geom = feature1.GetGeometryRef()
@@ -391,7 +393,6 @@ class dc:
         uses `las2txt` from lastools for las/laz files and
         gdal (geomods.gdalfun) for raster files.'''
 
-        pb = clis.prog_bar('processing {} to XYZ'.format(s_fn))
         status = 0
         xyz_dir = os.path.join(self._outdir, s_dir, 'xyz')
         
@@ -404,19 +405,17 @@ class dc:
             
         if s_t == 'las' or s_t == 'laz':
             ## Convert to XYZ
-            out, status = clis.run_cmd('las2txt -parse xyz -keep_class 2 29 -i {}'.format(o_fn), False, False)
+            out, status = utils.run_cmd('las2txt -verbose -parse xyz -keep_class 2 29 -i {}'.format(o_fn), True, 'converting LAS data using las2txt -keep_class 2 29')
             if status == 0:
                 o_fn_bn = os.path.basename(o_fn).split('.')[0]
 
                 o_fn_txt = os.path.join(self._outdir, s_dir, '{}.txt'.format(o_fn_bn))
 
                 ## Blockmedian the data
-                out, status = clis.run_cmd('gmt gmtset IO_COL_SEPARATOR=space')
-                out, status = clis.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}'.format(o_fn_txt, self.region.gmt, o_fn_p_xyz))
+                out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
+                out, status = utils.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}'.format(o_fn_txt, self.region.gmt, o_fn_p_xyz), True, 'blocking data using gmt blockmeidan')
 
                 os.remove(o_fn_txt)
-            else:
-                print('...fail')
 
         elif s_t == 'tif' or s_t == 'img':
             ## Convert to XYZ (chunk first?)
@@ -428,14 +427,13 @@ class dc:
         
             ## Add xyz file to datalist
             sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_dir)))
-            sdatalist._append_datafile('%s' %(os.path.basename(o_fn_xyz)), 168, 1)
+            sdatalist._append_datafile('{}'.format(os.path.basename(o_fn_xyz)), 168, 1)
             sdatalist._reset()
 
             ## Generate .inf file
-            out, status = clis.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_dir))))
+            out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_dir))), True, 'generating inf file for blocked xyz data')
 
             os.remove(o_fn)
-        pb._end(status)
 
     def print_results(self):
         '''print the fetch results as a list of urls suitable 
@@ -464,8 +462,6 @@ class dc:
                     outf = os.path.join(self._outdir, surv_dir, surv_fn)
 
                     ## Fetch and Log
-                    #sys.stderr.write('\rfetches: downlaoding {} to {}'.format(surv_fn, surv_dir))
-                    pb = clis.prog_bar('fetching {}'.format(row))
                     self._status = fetch_file(row, outf)
                     
                     if self._status == 0 and os.path.exists(outf):
@@ -476,9 +472,7 @@ class dc:
                         elif gdal.Open(outf, gdal.GA_ReadOnly):
                             self._status = 0
                         else: self._status = -1
-                        
-                        #sys.stderr.write('\rfetches: downlaoding {} to {}...ok\n'.format(surv_fn, surv_dir).ljust(79))
-                        pb._end(self._status)
+
                         self._log_survey(row)
                     
                         ## Process the data if wanted

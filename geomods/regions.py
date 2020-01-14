@@ -1,6 +1,6 @@
 ### regions.py
 ##
-## Copyright (c) 2012 - 2019 Matthew Love <matthew.love@colorado.edu>
+## Copyright (c) 2012 - 2020 Matthew Love <matthew.love@colorado.edu>
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -62,9 +62,8 @@ class region:
         else: ns = 'n'
         if self.east < 0: ew = 'w'
         else: ew = 'e'
-        self.fn = ('{}{:4}x{:2}_{}{:3}x{:2}\
-        '.format(ns, abs(int(self.north)), abs(int(self.north * 100) % 100), 
-                 ew, abs(int(self.east)), abs(int(self.east * 100) % 100)))
+        self.fn = ('{}{:04d}x{:02d}_{}{:03d}x{:02d}'.format(ns, abs(int(self.north)), abs(int(self.north * 100) % 100), 
+                                                            ew, abs(int(self.east)), abs(int(self.east * 100) % 100)))
 
     ## Process Region
     def buffer(self, bv, percentage = False):

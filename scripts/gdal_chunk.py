@@ -27,15 +27,11 @@
 import os
 import sys
 
-from geomods import gdalfun
+import geomods
 
 _version = '0.0.2'
 
-_license = '''
-version %s
-    ''' %(_version)
-
-_usage = '''gdal_chunk.py (%s): chunk a gdal grid
+_usage = '''gdal_chunk.py ({}): chunk a gdal grid
 
 usage: gdal_chunk.py [ file ]
 
@@ -51,7 +47,7 @@ usage: gdal_chunk.py [ file ]
  Examples:
  %% gdal_chunk.py input.tif --chunk 1000
 
-CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>''' %(_version)
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version)
 
 if __name__ == '__main__':
     src_fn = None
@@ -72,8 +68,7 @@ if __name__ == '__main__':
             sys.exit(1)
 
         elif arg == '-version' or arg == '--version':
-            print('gdal_chunk.py v.%s' %(_version))
-            print(_license)
+            print('gdal_chunk.py, version {}\n{}'.format(_version, geomods._license))
             sys.exit(1)
 
         elif src_fn is None:
@@ -90,7 +85,7 @@ if __name__ == '__main__':
         sys.exit(1)
 
     if not os.path.exists(src_fn):
-        print('Error: %s is not a valid file' %(src_fn))
-    else: gdalfun.chunks(src_fn, chunk_value)
+        print('Error: {} is not a valid file'.format(src_fn))
+    else: geomods.gdalfun.chunks(src_fn, chunk_value)
 
 ### End

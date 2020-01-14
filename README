@@ -29,3 +29,25 @@ Scripts:
  - fetch.py - Fetch elevation data from various sources.
  - gdal_chunk.py - Split a gdal grid into chunks.
  - gdal_crop.py - Crop a gdal grid by it's nodata value.
+
+Examples:
+
+ - fetch and process lidar data from NOAA's Digital Coast for all the regions found in tiles.shp 
+
+ % fetch.py dc -R tiles.shp -p
+
+ - list all the NOS hydrographic data in the given region
+
+ % fetch.py nos -R -90/-89/29/30 -l > nos.urls
+
+ - generate a DEM for each region found in tiles.shp using GMT
+
+ % cudem.py gmt-surface -R tiles.shp -E .00000925925 -I input_data.datalist --verbose
+
+ - generate spatial-metadata from the datalist input_data.datalist
+ 
+ % cudem.py spatial-metadata -R tiles.shp -E .00000925925 -I input_data.datalist --verbose
+
+ - split grid file tmp.tif into chunks of 1000x1000 cells:
+ 
+ % gdal_chunk.py tmp.tif -c 1000

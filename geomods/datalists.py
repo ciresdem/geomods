@@ -1,6 +1,6 @@
 ### datalists.py
 ##
-## Copyright (c) 2012 - 2019 Matthew Love <matthew.love@colorado.edu>
+## Copyright (c) 2012 - 2020 Matthew Love <matthew.love@colorado.edu>
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -54,7 +54,7 @@ class datalist:
         self.region = iregion
         self._path = idatalist
         self._path_dirname = os.path.dirname(self._path)
-        self._path_basename = os.epath.basename(self._path)
+        self._path_basename = os.path.basename(self._path)
         self._reset()
 
     ## Reload the datalist
@@ -140,5 +140,13 @@ class datalist:
                 with open(fn) as infile:
                     for line in infile:
                         outfile.write(line)
+
+    ## Catenate the xyz data from the datalist to a generator
+    ## usage: for line in self._caty(): proc(line)
+    def _caty(self):
+        for fn in self.datafiles:
+            with open(fn) as infile:
+                for line in infile:
+                    yield(line)
 
 ### End
