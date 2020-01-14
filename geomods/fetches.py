@@ -406,7 +406,7 @@ class dc:
             
         if s_t == 'las' or s_t == 'laz':
             ## Convert to XYZ
-            out, status = utils.run_cmd('las2txt -verbose -parse xyz -keep_class 2 29 -i {}'.format(o_fn), True, 'converting LAS data using las2txt -keep_class 2 29')
+            out, status = utils.run_cmd('las2txt -verbose -parse xyz -keep_class 2 29 -i {}'.format(o_fn), False, None)
             if status == 0:
                 o_fn_bn = os.path.basename(o_fn).split('.')[0]
 
@@ -414,7 +414,7 @@ class dc:
 
                 ## Blockmedian the data
                 out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
-                out, status = utils.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}'.format(o_fn_txt, self.region.gmt, o_fn_p_xyz), True, 'blocking data using gmt blockmeidan')
+                out, status = utils.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}'.format(o_fn_txt, self.region.gmt, o_fn_p_xyz), False, None)
 
                 os.remove(o_fn_txt)
 
@@ -432,7 +432,7 @@ class dc:
             sdatalist._reset()
 
             ## Generate .inf file
-            out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_dir))), True, 'generating inf file for blocked xyz data')
+            out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_dir))), False, None)
 
             os.remove(o_fn)
 
