@@ -39,31 +39,73 @@ cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in
 def run_cmd(cmd, verbose = False, prog = None):
     '''Run a command with or without a progress bar.'''
 
+    want_poll = lambda a, b: a or b is not None
+
     if prog is not None:
         prog = _progress('geomods: `{}`'.format(prog))
     
     p = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)
     
-    if verbose:
+    if want_poll(verbose, prog):
         while p.poll() is None:
-            l = p.stderr.readline()
+            if verbose:
+                l = p.stderr.readline()
+                _progress()._clear_stderr()
+                if l: sys.stderr.write('{}\n'.format(l.strip()))
+            elif prog is not None:
+                prog.update()
+                time.sleep(3)
+
+        if verbose:
+            l = p.stderr.read()
             _progress()._clear_stderr()
             if l: sys.stderr.write('{}\n'.format(l.strip()))
-            if prog is not None:
-                prog.update()
-
-        l = p.stderr.read()
-        _progress()._clear_stderr()
-        if l: sys.stderr.write('{}\n'.format(l.strip()))
 
     out, err = p.communicate()
 
     if verbose:
         p.stderr.close()
-        if prog is not None:
-            prog.end(p.returncode)
+
+    if prog is not None:
+        prog.end(p.returncode)
 
     return out, p.returncode
+
+class vdatum:
+    def __init__(self, vdatum_path = None):
+        if vdatum_path is None:
+            self.vdatum_paths = self._find_vdatum()
+        else: self.vdatum_path = [vdatum_path]
+
+        self.ivert = 'navd88:m:height'
+        self.overt = 'mhw:m:height'
+        self.ihorz = 'NAD83_2011'
+        self.ohorz = 'NAD83_2011'
+
+        self.region = '3'
+        self.ft = 'txt'
+        self.fd = 'space'
+
+        self.ds_dir = 'result'
+
+    def _find_vdatum(self):
+        results = []
+        status = 0
+        pb = _progress('geomods: attempting to locate a vdatum')
+        for root, dirs, files in os.walk('/'):
+            if 'vdatum.jar' in files:
+                results.append(os.path.join(root, 'vdatum.jar'))
+        if len(results) <= 0:
+            status = -1
+        pb.opm = '{}: {}'.format(pb.opm, results[0])
+        pb.end(status)
+        return results
+
+    def run_vdatum(self, src_fn):
+        vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},0,1,2:{}:{} region:{}'.format(self.ihorz, self.ivert, self.ohorz, self.overt, self.fd, src_fn, self.ds_dir, self.region)
+        run_cmd('java -jar {} {}'.format(self.vdatum_paths[0], vdc), False, 'transforming data with vdatum')
+
+#run_vdatum = lambda c: run_cmd('java -jar {} {}'.format(find_vdatum()[0], c), False, c)
 
 class _progress:
     def __init__(self, message=''):

@@ -650,6 +650,9 @@ class charts:
 
         self._want_proc = True
 
+        if self._want_proc:
+            self.this_vd = utils.vdatum()
+
         self.region = extent
         if extent is not None: 
             self._boundsGeom = bounds2geom(extent.region)
@@ -738,6 +741,7 @@ class charts:
 
         o_fn_bn = os.path.basename(o_fn).split('.')[0]
         o_fn_p_xyz = os.path.join(self._outdir, s_dir, '{}.xyz'.format(o_fn_bn))
+        o_fn_tmp = os.path.join(self._outdir, s_dir, '{}_tmp.xyz'.format(o_fn_bn.lower()))
         o_fn_xyz = os.path.join(xyz_dir, '{}_{}.xyz'.format(o_fn_bn, self.region.fn))
 
         if s_t == 'ENCs':
@@ -767,12 +771,24 @@ class charts:
             if os.path.exists(o_fn_p_xyz):
                 ## Blockmedian the data
                 out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
-                out, status = utils.run_cmd('gmt gmtselect {} {} -V > {}'.format(o_fn_p_xyz, self.region.gmt, o_fn_xyz), True, 'extracting data using gmt gmtselect')
+                out, status = utils.run_cmd('gmt gmtselect {} {} -V > {}'.format(o_fn_p_xyz, self.region.gmt, o_fn_tmp), False, 'extracting data using gmt gmtselect')
+                if os.stat(o_fn_tmp).st_size == 0:
+                    status = -1
             else: status = -1
 
         else: status = -1
 
         if status == 0:
+            ## transform process xyz file to NAVD88 using vdatum
+
+            self.this_vd.ivert = 'mllw'
+            self.this_vd.overt = 'navd88'
+            self.this_vd.ds_dir = os.path.relpath(os.path.join(xyz_dir, 'result'))
+
+            self.this_vd.run_vdatum(os.path.relpath(o_fn_tmp))
+
+            os.rename(os.path.join(xyz_dir, 'result', os.path.basename(o_fn_tmp)), o_fn_xyz)
+            
             ## Move processed xyz file to xyz directory
             os.remove(o_fn_p_xyz)
 
