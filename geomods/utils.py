@@ -75,7 +75,7 @@ class vdatum:
     def __init__(self, vdatum_path = None):
         if vdatum_path is None:
             self.vdatum_paths = self._find_vdatum()
-        else: self.vdatum_path = [vdatum_path]
+        else: self.vdatum_paths = [vdatum_path]
 
         self.ivert = 'navd88:m:height'
         self.overt = 'mhw:m:height'

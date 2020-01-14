@@ -780,14 +780,15 @@ class charts:
 
         if status == 0:
             ## transform process xyz file to NAVD88 using vdatum
+            if len(this_vd.vdatum_paths) > 0:
+                self.this_vd.ivert = 'mllw'
+                self.this_vd.overt = 'navd88'
+                self.this_vd.ds_dir = os.path.relpath(os.path.join(xyz_dir, 'result'))
 
-            self.this_vd.ivert = 'mllw'
-            self.this_vd.overt = 'navd88'
-            self.this_vd.ds_dir = os.path.relpath(os.path.join(xyz_dir, 'result'))
+                self.this_vd.run_vdatum(os.path.relpath(o_fn_tmp))
 
-            self.this_vd.run_vdatum(os.path.relpath(o_fn_tmp))
-
-            os.rename(os.path.join(xyz_dir, 'result', os.path.basename(o_fn_tmp)), o_fn_xyz)
+                os.rename(os.path.join(xyz_dir, 'result', os.path.basename(o_fn_tmp)), o_fn_xyz)
+            else: os.rename(o_fn_tmp, o_fn_xyz)
             
             ## Move processed xyz file to xyz directory
             os.remove(o_fn_p_xyz)
