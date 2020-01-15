@@ -43,6 +43,8 @@ GDAL_OPTS = ["COMPRESS=LZW", "INTERLEAVE=PIXEL", "TILED=YES",\
 _known_delims = [' ', ',', '\t', '/', ':']
 
 def _ogr_get_fields(src_ogr):
+    '''return all fields in src_ogr'''
+
     schema = []
     source = ogr.Open(src_ogr)
     layer = source.GetLayer()
@@ -110,7 +112,10 @@ def _invert_gt(geoTransform):
 
     invDet = 1.0 / det
 
-    # compute adjoint and divide by determinate
+    ## ==============================================
+    ## compute adjoint and divide by determinate
+    ## ==============================================
+
     outGeoTransform = [0, 0, 0, 0, 0, 0]
     outGeoTransform[1] = geoTransform[5] * invDet
     outGeoTransform[4] = -geoTransform[4] * invDet
@@ -120,6 +125,12 @@ def _invert_gt(geoTransform):
     outGeoTransform[3] = (-geoTransform[1] * geoTransform[3] + geoTransform[0] * geoTransform[4]) * invDet
 
     return(outGeoTransform)
+
+## =============================================================================
+##
+## GDAL Functions for external use
+##
+## =============================================================================
 
 def chunks(src_fn, n_chunk = 10):
     '''split `src_fn` GDAL file into chunks with `n_chunk` cells squared.'''
@@ -145,6 +156,10 @@ def chunks(src_fn, n_chunk = 10):
     i_chunk = 0
     x_i_chunk = 0
     x_chunk = n_chunk
+
+    ## ==============================================
+    ## parse through the grid and extract chunks
+    ## ==============================================
 
     while True:
         y_chunk = n_chunk
@@ -314,7 +329,10 @@ def null(outfile, extent, cellsize, nodata = -9999, outformat = 'GTiff', verbose
     xcount = int(xsize / cellsize) + 1
     ycount = int(ysize / cellsize) + 1
 
-    # Create the output GDAL Raster
+    ## ==============================================
+    ## Create the output GDAL Raster
+    ## ==============================================
+
     if outformat == "AAIGrid":
         driver = gdal.GetDriverByName("MEM")
     else: driver = gdal.GetDriverByName(outformat)
@@ -331,18 +349,27 @@ def null(outfile, extent, cellsize, nodata = -9999, outformat = 'GTiff', verbose
 
     dst_band.SetNoDataValue(nodata)
 
-    # Create a Numpy Array filled with 0's
+    ## ==============================================
+    ## Create a Numpy Array filled with 0's
+    ## ==============================================
+
     nullArray = np.zeros((ycount, xcount))
     nullArray[nullArray == 0] = nodata
 
-    # Write Numpy Array to the GDAL Raster Band
+    ## ==============================================
+    ## Write Numpy Array to the GDAL Raster Band
+    ## ==============================================
+
     dst_band.WriteArray(nullArray)
 
     if outformat == "AAIGrid":
         driver = gdal.GetDriverByName(outformat)
         dst_ds_aai = driver.CreateCopy(outfile, dst_ds)
     
-    # Clear the GDAL Raster(s)x
+    ## ==============================================
+    ## Clear the GDAL Raster(s)x
+    ## ==============================================
+
     dst_ds = dst_ds_aai = None
 
 def proximity(self, src_fn, dst_fn):
@@ -378,7 +405,10 @@ def query(src_xyz, src_grd, out_form):
 
     xyzl = []
 
-    # Process the src grid file
+    ## ==============================================
+    ## Process the src grid file
+    ## ==============================================
+
     ds = gdal.Open(src_grd)
     dsgeot = ds.GetGeoTransform()
     dsband = ds.GetRasterBand(1)
@@ -386,14 +416,20 @@ def query(src_xyz, src_grd, out_form):
 
     dsdt = gdal.GetDataTypeName(dsband.DataType)
 
-    # Load the src grid into a numpy array
+    ## ==============================================
+    ## Load the src grid into a numpy array
+    ## ==============================================
+
     tgrid = dsband.ReadAsArray()
 
     cellsize = [float(dsgeot[1]), float(dsgeot[5])]
     xextent = float(dsgeot[0])
     yextent = float(dsgeot[3])
-        
-    # Process the src xyz data
+     
+    ## ==============================================   
+    ## Process the src xyz data
+    ## ==============================================
+
     for xyz in src_xyz:
         x = xyz[0]
         y = xyz[1]
@@ -401,11 +437,17 @@ def query(src_xyz, src_grd, out_form):
             z = xyz[2]
         except: z = dsnodata
 
-        # Continue if values are reasonable.
+        ## ==============================================
+        ## Continue if values are reasonable.
+        ## ==============================================
+
         if x > xextent and y < yextent:
             xpos,ypos = _geo2pixel(x, y, dsgeot)
 
-            # Locate the grid cell and get it's value
+            ## ==============================================
+            ## Locate the grid cell and get it's value
+            ## ==============================================
+
             try: 
                 g = tgrid[ypos,xpos]
             except: g = dsnodata
@@ -426,22 +468,45 @@ def query(src_xyz, src_grd, out_form):
             xyzl.append(np.array(outs, dtype = dsdt))
 
     dsband = ds = None
+
     return(np.array(xyzl, dtype = dsdt))
 
+def transform(src_gdal):
+    ##Getting spatial reference of input raster
+    srs = osr.SpatialReference()
+    srs.ImportFromWkt(projection)
+
+    # WGS84 projection reference
+    OSR_WGS84_REF = osr.SpatialReference()
+    OSR_WGS84_REF.ImportFromEPSG(4326)
+    
+    # OSR transformation
+    wgs84_to_image_trasformation = osr.CoordinateTransformation(OSR_WGS84_REF, srs)
+    
+    #Create geometry. Finally:
+        
+    wkt_geom.Transform(wgs84_to_image_trasformation)
+        
 def xyz2gdal(src_xyz, dst_gdal, extent, cellsize,
              dst_format='GTiff', zvalue='d', xloc=0, yloc=1, zloc=2, 
              delim=' ', verbose=False, overwrite=False):
     '''Create a GDAL supported grid from xyz data'''
 
     dst_nodata=-9999
-    
+
+    ## ==============================================    
     ## Set the rows and columns for the output grid
+    ## ==============================================
+
     ysize = extent[3] - extent[2]
     xsize = extent[1] - extent[0]
     xcount = int(xsize / cellsize) + 1
     ycount = int(ysize / cellsize) + 1
 
+    ## ==============================================
     ## Create the output GDAL Raster
+    ## ==============================================
+
     if dst_format == "AAIGrid":
         driver = gdal.GetDriverByName("MEM")
     else: driver = gdal.GetDriverByName(dst_format)
@@ -476,7 +541,10 @@ def xyz2gdal(src_xyz, dst_gdal, extent, cellsize,
             y = float(this_xyz[int(yloc)].strip())
             z = float(this_xyz[int(zloc)].strip())
 
+        ## ==============================================
         ## Determine which cell to apply this count
+        ## ==============================================
+
         if x > extent[0] and x < extent[1]:
             if y > extent[2] and y < extent[3]:
                 xpos, ypos = _geo2pixel(x, y, dst_gt)
@@ -486,12 +554,15 @@ def xyz2gdal(src_xyz, dst_gdal, extent, cellsize,
                     ptArray[ypos, xpos] += 1
                 else: ptArray[ypos, xpos] = 1
         pointnum += 1
-        #sys.stderr.write('{}\b'.format(pointnum))
 
     if zvalue == 'z':
         outarray = sumArray / ptArray
     elif zvalue == 'd': outarray = ptArray
     else: outarray = ptArray
+
+    ## ==============================================
+    ## write the output grid
+    ## ==============================================
 
     outarray[np.isnan(outarray)] = dst_nodata
 
@@ -506,17 +577,23 @@ def xyz2gdal(src_xyz, dst_gdal, extent, cellsize,
 def xyz_gmask(src_xyz, dst_gdal, extent, cellsize,
               dst_format='GTiff', xloc=0, yloc=1, zloc=2, 
               delim=' ', verbose=False, overwrite=False):
-    '''Create a num grid'''
+    '''Create a num grid mask of xyz data'''
 
     dst_nodata=-9999
     
+    ## ==============================================
     ## Set the rows and columns for the output grid
+    ## ==============================================
+
     ysize = extent[3] - extent[2]
     xsize = extent[1] - extent[0]
     xcount = int(xsize / cellsize) + 1
     ycount = int(ysize / cellsize) + 1
 
+    ## ==============================================
     ## Create the output GDAL Raster
+    ## ==============================================
+
     if dst_format == "AAIGrid":
         driver = gdal.GetDriverByName("MEM")
     else: driver = gdal.GetDriverByName(dst_format)
@@ -531,6 +608,10 @@ def xyz_gmask(src_xyz, dst_gdal, extent, cellsize,
     dst_band.SetNoDataValue(dst_nodata)
 
     ptArray = np.zeros( (ycount, xcount) )
+
+    ## ==============================================
+    ## Process the XYZ data
+    ## ==============================================
 
     if verbose:
         print('geomods: processing xyz data...')
@@ -558,6 +639,10 @@ def xyz_gmask(src_xyz, dst_gdal, extent, cellsize,
                 ptArray[ypos, xpos] = 1
     if verbose:
         sys.stderr.write('ok\n')
+
+    ## ==============================================
+    ## Write out the grid    
+    ## ==============================================
 
     ptArray[np.isnan(ptArray)] = dst_nodata
 

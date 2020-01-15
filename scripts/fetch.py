@@ -39,7 +39,14 @@ except ImportError:
 
 import geomods
 
-_version = '0.1.1'
+_version = '0.1.2'
+
+## =============================================================================
+##
+## Fetch Modules
+## module-name: [ module-class, module-description ]
+##
+## =============================================================================
 
 fetch_infos = { 
     'dc':[lambda x, c: geomods.fetches.dc(x, callback = c), 'digital coast'],
@@ -92,6 +99,7 @@ CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_ver
 ## Run fetch from command-line
 ##
 ## =============================================================================
+
 def main():
     extent = None
     poly = False
@@ -105,7 +113,10 @@ def main():
     these_regions = []
     status = 0
 
+    ## ==============================================
     ## process Command-Line
+    ## ==============================================
+
     while i < len(sys.argv):
         arg = sys.argv[i]
 
@@ -144,17 +155,18 @@ def main():
         print(_usage)
         sys.exit(1)
 
-    ## if no fetch source is specified, fetch from them all.
     if len(fetch_class) == 0:
         fetch_class = fetch_infos.keys()
 
-    ## check platform
+    ## ==============================================
+    ## check platform and installed software
+    ## ==============================================
+
     tw = geomods.utils._progress('checking platform')
     platform = sys.platform
     tw.opm = 'checking platform - {}'.format(platform)
     tw.end(status)
 
-    ## check for installed software
     tw = geomods.utils._progress('checking for GMT')
     if geomods.utils.cmd_exists('gmt'): 
         gmt_vers, status = geomods.utils.run_cmd('gmt --version')
@@ -172,8 +184,6 @@ def main():
     tw = geomods.utils._progress('checking for LASTools')
     if geomods.utils.cmd_exists('las2txt'): 
         status = 0
-        #last_vers, status = geomods.clis.run_cmd('las2txt -version')
-        #tw.opm = 'checking for LASTools - %s' %(last_vers)
     else: status = -1
     tw.end(status)
 
@@ -192,15 +202,10 @@ def main():
     else: status = -1
     tw.end(status)
 
-    # ## print the available fields for filtering
-    # if len(f) > 0 and f[0] == '?':
-    #     for fc in fetch_class:
-    #         fl = fetch_infos[fc][0](None, None)
-    #         if fl._ref_vector is not None:
-    #             print('%s: %s' %(fc, geomods.gdalfun._ogr_get_fields(fl._ref_vector)))
-    #     sys.exit(1)
-
+    ## ==============================================
     ## update the reference vector
+    ## ==============================================
+
     if want_update: 
         for fc in fetch_class:
             pb = geomods.utils._progress('updating {} reference vector'.format(fc))
@@ -218,11 +223,14 @@ def main():
             pb.end(status)
         sys.exit(status)
 
+    ## ==============================================
+    ## process input region(s)
+    ## ==============================================
+
     if extent is None:
         print(_usage)
         sys.exit(1)
 
-    ## process input region(s)
     tw = geomods.utils._progress('processing region(s)')
     try: 
         these_regions = [geomods.regions.region(extent)]
@@ -244,10 +252,18 @@ def main():
     tw.opm = 'processing {} region(s)'.format(len(these_regions))
     tw.end(status)
 
-    ## fetch some data
+    ## ==============================================
+    ## fetch some data in each of the input regions
+    ## ==============================================
+
     for rn, this_region in enumerate(these_regions):
         if not stop_threads:
             for fc in fetch_class:
+
+                ## ==============================================
+                ## Initialize the Fetch Module
+                ## ==============================================
+
                 pb = geomods.utils._progress('initializing {} for region ({}/{}): {}\
                 '.format(fc, rn + 1, len(these_regions), this_region.region_string))
 
@@ -266,6 +282,10 @@ def main():
                     except (KeyboardInterrupt, SystemExit): stop_threads = True
 
                 pb.end(fl._status)
+
+                ## ==============================================
+                ## Run the Fetch Module
+                ## ==============================================
 
                 if fl._status == 0:
                     if want_list: 

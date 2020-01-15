@@ -57,6 +57,13 @@ import geomods
 
 _version = '0.1.3'
 
+## =============================================================================
+##
+## DEM Modules
+## { mod-name: [module-function, module-description, module-function arguments]}
+##
+## =============================================================================
+
 _dem_mods = { 'mbgrid': [lambda x: x.mbgrid, 'generate a DEM with mbgrid', 'None'], 
               'gmt-surface': [lambda x: x.surface, 'generate a DEM with GMT', 'None'],
               'spatial-metadata': [lambda x: x.spatial_metadata, 'generate spatial-metadata', 'None'],
@@ -150,8 +157,12 @@ def dem_interpolation_uncertainty(dem_surface):
     
     for sub_region in this_region.split(4):
         sub_count += 1
-            
-        ## Extract XYZ data for sub-region and randomly sample
+
+        ## ==============================================            
+        ## Extract XYZ data for sub-region and 
+        ## randomly sample
+        ## ==============================================
+
         status = this_surf.grd2xyz(this_surf.dem['dem-grd'], 
                                    '{}.xyz'.format(this_surf.oname), 
                                    region = sub_region.buffer(10 * float(iinc)), 
@@ -169,20 +180,34 @@ def dem_interpolation_uncertainty(dem_surface):
         sub_datalist._append_datafile('sub_{}_rest.xyz'.format(sub_count), 168, 1)
         sub_datalist._reset()
 
+        ## ==============================================
         ## Generate the random-sample DEM            
+        ## ==============================================
+
         sub_surf = dem(sub_datalist, sub_region, iinc)
         sub_surf.mbgrid()
             
         status = sub_surf.proximity()
-            
-        ## Query the random-sample DEM with the withheld data
+
+        ## ==============================================            
+        ## Query the random-sample DEM with the 
+        ## withheld data
+        ## ==============================================
+
         sub_xyd = geomods.gdalfun.query(sub_xyz[:sx_len_pct], sub_surf.dem['tif'], 'xyd')
 
-        ## Query the random-sample proximity grid with the withheld data
+        ## ==============================================
+        ## Query the random-sample proximity grid 
+        ## with the withheld data
+        ## ==============================================
+
         sub_dp = geomods.gdalfun.query(sub_xyd, sub_surf.dem['prox'], 'zg')
         #print np.max(sub_dp[:,1])
             
+        ## ==============================================
         ## Cleanup
+        ## ==============================================
+
         fl = glob.glob('sub_{}*'.format(sub_count))
         for f in fl:
             try: 
@@ -220,36 +245,45 @@ class dem:
         if self.oname is None: 
             self.oname = self.datalist._path_basename.split('.')[0]
 
-    ## 'Validate' the DEM (check if all files in `dem` exist)
     def _valid_p(self):
+        '''make sure all files referenced in dec dict exist'''
+
         for key in self.dem:
             if not os.path.exists(self.dem[key]):
                 return(False)
         return(True)
 
-    ## Remove keys to DEM filenames if they don't exist
     def _rectify(self):
+        '''reove keys from the dem dictionary if their references
+        don't exist'''
+ 
         for key in self.dem:
             if not os.path.exists(self.dem[key]):
                 del self.dem[key]
                 
-    ## Set a key/value in the `dem` dictionary
     def _set_dem(self, key, value):
+        '''Set a key/value in the dem dictionary'''
+
         self.dem[key] = value
 
-    ## Print out the key/value pairs from the `dem` dictionary
     def _print_dem(self):
+        '''Print out the key/value pairs from the dem dictionary'''
+
         for key in self.dem:
             print(key, self.dem[key])
 
-    ## Remove file associated with key
     def _dem_remove(self, key):
+        '''Remove file associated with key in the dem dictionary'''
+
         try: 
             os.remove(self.dem[key])
             return(0)
         except: return(-1)
 
+    ## ==============================================
     ## Generic Functions
+    ## ==============================================
+
     def grd2tif(self, src_grd):
         '''Convert the grd file to tif using GMT'''
 
@@ -346,10 +380,9 @@ class dem:
         return(self.status)
         
     ## ==============================================
-    ##
     ## Main DEM Modules
-    ##
     ## ==============================================
+
     def num(self):
         '''Generate a num and num-msk grid with GMT'''
 
@@ -480,18 +513,27 @@ class dem:
     def conversion_grid(self, ivert = 'navd88', overt = 'mllw', region = '3'):
         '''generate a vertical datum transformation grid with vdatum'''
         
+        ## ==============================================
         ##Create empty grid and transform to xy0
+        ## ==============================================
+
         geomods.gdalfun.null('empty.tif', self.dist_region.region, 0.00083333, nodata = 0)
         geomods.gdalfun.dump('empty.tif', 'empty.xyz')
 
+        ## ==============================================
         ## pass empty.xyz through vdatum
+        ## ==============================================
+
         this_vd = geomods.utils.vdatum()
         this_vd.ivert = ivert
         this_vd.overt = overt
 
         this_vd.run_vdatum('empty.xyz')
 
+        ## ==============================================
         ## surface the results
+        ## ==============================================
+
         out, status = geomods.utils.run_cmd('gmt gmtinfo result/empty.xyz -C')
         empty_infos = out.split()
 
@@ -541,7 +583,11 @@ class dem:
             for feature in layer:
                 layer.SetFeature(feature)
     
-            ## Generate geometry for each datalist and add to output layer
+            ## ==============================================
+            ## Generate geometry for each datalist 
+            ## and add to output layer
+            ## ==============================================
+
             for dl in self.datalist.datalist:
                 if not self.stop():
                     this_datalist = geomods.datalists.datalist(dl[0], self.dist_region)
@@ -555,7 +601,10 @@ class dem:
                         o_v_fields = [this_dem.oname, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
                     else: o_v_fields = [this_dem.oname, dl[3], int(dl[4]), dl[5], dl[6], dl[7], dl[8], dl[9].strip()]
                     
-                    ## NUM-MSK via GDAL
+                    ## ==============================================
+                    ## Gererate the NUM-MSK
+                    ## ==============================================
+
                     if self.verbose:
                         pb1 = geomods.utils._progress('generating {} mask'.format(this_datalist._path_basename))
                     else: pb1 = None
@@ -565,7 +614,6 @@ class dem:
                     if self.verbose:
                         pb1.end(self.status)
 
-                    ## NUM-MSK via GMT
                     #this_dem.num()
                     #this_dem._dem_remove('num')
                     #this_dem._dem_remove('num-grd')
@@ -579,7 +627,11 @@ class dem:
                             for sh in shps:
                                 os.remove(sh)
 
-                        ## Process the tmp vector to get the geometries of data cells
+                        ## ==============================================
+                        ## Process the tmp vector to get the 
+                        ## geometries of data cells
+                        ## ==============================================
+                        
                         tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(this_dem.oname))
                         tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(this_dem.oname), None, ogr.wkbMultiPolygon)
                         tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
@@ -602,7 +654,10 @@ class dem:
                                     multi.AddGeometryDirectly(ogr.CreateGeometryFromWkt(wkt))
                                     tmp_layer.DeleteFeature(i.GetFID())
 
+                        ## ==============================================
                         ## Add geometries to output layer
+                        ## ==============================================
+
                         union = multi.UnionCascaded()
                         out_feat = ogr.Feature(defn)
                         out_feat.SetGeometry(union)
@@ -647,9 +702,7 @@ def main():
     argv = sys.argv
         
     ## ==============================================
-    ##
     ## parse command line arguments.
-    ##
     ## ==============================================
 
     i = 1
@@ -706,9 +759,7 @@ def main():
         sys.exit(1)
 
     ## ==============================================
-    ##
     ## check platform and installed software
-    ##
     ## ==============================================
 
     pb = geomods.utils._progress('checking platform.')
@@ -740,9 +791,7 @@ def main():
     pb.end(status)
 
     ## ==============================================
-    ##
     ## process input region(s) and loop
-    ##
     ## ==============================================
 
     pb = geomods.utils._progress('processing region(s)...')
@@ -772,11 +821,9 @@ def main():
     for this_region in these_regions:
 
         ## ==============================================
-        ##
         ## Process Digital Elevation Model
         ## using `dem_mod` gridding function
         ## generate DEM and Num grid using full region
-        ##
         ## ==============================================
 
         if idatalist is not None:
@@ -801,10 +848,9 @@ def main():
                     break
 
             ## ==============================================
-            ##
             ## Run the module
-            ##
             ## ==============================================
+
             args = tuple(mod_opts[dem_mod])
                         
             pb = geomods.utils._progress('geomods: running {} module'.format(dem_mod))

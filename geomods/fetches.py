@@ -30,6 +30,7 @@ import lxml.html as lh
 import lxml.etree
 
 import zipfile
+import gzip
 import csv
 import json
 import threading
@@ -70,6 +71,7 @@ gdal.PushErrorHandler('CPLQuietErrorHandler')
 ## Generic fetching functions, etc.
 ##
 ## =============================================================================
+
 r_headers = { 'User-Agent': 'GeoMods: Fetches v%s' %(_version) }
 
 namespaces = {'gmd': 'http://www.isotc211.org/2005/gmd', 
@@ -78,6 +80,8 @@ namespaces = {'gmd': 'http://www.isotc211.org/2005/gmd',
               'gml': 'http://www.isotc211.org/2005/gml'}
 
 def fetch_file(src_url, dst_fn, params = None):
+    '''fetch src_url and save to dst_fn'''
+
     if not os.path.exists(os.path.dirname(dst_fn)):
         os.makedirs(os.path.dirname(dst_fn))
 
@@ -91,12 +95,16 @@ def fetch_file(src_url, dst_fn, params = None):
     else: return(-1)
 
 def fetch_req(src_url, params = None, tries = 3):
+    '''fetch src_url and return the requests object'''
+
     if tries <= 0: return(None)
     try:
         return(requests.get(src_url, stream = True, params = params, timeout = 1, headers = r_headers))
     except: return(fetch_req(src_url, params = params, tries = tries - 1))
 
 def fetch_nos_xml(src_url):
+    '''fetch src_url and return it as an XML object'''
+
     results = lxml.etree.fromstring('<?xml version="1.0"?><!DOCTYPE _[<!ELEMENT _ EMPTY>]><_/>'.encode('utf-8'))
 
     try:
@@ -107,6 +115,7 @@ def fetch_nos_xml(src_url):
     return(results)
         
 def fetch_html(src_url):
+    '''fetch src_url and return it as an HTML object'''
 
     req = fetch_req(src_url)
     if req:
@@ -114,6 +123,7 @@ def fetch_html(src_url):
     else: return(None)
 
 def fetch_csv(src_url):
+    '''fetch src_url and return it as a CSV object'''
 
     req = fetch_req(src_url)
     if req:
@@ -127,13 +137,13 @@ def fetch_csv(src_url):
 ## the reference vector location and related functions
 ##
 ## =============================================================================
-#fetchdata = '@fetchdir@'
-#if '/' not in fetchdata:
-#fetchdata = os.path.join(os.getcwd(), 'data')
+
 this_dir, this_filename = os.path.split(__file__)
 fetchdata = os.path.join(this_dir, 'data')
 
 def create_polygon(coords):
+    '''convert coords to Wkt'''
+
     ring = ogr.Geometry(ogr.wkbLinearRing)
     for coord in coords:
         ring.AddPoint(coord[1], coord[0])
@@ -144,6 +154,9 @@ def create_polygon(coords):
     return(poly.ExportToWkt())
 
 def bounds2geom(bounds):
+    '''convert a bounds [west, east, south, north] to an 
+    OGR geometry'''
+
     b1 = [[bounds[2], bounds[0]],
           [bounds[2], bounds[1]],
           [bounds[3], bounds[1]],
@@ -153,7 +166,8 @@ def bounds2geom(bounds):
     return(ogr.CreateGeometryFromWkt(create_polygon(b1)))
 
 def addf_ref_vector(ogr_layer, survey):
-    #try:
+    '''add a survey to the reference vector layer'''
+
     layer_defn = ogr_layer.GetLayerDefn()
     
     feat = ogr.Feature(layer_defn)
@@ -166,11 +180,12 @@ def addf_ref_vector(ogr_layer, survey):
     feat.SetField('Datatype', str(survey[6]))
         
     ogr_layer.CreateFeature(feat)
-    #except: pass
     
     feat = geom = None
 
 def update_ref_vector(src_vec, surveys, update=True):
+    '''update or create a reference vector'''
+
     if update:
         ds = ogr.GetDriverByName('GMT').Open(src_vec, 1)
         layer = ds.GetLayer()
@@ -207,6 +222,7 @@ def update_ref_vector(src_vec, surveys, update=True):
 ## such as lastools or liblas, etc.
 ##
 ## =============================================================================
+
 class dc:
     def __init__(self, extent = None, callback = lambda: True):
         '''Fetch elevation data from the Digital Coast'''
@@ -263,7 +279,10 @@ class dc:
                     if self._status == 0:
                         if 'lidar' in surv_dt:
 
+                            ## ==============================================
                             ## Lidar data has a minmax.csv file to get extent
+                            ## ==============================================
+
                             scsv = suh.xpath('//a[contains(@href, ".csv")]/@href')[0]
                             dc_csv = fetch_csv(surv_url + scsv)
 
@@ -276,7 +295,12 @@ class dc:
                                 except: pass
 
                         elif 'raster' in surv_dt:
-                            ## Raster data has a tileindex shapefile to get extent
+                            
+                            ## ==============================================
+                            ## Raster data has a tileindex shapefile 
+                            ## to get extent
+                            ## ==============================================
+
                             sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
                             fetch_file(surv_url + sshpz, os.path.join('.', sshpz))
 
@@ -338,6 +362,10 @@ class dc:
             cols = []
             for i in tr[0]: cols.append(i.text_content())
 
+            ## ==============================================
+            ## Collect relavant info from metadata
+            ## ==============================================
+
             for i in range(1, len(tr)):
                 if not self.stop():
                     cells = tr[i].getchildren()
@@ -379,6 +407,10 @@ class dc:
 
                                 self._surveys.append(out_s)
 
+            ## ==============================================
+            ## Add matching surveys to reference vector
+            ## ==============================================
+
             if len(self._surveys) > 0:
                 update_ref_vector(self._ref_vector, self._surveys, self._has_vector)
 
@@ -405,33 +437,57 @@ class dc:
         o_fn_xyz = os.path.join(xyz_dir, '{}_{}.xyz'.format(o_fn_bn, self.region.fn))
             
         if s_t == 'las' or s_t == 'laz':
+
+            ## ==============================================
             ## Convert to XYZ
+            ## ==============================================
+
             out, status = utils.run_cmd('las2txt -verbose -parse xyz -keep_class 2 29 -i {}'.format(o_fn), False, None)
+
             if status == 0:
                 o_fn_bn = os.path.basename(o_fn).split('.')[0]
 
                 o_fn_txt = os.path.join(self._outdir, s_dir, '{}.txt'.format(o_fn_bn))
 
+                ## ==============================================
                 ## Blockmedian the data
+                ## ==============================================
+
                 out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
                 out, status = utils.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}'.format(o_fn_txt, self.region.gmt, o_fn_p_xyz), False, None)
 
                 os.remove(o_fn_txt)
 
         elif s_t == 'tif' or s_t == 'img':
-            ## Convert to XYZ (chunk first?)
+
+            ## ==============================================
+            ## Convert to XYZ
+            ## Raster data should first be transformed to
+            ## WGS84 before dumping to xyz
+            ## ==============================================
+
             gdalfun.dump(o_fn, o_fn_p_xyz)
 
         if status == 0:
+
+            ## ==============================================
             ## Move processed xyz file to xyz directory
+            ## ==============================================
+
             os.rename(o_fn_p_xyz, o_fn_xyz)
-        
+
+            ## ==============================================        
             ## Add xyz file to datalist
+            ## ==============================================
+
             sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_dir)))
             sdatalist._append_datafile('{}'.format(os.path.basename(o_fn_xyz)), 168, 1)
             sdatalist._reset()
 
+            ## ==============================================
             ## Generate .inf file
+            ## ==============================================
+
             out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_dir))), False, None)
 
             os.remove(o_fn)
@@ -454,7 +510,11 @@ class dc:
         else:
             for row in self._results:
                 if not self.stop():
+
+                    ## ==============================================
                     ## Parse the result row
+                    ## ==============================================
+
                     surv_dir = row.split('/')[-2:][0]
                     if surv_dir == '.':
                         surv_dir = row.split('/')[-3:][0]
@@ -462,12 +522,18 @@ class dc:
                     surv_fn = row.split('/')[-2:][1]
                     outf = os.path.join(self._outdir, surv_dir, surv_fn)
 
+                    ## ==============================================
                     ## Fetch and Log
+                    ## ==============================================
+
                     self._status = fetch_file(row, outf)
                     
                     if self._status == 0 and os.path.exists(outf):
-                    
+
+                        ## ==============================================                    
                         ## validate downloaded file...
+                        ## ==============================================
+
                         if open(outf, 'rb').read(4) == 'LASF':
                             self._status = 0
                         elif gdal.Open(outf, gdal.GA_ReadOnly):
@@ -475,12 +541,16 @@ class dc:
                         else: self._status = -1
 
                         self._log_survey(row)
-                    
+
+                        ## ==============================================                    
                         ## Process the data if wanted
+                        ## ==============================================
+
                         if self._want_proc:
                             try:
                                 surv_t = surv_fn.split('.')[1]
                             except: surv_t = ''
+
                             t = threading.Thread(target = self.proc_data, args = (surv_dir, surv_fn, outf, surv_t))
                             t.start()
 
@@ -489,10 +559,15 @@ class dc:
 ## NOS Fetch
 ##
 ## fetch NOS BAG and XYZ sounding data from NOAA
+## BAG data is in projected units and MLLW (height)
+## XYZ data is CSV in MLLW (Sounding)
 ##
 ## =============================================================================
+
 class nos:
     def __init__(self, extent = None, callback = lambda: True):
+        '''Fetch NOS BAG and XYZ sounding data from NOAA'''
+
         self._nos_xml_url = lambda nd: 'https://data.noaa.gov/waf/NOAA/NESDIS/NGDC/MGG/NOS/%siso_u/xml/' %(nd)
         self._nos_directories = ["B00001-B02000/", "D00001-D02000/", "F00001-F02000/", \
                                  "H00001-H02000/", "H02001-H04000/", "H04001-H06000/", \
@@ -513,6 +588,9 @@ class nos:
         self._results = []
         self.stop = callback
 
+        self._want_proc = True
+
+        self.region = extent
         if extent is not None: 
             self._bounds = bounds2geom(extent.region)
         else: self._status = -1
@@ -542,6 +620,10 @@ class nos:
         xml_dsf = 'None'
         xml_dsu = []
 
+        ## ==============================================
+        ## Get all the data URLs
+        ## ==============================================
+
         dfs = xml_doc.findall('.//gmd:MD_Format/gmd:name/gco:CharacterString', namespaces = namespaces)
         dus = xml_doc.findall('.//gmd:onLine/gmd:CI_OnlineResource/gmd:linkage/gmd:URL', namespaces = namespaces)
         if dus is not None:
@@ -552,7 +634,7 @@ class nos:
                             xml_dsu.append(j.text)
                             xml_dsf = dfs[i].text
 
-            return([obbox, title, sid, odt, xml_url, ','.join(xml_dsu), xml_dsf])
+            return([obbox, title, sid, odt, xml_url, ','.join(list(set(xml_dsu))), xml_dsf])
         return([None])
 
     def _scan_directory(self, nosdir):
@@ -610,16 +692,127 @@ class nos:
 
                 self._surveys = []
 
+    def proc_data(self, s_dir, s_fn, o_fn, s_t):
+        '''Process a fetched file to xyz (navd88) and add it to its datalist.'''
+
+        status = 0
+        xyz_dir = os.path.join(self._outdir, s_dir, 'xyz')
+        
+        if not os.path.exists(xyz_dir):
+            os.makedirs(xyz_dir)
+
+        o_fn_bn = os.path.basename(o_fn).split('.')[0]
+        o_fn_tmp = os.path.join(self._outdir, s_dir, '{}_tmp.xyz'.format(o_fn_bn.lower()))
+        o_fn_xyz = os.path.join(xyz_dir, '{}_{}.xyz'.format(o_fn_bn, self.region.fn))
+
+        ## ==============================================
+        ## NOS XYZ data comes as gzipped CSV
+        ## ==============================================
+        if s_t == 'GEODAS':
+
+            ## ==============================================            
+            ## gunzip the and parse the file
+            ## ==============================================
+
+            in_f = gzip.open(os.path.join(s_dir, s_fn), 'rb')
+            s = in_f.read()
+            s_csv = csv.reader(s.split('\n'), delimiter = ',')
+            next(s_csv, None)
+
+            with open(os.path.join(o_fn_tmp), 'w') as out_xyz:
+                d_csv = csv.writer(out_xyz, delimiter = ' ')
+                
+                for row in s_csv:
+                    if len(row) > 2:
+                        this_xyz = [float(row[2]), float(row[1]), float(row[3]) * -1]
+                        d_csv.writerow(this_xyz)
+            in_f.close()
+
+            if status == 0:
+
+                ## ==============================================
+                ## transform processed xyz file to NAVD88 
+                ## using vdatum
+                ## ==============================================
+
+                if len(self.this_vd.vdatum_paths) > 0:
+                    self.this_vd.ivert = 'mllw'
+                    self.this_vd.overt = 'navd88'
+                    self.this_vd.ds_dir = os.path.relpath(os.path.join(xyz_dir, 'result'))
+                    
+                    self.this_vd.run_vdatum(os.path.relpath(o_fn_tmp))
+                    
+                    os.rename(os.path.join(xyz_dir, 'result', os.path.basename(o_fn_tmp)), o_fn_xyz)
+                else: os.rename(o_fn_tmp, o_fn_xyz)
+            
+                ## ==============================================
+                ## Move processed xyz file to xyz directory
+                ## ==============================================
+
+                os.remove(o_fn_p_xyz)
+
+                if os.stat(o_fn_xyz).st_size == 0:
+                    os.remove(o_fn_xyz)
+                else:
+
+                    ## ==============================================
+                    ## Add xyz file to datalist
+                    ## ==============================================
+
+                    sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_t)))
+                    sdatalist._append_datafile('{}'.format(os.path.basename(o_fn_xyz)), 168, 1)
+                    sdatalist._reset()
+
+                    ## ==============================================
+                    ## Generate .inf file
+                    ## ==============================================
+
+                    out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_t))), False, None)
+
+        os.remove(o_fn)
+
+
+        ## ==============================================
+        ## NOS BAG data comes as gzipped BAG
+        ## ==============================================
+        if s_t == 'BAG':
+            pass
+
     def print_results(self):
         for row in self._results:
-            print(row)
+            if row:
+                print(row)
 
     def fetch_results(self):
-        try:
-            for row in self._results:
+        #try:
+
+        if self._want_proc:
+            self.this_vd = utils.vdatum()
+
+        for row in self._results:
+            if row:
                 if not self.stop():
+
+                    ## ==============================================
+                    ## Fetch the data
+                    ## ==============================================
+                    
                     fetch_file(row, os.path.join(self._outdir, os.path.basename(row)))
-        except: self._status = -1
+                    
+                    ## ==============================================                    
+                    ## Process the data if wanted
+                    ## ==============================================
+
+                    if self._want_proc:
+                        outf = os.path.join(self._outdir, os.path.basename(row))
+                        surv_dir = self._outdir
+                        surv_fn = os.path.basename(outf)
+                        surv_t = row.split('/')[-2]
+                        
+                    t = threading.Thread(target = self.proc_data, args = (surv_dir, surv_fn, outf, surv_t))
+                    t.start()
+
+        #except: self._status = -1
 
 ## =============================================================================
 ##
@@ -628,8 +821,11 @@ class nos:
 ## Fetch digital charts from NOAA, including ENC and RNC
 ##
 ## =============================================================================
+
 class charts:
     def __init__(self, extent = None, callback = None):
+        '''Fetch digital chart data from NOAA'''
+
         self._enc_data_catalog = 'http://www.charts.noaa.gov/ENCs/ENCProdCat_19115.xml'
         self._rnc_data_catalog = 'http://www.charts.noaa.gov/RNCs/RNCProdCat_19115.xml'
 
@@ -650,15 +846,14 @@ class charts:
 
         self._want_proc = True
 
-        if self._want_proc:
-            self.this_vd = utils.vdatum()
-
         self.region = extent
         if extent is not None: 
             self._boundsGeom = bounds2geom(extent.region)
         else: self._status = -1
 
     def _parse_charts_xml(self, update = True):
+        '''parse the charts xyz and extract the survey results'''
+
         if update:
             ds = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
             layer = ds.GetLayer()
@@ -702,8 +897,15 @@ class charts:
         ds = layer = None
 
     def search_gmt(self, filters=[]):
+        '''Search for data in the reference vector file'''
+
         ds = ogr.Open(self._ref_vector)
         layer = ds.GetLayer(0)
+
+        ## ==============================================
+        ## Filter the reference vector and append
+        ## any matching results to _results
+        ## ==============================================
 
         for filt in filters:
             layer.SetAttributeFilter('{}'.format(filt))
@@ -716,11 +918,22 @@ class charts:
         ds = layer = None
 
     def _update(self):
+        '''Update or create the reference vector file'''
+
         for dt in self._dt_xml.keys():
             self._checks = dt
+
+            ## ==============================================
+            ## parse the Charts XML
+            ## ==============================================
+
             self.chart_xml = fetch_nos_xml(self._dt_xml[self._checks])
             self._parse_charts_xml(self._has_vector)
-            
+
+            ## ==============================================
+            ## Update the reference vector
+            ## ==============================================
+
             if len(self._chart_feats) > 0:
                 update_ref_vector(self._ref_vector, self._chart_feats, self._has_vector)
 
@@ -731,7 +944,7 @@ class charts:
             self._chart_feats = []
 
     def proc_data(self, s_dir, s_fn, o_fn, s_t):
-        '''Process a fetched file to xyz and add it to its datalist.'''
+        '''Process a fetched file to xyz (navd88) and add it to its datalist.'''
 
         status = 0
         xyz_dir = os.path.join(self._outdir, s_dir, 'xyz')
@@ -745,15 +958,20 @@ class charts:
         o_fn_xyz = os.path.join(xyz_dir, '{}_{}.xyz'.format(o_fn_bn, self.region.fn))
 
         if s_t == 'ENCs':
-            ## extract ZIP
-            #try:
+
+            ## ==============================================
+            ## extract downloaded ZIP
+            ## ==============================================
+
             zip_ref = zipfile.ZipFile(o_fn)
             zip_ref.extractall(os.path.join(s_dir, 'enc'))
             zip_ref.close()
-            #sys.exit(1)
-            #except BadZipFile: pass
 
             s_fn_000 = os.path.join(s_dir, 'enc/ENC_ROOT/', o_fn_bn, '{}.000'.format(o_fn_bn))
+
+            ## ==============================================
+            ## open the s57 vector and write out the xyz data
+            ## ==============================================
 
             ds_000 = ogr.Open(s_fn_000)
             layer_s = ds_000.GetLayerByName('SOUNDG')
@@ -764,22 +982,30 @@ class charts:
                     for xyz in g['coordinates']:
                         xyz_l = '{} {} {}\n'.format(xyz[0], xyz[1], xyz[2]*-1)
                         o_xyz.write(xyz_l)
-                        #o_xyz.write('{}\n'.format(' '.join(map(str, xyz))))
                 o_xyz.close()
             else: status = -1
 
             if os.path.exists(o_fn_p_xyz):
-                ## Blockmedian the data
+
+                ## ==============================================
+                ## Extract the data in the specified region
+                ## ==============================================
+
                 out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
                 out, status = utils.run_cmd('gmt gmtselect {} {} -V > {}'.format(o_fn_p_xyz, self.region.gmt, o_fn_tmp), False, 'extracting data using gmt gmtselect')
+
                 if os.stat(o_fn_tmp).st_size == 0:
                     status = -1
             else: status = -1
-
         else: status = -1
 
         if status == 0:
-            ## transform process xyz file to NAVD88 using vdatum
+
+            ## ==============================================
+            ## transform processed xyz file to NAVD88 
+            ## using vdatum
+            ## ==============================================
+
             if len(self.this_vd.vdatum_paths) > 0:
                 self.this_vd.ivert = 'mllw'
                 self.this_vd.overt = 'navd88'
@@ -790,45 +1016,70 @@ class charts:
                 os.rename(os.path.join(xyz_dir, 'result', os.path.basename(o_fn_tmp)), o_fn_xyz)
             else: os.rename(o_fn_tmp, o_fn_xyz)
             
+            ## ==============================================
             ## Move processed xyz file to xyz directory
+            ## ==============================================
+
             os.remove(o_fn_p_xyz)
 
             if os.stat(o_fn_xyz).st_size == 0:
                 os.remove(o_fn_xyz)
             else:
+
+                ## ==============================================
                 ## Add xyz file to datalist
+                ## ==============================================
+
                 sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_t)))
                 sdatalist._append_datafile('{}'.format(os.path.basename(o_fn_xyz)), 168, 1)
                 sdatalist._reset()
 
+                ## ==============================================
                 ## Generate .inf file
+                ## ==============================================
+
                 out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_t))), False, None)
 
+        if os.path.exists(o_fn_tmp):
+            os.remove(o_fn_tmp)
         os.remove(o_fn)
 
-
     def print_results(self):
+        '''print the resulting urls to stdout'''
+
         for row in self._results:
             print(row)
 
     def fetch_results(self):
-        #try:
-        for row in self._results:
-            ## Parse the result row
+        '''fetch the charts data and optionally process it.
+        unprocessed data is in S57 (ENC) and KAPP (RNC) format.
+        will only process ENC data to XYZ'''
 
-            fetch_file(row, os.path.join(self._outdir, os.path.basename(row)))
+        if self._want_proc:
+            self.this_vd = utils.vdatum()
+
+        try:
+            for row in self._results:
+
+                ## ==============================================
+                ## Fetch the data
+                ## ==============================================
+
+                fetch_file(row, os.path.join(self._outdir, os.path.basename(row)))
+
+                ## ==============================================                    
+                ## Process the data if wanted
+                ## ==============================================
+
+                if self._want_proc:
+                    outf = os.path.join(self._outdir, os.path.basename(row))
+                    surv_dir = self._outdir
+                    surv_fn = os.path.basename(outf)
+                    surv_t = row.split('/')[-2]
                     
-            ## Process the data if wanted
-            if self._want_proc:
-                outf = os.path.join(self._outdir, os.path.basename(row))
-                surv_dir = self._outdir
-                surv_fn = os.path.basename(outf)
-                surv_t = row.split('/')[-2]
-                
-                t = threading.Thread(target = self.proc_data, args = (surv_dir, surv_fn, outf, surv_t))
-                t.start()
-                #self.proc_data(surv_dir, surv_fn, outf, 'ENC')
-        #except: self._status = -1
+                    t = threading.Thread(target = self.proc_data, args = (surv_dir, surv_fn, outf, surv_t))
+                    t.start()
+        except: self._status = -1
 
 ## =============================================================================
 ##
@@ -838,6 +1089,7 @@ class charts:
 ## NED, 3DEP, Etc.
 ##
 ## =============================================================================
+
 class tnm:
     def __init__(self, extent = None, callback = None):
         self._tnm_api_url = "http://viewer.nationalmap.gov/tnmaccess/"
@@ -886,6 +1138,7 @@ class tnm:
 ## MBSystem is required to process the resulting data
 ##
 ## =============================================================================
+
 class mb:
     def __init__(self, extent = None, callback = None):
         self._mb_data_url = "https://data.ngdc.noaa.gov/platforms/"
@@ -948,6 +1201,7 @@ class mb:
 ## Fetch USACE bathymetric surveys
 ##
 ## =============================================================================
+
 class usace:
     def __init__(self, extent = None, callback = None):
 
@@ -986,6 +1240,7 @@ class usace:
 ## fetch extracts of the GMRT.
 ##
 ## =============================================================================
+
 class gmrt:
     def __init__(self, extent = None, callback = None):
         self._gmrt_grid_url = "https://www.gmrt.org/services/GridServer?"
@@ -1035,6 +1290,7 @@ class gmrt:
 ## Fetch srtm tiles from cgiar.
 ##
 ## =============================================================================
+
 class srtm_cgiar:
     def __init__(self, extent = None, callback = None):
         self._srtm_url = 'http://srtm.csi.cgiar.org'
@@ -1082,6 +1338,7 @@ class srtm_cgiar:
 ## Fetch NGS monuments from NGS
 ##
 ## =============================================================================
+
 class ngs:
     def __init__(self, extent = None, callback = None):
         self._ngs_search_url = 'http://geodesy.noaa.gov/api/nde/bounds?'

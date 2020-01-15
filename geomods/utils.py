@@ -28,12 +28,13 @@ import subprocess
 ## =============================================================================
 ##
 ## Command execution, et cetra
-#
+##
 ## OS System commands and checks.
 ## run a command with a progress bar with 'run_cmd'
 ## check if a command exists on the system with 'cmd_exists'
 ##
 ## =============================================================================
+
 cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ["PATH"].split(os.pathsep))
 
 def run_cmd(cmd, verbose = False, prog = None):
@@ -71,8 +72,17 @@ def run_cmd(cmd, verbose = False, prog = None):
 
     return out, p.returncode
 
+## =============================================================================
+##
+## VDatum class for working with NOAA's VDatum program
+## Currently only compatible with VDatum > 4.0
+##
+## =============================================================================
+
 class vdatum:
     def __init__(self, vdatum_path = None):
+        '''vdatum object to communicate with NOAA's VDatum'''
+
         if vdatum_path is None:
             self.vdatum_paths = self._find_vdatum()
         else: self.vdatum_paths = [vdatum_path]
@@ -89,6 +99,9 @@ class vdatum:
         self.ds_dir = 'result'
 
     def _find_vdatum(self):
+        '''Find the VDatum executable on the system and 
+        return a list of found vdatum.jar paths'''
+
         results = []
         status = 0
         pb = _progress('geomods: attempting to locate a vdatum')
@@ -99,12 +112,25 @@ class vdatum:
             status = -1
         pb.opm = '{}: {}'.format(pb.opm, results[0])
         pb.end(status)
+
         return results
 
     def run_vdatum(self, src_fn):
+        '''Run vdatum on src_fn which is an XYZ file'''
+
         vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},0,1,2:{}:{} region:{}'.format(self.ihorz, self.ivert, self.ohorz, self.overt, self.fd, src_fn, self.ds_dir, self.region)
         out, status = run_cmd('java -jar {} {}'.format(self.vdatum_paths[0], vdc), False, 'transforming data with vdatum')
+
         return status
+
+## =============================================================================
+##
+## Progress Bar
+##
+## with 'prog_message' print a simple progress bar and message.
+## use the 'prog_bar.pm' variable to update the message while running.
+##
+## =============================================================================
 
 class _progress:
     def __init__(self, message=''):
