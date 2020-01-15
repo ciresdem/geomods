@@ -514,7 +514,7 @@ class dem:
         '''generate a vertical datum transformation grid with vdatum'''
         
         ## ==============================================
-        ##Create empty grid and transform to xy0
+        ## Create empty grid and transform to xy0
         ## ==============================================
 
         geomods.gdalfun.null('empty.tif', self.dist_region.region, 0.00083333, nodata = 0)
