@@ -103,9 +103,8 @@ class vdatum:
 
     def run_vdatum(self, src_fn):
         vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},0,1,2:{}:{} region:{}'.format(self.ihorz, self.ivert, self.ohorz, self.overt, self.fd, src_fn, self.ds_dir, self.region)
-        run_cmd('java -jar {} {}'.format(self.vdatum_paths[0], vdc), False, 'transforming data with vdatum')
-
-#run_vdatum = lambda c: run_cmd('java -jar {} {}'.format(find_vdatum()[0], c), False, c)
+        out, status = run_cmd('java -jar {} {}'.format(self.vdatum_paths[0], vdc), False, 'transforming data with vdatum')
+        return status
 
 class _progress:
     def __init__(self, message=''):

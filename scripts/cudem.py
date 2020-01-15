@@ -29,9 +29,9 @@ import re
 import math
 import glob
 
+import socket
 import random
 import numpy as np
-#import matplotlib.pyplot as plt
 import threading
 import time
 
@@ -55,22 +55,23 @@ except ImportError:
 
 import geomods
 
-_version = '0.1.2'
+_version = '0.1.3'
 
-_dem_mods = { 'mbgrid': 'generate a DEM with mbgrid', 
-              'gmt-surface': 'generate a DEM with GMT',
-              'spatial-metadata': 'generate spatial-metadata'
+_dem_mods = { 'mbgrid': [lambda x: x.mbgrid, 'generate a DEM with mbgrid', 'None'], 
+              'gmt-surface': [lambda x: x.surface, 'generate a DEM with GMT', 'None'],
+              'spatial-metadata': [lambda x: x.spatial_metadata, 'generate spatial-metadata', 'None'],
+              'conversion-grid': [lambda x: x.conversion_grid, 'generate a conversion grid with vdatum', 'ivert:overt:region']
 }
 
 def dem_mod_desc(x):
     dmd = []
     for key in x: 
-        dmd.append('{:16}\t{}'.format(key, x[key]))
+        dmd.append('{:16}\t{} [{}]'.format(key, x[key][1], x[key][2]))
     return dmd
 
 _usage = '''cudem.py ({}): Process and generate Digital Elevation Models and derivatives
 
-usage: cudem.py [ -hvAIER [ args ] ] module(s) ...
+usage: cudem.py [ -hvAIER [ args ] ] module:option1:option2 ...
 
 Modules:
   {}
@@ -91,6 +92,7 @@ Options:
  Examples:
  % cudem.py -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 gmt-surface
  % cudem.py --datalist input.datalist --increment 0.000277777 --region input_tiles_ply.shp mbgrid spatial-metadata
+ % cudem.py -R-82.5/-82.25/26.75/27 -E0.0000925 conversion-grid:navd88:mhw
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version, '\n  '.join(dem_mod_desc(_dem_mods)))
 
@@ -99,6 +101,7 @@ CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_ver
 ## Uncertainty Analysis
 ##
 ## =============================================================================
+
 def err2coeff(data):
     '''data is 2 col file with `err dist`'''
     try: 
@@ -197,6 +200,7 @@ def dem_interpolation_uncertainty(dem_surface):
 ## including 'dem', 'dem-grd', 'num', 'num-grd', 'num-msk', 'prox', 'slope'
 ##
 ## =============================================================================
+
 class dem:
     def __init__(self, idatalist, iregion, iinc = '0.000277777', oname = None, callback = lambda: False, verbose = False):
         self.status = 0
@@ -205,10 +209,13 @@ class dem:
         self.dem = {}
         self.inc = float(iinc)
         self.datalist = idatalist
+
         self.region = iregion
         self.proc_region = self.region.buffer(10 * self.inc)
         self.dist_region = self.region.buffer(6 * self.inc)
+
         self.max_prox = self.max_num = None
+
         self.oname = oname
         if self.oname is None: 
             self.oname = self.datalist._path_basename.split('.')[0]
@@ -294,41 +301,55 @@ class dem:
                     os.remove('tmp.grd')
 
         return(self.status)
-        
-    ## DEM Et Cetra
-    def surface(self):
-        '''Generate a DEM with GMT surface'''
 
-        dem_cmd = ('cat {} | gmt blockmean {} -I{} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -r -Lud -Lld\
-        '.format(self.datalist._echo_datafiles(' '), self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
+    def slope(self):
+        '''Generate a Slope grid from the DEM with GMT'''
 
-        dem_cmd1 = ('gmt grdcut -V {}_p.grd -G{}.grd {}\
-        '.format(self.oname, self.oname, self.dist_region.gmt))
-
-        if self.verbose:
-            pb = 'generating DEM using gmt surface -T.35 -Z1.2'
-        else: pb = None
-        out, self.status = geomods.utils.run_cmd(dem_cmd, self.verbose, pb)
+        try: self.dem['dem-grd']
+        except KeyError: 
+            self.status = -1
 
         if self.status == 0:
-            if self.verbose:
-                pb = 'clipping DEM to final region'
-            else: pb = None
-            out, self.status = geomods.utils.run_cmd(dem_cmd1, self.verbose, pb)
-            
+            slope_cmd0 = ('gmt grdgradient -V -fg {} -S{}_pslp.grd -D -R{}\
+            '.format(self.dem['dem-grd'], self.oname, self.dem['dem-grd']))
+
+            slope_cmd1 = ('gmt grdmath -V {}_pslp.grd ATAN PI DIV 180 MUL = {}_slp.tif=gd+n-9999:GTiff\
+            '.format(self.oname, self.oname))
+
+            out, self.status = geomods.utils.run_cmd(slope_cmd0, self.verbose)
+
             if self.status == 0:
+                out, self.status = geomods.utils.run_cmd(slope_cmd1, self.verbose)
 
-                if os.path.exists('{}_p.grd'.format(self.oname)):
-                    os.remove('{}_p.grd'.format(self.oname))
+                if os.path.exists('{}_pslp.grd'.format(self.oname)):
+                    os.remove('{}_pslp.grd'.format(self.oname))
 
-                self.dem['dem-grd'] = ('{}.grd'.format(self.oname))
-
-                self.grd2tif(self.dem['dem-grd'])
-                
-                self.dem['dem'] = ('{}.tif'.format(self.oname))
+                self.dem['slope'] = ('{}_slp.tif'.format(self.oname))
 
         return(self.status)
 
+    def proximity(self):
+        '''Generate a Proximity grid with GDAL'''
+
+        try: self.dem['num-msk']
+        except KeyError: 
+            self.status = -1
+
+        if self.status == 0:
+            self.dem['prox'] = ('{}_prox.tif'.format(self.oname))
+
+            gdalfun.proximity(self.dem['num-msk'], self.dem['prox'])
+        
+            self.max_prox = self.grdinfo(self.dem['prox'])[6]
+            print(self.max_prox)
+
+        return(self.status)
+        
+    ## ==============================================
+    ##
+    ## Main DEM Modules
+    ##
+    ## ==============================================
     def num(self):
         '''Generate a num and num-msk grid with GMT'''
 
@@ -365,6 +386,39 @@ class dem:
     def num_msk(self):
         geomods.gdalfun.xyz_gmask(self.datalist._caty(), '{}_num_msk.tif'.format(self.oname), self.dist_region.region, self.inc, verbose = self.verbose)
         self.dem['num-msk'] = '{}_num_msk.tif'.format(self.oname)
+
+    def surface(self):
+        '''Generate a DEM with GMT surface'''
+
+        dem_cmd = ('cat {} | gmt blockmean {} -I{} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -r -Lud -Lld\
+        '.format(self.datalist._echo_datafiles(' '), self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
+
+        dem_cmd1 = ('gmt grdcut -V {}_p.grd -G{}.grd {}\
+        '.format(self.oname, self.oname, self.dist_region.gmt))
+
+        if self.verbose:
+            pb = 'generating DEM using gmt surface -T.35 -Z1.2'
+        else: pb = None
+        out, self.status = geomods.utils.run_cmd(dem_cmd, self.verbose, pb)
+
+        if self.status == 0:
+            if self.verbose:
+                pb = 'clipping DEM to final region'
+            else: pb = None
+            out, self.status = geomods.utils.run_cmd(dem_cmd1, self.verbose, pb)
+            
+            if self.status == 0:
+
+                if os.path.exists('{}_p.grd'.format(self.oname)):
+                    os.remove('{}_p.grd'.format(self.oname))
+
+                self.dem['dem-grd'] = ('{}.grd'.format(self.oname))
+
+                self.grd2tif(self.dem['dem-grd'])
+                
+                self.dem['dem'] = ('{}.tif'.format(self.oname))
+
+        return(self.status)
 
     def mbgrid(self, extras = False):
         '''Generate a DEM and num grid with MBSystem'''
@@ -423,52 +477,45 @@ class dem:
 
         return(self.status)
 
-    def slope(self):
-        '''Generate a Slope grid from the DEM with GMT'''
-
-        try: self.dem['dem-grd']
-        except KeyError: 
-            self.status = -1
-
-        if self.status == 0:
-            slope_cmd0 = ('gmt grdgradient -V -fg {} -S{}_pslp.grd -D -R{}\
-            '.format(self.dem['dem-grd'], self.oname, self.dem['dem-grd']))
-
-            slope_cmd1 = ('gmt grdmath -V {}_pslp.grd ATAN PI DIV 180 MUL = {}_slp.tif=gd+n-9999:GTiff\
-            '.format(self.oname, self.oname))
-
-            out, self.status = geomods.utils.run_cmd(slope_cmd0, self.verbose)
-
-            if self.status == 0:
-                out, self.status = geomods.utils.run_cmd(slope_cmd1, self.verbose)
-
-                if os.path.exists('{}_pslp.grd'.format(self.oname)):
-                    os.remove('{}_pslp.grd'.format(self.oname))
-
-                self.dem['slope'] = ('{}_slp.tif'.format(self.oname))
-
-        return(self.status)
-
-    def proximity(self):
-        '''Generate a Proximity grid with GDAL'''
-
-        try: self.dem['num-msk']
-        except KeyError: 
-            self.status = -1
-
-        if self.status == 0:
-            self.dem['prox'] = ('{}_prox.tif'.format(self.oname))
-
-            gdalfun.proximity(self.dem['num-msk'], self.dem['prox'])
+    def conversion_grid(self, ivert = 'navd88', overt = 'mllw', region = '3'):
+        '''generate a vertical datum transformation grid with vdatum'''
         
-            self.max_prox = self.grdinfo(self.dem['prox'])[6]
-            print(self.max_prox)
+        ##Create empty grid and transform to xy0
+        geomods.gdalfun.null('empty.tif', self.dist_region.region, 0.00083333, nodata = 0)
+        geomods.gdalfun.dump('empty.tif', 'empty.xyz')
 
-        return(self.status)
+        ## pass empty.xyz through vdatum
+        this_vd = geomods.utils.vdatum()
+        this_vd.ivert = ivert
+        this_vd.overt = overt
+
+        this_vd.run_vdatum('empty.xyz')
+
+        ## surface the results
+        out, status = geomods.utils.run_cmd('gmt gmtinfo result/empty.xyz -C')
+        empty_infos = out.split()
+
+        if empty_infos[4] > 0:
+            lu_switch = 'Lud'
+        else: lu_switch = 'Lu0'
+
+        if empty_infos[5] > 0:
+            ll_switch = 'Lld'
+        else: ll_switch = 'Ll0'
+
+        gc = 'gmt blockmean result/empty.xyz -V -I{} {} | gmt surface -I{} {} -G{}_{}to{}.tif=gd:GTiff -V -r -T0 -Lud -Lld\
+        '.format(self.inc, self.dist_region.gmt, self.inc, self.dist_region.gmt, self.dist_region.fn, this_vd.ivert, this_vd.overt)
+        geomods.utils.run_cmd(gc, True, 'generating conversion grid')
+
+        os.remove('empty.tif')
+        os.remove('empty.xyz')
+
+        self.dem['{}to{}'.format(this_vd.ivert, this_vd.overt)] = '{}_{}to{}.tif'.format(this_vd.ivert, this_vd.overt)
 
     def spatial_metadata(self):
         '''Geneate spatial metadata from a datalist'''
 
+        ## these fields should be found in the datalist starting at position 3 (from 0)
         v_fields = ['Name', 'Agency', 'Date', 'Type', 'Resolution', 'HDatum', 'VDatum', 'URL']
         t_fields = [ogr.OFTString, ogr.OFTString, ogr.OFTInteger, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString]
     
@@ -494,6 +541,7 @@ class dem:
             for feature in layer:
                 layer.SetFeature(feature)
     
+            ## Generate geometry for each datalist and add to output layer
             for dl in self.datalist.datalist:
                 if not self.stop():
                     this_datalist = geomods.datalists.datalist(dl[0], self.dist_region)
@@ -507,14 +555,17 @@ class dem:
                         o_v_fields = [this_dem.oname, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
                     else: o_v_fields = [this_dem.oname, dl[3], int(dl[4]), dl[5], dl[6], dl[7], dl[8], dl[9].strip()]
                     
-                    ## GDAL
+                    ## NUM-MSK via GDAL
                     if self.verbose:
                         pb1 = geomods.utils._progress('generating {} mask'.format(this_datalist._path_basename))
                     else: pb1 = None
+
                     this_dem.num_msk()
+
                     if self.verbose:
                         pb1.end(self.status)
-                    ## GMT
+
+                    ## NUM-MSK via GMT
                     #this_dem.num()
                     #this_dem._dem_remove('num')
                     #this_dem._dem_remove('num-grd')
@@ -528,6 +579,7 @@ class dem:
                             for sh in shps:
                                 os.remove(sh)
 
+                        ## Process the tmp vector to get the geometries of data cells
                         tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(this_dem.oname))
                         tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(this_dem.oname), None, ogr.wkbMultiPolygon)
                         tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
@@ -550,6 +602,7 @@ class dem:
                                     multi.AddGeometryDirectly(ogr.CreateGeometryFromWkt(wkt))
                                     tmp_layer.DeleteFeature(i.GetFID())
 
+                        ## Add geometries to output layer
                         union = multi.UnionCascaded()
                         out_feat = ogr.Feature(defn)
                         out_feat.SetGeometry(union)
@@ -577,6 +630,7 @@ class dem:
 ## Run cudem.py from command-line
 ##
 ## =============================================================================
+
 def main():
 
     iregion = None
@@ -588,12 +642,16 @@ def main():
     do_unc = False
     stop_threads = False
     want_verbose = False
-
-    dem_mods = []
+    mod_opts = {}
 
     argv = sys.argv
         
+    ## ==============================================
+    ##
     ## parse command line arguments.
+    ##
+    ## ==============================================
+
     i = 1
     while i < len(argv):
         arg = argv[i]
@@ -637,27 +695,27 @@ def main():
             print(_usage)
             sys.exit(0)
 
-        else: dem_mods.append(sys.argv[i])
+        else: 
+            opts = arg.split(':')
+            mod_opts[opts[0]] = list(opts[1:])
 
         i = i + 1
 
-    if iregion is None or idatalist is None:
+    if iregion is None:
         print(_usage)
         sys.exit(1)
-        #iregion = raw_input('input region: ')
 
-    #if idatalist is None:
-        #idatalist = raw_input('input datalist: ')
-        #print(usage)
-        #sys.exit(1)
+    ## ==============================================
+    ##
+    ## check platform and installed software
+    ##
+    ## ==============================================
 
-    ## check platform
     pb = geomods.utils._progress('checking platform.')
     platform = sys.platform
     pb.opm = 'checking platform...{}'.format(platform)
     pb.end(0)
 
-    ## check for installed software
     pb = geomods.utils._progress('checking for GMT...')
     if geomods.utils.cmd_exists('gmt'): 
         gmt_vers, status = geomods.utils.run_cmd('gmt --version')
@@ -681,7 +739,12 @@ def main():
     pb.opm = 'checking for GDAL...{}'.format(gdal_vers)
     pb.end(status)
 
-    ## process input region(s)
+    ## ==============================================
+    ##
+    ## process input region(s) and loop
+    ##
+    ## ==============================================
+
     pb = geomods.utils._progress('processing region(s)...')
     try: 
         these_regions = [geomods.regions.region(iregion)]
@@ -698,7 +761,7 @@ def main():
 
     for this_region in these_regions:
         if not this_region._valid: 
-            status = -1
+          status = -1
     pb.opm = 'processing region(s)...{}'.format(len(these_regions))
     pb.end(status)
             
@@ -708,8 +771,6 @@ def main():
 
     for this_region in these_regions:
 
-        pb = geomods.utils._progress('loading datalist...')
-
         ## ==============================================
         ##
         ## Process Digital Elevation Model
@@ -717,90 +778,48 @@ def main():
         ## generate DEM and Num grid using full region
         ##
         ## ==============================================
-        this_datalist = geomods.datalists.datalist(idatalist, this_region)
-        if not this_datalist._valid: 
-            status = -1
 
-        pb.opm = 'loading datalist...{}'.format(this_datalist._path_basename)
-        pb.end(status)
+        if idatalist is not None:
+            pb = geomods.utils._progress('loading datalist...')
+            this_datalist = geomods.datalists.datalist(idatalist, this_region)
+            if not this_datalist._valid: 
+                status = -1
+
+            pb.opm = 'loading datalist...{}'.format(this_datalist._path_basename)
+            pb.end(status)
+        else: this_datalist = None
 
         if status != 0: break
 
-        this_surf = dem(this_datalist, this_region, iinc, callback = lambda: stop_threads, verbose = want_verbose)
+        this_surf = dem(this_datalist, this_region, iinc, callback = lambda: stop_threads, oname = socket.gethostname().split('.')[0], verbose = want_verbose)
 
-        for dem_mod in dem_mods:
+        for dem_mod in mod_opts.keys():
+            
+            if this_datalist is None:
+                if dem_mod != 'conversion-grid':
+                    status = -1
+                    break
 
-            ## MBSystem mbgrid
-            if dem_mod == 'mbgrid':
-                pb = geomods.utils._progress('generating Digital Elevation Model using `{}` module...'.format(dem_mod))
-                try:
-                    dem_t = threading.Thread(target = this_surf.mbgrid, args = ())
-                    dem_t.start()
-                    while True:
-                        time.sleep(3)
-                        pb.update()
-                        if not dem_t.is_alive():
-                            break
-                except (KeyboardInterrupt, SystemExit): this_surf.status = -1
-                pb.end(this_surf.status)
-
-            ## GMT surface
-            elif dem_mod == 'gmt-surface':
-                pb = geomods.utils._progress('generating Digital Elevation Model using `{}` module...'.format(dem_mod))
-                try:
-                    dem_t = threading.Thread(target = this_surf.surface, args = ())
-                    dem_nt = threading.Thread(target = this_surf.num, args = ())
-                    dem_nt.start()
-                    dem_t.start()
-                    while True:
-                        time.sleep(3)
-                        pb.update()
-                        if not dem_t.is_alive() and not dem_nt.is_alive():
-                            break
-                except (KeyboardInterrupt, SystemExit): this_surf.status = -1
-                pb.end(this_surf.status)
-
-            ## Validate output DEM
-            if dem_mod == 'gmt-surface' or dem_mod == 'mbgrid':
-                pb = geomods.utils._progress('validating DEM...')
-
-                this_surf._rectify()
-                if this_surf._valid_p():
-                    if 'dem' not in this_surf.dem.keys() or 'num' not in this_surf.dem.keys():
-                        status = -1
-                else: status = -1
-                pb.end(status)
-
-            ## Spatial Metadata
-            if dem_mod == 'spatial-metadata':
-                pb = geomods.utils._progress('generating spatial metadata from `{}`...'.format(this_datalist._path_basename))
-                try:
-                    dem_sm = threading.Thread(target = this_surf.spatial_metadata, args = ())
-                    dem_sm.start()
-                    while True:
-                        time.sleep(3)
-                        pb.update()
-                        if not dem_sm.is_alive():
-                            break
-                except (KeyboardInterrupt, SystemExit): 
-                    stop_threads = True
-                    this_surf.status = -1
-                pb.end(this_surf.status)
-
-            ## Analyze the uncertainty
-            ## TESTING
-            if dem_mod == 'uncertainty':
-                ## Check for a valid dem-set
-                this_surf._rectify()
-                if this_surf._valid_p():
-                    if 'dem' not in this_surf.dem.keys() or 'num' not in this_surf.dem.keys():
-                        status = -1
-                else: status = -1            
-                ## source data uncertainty
-                ## Vdatum uncertainty
-                ## interpolation uncertainty
-                if status == 0:
-                    dem_interpolation_uncertainty(this_surf)        
+            ## ==============================================
+            ##
+            ## Run the module
+            ##
+            ## ==============================================
+            args = tuple(mod_opts[dem_mod])
+                        
+            pb = geomods.utils._progress('geomods: running {} module'.format(dem_mod))
+            try:
+                mod_thread = threading.Thread(target = _dem_mods[dem_mod][0](this_surf), args = args)
+                mod_thread.start()
+                while True:
+                    time.sleep(3)
+                    pb.update()
+                    if not mod_thread.is_alive():
+                        break
+            except (KeyboardInterrupt, SystemExit): 
+                stop_threads = True
+                this_surf.status = -1
+            pb.end(this_surf.status)
             
 if __name__ == '__main__':
     main()

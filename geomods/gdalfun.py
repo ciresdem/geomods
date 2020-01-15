@@ -307,6 +307,44 @@ def dump(src_gdal, dst_xyz):
 
     srcds = None
 
+def null(outfile, extent, cellsize, nodata = -9999, outformat = 'GTiff', verbose = False, overwrite = True):
+    '''generate a `null` grid with gdal'''
+    ysize = extent[3] - extent[2]
+    xsize = extent[1] - extent[0]
+    xcount = int(xsize / cellsize) + 1
+    ycount = int(ysize / cellsize) + 1
+
+    # Create the output GDAL Raster
+    if outformat == "AAIGrid":
+        driver = gdal.GetDriverByName("MEM")
+    else: driver = gdal.GetDriverByName(outformat)
+
+    if os.path.exists(outfile):
+        driver.Delete(outfile)
+
+    dst_ds = driver.Create(outfile, xcount, ycount, 1, gdal.GDT_Float32)
+    if dst_ds is None: sys.exit("Error: failed to open output file...%s" %(outfile))
+
+    gt = (extent[0], cellsize, 0, extent[3], 0, (cellsize * -1.))
+    dst_ds.SetGeoTransform(gt)
+    dst_band = dst_ds.GetRasterBand(1)
+
+    dst_band.SetNoDataValue(nodata)
+
+    # Create a Numpy Array filled with 0's
+    nullArray = np.zeros((ycount, xcount))
+    nullArray[nullArray == 0] = nodata
+
+    # Write Numpy Array to the GDAL Raster Band
+    dst_band.WriteArray(nullArray)
+
+    if outformat == "AAIGrid":
+        driver = gdal.GetDriverByName(outformat)
+        dst_ds_aai = driver.CreateCopy(outfile, dst_ds)
+    
+    # Clear the GDAL Raster(s)x
+    dst_ds = dst_ds_aai = None
+
 def proximity(self, src_fn, dst_fn):
     '''Compute a proximity grid via GDAL'''
 
