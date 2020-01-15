@@ -534,25 +534,32 @@ class dem:
         ## surface the results
         ## ==============================================
 
-        out, status = geomods.utils.run_cmd('gmt gmtinfo result/empty.xyz -C')
-        empty_infos = out.split()
+        if os.stat('result/empty.xyz').st_size != 0:
+            out, status = geomods.utils.run_cmd('gmt gmtinfo result/empty.xyz -C')
+            empty_infos = out.split()
 
-        if empty_infos[4] > 0:
-            lu_switch = 'Lud'
-        else: lu_switch = 'Lu0'
+            if empty_infos[4] > 0:
+                ll_switch = '-Lld'
+            else: ll_switch = '-Ll0'
 
-        if empty_infos[5] > 0:
-            ll_switch = 'Lld'
-        else: ll_switch = 'Ll0'
+            if empty_infos[5] > 0:
+                lu_switch = '-Lud'
+            else: lu_switch = '-Lu0'
 
-        gc = 'gmt blockmean result/empty.xyz -V -I{} {} | gmt surface -I{} {} -G{}_{}to{}.tif=gd:GTiff -V -r -T0 -Lud -Lld\
-        '.format(self.inc, self.dist_region.gmt, self.inc, self.dist_region.gmt, self.dist_region.fn, this_vd.ivert, this_vd.overt)
-        geomods.utils.run_cmd(gc, True, 'generating conversion grid')
+            gc = 'gmt blockmean result/empty.xyz -V -I{} {} | gmt surface -I{} {} -G{}_{}to{}.tif=gd:GTiff -V -r -T0 {} {}\
+            '.format(self.inc, self.dist_region.gmt, self.inc, self.dist_region.gmt, self.dist_region.fn, this_vd.ivert, this_vd.overt, ll_switch, lu_switch)
+            geomods.utils.run_cmd(gc, True, 'generating conversion grid')
+
+            self.dem['{}to{}'.format(this_vd.ivert, this_vd.overt)] = '{}_{}to{}.tif'.format(this_vd.ivert, this_vd.overt)
+        else: self.status = -1
 
         os.remove('empty.tif')
         os.remove('empty.xyz')
-
-        self.dem['{}to{}'.format(this_vd.ivert, this_vd.overt)] = '{}_{}to{}.tif'.format(this_vd.ivert, this_vd.overt)
+        
+        vd_results = glob.glob('result/*')
+        for vd_r in vd_results:
+            os.remove(vd_r)
+        os.removedirs('result')
 
     def spatial_metadata(self):
         '''Geneate spatial metadata from a datalist'''
