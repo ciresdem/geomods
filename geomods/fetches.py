@@ -774,16 +774,22 @@ class nos:
         ## ==============================================
 
         elif 'BAG' in s_t:
+            
             s_gz = os.path.join(s_dir, s_fn)
-            s_bag = '.'.join(s_gz.split('.')[:-1])
+
+            if s_gz.split('.')[-1] == 'gz':
+                utils.run_cmd('gunzip {}'.format(os.path.join(s_dir, s_fn)), False, 'gunzip')
+                s_bag = '.'.join(s_gz.split('.')[:-1])
+            else: s_bag = os.path.join(s_dir, s_fn)
+
             s_tif = os.path.join(s_dir, s_fn.split('.')[0].lower() + '.tif')
             
             s_xyz = s_gz.split('.')[0] + '.xyz'
 
-            utils.run_cmd('gunzip {}'.format(os.path.join(s_dir, s_fn)), False, 'gunzip')
             utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(s_bag, s_tif), True, 'gdalwarp')
 
             out_chunks = gdalfun.chunks(s_tif, 1000)
+            os.remove(s_tif)
 
             for i in out_chunks:
                 i_xyz = i.split('.')[0] + '.xyz'
@@ -865,8 +871,9 @@ class nos:
                         surv_fn = os.path.basename(outf)
                         surv_t = row.split('/')[-2]
                         
-                    t = threading.Thread(target = self.proc_data, args = (surv_dir, surv_fn, outf, surv_t))
-                    t.start()
+                    #t = threading.Thread(target = self.proc_data, args = (surv_dir, surv_fn, outf, surv_t))
+                    #t.start()
+                    self.proc_data(surv_dir, surv_fn, outf, surv_t)
 
         #except: self._status = -1
 
