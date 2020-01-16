@@ -570,7 +570,7 @@ class dem:
 
             gc = 'gmt blockmean result/empty.xyz -V -I{} {} | gmt surface -I{} {} -G{}_{}to{}.tif=gd:GTiff -V -r -T0 {} {}\
             '.format(self.inc, self.dist_region.gmt, self.inc, self.dist_region.gmt, self.oname, this_vd.ivert, this_vd.overt, ll_switch, lu_switch)
-            geomods.utils.run_cmd(gc, True, 'generating conversion grid')
+            geomods.utils.run_cmd(gc, self.verbose, 'generating conversion grid')
 
             self.dem['{}to{}'.format(this_vd.ivert, this_vd.overt)] = '{}_{}to{}.tif'.format(self.oname, this_vd.ivert, this_vd.overt)
         else: self.status = -1
