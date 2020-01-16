@@ -10,7 +10,6 @@ External Dependencies for DEM generation and data processing:
  - GMT
  - MBSystem
  - LASTools
- - Bounds
 
 Installation:
 
@@ -51,3 +50,7 @@ Examples:
  - split grid file tmp.tif into chunks of 1000x1000 cells:
  
  % gdal_chunk.py tmp.tif -c 1000
+
+ - generate a vertical datum conversion grid:
+ 
+ % cudem.py -R -90/-89/29/30 -E 0.00083333 conversion-grid:navd88:mhw
