@@ -76,7 +76,7 @@ def run_cmd(cmd, verbose = False, prog = None, std_in = False):
     want_poll = lambda a, b: a or b is not None
 
     if prog is not None:
-        prog = _progress('geomods: `{}`'.format(prog))
+        prog = _progress('{}'.format(prog))
     
     p = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)
     
@@ -137,13 +137,13 @@ class vdatum:
 
         results = []
         status = 0
-        pb = _progress('geomods: attempting to locate a vdatum')
+        pb = _progress('checking for vdatum.')
         for root, dirs, files in os.walk('/'):
             if 'vdatum.jar' in files:
                 results.append(os.path.join(root, 'vdatum.jar'))
         if len(results) <= 0:
             status = -1
-        pb.opm = '{}: {}'.format(pb.opm, results[0])
+        pb.opm = '{}..{}'.format(pb.opm, results[0])
         pb.end(status)
 
         return results

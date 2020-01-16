@@ -126,6 +126,16 @@ def _invert_gt(geoTransform):
 
     return(outGeoTransform)
 
+def _prj_file(dst_fn, epsg):
+    sr = osr.SpatialReference()
+    sr.ImportFromEPSG(epsg)
+    
+    sr.MorphToESRI()
+    sr_f = open(dst_fn, 'w')
+    sr_f.write(sr.ExportToWkt())
+    sr_f.close()
+
+
 ## =============================================================================
 ##
 ## GDAL Functions for external use
@@ -253,7 +263,7 @@ def crop(src_fn):
     
     return(out_array, ds_config)
 
-def dump(src_gdal, dst_xyz):
+def dump(src_gdal, dst_xyz, dump_nodata = False):
     '''Dump `src_gdal` GDAL file to ASCII XYZ
     Function taken from GDAL's `gdal2xyz.py` script.'''
 
@@ -324,13 +334,17 @@ def dump(src_gdal, dst_xyz):
             line = format % (float(geo_x), float(geo_y), band_str)
 
             #print nodata
-            if band_str not in nodata:
+            if dump_nodata:
                 dst_fh.write(line)
+            else:
+                if band_str not in nodata:
+                    dst_fh.write(line)
 
     srcds = None
 
 def null(outfile, extent, cellsize, nodata = -9999, outformat = 'GTiff', verbose = False, overwrite = True):
     '''generate a `null` grid with gdal'''
+
     ysize = extent[3] - extent[2]
     xsize = extent[1] - extent[0]
     xcount = int(xsize / cellsize) + 1

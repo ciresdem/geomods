@@ -540,7 +540,7 @@ class dem:
         ## ==============================================
 
         geomods.gdalfun.null('empty.tif', self.dist_region.region, 0.00083333, nodata = 0)
-        geomods.gdalfun.dump('empty.tif', 'empty.xyz')
+        geomods.gdalfun.dump('empty.tif', 'empty.xyz', dump_nodata = True)
 
         ## ==============================================
         ## pass empty.xyz through vdatum
@@ -569,10 +569,10 @@ class dem:
             else: lu_switch = '-Lu0'
 
             gc = 'gmt blockmean result/empty.xyz -V -I{} {} | gmt surface -I{} {} -G{}_{}to{}.tif=gd:GTiff -V -r -T0 {} {}\
-            '.format(self.inc, self.dist_region.gmt, self.inc, self.dist_region.gmt, self.dist_region.fn, this_vd.ivert, this_vd.overt, ll_switch, lu_switch)
+            '.format(self.inc, self.dist_region.gmt, self.inc, self.dist_region.gmt, self.oname, this_vd.ivert, this_vd.overt, ll_switch, lu_switch)
             geomods.utils.run_cmd(gc, True, 'generating conversion grid')
 
-            self.dem['{}to{}'.format(this_vd.ivert, this_vd.overt)] = '{}_{}to{}.tif'.format(this_vd.ivert, this_vd.overt)
+            self.dem['{}to{}'.format(this_vd.ivert, this_vd.overt)] = '{}_{}to{}.tif'.format(self.oname, this_vd.ivert, this_vd.overt)
         else: self.status = -1
 
         os.remove('empty.tif')
@@ -604,13 +604,7 @@ class dem:
 
         if self.status == 0:
 
-            sr = osr.SpatialReference()
-            sr.ImportFromEPSG(4326)
-
-            sr.MorphToESRI()
-            sr_f = open('{}.prj'.format(os.path.basename(dst_vec).split('.')[0]), 'w')
-            sr_f.write(sr.ExportToWkt())
-            sr_f.close()
+            geomods.gdalfun._prj_file('{}.prj'.format(os.path.basename(dst_vec).split('.')[0]), 4326)
 
             layer = ds.CreateLayer('{}'.format(os.path.basename(dst_vec).split('.')[0]), None, ogr.wkbMultiPolygon)
             defn = layer.GetLayerDefn()
@@ -642,8 +636,8 @@ class dem:
                     #else: pb = None
 
                     if len(dl) < 8: 
-                        o_v_fields = [this_dem.oname, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
-                    else: o_v_fields = [this_dem.oname, dl[3], int(dl[4]), dl[5], dl[6], dl[7], dl[8], dl[9].strip()]
+                        o_v_fields = [this_datalist._path_dl_name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
+                    else: o_v_fields = [this_datalist._path_dl_name, dl[3], int(dl[4]), dl[5], dl[6], dl[7], dl[8], dl[9].strip()]
                     
                     ## ==============================================
                     ## Gererate the NUM-MSK

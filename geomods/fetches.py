@@ -811,7 +811,6 @@ class nos:
                         self.this_vd.ds_dir = os.path.relpath(os.path.join(xyz_dir, 'result'))
                         
                         self.this_vd.run_vdatum(os.path.relpath(i_xyz))
-                        print os.path.join(xyz_dir, 'result', os.path.basename(i_xyz))
                         
                         os.rename(os.path.join(xyz_dir, 'result', os.path.basename(i_xyz)), o_xyz)
                     else: os.rename(i_xyz, o_xyz)

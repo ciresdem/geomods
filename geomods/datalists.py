@@ -55,6 +55,7 @@ class datalist:
         self._path = idatalist
         self._path_dirname = os.path.dirname(self._path)
         self._path_basename = os.path.basename(self._path)
+        self._path_dl_name = os.path.basename(self._path).split('.')[0]
         self._reset()
 
     ## Reload the datalist
