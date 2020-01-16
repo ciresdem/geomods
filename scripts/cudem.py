@@ -38,11 +38,13 @@ import time
 
 try:
     import osgeo.ogr as ogr
+    import osgeo.osr as osr
     import osgeo.gdal as gdal
     has_gdalpy = True
 except ImportError:
     try:
         import ogr
+        import osr
         import gdal
         has_gdalpy = True
     except ImportError:
@@ -244,7 +246,7 @@ class dem:
         self.max_prox = self.max_num = None
 
         if oname is None: 
-            bn = self.datalist._path_basename.split('.')[0]
+            oname = self.datalist._path_basename.split('.')[0]
 
         str_inc = str(fractions.Fraction(str(self.inc * 3600)).limit_denominator(10)).replace('/', '')
         self.oname = '{}{}_{}_{}'.format(oname, str_inc, self.region.fn, datetime.datetime.now().strftime('%Y'))
@@ -586,10 +588,10 @@ class dem:
         v_fields = ['Name', 'Agency', 'Date', 'Type', 'Resolution', 'HDatum', 'VDatum', 'URL']
         t_fields = [ogr.OFTString, ogr.OFTString, ogr.OFTInteger, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString]
     
-        dst_vec = '{}_ply.shp'.format(self.oname, self.region.fn)
+        dst_vec = '{}_sm.shp'.format(self.oname, self.region.fn)
         dst_layername = os.path.basename(dst_vec).split('.')[0]
 
-        shps = glob.glob('{}_ply.*'.format(self.oname))
+        shps = glob.glob('{}_sm.*'.format(self.oname))
         if len(shps) > 0:
             for sh in shps:
                 os.remove(sh)
@@ -599,6 +601,15 @@ class dem:
             self.status = -1
 
         if self.status == 0:
+
+            sr = osr.SpatialReference()
+            sr.ImportFromEPSG(4326)
+
+            sr.MorphToESRI()
+            sr_f = open('{}.prj'.format(os.path.basename(dst_vec).split('.')[0]), 'w')
+            sr_f.write(sr.ExportToWkt())
+            sr_f.close()
+
             layer = ds.CreateLayer('{}'.format(os.path.basename(dst_vec).split('.')[0]), None, ogr.wkbMultiPolygon)
             defn = layer.GetLayerDefn()
 
