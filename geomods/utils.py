@@ -24,6 +24,7 @@ import sys
 
 import time
 import subprocess
+import threading
 
 ## =============================================================================
 ##
@@ -37,7 +38,39 @@ import subprocess
 
 cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ["PATH"].split(os.pathsep))
 
-def run_cmd(cmd, verbose = False, prog = None):
+def run_cmd_with_input(cmd, data_fun, verbose = False, prog = None):
+    '''Run a command with or without a progress bar while passing data'''
+
+    want_poll = lambda a, b: a or b is not None
+
+    if prog is not None:
+        prog = _progress('{}'.format(prog))
+
+    p = subprocess.Popen(cmd, shell = True, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)    
+    
+    c = lambda x: map(p.stdin.write, x)
+    t = threading.Thread(target = data_fun, args = (p.stdin,))
+    t.start()
+
+    while True:
+        time.sleep(4)
+        if prog is not None:
+            prog.update()
+        if not t.is_alive():
+            break
+        
+    out, err = p.communicate()
+    
+    if verbose:
+        _progress()._clear_stderr()
+        print err
+
+    if prog is not None:
+        prog.end(p.returncode)
+
+    return out, p.returncode
+
+def run_cmd(cmd, verbose = False, prog = None, std_in = False):
     '''Run a command with or without a progress bar.'''
 
     want_poll = lambda a, b: a or b is not None

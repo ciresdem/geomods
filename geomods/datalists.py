@@ -86,7 +86,7 @@ class datalist:
                             minmax[2] = til[2]
                             minmax[3] = til[5]
 
-        try: oregion = region('/'.join(minmax))
+        try: oregion = regions.region('/'.join(minmax))
         except: oregion = False
         return(oregion)
                      
@@ -117,7 +117,7 @@ class datalist:
                 path_d = os.path.join(self._path_dirname, dpath)
                 if not os.path.exists(path_d): usable = False
                 dinf = self._read_inf(path_d + '.inf')
-
+                
                 if self.region and dinf:
                     usable = regions.regions_intersect_p(self.region, dinf)
 
@@ -141,6 +141,13 @@ class datalist:
                     for line in infile:
                         outfile.write(line)
 
+    ## Catenate the xyz data from the datalist
+    def _cat_port(self, dst_port):
+        for fn in self.datafiles:
+            with open(fn) as infile:
+                for line in infile:
+                    dst_port.write(line)
+
     ## Catenate the xyz data from the datalist to a generator
     ## usage: for line in self._caty(): proc(line)
     def _caty(self):
@@ -148,5 +155,14 @@ class datalist:
             with open(fn) as infile:
                 for line in infile:
                     yield(line)
+
+    def _join(self, osep='\n'):
+        df = []
+        for fn in self.datafiles:
+            with open(fn) as infile:
+                for line in infile:
+                    df.append(line)
+
+        return osep.join(df)
 
 ### End

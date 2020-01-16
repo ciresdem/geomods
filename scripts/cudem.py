@@ -29,10 +29,11 @@ import re
 import math
 import glob
 
-import socket
 import random
 import numpy as np
+import fractions
 import threading
+import datetime
 import time
 
 try:
@@ -91,6 +92,7 @@ Options:
   -I, --datalsit\tThe input datalist.
   -E, --increment\tThe desired cell-size in native units.
       note: use at least 7 digits precision with WGS84 units
+  -N, --name\t\tThe output naming prefix
 
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
@@ -241,9 +243,11 @@ class dem:
 
         self.max_prox = self.max_num = None
 
-        self.oname = oname
-        if self.oname is None: 
-            self.oname = self.datalist._path_basename.split('.')[0]
+        if oname is None: 
+            bn = self.datalist._path_basename.split('.')[0]
+
+        str_inc = str(fractions.Fraction(str(self.inc * 3600)).limit_denominator(10)).replace('/', '')
+        self.oname = '{}{}_{}_{}'.format(oname, str_inc, self.region.fn, datetime.datetime.now().strftime('%Y'))
 
     def _valid_p(self):
         '''make sure all files referenced in dec dict exist'''
@@ -386,16 +390,22 @@ class dem:
     def num(self):
         '''Generate a num and num-msk grid with GMT'''
 
-        num_cmd0 = ('cat {} | gmt xyz2grd -V {} -I{} -r -G{}_num.grd -An\
-        '.format(self.datalist._echo_datafiles(' '), self.dist_region.gmt, self.inc, self.oname))
+        #num_cmd0 = ('cat {} | gmt xyz2grd -V {} -I{} -r -G{}_num.grd -An\
+        #'.format(self.datalist._echo_datafiles(' '), self.dist_region.gmt, self.inc, self.oname))
+
+        num_cmd0 = ('gmt xyz2grd -V {} -I{} -r -G{}_num.grd -An\
+        '.format(self.dist_region.gmt, self.inc, self.oname))
 
         num_cmd1 = ('gmt grdmath -V {}_num.grd 0 MUL 1 ADD 0 AND = {}_num_msk.tif=gd+n-9999:GTiff\
         '.format(self.oname, self.oname))
 
-        if self.verbose:
-            pb = 'generating NUM grid using gmt xyz2grd -An'
-        else: pb = None
-        out, self.status = geomods.utils.run_cmd(num_cmd0, self.verbose, pb)
+        #if self.verbose:
+        #pb = 'generating NUM grid using gmt xyz2grd -An'
+        pb = 'processing {} to NUM grid'.format(self.datalist._path_basename)
+        #else: pb = None
+
+        out, self.status = geomods.utils.run_cmd_with_input(num_cmd0, self.datalist._cat_port, verbose = self.verbose, prog = pb)
+
         if self.status == 0:
             if self.verbose:
                 pb = 'generating NUM-MSK grid using gmt grdmath 0 MUL 1 ADD 0 AND'
@@ -417,28 +427,36 @@ class dem:
         return(self.status)
 
     def num_msk(self):
-        geomods.gdalfun.xyz_gmask(self.datalist._caty(), '{}_num_msk.tif'.format(self.oname), self.dist_region.region, self.inc, verbose = self.verbose)
+        geomods.gdalfun.xyz_gmask(self.datalist._caty(), 
+                                  '{}_num_msk.tif'.format(self.oname), 
+                                  self.dist_region.region, 
+                                  self.inc, verbose = self.verbose)
+
         self.dem['num-msk'] = '{}_num_msk.tif'.format(self.oname)
 
     def surface(self):
         '''Generate a DEM with GMT surface'''
 
-        dem_cmd = ('cat {} | gmt blockmean {} -I{} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -r -Lud -Lld\
-        '.format(self.datalist._echo_datafiles(' '), self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
+        #dem_cmd = ('cat {} | gmt blockmean {} -I{} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -r -Lud -Lld\
+        #'.format(self.datalist._echo_datafiles(' '), self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
 
-        dem_cmd1 = ('gmt grdcut -V {}_p.grd -G{}.grd {}\
+        dem_surf_cmd = ('gmt blockmean {} -I{} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -r -Lud -Lld\
+        '.format(self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
+
+        dem_cut_cmd = ('gmt grdcut -V {}_p.grd -G{}.grd {}\
         '.format(self.oname, self.oname, self.dist_region.gmt))
 
-        if self.verbose:
-            pb = 'generating DEM using gmt surface -T.35 -Z1.2'
-        else: pb = None
-        out, self.status = geomods.utils.run_cmd(dem_cmd, self.verbose, pb)
+        #if self.verbose:
+        pb = 'generating DEM using GMT'
+        #else: pb = None
+
+        out, self.status = geomods.utils.run_cmd_with_input(dem_surf_cmd, self.datalist._cat_port, self.verbose, pb)
 
         if self.status == 0:
-            if self.verbose:
-                pb = 'clipping DEM to final region'
-            else: pb = None
-            out, self.status = geomods.utils.run_cmd(dem_cmd1, self.verbose, pb)
+            #if self.verbose:
+            pb = 'clipping DEM to final region'
+            #else: pb = None
+            out, self.status = geomods.utils.run_cmd(dem_cut_cmd, self.verbose, pb)
             
             if self.status == 0:
 
@@ -459,9 +477,9 @@ class dem:
         mbgrid_cmd = ('mbgrid -I{} {} -E{}/{}/degrees! -O{} -A2 -G100 -F1 -N -C10/3 -S0 -X0.1 -T35 -M\
         '.format(self.datalist._path, self.dist_region.gmt, self.inc, self.inc, self.oname))
 
-        if self.verbose:
-            pb = 'generating DEM and NUM grid using gmt mbgrid -T35 -X0.1 -C10/3 -M'
-        else: pb = None
+        #if self.verbose:
+        pb = 'generating DEM and NUM grid using gmt mbgrid -T35 -X0.1 -C10/3 -M'
+        #else: pb = None
         out, self.status = geomods.utils.run_cmd(mbgrid_cmd, self.verbose, pb)
 
         if self.status == 0:
@@ -469,15 +487,15 @@ class dem:
             self.dem['dem-grd'] = '{}.grd'.format(self.oname)
             self.dem['num-grd'] = '{}_num.grd'.format(self.oname)
 
-            if self.verbose:
-                pb = 'resampling DEM to pixel-node registration'
-            else: pb = None
+            #if self.verbose:
+            pb = 'resampling DEM to pixel-node registration'
+            #else: pb = None
             out, self.status = geomods.utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['dem-grd']), self.verbose, pb)
             os.rename('tmp.grd', self.dem['dem-grd'])
 
-            if self.verbose:
-                pb = 'resampling NUM grid to pixel-node registration'
-            else: pb = None
+            #if self.verbose:
+            pb = 'resampling NUM grid to pixel-node registration'
+            #else: pb = None
             out, self.status = geomods.utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['num-grd']), self.verbose, pb)
             os.rename('tmp.grd', self.dem['num-grd'])
 
@@ -500,9 +518,9 @@ class dem:
             num_msk_cmd = ('gmt grdmath -V {} 0 MUL 1 ADD 0 AND = {}_num_msk.tif=gd+n-9999:GTiff\
             '.format(self.dem['num-grd'], self.oname))
 
-            if self.verbose:
-                pb = 'generating NUM-MSK grid using gmt grdmath 0 MUL 1 ADD 0 AND'
-            else: pb = None
+            #if self.verbose:
+            pb = 'generating NUM-MSK grid using gmt grdmath 0 MUL 1 ADD 0 AND'
+            #else: pb = None
             out, self.status = geomods.utils.run_cmd(num_msk_cmd, self.verbose, pb)
 
             if self.status == 0:
@@ -568,10 +586,10 @@ class dem:
         v_fields = ['Name', 'Agency', 'Date', 'Type', 'Resolution', 'HDatum', 'VDatum', 'URL']
         t_fields = [ogr.OFTString, ogr.OFTString, ogr.OFTInteger, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString]
     
-        dst_vec = '{}_sm_ply.shp'.format(self.oname)
+        dst_vec = '{}_ply.shp'.format(self.oname, self.region.fn)
         dst_layername = os.path.basename(dst_vec).split('.')[0]
 
-        shps = glob.glob('{}_sm_ply.*'.format(self.oname))
+        shps = glob.glob('{}_ply.*'.format(self.oname))
         if len(shps) > 0:
             for sh in shps:
                 os.remove(sh)
@@ -597,12 +615,18 @@ class dem:
 
             for dl in self.datalist.datalist:
                 if not self.stop():
-                    this_datalist = geomods.datalists.datalist(dl[0], self.dist_region)
-                    this_dem = dem(this_datalist, self.region, str(self.inc))
 
-                    if self.verbose:
-                        pb = geomods.utils._progress('processing {}'.format(this_datalist._path_basename))
-                    else: pb = None
+                    #if self.verbose:
+                    pb = geomods.utils._progress('loading datalist...')
+                    #else: pb = None
+
+                    this_datalist = geomods.datalists.datalist(dl[0], self.dist_region)
+                    this_dem = dem(this_datalist, self.region, str(self.inc), verbose = self.verbose)
+
+                    #if self.verbose:
+                    pb.opm = 'loading datalist...{}'.format(this_datalist._path_basename)
+                    pb.end(0)
+                    #else: pb = None
 
                     if len(dl) < 8: 
                         o_v_fields = [this_dem.oname, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
@@ -612,18 +636,20 @@ class dem:
                     ## Gererate the NUM-MSK
                     ## ==============================================
 
-                    if self.verbose:
-                        pb1 = geomods.utils._progress('generating {} mask'.format(this_datalist._path_basename))
-                    else: pb1 = None
+                    #if self.verbose:
+                    #    pb1 = geomods.utils._progress('generating {} mask'.format(this_datalist._path_basename))
+                    #else: pb1 = None
 
-                    this_dem.num_msk()
+                    #this_dem.num_msk()
 
-                    if self.verbose:
-                        pb1.end(self.status)
+                    #if self.verbose:
+                    #    pb1.end(self.status)
 
-                    #this_dem.num()
-                    #this_dem._dem_remove('num')
-                    #this_dem._dem_remove('num-grd')
+                    this_dem.num()
+                    this_dem._dem_remove('num')
+                    this_dem._dem_remove('num-grd')
+
+                    pb = geomods.utils._progress('gathering geometries from {}'.format(this_datalist._path_basename))
 
                     if self.status == 0:
                         src_ds = gdal.Open(this_dem.dem['num-msk'])
@@ -643,9 +669,9 @@ class dem:
                         tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(this_dem.oname), None, ogr.wkbMultiPolygon)
                         tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
                         
-                        if self.verbose:
-                            pb1 = geomods.utils._progress('polygonizing {} mask'.format(this_datalist._path_basename))
-                        else: pb1 = None
+                        #if self.verbose:
+                        pb1 = geomods.utils._progress('polygonizing {} mask'.format(this_datalist._path_basename))
+                        #else: pb1 = None
                         result = gdal.Polygonize(srcband, None, tmp_layer, 0, [], callback = None)
 
                         multi = ogr.Geometry(ogr.wkbMultiPolygon)
@@ -679,12 +705,12 @@ class dem:
                         if len(shps) > 0:
                             for sh in shps:
                                 os.remove(sh)
-                        if self.verbose:
-                            pb1.end(result)
+                        #if self.verbose:
+                        pb1.end(result)
 
                     this_dem._dem_remove('num-msk')
-                    if self.verbose:
-                        pb.end(self.status)
+                    #if self.verbose:
+                    pb.end(self.status)
         ds = layer = None
 
 ## =============================================================================
@@ -705,6 +731,7 @@ def main():
     stop_threads = False
     want_verbose = False
     mod_opts = {}
+    o_pre = None
 
     argv = sys.argv
         
@@ -739,6 +766,12 @@ def main():
             i = i + 1
         elif arg[:2] == '-G':
             igrid = str(arg[2:])
+
+        elif arg == '--name' or arg == '-N':
+            o_pre = str(argv[i + 1])
+            i = i + 1
+        elif arg[:2] == '-N':
+            o_pre = str(arg[2:])
 
         elif arg == '--help' or arg == '-h':
             print(_usage)
@@ -845,10 +878,10 @@ def main():
 
         if status != 0: break
 
-        this_surf = dem(this_datalist, this_region, iinc, callback = lambda: stop_threads, oname = socket.gethostname().split('.')[0], verbose = want_verbose)
+        this_surf = dem(this_datalist, this_region, iinc, callback = lambda: stop_threads, oname = o_pre, verbose = want_verbose)
 
         for dem_mod in mod_opts.keys():
-            
+
             if this_datalist is None:
                 if dem_mod != 'conversion-grid':
                     status = -1

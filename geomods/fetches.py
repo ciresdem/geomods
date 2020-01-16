@@ -1244,13 +1244,16 @@ class usace:
 class gmrt:
     def __init__(self, extent = None, callback = None):
         self._gmrt_grid_url = "https://www.gmrt.org/services/GridServer?"
-        self.outd = os.path.join(os.getcwd(), 'gmrt')
+        self._outdir = os.path.join(os.getcwd(), 'gmrt')
         self.outf = None
 
         self._status = 0
         self._results = None
         self._ref_vector = None
 
+        self._want_proc = True
+
+        self.region = extent
         if extent is not None: 
             self.data = { 'north':extent.north,
                           'west':extent.west,
@@ -1262,26 +1265,57 @@ class gmrt:
         
             self._results = fetch_req(self._gmrt_grid_url, params = self.data)
 
+    def proc_data(self, s_dir, s_fn, o_fn, s_t):
+
+        status = 0
+        xyz_dir = os.path.join(self._outdir, s_dir, 'xyz')
+        
+        if not os.path.exists(xyz_dir):
+            os.makedirs(xyz_dir)
+
+        o_fn_bn = os.path.basename(o_fn).split('.')[0]
+        o_fn_xyz = os.path.join(xyz_dir, '{}_{}.xyz'.format(o_fn_bn, self.region.fn))
+
+        ## chunk
+        ## convert to xyz
+        gdalfun.dump(o_fn, o_fn_xyz)
+
+        ## ==============================================
+        ## Add xyz file to datalist
+        ## ==============================================
+
+        sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_t)))
+        sdatalist._append_datafile('{}'.format(os.path.basename(o_fn_xyz)), 168, 1)
+        sdatalist._reset()
+
+        ## ==============================================
+        ## Generate .inf file
+        ## ==============================================
+
+        out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_t))), False, None)
+
     def print_results(self):
         print(self._results.url)
 
     def fetch_results(self):
-        try:
-            self.outf = os.path.join(self.outd, self._results.headers['content-disposition'].split('=')[1].strip())
+        #try:
+        outf = os.path.join(self._outdir, self._results.headers['content-disposition'].split('=')[1].strip())
+        
+        if not os.path.exists(os.path.dirname(outf)):
+            os.makedirs(os.path.dirname(outf))
 
-            if not os.path.exists(os.path.dirname(self.outf)):
-                os.makedirs(os.path.dirname(self.outf))
+        with open(outf, 'wb') as local_file:
+            for chunk in self._results.iter_content(chunk_size = 50000):
+                local_file.write(chunk)
 
-            with open(self.outf, 'wb') as local_file:
-                for chunk in self._results.iter_content(chunk_size = 50000):
-                    local_file.write(chunk)
-        except: self._status = -1
+        if self._want_proc:
+            surv_dir = self._outdir
+            surv_fn = os.path.basename(outf)
 
-    def proc_results(self):
-        if self._status == 0 and self.outf is not None:
-            ## chunk
-            ## convert to xyz
-            gdalfun.gdal2xyz(os.path.join(self.outf, os.path.basename(self.outf).split('.')[0] + '.xyz'))
+            t = threading.Thread(target = self.proc_data, args = (surv_dir, surv_fn, outf, 'gmrt'))
+            t.start()
+
+        #except: self._status = -1
             
 ## =============================================================================
 ##
