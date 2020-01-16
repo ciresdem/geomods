@@ -136,6 +136,7 @@ def chunks(src_fn, n_chunk = 10):
     '''split `src_fn` GDAL file into chunks with `n_chunk` cells squared.'''
 
     band_nums = []
+    o_chunks = []
     status = 0
     
     if band_nums == []: band_nums = [1]
@@ -191,6 +192,8 @@ def chunks(src_fn, n_chunk = 10):
                 band_data = band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])    
                 
                 dst_fn = '{}_chnk{}x{}.tif'.format(src_fn.split('.')[0], x_i_chunk, i_chunk)
+                
+                o_chunks.append(dst_fn)
 
                 ods = gdal.GetDriverByName('GTiff').Create(dst_fn, this_x_size, this_y_size, 1, ds_config['dt'])
                 ods.SetGeoTransform(dst_gt)
@@ -209,6 +212,8 @@ def chunks(src_fn, n_chunk = 10):
         else:
             x_chunk += n_chunk
             x_i_chunk += 1
+
+    return o_chunks
 
 def crop(src_fn):
     '''Crop `src_fn` GDAL file by it's NoData value.
@@ -254,7 +259,6 @@ def dump(src_gdal, dst_xyz):
 
     status = 0
     band_nums = []
-    nodata = ['-9999', 'nan']
     srcwin = None
     delim = ' '
     skip = 1
@@ -296,13 +300,15 @@ def dump(src_gdal, dst_xyz):
 
     for y in range(srcwin[1], srcwin[1] + srcwin[3], skip):
 
+        nodata = ['-9999', 'nan']
         data = []
         for band in bands:
-            nodata.append(band.GetNoDataValue())
+            nodata.append(band_format % band.GetNoDataValue())
             band_data = band.ReadAsArray(srcwin[0], y, srcwin[2], 1)    
             band_data = np.reshape(band_data, (srcwin[2], ))
             data.append(band_data)
 
+            #print nodata
         for x_i in range(0, srcwin[2], skip):
             x = x_i + srcwin[0]
 
@@ -317,6 +323,7 @@ def dump(src_gdal, dst_xyz):
 
             line = format % (float(geo_x), float(geo_y), band_str)
 
+            #print nodata
             if band_str not in nodata:
                 dst_fh.write(line)
 
@@ -607,7 +614,7 @@ def xyz_gmask(src_xyz, dst_gdal, extent, cellsize,
     dst_band = dst_ds.GetRasterBand(1)
     dst_band.SetNoDataValue(dst_nodata)
 
-    ptArray = np.zeros( (ycount, xcount) )
+    ptArray = np.zeros((ycount, xcount))
 
     ## ==============================================
     ## Process the XYZ data

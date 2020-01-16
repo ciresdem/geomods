@@ -696,7 +696,7 @@ class nos:
         '''Process a fetched file to xyz (navd88) and add it to its datalist.'''
 
         status = 0
-        xyz_dir = os.path.join(self._outdir, s_dir, 'xyz')
+        xyz_dir = os.path.join(self._outdir, s_dir, s_t.lower(), 'xyz')
         
         if not os.path.exists(xyz_dir):
             os.makedirs(xyz_dir)
@@ -749,8 +749,7 @@ class nos:
                 ## Move processed xyz file to xyz directory
                 ## ==============================================
 
-                os.remove(o_fn_p_xyz)
-
+                os.remove(o_fn_tmp)
                 if os.stat(o_fn_xyz).st_size == 0:
                     os.remove(o_fn_xyz)
                 else:
@@ -768,16 +767,73 @@ class nos:
                     ## ==============================================
 
                     out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_t))), False, None)
-
-        os.remove(o_fn)
-
+            os.remove(o_fn)
 
         ## ==============================================
         ## NOS BAG data comes as gzipped BAG
         ## ==============================================
-        if s_t == 'BAG':
-            pass
 
+        elif 'BAG' in s_t:
+            s_gz = os.path.join(s_dir, s_fn)
+            s_bag = '.'.join(s_gz.split('.')[:-1])
+            s_tif = os.path.join(s_dir, s_fn.split('.')[0].lower() + '.tif')
+            
+            s_xyz = s_gz.split('.')[0] + '.xyz'
+
+            utils.run_cmd('gunzip {}'.format(os.path.join(s_dir, s_fn)), False, 'gunzip')
+            utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(s_bag, s_tif), True, 'gdalwarp')
+
+            out_chunks = gdalfun.chunks(s_tif, 1000)
+
+            for i in out_chunks:
+                i_xyz = i.split('.')[0] + '.xyz'
+                o_xyz = os.path.join(xyz_dir, os.path.basename(i_xyz))
+
+                gdalfun.dump(i, i_xyz)
+
+                if os.stat(i_xyz).st_size == 0:
+                    os.remove(i_xyz)
+                else:
+                    ## ==============================================
+                    ## transform processed xyz file to NAVD88 
+                    ## using vdatum
+                    ## ==============================================
+
+                    if len(self.this_vd.vdatum_paths) > 0:
+                        self.this_vd.ivert = 'mllw'
+                        self.this_vd.overt = 'navd88'
+                        self.this_vd.ds_dir = os.path.relpath(os.path.join(xyz_dir, 'result'))
+                        
+                        self.this_vd.run_vdatum(os.path.relpath(i_xyz))
+                        print os.path.join(xyz_dir, 'result', os.path.basename(i_xyz))
+                        
+                        os.rename(os.path.join(xyz_dir, 'result', os.path.basename(i_xyz)), o_xyz)
+                    else: os.rename(i_xyz, o_xyz)
+            
+                    ## ==============================================
+                    ## Move processed xyz file to xyz directory
+                    ## ==============================================
+                    
+                    os.remove(i_xyz)
+                    os.remove(i)
+                    if os.stat(o_xyz).st_size == 0:
+                        os.remove(o_xyz)
+                    else:
+
+                        ## ==============================================
+                        ## Add xyz file to datalist
+                        ## ==============================================
+                        
+                        sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_t)))
+                        sdatalist._append_datafile('{}'.format(os.path.basename(o_xyz)), 168, 1)
+                        sdatalist._reset()
+
+                        ## ==============================================
+                        ## Generate .inf file
+                        ## ==============================================
+
+                        out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_t))), False, None)
+                
     def print_results(self):
         for row in self._results:
             if row:

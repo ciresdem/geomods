@@ -246,7 +246,9 @@ class dem:
         self.max_prox = self.max_num = None
 
         if oname is None: 
-            oname = self.datalist._path_basename.split('.')[0]
+            if idatalist is None:
+                oname = 'cgrid'
+            else: oname = self.datalist._path_basename.split('.')[0]
 
         str_inc = str(fractions.Fraction(str(self.inc * 3600)).limit_denominator(10)).replace('/', '')
         self.oname = '{}{}_{}_{}'.format(oname, str_inc, self.region.fn, datetime.datetime.now().strftime('%Y'))
