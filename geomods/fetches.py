@@ -82,6 +82,8 @@ namespaces = {'gmd': 'http://www.isotc211.org/2005/gmd',
 def fetch_file(src_url, dst_fn, params = None):
     '''fetch src_url and save to dst_fn'''
 
+    pb = utils._progress('fetching remote file: {}'.format(src_url))
+
     if not os.path.exists(os.path.dirname(dst_fn)):
         os.makedirs(os.path.dirname(dst_fn))
 
@@ -91,8 +93,12 @@ def fetch_file(src_url, dst_fn, params = None):
         with open(dst_fn, 'wb') as local_file:
             for chunk in req.iter_content(chunk_size = 50000):
                 local_file.write(chunk)
+                pb.update()
+        pb.end(0)
         return(0)
-    else: return(-1)
+    else: 
+        pb.end(-1)
+        return(-1)
 
 def fetch_req(src_url, params = None, tries = 3):
     '''fetch src_url and return the requests object'''
@@ -223,9 +229,12 @@ def update_ref_vector(src_vec, surveys, update=True):
 ##
 ## =============================================================================
 
-class dc:
-    def __init__(self, extent = None, callback = lambda: True):
+class dc(threading.Thread):
+    #def __init__(self, extent = None, callback = lambda: True):
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         '''Fetch elevation data from the Digital Coast'''
+
+        threading.Thread.__init__(self)
 
         self._dc_htdata_url = 'https://coast.noaa.gov/htdata/'
         self._dc_dav_id = 'https://coast.noaa.gov/dataviewer/#/lidar/search/where:ID='
@@ -240,7 +249,12 @@ class dc:
         self._results = []
 
         self._index = False
+
+        self.stop = callback
         self._want_proc = True
+        self._want_list = want_list
+        self._want_update = want_update
+        self._filters = filters
 
         if extent is not None: 
             self._boundsGeom = bounds2geom(extent.region)
@@ -250,8 +264,18 @@ class dc:
             self._has_vector = True
         else: self._has_vector = False
 
-        self.stop = callback
         self.region = extent
+
+    def run(self):
+        
+        if self._want_update:
+            self._update()
+        else:
+            self.search_gmt()
+
+            if self._want_list:
+                self.print_results()
+            else: self.fetch_results()
 
     def _log_survey(self, surv_url):
         with open(self._log_fn, 'a') as local_file:
@@ -564,9 +588,12 @@ class dc:
 ##
 ## =============================================================================
 
-class nos:
-    def __init__(self, extent = None, callback = lambda: True):
+class nos(threading.Thread):
+    #def __init__(self, extent = None, callback = lambda: True):
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         '''Fetch NOS BAG and XYZ sounding data from NOAA'''
+
+        threading.Thread.__init__(self)
 
         self._nos_xml_url = lambda nd: 'https://data.noaa.gov/waf/NOAA/NESDIS/NGDC/MGG/NOS/%siso_u/xml/' %(nd)
         self._nos_directories = ["B00001-B02000/", "D00001-D02000/", "F00001-F02000/", \
@@ -586,14 +613,28 @@ class nos:
         self._surveys = []
         self._xml_results = []
         self._results = []
-        self.stop = callback
 
+        self.stop = callback
         self._want_proc = True
+        self._want_list = want_list
+        self._want_update = want_update
+        self._filters = filters
 
         self.region = extent
         if extent is not None: 
             self._bounds = bounds2geom(extent.region)
         else: self._status = -1
+
+    def run(self):
+        
+        if self._want_update:
+            self._update()
+        else:
+            self.search_gmt()
+
+            if self._want_list:
+                self.print_results()
+            else: self.fetch_results()
 
     def _parse_nos_xml(self, xml_url, sid):        
         xml_doc = fetch_nos_xml(xml_url)
@@ -722,6 +763,7 @@ class nos:
             with open(os.path.join(o_fn_tmp), 'w') as out_xyz:
                 d_csv = csv.writer(out_xyz, delimiter = ' ')
                 
+
                 for row in s_csv:
                     if len(row) > 2:
                         this_xyz = [float(row[2]), float(row[1]), float(row[3]) * -1]
@@ -778,7 +820,7 @@ class nos:
             s_gz = os.path.join(s_dir, s_fn)
 
             if s_gz.split('.')[-1] == 'gz':
-                utils.run_cmd('gunzip {}'.format(os.path.join(s_dir, s_fn)), False, 'gunzip')
+                out, status = utils.run_cmd('gunzip {}'.format(os.path.join(s_dir, s_fn)), False, None)
                 s_bag = '.'.join(s_gz.split('.')[:-1])
             else: s_bag = os.path.join(s_dir, s_fn)
 
@@ -786,7 +828,7 @@ class nos:
             
             s_xyz = s_gz.split('.')[0] + '.xyz'
 
-            utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(s_bag, s_tif), True, 'gdalwarp')
+            out, status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(s_bag, s_tif), True, 'transforming data to WGS84')
 
             out_chunks = gdalfun.chunks(s_tif, 1000)
             os.remove(s_tif)
@@ -800,11 +842,6 @@ class nos:
                 if os.stat(i_xyz).st_size == 0:
                     os.remove(i_xyz)
                 else:
-                    ## ==============================================
-                    ## transform processed xyz file to NAVD88 
-                    ## using vdatum
-                    ## ==============================================
-
                     if len(self.this_vd.vdatum_paths) > 0:
                         self.this_vd.ivert = 'mllw'
                         self.this_vd.overt = 'navd88'
@@ -813,31 +850,18 @@ class nos:
                         self.this_vd.run_vdatum(os.path.relpath(i_xyz))
                         
                         os.rename(os.path.join(xyz_dir, 'result', os.path.basename(i_xyz)), o_xyz)
+                        os.remove(i_xyz)
                     else: os.rename(i_xyz, o_xyz)
             
-                    ## ==============================================
-                    ## Move processed xyz file to xyz directory
-                    ## ==============================================
-                    
-                    os.remove(i_xyz)
-                    os.remove(i)
-                    if os.stat(o_xyz).st_size == 0:
-                        os.remove(o_xyz)
-                    else:
-
-                        ## ==============================================
-                        ## Add xyz file to datalist
-                        ## ==============================================
-                        
+                    if os.stat(o_xyz).st_size != 0:
                         sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_t)))
                         sdatalist._append_datafile('{}'.format(os.path.basename(o_xyz)), 168, 1)
                         sdatalist._reset()
 
-                        ## ==============================================
-                        ## Generate .inf file
-                        ## ==============================================
-
                         out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_t))), False, None)
+                    else: os.remove(o_xyz)
+
+                os.remove(i)
                 
     def print_results(self):
         for row in self._results:
@@ -854,10 +878,6 @@ class nos:
             if row:
                 if not self.stop():
 
-                    ## ==============================================
-                    ## Fetch the data
-                    ## ==============================================
-                    
                     fetch_file(row, os.path.join(self._outdir, os.path.basename(row)))
                     
                     ## ==============================================                    
@@ -884,9 +904,12 @@ class nos:
 ##
 ## =============================================================================
 
-class charts:
-    def __init__(self, extent = None, callback = None):
+class charts(threading.Thread):
+    #def __init__(self, extent = None, callback = None):
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         '''Fetch digital chart data from NOAA'''
+
+        threading.Thread.__init__(self)
 
         self._enc_data_catalog = 'http://www.charts.noaa.gov/ENCs/ENCProdCat_19115.xml'
         self._rnc_data_catalog = 'http://www.charts.noaa.gov/RNCs/RNCProdCat_19115.xml'
@@ -906,12 +929,27 @@ class charts:
         self._results = []
         self._chart_feats = []
 
+        self.stop = callback
         self._want_proc = True
+        self._want_list = want_list
+        self._want_update = want_update
+        self._filters = filters
 
         self.region = extent
         if extent is not None: 
             self._boundsGeom = bounds2geom(extent.region)
         else: self._status = -1
+
+    def run(self):
+        
+        if self._want_update:
+            self._update()
+        else:
+            self.search_gmt()
+
+            if self._want_list:
+                self.print_results()
+            else: self.fetch_results()
 
     def _parse_charts_xml(self, update = True):
         '''parse the charts xyz and extract the survey results'''
@@ -1153,7 +1191,12 @@ class charts:
 ## =============================================================================
 
 class tnm:
-    def __init__(self, extent = None, callback = None):
+    #def __init__(self, extent = None, callback = None):
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
+        '''Fetch elevation data from The National Map'''
+
+        threading.Thread.__init__(self)
+
         self._tnm_api_url = "http://viewer.nationalmap.gov/tnmaccess/"
         self._tnm_dataset_url = "http://viewer.nationalmap.gov/tnmaccess/api/datasets?"
         self._tnm_product_url = "http://viewer.nationalmap.gov/tnmaccess/api/products?"
@@ -1168,6 +1211,12 @@ class tnm:
         self._tnm_ds = [1, 2]
         self._tnm_df = ['IMG']
 
+        self.stop = callback
+        self._want_proc = True
+        self._want_list = want_list
+        self._want_update = want_update
+        self._filters = filters
+
         if extent is not None: 
             self._results = fetch_req(self._tnm_dataset_url)
             self._datasets = self._results.json()
@@ -1181,6 +1230,11 @@ class tnm:
         
             self._results = fetch_req(self._tnm_product_url, params = self.data)
             self._dataset_results = self._results.json()
+
+    def run(self):
+        if self._want_list:
+            self.print_results()
+        else: self.fetch_results()
 
     def print_results(self):
         for i in self._dataset_results['items']:
@@ -1201,8 +1255,13 @@ class tnm:
 ##
 ## =============================================================================
 
-class mb:
-    def __init__(self, extent = None, callback = None):
+class mb(threading.Thread):
+    #def __init__(self, extent = None, callback = None):
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
+        '''Fetch multibeam bathymetry from NOAA'''
+
+        threading.Thread.__init__(self)
+
         self._mb_data_url = "https://data.ngdc.noaa.gov/platforms/"
         self._mb_search_url = "https://maps.ngdc.noaa.gov/mapviewer-support/multibeam/files.groovy?"
         self._outdir = os.path.join(os.getcwd(), 'mb')
@@ -1213,10 +1272,21 @@ class mb:
         self._survey_list = []
         self._ref_vector = None
 
+        self.stop = callback
+        self._want_proc = True
+        self._want_list = want_list
+        self._want_update = want_update
+        self._filters = filters
+
         if extent is not None:
             self.data = { 'geometry':extent.bbox }
             self._results = fetch_req(self._mb_search_url, params = self.data)
             self._survey_list = self._results.content.split('\n')[:-1]
+
+    def run(self):
+        if self._want_list:
+            self.print_results()
+        else: self.fetch_results()
         
     def parse_results(self, local):
         for res in self._survey_list:
@@ -1264,8 +1334,12 @@ class mb:
 ##
 ## =============================================================================
 
-class usace:
-    def __init__(self, extent = None, callback = None):
+class usace(threading.Thread):
+    #def __init__(self, extent = None, callback = None):
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
+        '''Fetch USACE bathymetric surveys'''
+
+        threading.Thread.__init__(self)
 
         self._usace_gj_api_url = 'https://opendata.arcgis.com/datasets/80a394bae6b547f1b5788074261e11f1_0.geojson'
         self._usace_gs_api_url = 'https://services7.arcgis.com/n1YM8pTrFmm7L4hs/arcgis/rest/services/eHydro_Survey_Data/FeatureServer/0/query?outFields=*&where=1%3D1'
@@ -1276,6 +1350,12 @@ class usace:
         self._survey_list = []
         self._ref_vector = None
 
+        self.stop = callback
+        self._want_proc = True
+        self._want_list = want_list
+        self._want_update = want_update
+        self._filters = filters
+
         if extent is not None:
             self.data = { 'geometry':extent.bbox,
                           'inSR':4326,
@@ -1283,6 +1363,11 @@ class usace:
  
             self._results = fetch_req(self._usace_gs_api_url, params = self.data)
             self._survey_list = self._results.json()
+
+    def run(self):
+        if self._want_list:
+            self.print_results()
+        else: self.fetch_results()
 
     def print_results(self):
         for feature in self._survey_list['features']:
@@ -1303,8 +1388,12 @@ class usace:
 ##
 ## =============================================================================
 
-class gmrt:
-    def __init__(self, extent = None, callback = None):
+class gmrt(threading.Thread):
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
+        '''Fetch raster data from the GMRT'''
+
+        threading.Thread.__init__(self)
+
         self._gmrt_grid_url = "https://www.gmrt.org/services/GridServer?"
         self._outdir = os.path.join(os.getcwd(), 'gmrt')
         self.outf = None
@@ -1313,7 +1402,11 @@ class gmrt:
         self._results = None
         self._ref_vector = None
 
+        self.stop = callback
         self._want_proc = True
+        self._want_list = want_list
+        self._want_update = want_update
+        self._filters = filters
 
         self.region = extent
         if extent is not None: 
@@ -1327,6 +1420,11 @@ class gmrt:
         
             self._results = fetch_req(self._gmrt_grid_url, params = self.data)
 
+    def run(self):
+        if self._want_list:
+            self.print_results()
+        else: self.fetch_results()
+            
     def proc_data(self, s_dir, s_fn, o_fn, s_t):
 
         status = 0
@@ -1360,7 +1458,6 @@ class gmrt:
         print(self._results.url)
 
     def fetch_results(self):
-        #try:
         outf = os.path.join(self._outdir, self._results.headers['content-disposition'].split('=')[1].strip())
         
         if not os.path.exists(os.path.dirname(outf)):
@@ -1374,10 +1471,7 @@ class gmrt:
             surv_dir = self._outdir
             surv_fn = os.path.basename(outf)
 
-            t = threading.Thread(target = self.proc_data, args = (surv_dir, surv_fn, outf, 'gmrt'))
-            t.start()
-
-        #except: self._status = -1
+            self.proc_data(surv_dir, surv_fn, outf, 'gmrt')
             
 ## =============================================================================
 ##
@@ -1387,8 +1481,13 @@ class gmrt:
 ##
 ## =============================================================================
 
-class srtm_cgiar:
-    def __init__(self, extent = None, callback = None):
+class srtm_cgiar(threading.Thread):
+    #def __init__(self, extent = None, callback = None):
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
+        '''Fetch SRTM data from CGIAR'''
+
+        threading.Thread.__init__(self)
+
         self._srtm_url = 'http://srtm.csi.cgiar.org'
         self._srtm_dl_url = 'http://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/'
 
@@ -1397,15 +1496,29 @@ class srtm_cgiar:
         self._outdir = os.path.join(os.getcwd(), 'srtm')
         self._ref_vector = os.path.join(fetchdata, 'srtm.gmt')
 
+        self.stop = callback
+        self._want_proc = True
+        self._want_list = want_list
+        self._want_update = want_update
+        self._filters = filters
+
         self._boundsGeom = None
         if extent is not None: 
             self._boundsGeom = bounds2geom(extent.region)
 
-    def search_gmt(self, filters=[]):
+    def run(self):
+        #if len(self._filters) > 0:
+        self.search_gmt()
+
+        if self._want_list:
+            self.print_results()
+        else: self.fetch_results()
+
+    def search_gmt(self):
         gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
         layer = gmt1.GetLayer()
 
-        for filt in filters:
+        for filt in self._filters:
             layer.SetAttributeFilter('{}'.format(filt))
 
         for feature in layer:
@@ -1415,17 +1528,17 @@ class srtm_cgiar:
                 geo_env = geom.GetEnvelope()
                 srtm_lon = int(math.ceil(abs((-180 - geo_env[1]) / 5)))
                 srtm_lat = int(math.ceil(abs((60 - geo_env[3]) / 5)))
-                self._results.append('srtm_{:2}_{:2}.zip'.format(srtm_lon, srtm_lat))
+                self._results.append('srtm_{:02}_{:02}.zip'.format(srtm_lon, srtm_lat))
 
     def print_results(self):
         for row in self._results:
             print('{}{}'.format(self._srtm_dl_url, row))
 
     def fetch_results(self):
-        try:
-            for row in self._results:
-                fetch_file('{}{}'.format(self._srtm_dl_url, row), os.path.join(self._outdir, os.path.basename(row)))
-        except: self._status = -1
+        #try:
+        for row in self._results:
+            fetch_file('{}{}'.format(self._srtm_dl_url, row), os.path.join(self._outdir, os.path.basename(row)))
+        #except: self._status = -1
 
 ## =============================================================================
 ##
@@ -1435,14 +1548,25 @@ class srtm_cgiar:
 ##
 ## =============================================================================
 
-class ngs:
-    def __init__(self, extent = None, callback = None):
+class ngs(threading.Thread):
+    #def __init__(self, extent = None, callback = None):
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
+        '''Fetch NGS monuments from NGS'''
+
+        threading.Thread.__init__(self)
+
         self._ngs_search_url = 'http://geodesy.noaa.gov/api/nde/bounds?'
         self._outdir = os.path.join(os.getcwd(), 'ngs')
         self._ref_vector = None
 
         self._status = 0
         self._results = None
+
+        self.stop = callback
+        self._want_proc = True
+        self._want_list = want_list
+        self._want_update = want_update
+        self._filters = filters
 
         if extent is not None:
             self.data = { 'maxlon':extent.east,
@@ -1451,6 +1575,11 @@ class ngs:
                           'minlat':extent.south }
 
             self._results = fetch_req(self._ngs_search_url, params = self.data)
+
+    def run(self):
+        if self._want_list:
+            self.print_results()
+        else: self.fetch_results()
         
     def print_results(self):
         print self._results.url

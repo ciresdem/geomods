@@ -313,7 +313,8 @@ def dump(src_gdal, dst_xyz, dump_nodata = False):
         nodata = ['-9999', 'nan']
         data = []
         for band in bands:
-            nodata.append(band_format % band.GetNoDataValue())
+            if band.GetNoDataValue() is not None:
+                nodata.append(band_format % band.GetNoDataValue())
             band_data = band.ReadAsArray(srcwin[0], y, srcwin[2], 1)    
             band_data = np.reshape(band_data, (srcwin[2], ))
             data.append(band_data)

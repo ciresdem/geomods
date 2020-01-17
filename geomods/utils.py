@@ -70,7 +70,7 @@ def run_cmd_with_input(cmd, data_fun, verbose = False, prog = None):
 
     return out, p.returncode
 
-def run_cmd(cmd, verbose = False, prog = None, std_in = False):
+def run_cmd(cmd, verbose = False, prog = None):
     '''Run a command with or without a progress bar.'''
 
     want_poll = lambda a, b: a or b is not None
@@ -91,7 +91,7 @@ def run_cmd(cmd, verbose = False, prog = None, std_in = False):
                 time.sleep(3)
 
         if verbose:
-            l = p.stderr.read()
+            l = p.stderr.read(len(prog))
             _progress()._clear_stderr()
             if l: sys.stderr.write('{}\n'.format(l.strip()))
 
@@ -193,13 +193,20 @@ class _progress:
     def _terminal_size(self):
         return os.popen('stty size', 'r').read().split()
 
-    def _clear_stderr(self):
-        sys.stderr.write('\r{}\r'.format(' ' * int(self._terminal_size()[1])))
+    # def _clear_stderr(self):
+    #     sys.stderr.write('\r{}\r'.format(' ' * int(self._terminal_size()[1])))
+    #     sys.stderr.flush()
+
+    def _clear_stderr(self, slen = 79):
+        #sys.stderr.write('\r{}\r'.format(' ' * int(slen)))
+        #sys.stderr.write('\033[A\n')
+        sys.stderr.write('\x1b[2K')
         sys.stderr.flush()
 
     def update(self):
         self.pc = (self.count % self.tw)
         self.sc = (self.count % (self.tw+1))
+        #self._clear_stderr(len(self.pm))
         self._clear_stderr()
 
         sys.stderr.write('\r[\033[32m{:4}\033[m] {:40}\r'.format(self.spinner[self.sc], self.pm))
@@ -211,6 +218,7 @@ class _progress:
         self.count = self.spin_way(self.count)
 
     def end(self, status):
+        #self._clear_stderr(len(self.opm))
         self._clear_stderr()
 
         if status != 0:

@@ -49,15 +49,15 @@ _version = '0.1.2'
 ## =============================================================================
 
 fetch_infos = { 
-    'dc':[lambda x, c: geomods.fetches.dc(x, callback = c), 'digital coast'],
-    'nos':[lambda x, c: geomods.fetches.nos(x, callback = c), 'noaa nos bathymetry'],
-    'mb':[lambda x, c: geomods.fetches.mb(x, callback = c), 'noaa multibeam'],
-    'gmrt':[lambda x, c: geomods.fetches.gmrt(x, callback = c), 'gmrt'],
-    'srtm':[lambda x, c: geomods.fetches.srtm_cgiar(x, callback = c), 'srtm from cgiar'],
-    'charts':[lambda x, c: geomods.fetches.charts(x, callback = c), 'noaa nautical charts'],
-    'tnm':[lambda x, c: geomods.fetches.tnm(x, callback = c), 'the national map'],
-    'ngs':[lambda x, c: geomods.fetches.ngs(x, callback = c), 'ngs monuments'],
-    'usace':[lambda x, c: geomods.fetches.usace(x, callback = c), 'usace bathymetry'] }    
+    'dc':[lambda x, f, wl, wu, c: geomods.fetches.dc(x, f, wl, wu, callback = c), 'digital coast'],
+    'nos':[lambda x, f, wl, wu, c: geomods.fetches.nos(x, f, wl, wu, callback = c), 'noaa nos bathymetry'],
+    'mb':[lambda x, f, wl, wu, c: geomods.fetches.mb(x, f, wl, wu, callback = c), 'noaa multibeam'],
+    'gmrt':[lambda x, f, wl, wu, c: geomods.fetches.gmrt(x, f, wl, wu, callback = c), 'gmrt'],
+    'srtm':[lambda x, f, wl, wu, c: geomods.fetches.srtm_cgiar(x, f, wl, wu, callback = c), 'srtm from cgiar'],
+    'charts':[lambda x, f, wl, wu, c: geomods.fetches.charts(x, f, wl, wu, callback = c), 'noaa nautical charts'],
+    'tnm':[lambda x, f, wl, wu, c: geomods.fetches.tnm(x, f, wl, wu, callback = c), 'the national map'],
+    'ngs':[lambda x, f, wl, wu, c: geomods.fetches.ngs(x, f, wl, wu, callback = c), 'ngs monuments'],
+    'usace':[lambda x, f, wl, wu, c: geomods.fetches.usace(x, f, wl, wu, callback = c), 'usace bathymetry'] }    
 
 def fetch_desc(x):
     fd = []
@@ -264,22 +264,37 @@ def main():
                 ## Initialize the Fetch Module
                 ## ==============================================
 
-                pb = geomods.utils._progress('initializing {} for region ({}/{}): {}\
+                pb = geomods.utils._progress('fetching {} for region ({}/{}): {}\
                 '.format(fc, rn + 1, len(these_regions), this_region.region_string))
+                
+                #stop_l = lambda: stop_threads
 
-                fl = fetch_infos[fc][0](this_region.buffer(5, percentage = True), lambda: stop_threads)
+                fl = fetch_infos[fc][0](this_region.buffer(5, percentage = True), f, want_list, want_update, lambda: stop_threads)
                 fl._want_proc = want_proc
-                if 'search_gmt' in dir(fl):
-                    stop_threads = False
-                    try:
-                        fl_search = threading.Thread(target = fl.search_gmt, args = (f,))
-                        fl_search.start()
-                        while True:
-                            time.sleep(3)
-                            pb.update()
-                            if not fl_search.is_alive():
-                                break
-                    except (KeyboardInterrupt, SystemExit): stop_threads = True
+                
+                try:
+                    fl.start()
+                    #print fl
+                    while True:
+                        time.sleep(2)
+                        pb.update()
+                        if not fl.is_alive():
+                            break
+                except (KeyboardInterrupt, SystemExit): 
+                    fl._status = -1
+                    stop_threads = True
+
+                # if 'search_gmt' in dir(fl):
+                #     stop_threads = False
+                #     try:
+                #         fl_search = threading.Thread(target = fl.search_gmt, args = (f,))
+                #         fl_search.start()
+                #         while True:
+                #             time.sleep(3)
+                #             pb.update()
+                #             if not fl_search.is_alive():
+                #                 break
+                #     except (KeyboardInterrupt, SystemExit): stop_threads = True
 
                 pb.end(fl._status)
 
@@ -287,24 +302,26 @@ def main():
                 ## Run the Fetch Module
                 ## ==============================================
 
-                if fl._status == 0:
-                    if want_list: 
-                        fl.print_results()
-                    else:
-                        pb = geomods.utils._progress('fetching {} data in region ({}/{}): {}\
-                        '.format(fc, rn + 1, len(these_regions), this_region.region_string))
+                # if fl._status == 0:
+                #     #if want_list: 
+                #     #    fl.print_results()
+                #     #else:
+                #     pb = geomods.utils._progress('fetching {} data in region ({}/{}): {}\
+                #     '.format(fc, rn + 1, len(these_regions), this_region.region_string))
+                    
+                #     #fl
+                        
+                #         # try:
+                #         #     fl_fetch = threading.Thread(target = fl.fetch_results, args = ())
+                #         #     fl_fetch.start()
+                #         #     while True:
+                #         #         time.sleep(5)
+                #         #         pb.update()
+                #         #         if not fl_fetch.is_alive():
+                #         #             break
+                #         # except (KeyboardInterrupt, SystemExit): stop_threads = True
 
-                        try:
-                            fl_fetch = threading.Thread(target = fl.fetch_results, args = ())
-                            fl_fetch.start()
-                            while True:
-                                time.sleep(5)
-                                pb.update()
-                                if not fl_fetch.is_alive():
-                                    break
-                        except (KeyboardInterrupt, SystemExit): stop_threads = True
-
-                        pb.end(fl._status)
+                #     pb.end(fl._status)
 
 if __name__ == '__main__':
     main()
