@@ -69,7 +69,7 @@ _version = '0.1.3'
 
 _dem_mods = { 'mbgrid': [lambda x: x.mbgrid, 'generate a DEM with mbgrid', 'None'], 
               'gmt-surface': [lambda x: x.surface, 'generate a DEM with GMT', 'None'],
-              'spatial-metadata': [lambda x: x.spatial_metadata, 'generate spatial-metadata', 'None'],
+              'spatial-metadata': [lambda x: x.spatial_metadata, 'generate spatial-metadata', 'epsg'],
               'conversion-grid': [lambda x: x.conversion_grid, 'generate a conversion grid with vdatum', 'ivert:overt:region']
 }
 
@@ -81,7 +81,7 @@ def dem_mod_desc(x):
 
 _usage = '''cudem.py ({}): Process and generate Digital Elevation Models and derivatives
 
-usage: cudem.py [ -hvAIER [ args ] ] module:option1:option2 ...
+usage: cudem.py [ -hvAIER [ args ] ] module[:option1:option2] ...
 
 Modules:
   {}
@@ -94,7 +94,7 @@ Options:
   -I, --datalsit\tThe input datalist.
   -E, --increment\tThe desired cell-size in native units.
       note: use at least 7 digits precision with WGS84 units
-  -N, --name\t\tThe output naming prefix
+  -N, --name\t\tThe output naming prefix.
 
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
@@ -230,14 +230,20 @@ def dem_interpolation_uncertainty(dem_surface):
 ##
 ## =============================================================================
 
-class dem:
+class dem(threading.Thread):
     def __init__(self, idatalist, iregion, iinc = '0.000277777', oname = None, callback = lambda: False, verbose = False):
+        '''run a number of modules for DEM generation and analysis'''
+
+        threading.Thread.__init__(self)
+
         self.status = 0
         self.stop = callback
         self.verbose = verbose
         self.dem = {}
         self.inc = float(iinc)
         self.datalist = idatalist
+        self._module = self._valid_p
+        self._module_args = ()
 
         self.region = iregion
         self.proc_region = self.region.buffer(10 * self.inc)
@@ -252,6 +258,11 @@ class dem:
 
         str_inc = str(fractions.Fraction(str(self.inc * 3600)).limit_denominator(10)).replace('/', '')
         self.oname = '{}{}_{}_{}'.format(oname, str_inc, self.region.fn, datetime.datetime.now().strftime('%Y'))
+
+    def run(self):
+        if len(self._module_args) == 0:
+            self._module()
+        else: self._module(*self._module_args)
 
     def _valid_p(self):
         '''make sure all files referenced in dec dict exist'''
@@ -583,12 +594,12 @@ class dem:
             os.remove(vd_r)
         os.removedirs('result')
 
-    def spatial_metadata(self):
+    def spatial_metadata(self, epsg = 4269):
         '''Geneate spatial metadata from a datalist'''
 
         ## these fields should be found in the datalist starting at position 3 (from 0)
         v_fields = ['Name', 'Agency', 'Date', 'Type', 'Resolution', 'HDatum', 'VDatum', 'URL']
-        t_fields = [ogr.OFTString, ogr.OFTString, ogr.OFTInteger, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString]
+        t_fields = [ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString]
     
         dst_vec = '{}_sm.shp'.format(self.oname, self.region.fn)
         dst_layername = os.path.basename(dst_vec).split('.')[0]
@@ -604,7 +615,10 @@ class dem:
 
         if self.status == 0:
 
-            geomods.gdalfun._prj_file('{}.prj'.format(os.path.basename(dst_vec).split('.')[0]), 4326)
+            try:
+                int(epsg)
+            except: epsg = 4326
+            geomods.gdalfun._prj_file('{}.prj'.format(os.path.basename(dst_vec).split('.')[0]), int(epsg))
 
             layer = ds.CreateLayer('{}'.format(os.path.basename(dst_vec).split('.')[0]), None, ogr.wkbMultiPolygon)
             defn = layer.GetLayerDefn()
@@ -622,35 +636,30 @@ class dem:
 
             for dl in self.datalist.datalist:
                 if not self.stop():
-
-                    #if self.verbose:
+                    
+                    ## ==============================================
+                    ## Load the sub DATALIST
+                    ## ==============================================
+                    
                     pb = geomods.utils._progress('loading datalist...')
-                    #else: pb = None
 
                     this_datalist = geomods.datalists.datalist(dl[0], self.dist_region)
                     this_dem = dem(this_datalist, self.region, str(self.inc), verbose = self.verbose)
 
-                    #if self.verbose:
                     pb.opm = 'loading datalist...{}'.format(this_datalist._path_basename)
                     pb.end(0)
-                    #else: pb = None
 
-                    if len(dl) < 8: 
-                        o_v_fields = [this_datalist._path_dl_name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
-                    else: o_v_fields = [this_datalist._path_dl_name, dl[3], int(dl[4]), dl[5], dl[6], dl[7], dl[8], dl[9].strip()]
+                    try:
+                        o_v_fields = [dl[3], dl[4], dl[5], dl[6], dl[7], dl[8], dl[9], dl[10].strip()]
+                    except: o_v_fields = [this_datalist._path_dl_name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
                     
                     ## ==============================================
                     ## Gererate the NUM-MSK
                     ## ==============================================
 
-                    #if self.verbose:
-                    #    pb1 = geomods.utils._progress('generating {} mask'.format(this_datalist._path_basename))
-                    #else: pb1 = None
-
+                    #pb1 = geomods.utils._progress('generating {} mask'.format(this_datalist._path_basename))
                     #this_dem.num_msk()
-
-                    #if self.verbose:
-                    #    pb1.end(self.status)
+                    #pb1.end(self.status)
 
                     this_dem.num()
                     this_dem._dem_remove('num')
@@ -676,47 +685,50 @@ class dem:
                         tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(this_dem.oname), None, ogr.wkbMultiPolygon)
                         tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
                         
-                        #if self.verbose:
                         pb1 = geomods.utils._progress('polygonizing {} mask'.format(this_datalist._path_basename))
-                        #else: pb1 = None
                         result = gdal.Polygonize(srcband, None, tmp_layer, 0, [], callback = None)
 
                         multi = ogr.Geometry(ogr.wkbMultiPolygon)
                         src_ds = srcband = None
 
-                        for i in tmp_layer:
-                            if not self.stop():
-                                if i.GetField('DN') == 0:
-                                    tmp_layer.DeleteFeature(i.GetFID())
-                                elif i.GetField('DN') == 1:
-                                    i.geometry().CloseRings()
-                                    wkt = i.geometry().ExportToWkt()
-                                    multi.AddGeometryDirectly(ogr.CreateGeometryFromWkt(wkt))
-                                    tmp_layer.DeleteFeature(i.GetFID())
+                        ## check for empty layer and dont add it if it is
+                        if len(tmp_layer) > 1:
+                            for i in tmp_layer:
+                                if not self.stop():
+                                    if i.GetField('DN') == 0:
+                                        tmp_layer.DeleteFeature(i.GetFID())
+                                    elif i.GetField('DN') == 1:
+                                        i.geometry().CloseRings()
+                                        wkt = i.geometry().ExportToWkt()
+                                        multi.AddGeometryDirectly(ogr.CreateGeometryFromWkt(wkt))
+                                        tmp_layer.DeleteFeature(i.GetFID())
+
+                            ## ==============================================
+                            ## Add geometries to output layer
+                            ## ==============================================
+
+                            union = multi.UnionCascaded()
+                            out_feat = ogr.Feature(defn)
+                            out_feat.SetGeometry(union)
+
+                            for i, f in enumerate(v_fields):
+                                out_feat.SetField(f, o_v_fields[i])
+
+                            layer.CreateFeature(out_feat)
 
                         ## ==============================================
-                        ## Add geometries to output layer
+                        ## Cleanup the tmp layer
                         ## ==============================================
-
-                        union = multi.UnionCascaded()
-                        out_feat = ogr.Feature(defn)
-                        out_feat.SetGeometry(union)
-
-                        for i, f in enumerate(v_fields):
-                            out_feat.SetField(f, o_v_fields[i])
-
-                        layer.CreateFeature(out_feat)
+                            
                         tmp_ds = tmp_layer = None
 
                         shps = glob.glob('{}_poly.*'.format(this_dem.oname))
                         if len(shps) > 0:
                             for sh in shps:
                                 os.remove(sh)
-                        #if self.verbose:
                         pb1.end(result)
 
                     this_dem._dem_remove('num-msk')
-                    #if self.verbose:
                     pb.end(self.status)
         ds = layer = None
 
@@ -868,9 +880,7 @@ def main():
     for this_region in these_regions:
 
         ## ==============================================
-        ## Process Digital Elevation Model
-        ## using `dem_mod` gridding function
-        ## generate DEM and Num grid using full region
+        ## Load the input datalist
         ## ==============================================
 
         if idatalist is not None:
@@ -885,6 +895,10 @@ def main():
 
         if status != 0: break
 
+        ## ==============================================
+        ## Initialize the DEM CLASS
+        ## ==============================================
+
         this_surf = dem(this_datalist, this_region, iinc, callback = lambda: stop_threads, oname = o_pre, verbose = want_verbose)
 
         for dem_mod in mod_opts.keys():
@@ -895,24 +909,39 @@ def main():
                     break
 
             ## ==============================================
-            ## Run the module
+            ## Run the DEM module
             ## ==============================================
 
             args = tuple(mod_opts[dem_mod])
                         
             pb = geomods.utils._progress('geomods: running {} module'.format(dem_mod))
+            this_surf._module = _dem_mods[dem_mod][0](this_surf)
+            this_surf._module_args = args
+
             try:
-                mod_thread = threading.Thread(target = _dem_mods[dem_mod][0](this_surf), args = args)
-                mod_thread.start()
+                this_surf.start()
                 while True:
-                    time.sleep(3)
+                    time.sleep(2)
                     pb.update()
-                    if not mod_thread.is_alive():
+                    if not this_surf.is_alive():
                         break
             except (KeyboardInterrupt, SystemExit): 
-                stop_threads = True
                 this_surf.status = -1
+                stop_threads = True
+
             pb.end(this_surf.status)
+            # try:
+            #     mod_thread = threading.Thread(target = _dem_mods[dem_mod][0](this_surf), args = args)
+            #     mod_thread.start()
+            #     while True:
+            #         time.sleep(3)
+            #         pb.update()
+            #         if not mod_thread.is_alive():
+            #             break
+            # except (KeyboardInterrupt, SystemExit): 
+            #     stop_threads = True
+            #     this_surf.status = -1
+            # pb.end(this_surf.status)
             
 if __name__ == '__main__':
     main()

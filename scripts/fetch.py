@@ -39,7 +39,7 @@ except ImportError:
 
 import geomods
 
-_version = '0.1.2'
+_version = '0.1.4'
 
 ## =============================================================================
 ##
@@ -91,7 +91,7 @@ Examples:
  %% fetch.py dc -R tiles.shp -p
  %% fetch.py dc -R tiles.shp -p -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
 
-CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version, '\n  '.join(fetch_desc(fetch_infos)))
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version, geomods.fetches._version, '\n  '.join(fetch_desc(fetch_infos)))
 
 
 ## =============================================================================
@@ -144,7 +144,7 @@ def main():
             sys.exit(1)
 
         elif arg == '--version' or arg == '-v':
-            print('fetch.py, version {}\n{}'.format(_version, geomods._license))
+            print('fetch.py, version {}\nfetches.py, version {}\n{}'.format(_version, geomods.fetches._version, geomods._license))
             sys.exit(1)
 
         else: fetch_class.append(sys.argv[i])
@@ -203,27 +203,6 @@ def main():
     tw.end(status)
 
     ## ==============================================
-    ## update the reference vector
-    ## ==============================================
-
-    if want_update: 
-        for fc in fetch_class:
-            pb = geomods.utils._progress('updating {} reference vector'.format(fc))
-            fl = fetch_infos[fc][0](None, lambda: stop_threads)
-            try:
-                fl_update = threading.Thread(target = fl._update)
-                fl_update.start()
-                while True:
-                    time.sleep(5)
-                    pb.update()
-                    if not fl_update.is_alive():
-                        break
-            except (KeyboardInterrupt, SystemExit): stop_threads = True
-
-            pb.end(status)
-        sys.exit(status)
-
-    ## ==============================================
     ## process input region(s)
     ## ==============================================
 
@@ -261,20 +240,17 @@ def main():
             for fc in fetch_class:
 
                 ## ==============================================
-                ## Initialize the Fetch Module
+                ## Run the Fetch Module
                 ## ==============================================
 
                 pb = geomods.utils._progress('fetching {} for region ({}/{}): {}\
                 '.format(fc, rn + 1, len(these_regions), this_region.region_string))
                 
-                #stop_l = lambda: stop_threads
-
                 fl = fetch_infos[fc][0](this_region.buffer(5, percentage = True), f, want_list, want_update, lambda: stop_threads)
                 fl._want_proc = want_proc
                 
                 try:
                     fl.start()
-                    #print fl
                     while True:
                         time.sleep(2)
                         pb.update()
@@ -283,45 +259,7 @@ def main():
                 except (KeyboardInterrupt, SystemExit): 
                     fl._status = -1
                     stop_threads = True
-
-                # if 'search_gmt' in dir(fl):
-                #     stop_threads = False
-                #     try:
-                #         fl_search = threading.Thread(target = fl.search_gmt, args = (f,))
-                #         fl_search.start()
-                #         while True:
-                #             time.sleep(3)
-                #             pb.update()
-                #             if not fl_search.is_alive():
-                #                 break
-                #     except (KeyboardInterrupt, SystemExit): stop_threads = True
-
                 pb.end(fl._status)
-
-                ## ==============================================
-                ## Run the Fetch Module
-                ## ==============================================
-
-                # if fl._status == 0:
-                #     #if want_list: 
-                #     #    fl.print_results()
-                #     #else:
-                #     pb = geomods.utils._progress('fetching {} data in region ({}/{}): {}\
-                #     '.format(fc, rn + 1, len(these_regions), this_region.region_string))
-                    
-                #     #fl
-                        
-                #         # try:
-                #         #     fl_fetch = threading.Thread(target = fl.fetch_results, args = ())
-                #         #     fl_fetch.start()
-                #         #     while True:
-                #         #         time.sleep(5)
-                #         #         pb.update()
-                #         #         if not fl_fetch.is_alive():
-                #         #             break
-                #         # except (KeyboardInterrupt, SystemExit): stop_threads = True
-
-                #     pb.end(fl._status)
 
 if __name__ == '__main__':
     main()

@@ -95,7 +95,7 @@ class datalist:
     def _load(self):
         fob = open(self._path, 'r')
         for dl in fob:
-            if dl[0] != '#' and dl[0] != '':
+            if dl[0] != '#' and dl[0] != '\n' and dl[0] != '':
                 self.datalist.append( dl.split(' '))
         fob.close()
 

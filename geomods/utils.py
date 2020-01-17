@@ -119,7 +119,9 @@ class vdatum:
         if vdatum_path is None:
             self.vdatum_paths = self._find_vdatum()
         else: self.vdatum_paths = [vdatum_path]
-
+        
+        self._version = self._get_version()
+        
         self.ivert = 'navd88:m:height'
         self.overt = 'mhw:m:height'
         self.ihorz = 'NAD83_2011'
@@ -130,6 +132,15 @@ class vdatum:
         self.fd = 'space'
 
         self.ds_dir = 'result'
+
+    def _get_version(self):
+        if len(self.vdatum_paths) > 0:
+            out, status = rum_cmd('java -jar {} {}'.format(self.vdatum_paths[0], '-'))
+            self._version = None
+            for line in out.split('\n'):
+                if '- v' in line:
+                    self._version = line
+                    break
 
     def _find_vdatum(self):
         '''Find the VDatum executable on the system and 
@@ -193,20 +204,14 @@ class _progress:
     def _terminal_size(self):
         return os.popen('stty size', 'r').read().split()
 
-    # def _clear_stderr(self):
-    #     sys.stderr.write('\r{}\r'.format(' ' * int(self._terminal_size()[1])))
-    #     sys.stderr.flush()
-
     def _clear_stderr(self, slen = 79):
-        #sys.stderr.write('\r{}\r'.format(' ' * int(slen)))
-        #sys.stderr.write('\033[A\n')
+        #sys.stderr.write('\r{}\r'.format(' ' * int(self._terminal_size()[1])))
         sys.stderr.write('\x1b[2K')
         sys.stderr.flush()
 
     def update(self):
         self.pc = (self.count % self.tw)
         self.sc = (self.count % (self.tw+1))
-        #self._clear_stderr(len(self.pm))
         self._clear_stderr()
 
         sys.stderr.write('\r[\033[32m{:4}\033[m] {:40}\r'.format(self.spinner[self.sc], self.pm))
@@ -218,7 +223,6 @@ class _progress:
         self.count = self.spin_way(self.count)
 
     def end(self, status):
-        #self._clear_stderr(len(self.opm))
         self._clear_stderr()
 
         if status != 0:

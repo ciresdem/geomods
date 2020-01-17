@@ -60,7 +60,7 @@ import datalists
 import gdalfun
 import utils
 
-_version = '0.1.7'
+_version = '0.1.8'
 
 gdal.PushErrorHandler('CPLQuietErrorHandler')
 
@@ -79,8 +79,11 @@ namespaces = {'gmd': 'http://www.isotc211.org/2005/gmd',
               'gco': 'http://www.isotc211.org/2005/gco',
               'gml': 'http://www.isotc211.org/2005/gml'}
 
-def fetch_file(src_url, dst_fn, params = None):
+def fetch_file(src_url, dst_fn, params = None, callback = None):
     '''fetch src_url and save to dst_fn'''
+    
+    status = 0
+    halt = callback
 
     pb = utils._progress('fetching remote file: {}'.format(src_url))
 
@@ -90,23 +93,28 @@ def fetch_file(src_url, dst_fn, params = None):
     req = requests.get(src_url, stream = True, params = params, headers = r_headers)
 
     if req:
+        status = 0
         with open(dst_fn, 'wb') as local_file:
             for chunk in req.iter_content(chunk_size = 50000):
+                if halt(): 
+                    status = -1
+                    break
                 local_file.write(chunk)
                 pb.update()
-        pb.end(0)
-        return(0)
+        pb.end(status)
+        return(status)
     else: 
-        pb.end(-1)
-        return(-1)
+        status = -1
+        pb.end(status)
+        return(status)
 
-def fetch_req(src_url, params = None, tries = 3):
+def fetch_req(src_url, params = None, tries = 3, timeout = 1):
     '''fetch src_url and return the requests object'''
 
     if tries <= 0: return(None)
     try:
-        return(requests.get(src_url, stream = True, params = params, timeout = 1, headers = r_headers))
-    except: return(fetch_req(src_url, params = params, tries = tries - 1))
+        return(requests.get(src_url, stream = True, params = params, timeout = timeout, headers = r_headers))
+    except: return(fetch_req(src_url, params = params, tries = tries - 1, timeout = timeout + 1))
 
 def fetch_nos_xml(src_url):
     '''fetch src_url and return it as an XML object'''
@@ -230,7 +238,6 @@ def update_ref_vector(src_vec, surveys, update=True):
 ## =============================================================================
 
 class dc(threading.Thread):
-    #def __init__(self, extent = None, callback = lambda: True):
     def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         '''Fetch elevation data from the Digital Coast'''
 
@@ -250,6 +257,14 @@ class dc(threading.Thread):
 
         self._index = False
 
+        if os.path.exists(self._ref_vector): 
+            self._has_vector = True
+        else: self._has_vector = False
+
+        ## ==============================================
+        ## Class inputs
+        ## ==============================================
+
         self.stop = callback
         self._want_proc = True
         self._want_list = want_list
@@ -260,14 +275,11 @@ class dc(threading.Thread):
             self._boundsGeom = bounds2geom(extent.region)
         else: self._status = -1
 
-        if os.path.exists(self._ref_vector): 
-            self._has_vector = True
-        else: self._has_vector = False
-
         self.region = extent
-
-    def run(self):
         
+    def run(self):
+        '''Run the Digital Coast fetching module'''
+
         if self._want_update:
             self._update()
         else:
@@ -281,15 +293,14 @@ class dc(threading.Thread):
         with open(self._log_fn, 'a') as local_file:
             local_file.write(surv_url + "\n")
                 
-    def search_gmt(self, filters=[]):
+    def search_gmt(self):
         '''Search for data in the reference vector file'''
 
         gmt1 = ogr.Open(self._ref_vector)
         layer = gmt1.GetLayer(0)
 
-        if len(filters) > 0:
-            for filt in [filters]:
-                layer.SetAttributeFilter('{}'.format(filt))
+        for filt in self._filters:
+            layer.SetAttributeFilter('{}'.format(filt))
 
         for feature1 in layer:
             if not self.stop():
@@ -326,7 +337,7 @@ class dc(threading.Thread):
                             ## ==============================================
 
                             sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
-                            fetch_file(surv_url + sshpz, os.path.join('.', sshpz))
+                            fetch_file(surv_url + sshpz, os.path.join('.', sshpz), callback = self.stop)
 
                             try:
                                 zip_ref = zipfile.ZipFile(sshpz)
@@ -550,7 +561,7 @@ class dc(threading.Thread):
                     ## Fetch and Log
                     ## ==============================================
 
-                    self._status = fetch_file(row, outf)
+                    self._status = fetch_file(row, outf, callback = self.stop)
                     
                     if self._status == 0 and os.path.exists(outf):
 
@@ -570,13 +581,12 @@ class dc(threading.Thread):
                         ## Process the data if wanted
                         ## ==============================================
 
-                        if self._want_proc:
+                        if self._status == 0 and self._want_proc:
                             try:
                                 surv_t = surv_fn.split('.')[1]
                             except: surv_t = ''
 
-                            t = threading.Thread(target = self.proc_data, args = (surv_dir, surv_fn, outf, surv_t))
-                            t.start()
+                            self.proc_data(surv_dir, surv_fn, outf, surv_t)
 
 ## =============================================================================
 ##
@@ -589,7 +599,6 @@ class dc(threading.Thread):
 ## =============================================================================
 
 class nos(threading.Thread):
-    #def __init__(self, extent = None, callback = lambda: True):
     def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         '''Fetch NOS BAG and XYZ sounding data from NOAA'''
 
@@ -614,6 +623,10 @@ class nos(threading.Thread):
         self._xml_results = []
         self._results = []
 
+        ## ==============================================
+        ## Class inputs
+        ## ==============================================
+
         self.stop = callback
         self._want_proc = True
         self._want_list = want_list
@@ -626,7 +639,8 @@ class nos(threading.Thread):
         else: self._status = -1
 
     def run(self):
-        
+        '''Run the NOS fetching module.'''
+
         if self._want_update:
             self._update()
         else:
@@ -705,11 +719,11 @@ class nos(threading.Thread):
                         self._surveys.append(s_entry)
         gmt1 = layer = None
 
-    def search_gmt(self, filters=[]):
+    def search_gmt(self):
         gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
         layer = gmt1.GetLayer()
 
-        for filt in filters:
+        for filt in self._filters:
             layer.SetAttributeFilter('{}'.format(filt))
 
         for feature in layer:
@@ -751,10 +765,6 @@ class nos(threading.Thread):
         ## ==============================================
         if s_t == 'GEODAS':
 
-            ## ==============================================            
-            ## gunzip the and parse the file
-            ## ==============================================
-
             in_f = gzip.open(os.path.join(s_dir, s_fn), 'rb')
             s = in_f.read()
             s_csv = csv.reader(s.split('\n'), delimiter = ',')
@@ -786,10 +796,6 @@ class nos(threading.Thread):
                     
                     os.rename(os.path.join(xyz_dir, 'result', os.path.basename(o_fn_tmp)), o_fn_xyz)
                 else: os.rename(o_fn_tmp, o_fn_xyz)
-            
-                ## ==============================================
-                ## Move processed xyz file to xyz directory
-                ## ==============================================
 
                 os.remove(o_fn_tmp)
                 if os.stat(o_fn_xyz).st_size == 0:
@@ -804,15 +810,12 @@ class nos(threading.Thread):
                     sdatalist._append_datafile('{}'.format(os.path.basename(o_fn_xyz)), 168, 1)
                     sdatalist._reset()
 
-                    ## ==============================================
-                    ## Generate .inf file
-                    ## ==============================================
-
                     out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_t))), False, None)
             os.remove(o_fn)
 
         ## ==============================================
-        ## NOS BAG data comes as gzipped BAG
+        ## NOS BAG data comes as gzipped BAG or
+        ## sometimes just BAG
         ## ==============================================
 
         elif 'BAG' in s_t:
@@ -869,8 +872,6 @@ class nos(threading.Thread):
                 print(row)
 
     def fetch_results(self):
-        #try:
-
         if self._want_proc:
             self.this_vd = utils.vdatum()
 
@@ -878,23 +879,19 @@ class nos(threading.Thread):
             if row:
                 if not self.stop():
 
-                    fetch_file(row, os.path.join(self._outdir, os.path.basename(row)))
-                    
+                    self._status = fetch_file(row, os.path.join(self._outdir, os.path.basename(row)), callback = self.stop)
+
                     ## ==============================================                    
                     ## Process the data if wanted
                     ## ==============================================
 
-                    if self._want_proc:
+                    if self._status == 0 and self._want_proc:
                         outf = os.path.join(self._outdir, os.path.basename(row))
                         surv_dir = self._outdir
                         surv_fn = os.path.basename(outf)
                         surv_t = row.split('/')[-2]
-                        
-                    #t = threading.Thread(target = self.proc_data, args = (surv_dir, surv_fn, outf, surv_t))
-                    #t.start()
-                    self.proc_data(surv_dir, surv_fn, outf, surv_t)
 
-        #except: self._status = -1
+                        self.proc_data(surv_dir, surv_fn, outf, surv_t)
 
 ## =============================================================================
 ##
@@ -905,7 +902,6 @@ class nos(threading.Thread):
 ## =============================================================================
 
 class charts(threading.Thread):
-    #def __init__(self, extent = None, callback = None):
     def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         '''Fetch digital chart data from NOAA'''
 
@@ -929,6 +925,10 @@ class charts(threading.Thread):
         self._results = []
         self._chart_feats = []
 
+        ## ==============================================
+        ## Class inputs
+        ## ==============================================
+
         self.stop = callback
         self._want_proc = True
         self._want_list = want_list
@@ -941,7 +941,8 @@ class charts(threading.Thread):
         else: self._status = -1
 
     def run(self):
-        
+        '''Run the charts fetching module.'''
+
         if self._want_update:
             self._update()
         else:
@@ -996,18 +997,13 @@ class charts(threading.Thread):
 
         ds = layer = None
 
-    def search_gmt(self, filters=[]):
+    def search_gmt(self):
         '''Search for data in the reference vector file'''
 
         ds = ogr.Open(self._ref_vector)
         layer = ds.GetLayer(0)
 
-        ## ==============================================
-        ## Filter the reference vector and append
-        ## any matching results to _results
-        ## ==============================================
-
-        for filt in filters:
+        for filt in self._filters:
             layer.SetAttributeFilter('{}'.format(filt))
 
         for feature1 in layer:
@@ -1023,16 +1019,8 @@ class charts(threading.Thread):
         for dt in self._dt_xml.keys():
             self._checks = dt
 
-            ## ==============================================
-            ## parse the Charts XML
-            ## ==============================================
-
             self.chart_xml = fetch_nos_xml(self._dt_xml[self._checks])
             self._parse_charts_xml(self._has_vector)
-
-            ## ==============================================
-            ## Update the reference vector
-            ## ==============================================
 
             if len(self._chart_feats) > 0:
                 update_ref_vector(self._ref_vector, self._chart_feats, self._has_vector)
@@ -1059,19 +1047,11 @@ class charts(threading.Thread):
 
         if s_t == 'ENCs':
 
-            ## ==============================================
-            ## extract downloaded ZIP
-            ## ==============================================
-
             zip_ref = zipfile.ZipFile(o_fn)
             zip_ref.extractall(os.path.join(s_dir, 'enc'))
             zip_ref.close()
 
             s_fn_000 = os.path.join(s_dir, 'enc/ENC_ROOT/', o_fn_bn, '{}.000'.format(o_fn_bn))
-
-            ## ==============================================
-            ## open the s57 vector and write out the xyz data
-            ## ==============================================
 
             ds_000 = ogr.Open(s_fn_000)
             layer_s = ds_000.GetLayerByName('SOUNDG')
@@ -1086,10 +1066,6 @@ class charts(threading.Thread):
             else: status = -1
 
             if os.path.exists(o_fn_p_xyz):
-
-                ## ==============================================
-                ## Extract the data in the specified region
-                ## ==============================================
 
                 out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
                 out, status = utils.run_cmd('gmt gmtselect {} {} -V > {}'.format(o_fn_p_xyz, self.region.gmt, o_fn_tmp), False, 'extracting data using gmt gmtselect')
@@ -1115,10 +1091,6 @@ class charts(threading.Thread):
 
                 os.rename(os.path.join(xyz_dir, 'result', os.path.basename(o_fn_tmp)), o_fn_xyz)
             else: os.rename(o_fn_tmp, o_fn_xyz)
-            
-            ## ==============================================
-            ## Move processed xyz file to xyz directory
-            ## ==============================================
 
             os.remove(o_fn_p_xyz)
 
@@ -1133,10 +1105,6 @@ class charts(threading.Thread):
                 sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_t)))
                 sdatalist._append_datafile('{}'.format(os.path.basename(o_fn_xyz)), 168, 1)
                 sdatalist._reset()
-
-                ## ==============================================
-                ## Generate .inf file
-                ## ==============================================
 
                 out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_t))), False, None)
 
@@ -1158,28 +1126,20 @@ class charts(threading.Thread):
         if self._want_proc:
             self.this_vd = utils.vdatum()
 
-        try:
-            for row in self._results:
+        for row in self._results:
 
-                ## ==============================================
-                ## Fetch the data
-                ## ==============================================
+            self._status = fetch_file(row, os.path.join(self._outdir, os.path.basename(row)), callback = self.stop)
 
-                fetch_file(row, os.path.join(self._outdir, os.path.basename(row)))
+            ## ==============================================                    
+            ## Process the data if wanted
+            ## ==============================================
 
-                ## ==============================================                    
-                ## Process the data if wanted
-                ## ==============================================
-
-                if self._want_proc:
-                    outf = os.path.join(self._outdir, os.path.basename(row))
-                    surv_dir = self._outdir
-                    surv_fn = os.path.basename(outf)
-                    surv_t = row.split('/')[-2]
-                    
-                    t = threading.Thread(target = self.proc_data, args = (surv_dir, surv_fn, outf, surv_t))
-                    t.start()
-        except: self._status = -1
+            if self._status and self._want_proc:
+                outf = os.path.join(self._outdir, os.path.basename(row))
+                surv_dir = self._outdir
+                surv_fn = os.path.basename(outf)
+                surv_t = row.split('/')[-2]
+                self.proc_data(surv_dir, surv_fn, outf, surv_t)
 
 ## =============================================================================
 ##
@@ -1190,8 +1150,7 @@ class charts(threading.Thread):
 ##
 ## =============================================================================
 
-class tnm:
-    #def __init__(self, extent = None, callback = None):
+class tnm(threading.Thread):
     def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         '''Fetch elevation data from The National Map'''
 
@@ -1210,6 +1169,10 @@ class tnm:
 
         self._tnm_ds = [1, 2]
         self._tnm_df = ['IMG']
+
+        ## ==============================================
+        ## Class inputs
+        ## ==============================================
 
         self.stop = callback
         self._want_proc = True
@@ -1232,6 +1195,8 @@ class tnm:
             self._dataset_results = self._results.json()
 
     def run(self):
+        '''Run the TNM (National Map) fetching module.'''
+
         if self._want_list:
             self.print_results()
         else: self.fetch_results()
@@ -1241,10 +1206,8 @@ class tnm:
             print i['downloadURL']
 
     def fetch_results(self):
-        try:
-            for i in self._dataset_results['items']:
-                fetch_file(i['downloadURL'], os.path.join(self._outdir, os.path.basename(i['downloadURL'])))
-        except: self._status = -1
+        for i in self._dataset_results['items']:
+            self._status = fetch_file(i['downloadURL'], os.path.join(self._outdir, os.path.basename(i['downloadURL'])), callback = self.stop)
 
 ## =============================================================================
 ##
@@ -1256,7 +1219,6 @@ class tnm:
 ## =============================================================================
 
 class mb(threading.Thread):
-    #def __init__(self, extent = None, callback = None):
     def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         '''Fetch multibeam bathymetry from NOAA'''
 
@@ -1272,6 +1234,10 @@ class mb(threading.Thread):
         self._survey_list = []
         self._ref_vector = None
 
+        ## ==============================================
+        ## Class inputs
+        ## ==============================================
+
         self.stop = callback
         self._want_proc = True
         self._want_list = want_list
@@ -1284,6 +1250,8 @@ class mb(threading.Thread):
             self._survey_list = self._results.content.split('\n')[:-1]
 
     def run(self):
+        '''Run the MB (multibeam) fetching module.'''
+
         if self._want_list:
             self.print_results()
         else: self.fetch_results()
@@ -1311,20 +1279,18 @@ class mb(threading.Thread):
             print self._mb_data_url + res.split(' ')[0]
 
     def fetch_results(self):
-        try:
-            for r in self._survey_list:
-                survey = r.split(' ')[0].split('/')[6]
-                dn = r.split(' ')[0].split('/')[:-1]
-                dst_dn = os.path.join(self._outdir, *dn)
+        for r in self._survey_list:
+            survey = r.split(' ')[0].split('/')[6]
+            dn = r.split(' ')[0].split('/')[:-1]
+            dst_dn = os.path.join(self._outdir, *dn)
+            
+            if not os.path.exists(dst_dn):
+                os.makedirs(dst_dn)
 
-                if not os.path.exists(dst_dn):
-                    os.makedirs(dst_dn)
-
-                data_url = self._mb_data_url + '/'.join(r.split('/')[3:])
-                dst_fn = r.split(' ')[0].split('/')[-1:][0]
-                
-                fetch_file(data_url.split(' ')[0], os.path.join(dst_dn, dst_fn))
-        except: self._status = -1
+            data_url = self._mb_data_url + '/'.join(r.split('/')[3:])
+            dst_fn = r.split(' ')[0].split('/')[-1:][0]
+            
+            self._status = fetch_file(data_url.split(' ')[0], os.path.join(dst_dn, dst_fn), callback = self.stop)
 
 ## =============================================================================
 ##
@@ -1335,7 +1301,6 @@ class mb(threading.Thread):
 ## =============================================================================
 
 class usace(threading.Thread):
-    #def __init__(self, extent = None, callback = None):
     def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         '''Fetch USACE bathymetric surveys'''
 
@@ -1349,6 +1314,10 @@ class usace(threading.Thread):
         self._results = []
         self._survey_list = []
         self._ref_vector = None
+
+        ## ==============================================
+        ## Class inputs
+        ## ==============================================
 
         self.stop = callback
         self._want_proc = True
@@ -1365,6 +1334,8 @@ class usace(threading.Thread):
             self._survey_list = self._results.json()
 
     def run(self):
+        '''Run the USACE fetching module'''
+
         if self._want_list:
             self.print_results()
         else: self.fetch_results()
@@ -1374,11 +1345,10 @@ class usace(threading.Thread):
             print feature['attributes']['SOURCEDATALOCATION']
 
     def fetch_results(self):
-        try:
-            for feature in self._survey_list['features']:
-                fetch_file(feature['attributes']['SOURCEDATALOCATION'], \
-                           os.path.join(self._outdir, os.path.basename(feature['attributes']['SOURCEDATALOCATION'])))
-        except: self._status = -1
+        for feature in self._survey_list['features']:
+            self._status = fetch_file(feature['attributes']['SOURCEDATALOCATION'], \
+                                      os.path.join(self._outdir, os.path.basename(feature['attributes']['SOURCEDATALOCATION'])), 
+                                      callback = self.stop)
 
 ## =============================================================================
 ##
@@ -1402,6 +1372,10 @@ class gmrt(threading.Thread):
         self._results = None
         self._ref_vector = None
 
+        ## ==============================================
+        ## Class inputs
+        ## ==============================================
+
         self.stop = callback
         self._want_proc = True
         self._want_list = want_list
@@ -1421,11 +1395,14 @@ class gmrt(threading.Thread):
             self._results = fetch_req(self._gmrt_grid_url, params = self.data)
 
     def run(self):
+        '''Run the GMRT fetching module'''
+
         if self._want_list:
             self.print_results()
         else: self.fetch_results()
             
     def proc_data(self, s_dir, s_fn, o_fn, s_t):
+        '''Process the GMRT data to XYZ and add it to a DATALIST.'''
 
         status = 0
         xyz_dir = os.path.join(self._outdir, s_dir, 'xyz')
@@ -1434,10 +1411,12 @@ class gmrt(threading.Thread):
             os.makedirs(xyz_dir)
 
         o_fn_bn = os.path.basename(o_fn).split('.')[0]
-        o_fn_xyz = os.path.join(xyz_dir, '{}_{}.xyz'.format(o_fn_bn, self.region.fn))
+        o_fn_xyz = os.path.join(xyz_dir, '{}.xyz'.format(o_fn_bn))
 
-        ## chunk
-        ## convert to xyz
+        ## ==============================================
+        ## Dump the XYZ data from the GMRT TIF
+        ## ==============================================
+
         gdalfun.dump(o_fn, o_fn_xyz)
 
         ## ==============================================
@@ -1449,29 +1428,45 @@ class gmrt(threading.Thread):
         sdatalist._reset()
 
         ## ==============================================
-        ## Generate .inf file
+        ## Generate an INF file for the XYZ data
+        ## Currently uses MBSystem - change to generate
+        ## in python or with GMT or GDAL.
         ## ==============================================
 
         out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_t))), False, None)
 
     def print_results(self):
+        '''print the appropriate URL for downloading the GMRT in the
+        region of interest.'''
+
         print(self._results.url)
 
     def fetch_results(self):
-        outf = os.path.join(self._outdir, self._results.headers['content-disposition'].split('=')[1].strip())
+        '''Fetch the GMRT data in the region of interest.'''
+
+        if self._results is not None:
+            gmrt_fn = self._results.headers['content-disposition'].split('=')[1].strip()
+            outf = os.path.join(self._outdir, '{}_{}.{}'.format(gmrt_fn.split('.')[0], self.region.fn, gmrt_fn.split('.')[1]))
         
-        if not os.path.exists(os.path.dirname(outf)):
-            os.makedirs(os.path.dirname(outf))
+            if not os.path.exists(os.path.dirname(outf)):
+                os.makedirs(os.path.dirname(outf))
 
-        with open(outf, 'wb') as local_file:
-            for chunk in self._results.iter_content(chunk_size = 50000):
-                local_file.write(chunk)
+                ## ==============================================                    
+                ## Fetch the GMRT GEOTIFF
+                ## ==============================================
 
-        if self._want_proc:
-            surv_dir = self._outdir
-            surv_fn = os.path.basename(outf)
+                self._status = fetch_file(self._results.url, outf, callback = self.stop)
 
-            self.proc_data(surv_dir, surv_fn, outf, 'gmrt')
+                ## ==============================================                    
+                ## Process the data to XYZ if wanted
+                ## ==============================================
+
+                if self._status == 0 and self._want_proc:
+                    surv_dir = self._outdir
+                    surv_fn = os.path.basename(outf)
+
+                    self.proc_data(surv_dir, surv_fn, outf, 'gmrt')
+        else: self._status = -1
             
 ## =============================================================================
 ##
@@ -1482,7 +1477,6 @@ class gmrt(threading.Thread):
 ## =============================================================================
 
 class srtm_cgiar(threading.Thread):
-    #def __init__(self, extent = None, callback = None):
     def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         '''Fetch SRTM data from CGIAR'''
 
@@ -1507,7 +1501,8 @@ class srtm_cgiar(threading.Thread):
             self._boundsGeom = bounds2geom(extent.region)
 
     def run(self):
-        #if len(self._filters) > 0:
+        '''Run the SRTM fetching module.'''
+
         self.search_gmt()
 
         if self._want_list:
@@ -1535,10 +1530,8 @@ class srtm_cgiar(threading.Thread):
             print('{}{}'.format(self._srtm_dl_url, row))
 
     def fetch_results(self):
-        #try:
         for row in self._results:
-            fetch_file('{}{}'.format(self._srtm_dl_url, row), os.path.join(self._outdir, os.path.basename(row)))
-        #except: self._status = -1
+            self._status = fetch_file('{}{}'.format(self._srtm_dl_url, row), os.path.join(self._outdir, os.path.basename(row)), callback = self.stop)
 
 ## =============================================================================
 ##
@@ -1549,7 +1542,6 @@ class srtm_cgiar(threading.Thread):
 ## =============================================================================
 
 class ngs(threading.Thread):
-    #def __init__(self, extent = None, callback = None):
     def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         '''Fetch NGS monuments from NGS'''
 
@@ -1577,6 +1569,8 @@ class ngs(threading.Thread):
             self._results = fetch_req(self._ngs_search_url, params = self.data)
 
     def run(self):
+        '''Run the NGS (monuments) fetching module.'''
+
         if self._want_list:
             self.print_results()
         else: self.fetch_results()
