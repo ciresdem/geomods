@@ -35,5 +35,5 @@ setup(
         'scripts/cudem.py',
         'scripts/gdal_chunk.py',
         'scripts/gdal_crop.py',
-        'scripts/vdatum.py']
+        'scripts/vdatum_cmd.py']
 )

@@ -1,5 +1,5 @@
 #!/usr/bin/env python
-### vdatum.py
+### vdatum_cmd.py
 ##
 ## Copyright (c) 2019 - 2020 Matthew Love <matthew.love@colorado.edu>
 ##
@@ -31,7 +31,7 @@ import geomods
 
 _version = '0.0.2'
 
-_usage = '''vdatum.py ({}): run NOAAs vdatum
+_usage = '''vdatum_cmd.py ({}): run NOAAs vdatum
 
 usage: vdatum [ file ]
 
@@ -51,11 +51,11 @@ usage: vdatum [ file ]
   --version\tPrint the version information
 
  Examples:
- % vdatum.py elev_data.xyz -i mllw -o navd88 -g 1
- % vdatum.py elev_data.xyz -i lmsl:ft:sounding -o navd88:m:height -g 1
- % vdatum.py elev_data.xyz -i navd88:m:height -o navd88:m:height -r nad83:utm:ft:10 -z nad83:geo:deg
+ % vdatum_cmd.py elev_data.xyz -i mllw -o navd88 -g 1
+ % vdatum_cmd.py elev_data.xyz -i lmsl:ft:sounding -o navd88:m:height -g 1
+ % vdatum_cmd.py elev_data.xyz -i navd88:m:height -o navd88:m:height -r nad83:utm:ft:10 -z nad83:geo:deg
 
-See: vdatum.noaa.gov/docs/userguide for specifics on cli parameters.
+See: vdatum.noaa.gov/docs/userguide_cmd.html for specifics on cli parameters.
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version)
 
 def main():
@@ -108,7 +108,7 @@ def main():
             sys.exit(1)
 
         elif arg == '-version' or arg == '--version':
-            print('vdatum.py, version {}\nVDatum, version {}\n{}'.format(_version, geomods.utils.vdatum()._version, geomods._license))
+            print('vdatum_cmd.py, version {}\nVDatum, version {}\n{}'.format(_version, geomods.utils.vdatum()._version, geomods._license))
             sys.exit(1)
 
         elif src_fn is None:
