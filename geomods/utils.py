@@ -120,7 +120,7 @@ class vdatum:
             self.vdatum_paths = self._find_vdatum()
         else: self.vdatum_paths = [vdatum_path]
         
-        self._version = self._get_version()
+        self._get_version()
         
         self.ivert = 'navd88:m:height'
         self.overt = 'mhw:m:height'
@@ -135,11 +135,12 @@ class vdatum:
 
     def _get_version(self):
         if len(self.vdatum_paths) > 0:
-            out, status = rum_cmd('java -jar {} {}'.format(self.vdatum_paths[0], '-'))
             self._version = None
-            for line in out.split('\n'):
-                if '- v' in line:
-                    self._version = line
+            out, status = run_cmd('java -jar {} {}'.format(self.vdatum_paths[0], '-'))
+            for i in out.split('\n'):
+                if '- v' in i.strip():
+                    #print i.strip().split('v')[-1]
+                    self._version = i.strip().split('v')[-1]
                     break
 
     def _find_vdatum(self):

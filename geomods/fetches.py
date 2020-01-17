@@ -736,6 +736,8 @@ class nos(threading.Thread):
                         self._results.append(i)
 
     def _update(self):
+        '''Update the NOS reference vector'''
+
         for j in self._nos_directories:
             if not self.stop():
                 self._scan_directory(j)
@@ -953,7 +955,7 @@ class charts(threading.Thread):
             else: self.fetch_results()
 
     def _parse_charts_xml(self, update = True):
-        '''parse the charts xyz and extract the survey results'''
+        '''parse the charts XML and extract the survey results'''
 
         if update:
             ds = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
@@ -1451,21 +1453,21 @@ class gmrt(threading.Thread):
             if not os.path.exists(os.path.dirname(outf)):
                 os.makedirs(os.path.dirname(outf))
 
-                ## ==============================================                    
-                ## Fetch the GMRT GEOTIFF
-                ## ==============================================
+            ## ==============================================                    
+            ## Fetch the GMRT GEOTIFF
+            ## ==============================================
 
-                self._status = fetch_file(self._results.url, outf, callback = self.stop)
+            self._status = fetch_file(self._results.url, outf, callback = self.stop)
 
-                ## ==============================================                    
-                ## Process the data to XYZ if wanted
-                ## ==============================================
+            ## ==============================================                    
+            ## Process the data to XYZ if wanted
+            ## ==============================================
 
-                if self._status == 0 and self._want_proc:
-                    surv_dir = self._outdir
-                    surv_fn = os.path.basename(outf)
-
-                    self.proc_data(surv_dir, surv_fn, outf, 'gmrt')
+            if self._status == 0 and self._want_proc:
+                surv_dir = self._outdir
+                surv_fn = os.path.basename(outf)
+                
+                self.proc_data(surv_dir, surv_fn, outf, 'gmrt')
         else: self._status = -1
             
 ## =============================================================================
