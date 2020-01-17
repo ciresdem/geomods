@@ -50,3 +50,6 @@ Examples:
 
  - generate a vertical datum conversion grid:
    % cudem.py -R -90/-89/29/30 -E 0.00083333 conversion-grid:navd88:mhw
+
+ - transform the vertical datum of an xyz data file:
+   % vdatum_cmd.py elev_data.xyz -i lmsl:ft:sounding -o navd88:m:height
