@@ -10,6 +10,7 @@ External Dependencies for DEM generation and data processing:
  - GMT
  - MBSystem
  - LASTools
+ - VDatum
 
 Installation:
 
