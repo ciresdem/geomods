@@ -414,10 +414,7 @@ class dem(threading.Thread):
         num_cmd1 = ('gmt grdmath -V {}_num.grd 0 MUL 1 ADD 0 AND = {}_num_msk.tif=gd+n-9999:GTiff\
         '.format(self.oname, self.oname))
 
-        #if self.verbose:
-        #pb = 'generating NUM grid using gmt xyz2grd -An'
         pb = 'processing {} to NUM grid'.format(self.datalist._path_basename)
-        #else: pb = None
 
         out, self.status = geomods.utils.run_cmd_with_input(num_cmd0, self.datalist._cat_port, verbose = self.verbose, prog = pb)
 
@@ -461,16 +458,12 @@ class dem(threading.Thread):
         dem_cut_cmd = ('gmt grdcut -V {}_p.grd -G{}.grd {}\
         '.format(self.oname, self.oname, self.dist_region.gmt))
 
-        #if self.verbose:
         pb = 'generating DEM using GMT'
-        #else: pb = None
 
         out, self.status = geomods.utils.run_cmd_with_input(dem_surf_cmd, self.datalist._cat_port, self.verbose, pb)
 
         if self.status == 0:
-            #if self.verbose:
             pb = 'clipping DEM to final region'
-            #else: pb = None
             out, self.status = geomods.utils.run_cmd(dem_cut_cmd, self.verbose, pb)
             
             if self.status == 0:
@@ -492,9 +485,7 @@ class dem(threading.Thread):
         mbgrid_cmd = ('mbgrid -I{} {} -E{}/{}/degrees! -O{} -A2 -G100 -F1 -N -C10/3 -S0 -X0.1 -T35 -M\
         '.format(self.datalist._path, self.dist_region.gmt, self.inc, self.inc, self.oname))
 
-        #if self.verbose:
         pb = 'generating DEM and NUM grid using gmt mbgrid -T35 -X0.1 -C10/3 -M'
-        #else: pb = None
         out, self.status = geomods.utils.run_cmd(mbgrid_cmd, self.verbose, pb)
 
         if self.status == 0:
@@ -502,15 +493,11 @@ class dem(threading.Thread):
             self.dem['dem-grd'] = '{}.grd'.format(self.oname)
             self.dem['num-grd'] = '{}_num.grd'.format(self.oname)
 
-            #if self.verbose:
             pb = 'resampling DEM to pixel-node registration'
-            #else: pb = None
             out, self.status = geomods.utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['dem-grd']), self.verbose, pb)
             os.rename('tmp.grd', self.dem['dem-grd'])
 
-            #if self.verbose:
             pb = 'resampling NUM grid to pixel-node registration'
-            #else: pb = None
             out, self.status = geomods.utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['num-grd']), self.verbose, pb)
             os.rename('tmp.grd', self.dem['num-grd'])
 
@@ -533,9 +520,7 @@ class dem(threading.Thread):
             num_msk_cmd = ('gmt grdmath -V {} 0 MUL 1 ADD 0 AND = {}_num_msk.tif=gd+n-9999:GTiff\
             '.format(self.dem['num-grd'], self.oname))
 
-            #if self.verbose:
             pb = 'generating NUM-MSK grid using gmt grdmath 0 MUL 1 ADD 0 AND'
-            #else: pb = None
             out, self.status = geomods.utils.run_cmd(num_msk_cmd, self.verbose, pb)
 
             if self.status == 0:
@@ -691,7 +676,6 @@ class dem(threading.Thread):
                         multi = ogr.Geometry(ogr.wkbMultiPolygon)
                         src_ds = srcband = None
 
-                        ## check for empty layer and dont add it if it is
                         if len(tmp_layer) > 1:
                             for i in tmp_layer:
                                 if not self.stop():
@@ -930,18 +914,6 @@ def main():
                 stop_threads = True
 
             pb.end(this_surf.status)
-            # try:
-            #     mod_thread = threading.Thread(target = _dem_mods[dem_mod][0](this_surf), args = args)
-            #     mod_thread.start()
-            #     while True:
-            #         time.sleep(3)
-            #         pb.update()
-            #         if not mod_thread.is_alive():
-            #             break
-            # except (KeyboardInterrupt, SystemExit): 
-            #     stop_threads = True
-            #     this_surf.status = -1
-            # pb.end(this_surf.status)
             
 if __name__ == '__main__':
     main()
