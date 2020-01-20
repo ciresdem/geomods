@@ -141,7 +141,7 @@ def fetch_csv(src_url):
 
     req = fetch_req(src_url)
     if req:
-        return(list(csv.reader(req.text.split('\n'), delimiter = ',')))
+        return(csv.reader(req.text.split('\n'), delimiter = ','))
     else: return(None)
 
 ## =============================================================================
@@ -302,6 +302,11 @@ class dc(threading.Thread):
         for filt in self._filters:
             layer.SetAttributeFilter('{}'.format(filt))
 
+        ## ==============================================
+        ## Find surveys that fit all filters and within
+        ## the region of interest.
+        ## ==============================================
+
         for feature1 in layer:
             if not self.stop():
                 geom = feature1.GetGeometryRef()
@@ -310,24 +315,25 @@ class dc(threading.Thread):
                     surv_dt = feature1.GetField('Datatype')
                     suh = fetch_html(surv_url)
                     if suh is None: self._status = -1
-                    
+
                     if self._status == 0:
                         if 'lidar' in surv_dt:
 
                             ## ==============================================
                             ## Lidar data has a minmax.csv file to get extent
+                            ## for each survey file.
                             ## ==============================================
 
                             scsv = suh.xpath('//a[contains(@href, ".csv")]/@href')[0]
                             dc_csv = fetch_csv(surv_url + scsv)
+                            next(dc_csv, None)
 
                             for tile in dc_csv:
-                                try:
+                                if len(tile) > 3:
                                     tb = [float(tile[1]), float(tile[2]), float(tile[3]), float(tile[4])]
                                     tile_geom = bounds2geom(tb)
                                     if tile_geom.Intersects(self._boundsGeom):
                                         self._results.append(os.path.join(surv_url, tile[0]))
-                                except: pass
 
                         elif 'raster' in surv_dt:
                             
@@ -338,14 +344,14 @@ class dc(threading.Thread):
 
                             sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
                             fetch_file(surv_url + sshpz, os.path.join('.', sshpz), callback = self.stop)
-
-                            try:
-                                zip_ref = zipfile.ZipFile(sshpz)
-                                zip_ref.extractall('dc_tile_index')
-                                zip_ref.close()
-                            except BadZipFile:
-                                self.stop = lambda: True
-                                break
+                            
+                            #try:
+                            zip_ref = zipfile.ZipFile(sshpz)
+                            zip_ref.extractall('dc_tile_index')
+                            zip_ref.close()
+                            #except BadZipFile:
+                            #    self.stop = lambda: True
+                            #    break
 
                             if os.path.exists('dc_tile_index'):
                                 ti = os.listdir('dc_tile_index')
@@ -432,6 +438,10 @@ class dc(threading.Thread):
                                     odate = int(dc['Year'][:4])
                                 except: odate = 1900
 
+                                ## ==============================================
+                                ## Append survey to surveys list
+                                ## ==============================================
+
                                 out_s = [obbox, 
                                          dc['Dataset Name'], 
                                          dc['ID #'], 
@@ -468,8 +478,10 @@ class dc(threading.Thread):
             os.makedirs(xyz_dir)
 
         o_fn_bn = os.path.basename(o_fn).split('.')[0]            
-        o_fn_p_xyz = os.path.join(self._outdir, s_dir, '{}.xyz'.format(o_fn_bn))
+        o_fn_p_ras = os.path.join(self._outdir, s_dir, '{}.tif'.format(o_fn_bn))
         o_fn_xyz = os.path.join(xyz_dir, '{}_{}.xyz'.format(o_fn_bn, self.region.fn))
+
+        o_xyzs = []
             
         if s_t == 'las' or s_t == 'laz':
 
@@ -489,9 +501,12 @@ class dc(threading.Thread):
                 ## ==============================================
 
                 out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
-                out, status = utils.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}'.format(o_fn_txt, self.region.gmt, o_fn_p_xyz), False, None)
+                out, status = utils.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}'.format(o_fn_txt, self.region.gmt, o_fn_xyz), False, None)
 
                 os.remove(o_fn_txt)
+
+                if status == 0:
+                    o_xyzs.append(o_fn_xyz)
 
         elif s_t == 'tif' or s_t == 'img':
 
@@ -501,29 +516,38 @@ class dc(threading.Thread):
             ## WGS84 before dumping to xyz
             ## ==============================================
 
-            gdalfun.dump(o_fn, o_fn_p_xyz)
+            out, status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(o_fn, o_fn_p_ras), False, None)
+
+            out_chunks = gdalfun.chunks(o_fn_p_ras, 1000)
+            os.remove(o_fn_p_ras)
+
+            for chunk in out_chunks:
+
+                i_xyz = chunk.split('.')[0] + '.xyz'
+                o_xyz = os.path.join(xyz_dir, os.path.basename(i_xyz))
+
+                gdalfun.dump(chunk, o_xyz)
+                
+                o_xyzs.append(o_xyz)
+
 
         if status == 0:
+            
+            for o_xyz in o_xyzs:
+                
+                ## ==============================================        
+                ## Add xyz file to datalist
+                ## ==============================================
 
-            ## ==============================================
-            ## Move processed xyz file to xyz directory
-            ## ==============================================
+                sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_dir)))
+                sdatalist._append_datafile('{}'.format(os.path.basename(o_xyz)), 168, 1)
+                sdatalist._reset()
 
-            os.rename(o_fn_p_xyz, o_fn_xyz)
+                ## ==============================================
+                ## Generate .inf file
+                ## ==============================================
 
-            ## ==============================================        
-            ## Add xyz file to datalist
-            ## ==============================================
-
-            sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_dir)))
-            sdatalist._append_datafile('{}'.format(os.path.basename(o_fn_xyz)), 168, 1)
-            sdatalist._reset()
-
-            ## ==============================================
-            ## Generate .inf file
-            ## ==============================================
-
-            out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_dir))), False, None)
+                out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_dir))), False, None)
 
             os.remove(o_fn)
 
@@ -650,7 +674,9 @@ class nos(threading.Thread):
                 self.print_results()
             else: self.fetch_results()
 
-    def _parse_nos_xml(self, xml_url, sid):        
+    def _parse_nos_xml(self, xml_url, sid):
+        '''pare the NOS XML file and extract relavant infos.'''
+
         xml_doc = fetch_nos_xml(xml_url)
         title = 'Unknown'
 
@@ -693,6 +719,8 @@ class nos(threading.Thread):
         return([None])
 
     def _scan_directory(self, nosdir):
+        '''Scan an NOS directory and parse the XML for each survey.'''
+
         if self._has_vector:
             gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
             layer = gmt1.GetLayer()
@@ -703,6 +731,11 @@ class nos(threading.Thread):
         xml_catalog = self._nos_xml_url(nosdir)
         page = fetch_html(xml_catalog)
         rows = page.xpath('//a[contains(@href, ".xml")]/@href')
+
+        ## ==============================================
+        ## Parse each survey found in the directory
+        ## and append it to the surveys list
+        ## ==============================================
 
         for survey in rows:
             if not self.stop():
@@ -720,6 +753,9 @@ class nos(threading.Thread):
         gmt1 = layer = None
 
     def search_gmt(self):
+        '''Search the NOS reference vector and append the results
+        to the results list.'''
+
         gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
         layer = gmt1.GetLayer()
 
@@ -736,7 +772,7 @@ class nos(threading.Thread):
                         self._results.append(i)
 
     def _update(self):
-        '''Update the NOS reference vector'''
+        '''Crawl the NOS database and update the NOS reference vector.'''
 
         for j in self._nos_directories:
             if not self.stop():
@@ -775,7 +811,6 @@ class nos(threading.Thread):
             with open(os.path.join(o_fn_tmp), 'w') as out_xyz:
                 d_csv = csv.writer(out_xyz, delimiter = ' ')
                 
-
                 for row in s_csv:
                     if len(row) > 2:
                         this_xyz = [float(row[2]), float(row[1]), float(row[3]) * -1]
@@ -825,12 +860,15 @@ class nos(threading.Thread):
             s_gz = os.path.join(s_dir, s_fn)
 
             if s_gz.split('.')[-1] == 'gz':
-                out, status = utils.run_cmd('gunzip {}'.format(os.path.join(s_dir, s_fn)), False, None)
-                s_bag = '.'.join(s_gz.split('.')[:-1])
-            else: s_bag = os.path.join(s_dir, s_fn)
+                with gzip.open(s_gz, 'rb') as in_bag:
+                    s = in_bag.read()
+                    with open(s_gz[:-3], 'w') as f:
+                        f.write(s)
 
-            s_tif = os.path.join(s_dir, s_fn.split('.')[0].lower() + '.tif')
-            
+                s_bag = s_gz[:-3]
+            else: s_bag = s_gz
+
+            s_tif = os.path.join(s_dir, s_fn.split('.')[0].lower() + '.tif')            
             s_xyz = s_gz.split('.')[0] + '.xyz'
 
             out, status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(s_bag, s_tif), True, 'transforming data to WGS84')
@@ -843,6 +881,11 @@ class nos(threading.Thread):
                 o_xyz = os.path.join(xyz_dir, os.path.basename(i_xyz))
 
                 gdalfun.dump(i, i_xyz)
+
+                ## ==============================================
+                ## transform processed xyz file to NAVD88 
+                ## using vdatum
+                ## ==============================================
 
                 if os.stat(i_xyz).st_size == 0:
                     os.remove(i_xyz)
@@ -857,6 +900,10 @@ class nos(threading.Thread):
                         os.rename(os.path.join(xyz_dir, 'result', os.path.basename(i_xyz)), o_xyz)
                         os.remove(i_xyz)
                     else: os.rename(i_xyz, o_xyz)
+
+                    ## ==============================================
+                    ## Add xyz file to datalist
+                    ## ==============================================
             
                     if os.stat(o_xyz).st_size != 0:
                         sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_t)))
@@ -869,11 +916,15 @@ class nos(threading.Thread):
                 os.remove(i)
                 
     def print_results(self):
+        '''Print the data url(s) for each survey in results.'''
+
         for row in self._results:
             if row:
                 print(row)
 
     def fetch_results(self):
+        '''Fetch NOS data in the given region and meeting any filters.'''
+
         if self._want_proc:
             self.this_vd = utils.vdatum()
 

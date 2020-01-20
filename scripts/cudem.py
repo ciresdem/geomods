@@ -70,7 +70,8 @@ _version = '0.1.3'
 _dem_mods = { 'mbgrid': [lambda x: x.mbgrid, 'generate a DEM with mbgrid', 'None'], 
               'gmt-surface': [lambda x: x.surface, 'generate a DEM with GMT', 'None'],
               'spatial-metadata': [lambda x: x.spatial_metadata, 'generate spatial-metadata', 'epsg'],
-              'conversion-grid': [lambda x: x.conversion_grid, 'generate a conversion grid with vdatum', 'ivert:overt:region']
+              'conversion-grid': [lambda x: x.conversion_grid, 'generate a conversion grid with vdatum', 'ivert:overt:region'],
+              'bathy-surface': [lambda x: x.masked_surface, 'generate a bathymetry surface with GMT', 'coastline']
 }
 
 def dem_mod_desc(x):
@@ -344,7 +345,7 @@ class dem(threading.Thread):
         if region and region._valid:
             self.grd2xyz_cmd = ('gmt grd2xyz -V {} {} -s > {}'.format(src_grd, region.gmt, dst_xyz))
 
-        else: self.grd2xyz_cmd = ('gmt grd2xyz {} -V -s > {}'.format(igrid, dst_xyz))
+        else: self.grd2xyz_cmd = ('gmt grd2xyz {} -V -s > {}'.format(src_grd, dst_xyz))
             
         out, self.status = geomods.utils.run_cmd(self.grd2xyz_cmd, self.verbose)
 
@@ -445,6 +446,76 @@ class dem(threading.Thread):
                                   self.inc, verbose = self.verbose)
 
         self.dem['num-msk'] = '{}_num_msk.tif'.format(self.oname)
+
+    def masked_surface(self, mask = None):
+        '''Generate a masked surface with GMT surface and a breakline mask polygon'''
+
+        ## GMT GRDLANDMASK FOR COASTLINE WHEN COASTLINE IS NONE
+        ## OR GRID ALL DATA AND EXTRACT ZERO LINE AS BEST WE CAN
+        ## TRY SURFACE -D OPTION FOR BREAKLINE DATA
+
+        dem_landmask_cmd = ('gmt grdlandmask -Gtmp_lm.grd -I{} {} -Df+ -V -r -N1/0\
+        '.format(self.inc, self.proc_region.gmt))
+
+        dem_surf_cmd = ('gmt blockmean {} -I{} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -r -Lu0\
+        '.format(self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
+
+        dem_landmask_cmd1 = ('gmt grdmath -V {}_p.grd tmp_lm.grd MUL 0 NAN = {}_p_bathy.grd\
+        '.format(self.oname, self.oname))
+
+        dem_cut_cmd = ('gmt grdcut -V {}_p_bathy.grd -G{}_bs.grd {}\
+        '.format(self.oname, self.oname, self.dist_region.gmt))
+
+        if mask is None:
+            out, self.status = geomods.utils.run_cmd(dem_landmask_cmd, self.verbose, 'generating landmask from gsshg')
+        
+        pb = 'generating bathymetry surface using GMT'
+
+        out, self.status = geomods.utils.run_cmd_with_input(dem_surf_cmd, self.datalist._cat_port, self.verbose, pb)
+
+        if self.status == 0:
+
+            #if mask is None:
+            out, self.status = geomods.utils.run_cmd(dem_landmask_cmd1, self.verbose, 'masking bathy surface')
+
+            pb = 'clipping DEM to final region'
+            out, self.status = geomods.utils.run_cmd(dem_cut_cmd, self.verbose, pb)
+            
+            if self.status == 0:
+
+                if os.path.exists('{}_p.grd'.format(self.oname)):
+                    os.remove('{}_p.grd'.format(self.oname))
+
+                if os.path.exists('{}_p_bathy.grd'.format(self.oname)):
+                    os.remove('{}_p_bathy.grd'.format(self.oname))
+
+                ## DUMP TO XYZ AND ADD TO DATALIST
+
+                xyz_dir = os.path.join(os.getcwd(), 'xyz')
+        
+                if not os.path.exists(xyz_dir):
+                    os.makedirs(xyz_dir)
+
+                self.dem['dem-bathy'] = ('{}_bs.grd'.format(self.oname))
+                self.dem['xyz-bathy'] = ('xyz/{}_bs.xyz'.format(self.oname))
+
+                self.grd2xyz(self.dem['dem-bathy'], self.dem['xyz-bathy'])
+
+                ## ==============================================
+                ## Add xyz file to datalist
+                ## ==============================================
+
+                sdatalist = geomods.datalists.datalist(os.path.join(xyz_dir, 'bathy.datalist'))
+                sdatalist._append_datafile('{}'.format(os.path.basename(self.dem['xyz-bathy'])), 168, 1)
+                sdatalist._reset()
+
+                ## ==============================================
+                ## Generate .inf file
+                ## ==============================================
+
+                out, status = geomods.utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, 'bathy.datalist')), False, None)
+
+        return(self.status)
 
     def surface(self):
         '''Generate a DEM with GMT surface'''
@@ -571,6 +642,10 @@ class dem(threading.Thread):
             self.dem['{}to{}'.format(this_vd.ivert, this_vd.overt)] = '{}_{}to{}.tif'.format(self.oname, this_vd.ivert, this_vd.overt)
         else: self.status = -1
 
+        ## ==============================================
+        ## Cleanup
+        ## ==============================================
+
         os.remove('empty.tif')
         os.remove('empty.xyz')
         
@@ -582,7 +657,11 @@ class dem(threading.Thread):
     def spatial_metadata(self, epsg = 4269):
         '''Geneate spatial metadata from a datalist'''
 
-        ## these fields should be found in the datalist starting at position 3 (from 0)
+        ## ==============================================
+        ## these fields should be found in the datalist 
+        ## starting at position 3 (from 0)
+        ## ==============================================
+
         v_fields = ['Name', 'Agency', 'Date', 'Type', 'Resolution', 'HDatum', 'VDatum', 'URL']
         t_fields = [ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString]
     
@@ -641,7 +720,7 @@ class dem(threading.Thread):
                     ## ==============================================
                     ## Gererate the NUM-MSK
                     ## ==============================================
-
+                    
                     #pb1 = geomods.utils._progress('generating {} mask'.format(this_datalist._path_basename))
                     #this_dem.num_msk()
                     #pb1.end(self.status)

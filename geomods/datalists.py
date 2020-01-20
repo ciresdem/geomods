@@ -135,6 +135,7 @@ class datalist:
         return(osep.join(self.datafiles))
 
     ## Catenate the xyz data from the datalist
+    ## Depreciated, use _cat_port
     def _cat(self, dst_xyz):
         with open(dst_xyz, 'w') as outfile:
             for fn in self.datafiles:

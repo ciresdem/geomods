@@ -40,7 +40,19 @@ except ImportError:
 GDAL_OPTS = ["COMPRESS=LZW", "INTERLEAVE=PIXEL", "TILED=YES",\
         "SPARSE_OK=TRUE", "BIGTIFF=YES" ]
 
-_known_delims = [' ', ',', '\t', '/', ':']
+_known_delims = [',', ' ', '\t', '/', ':']
+
+def xyz_parse(src_xyz):
+    for xyz in src_xyz:
+        this_line = xyz.strip()
+
+        for delim in _known_delims:
+            this_xyz = this_line.split(delim)
+            if len(this_xyz) > 1:
+                this_delim = delim
+                break
+
+        yield this_xyz
 
 def _ogr_get_fields(src_ogr):
     '''return all fields in src_ogr'''
@@ -190,12 +202,7 @@ def chunks(src_fn, n_chunk = 10):
             this_y_size = this_y_chunk - this_y_origin
 
             srcwin = (this_x_origin, this_y_origin, this_x_size, this_y_size)
-
-            #this_geo_x_origin = gt[0] + this_x_origin * gt[1] + this_y_origin * gt[2]
-            #this_geo_y_origin = gt[3] + this_x_origin * gt[4] + this_y_origin * gt[5]
-
             this_geo_x_origin, this_geo_y_origin = _pixel2geo(this_x_origin, this_y_origin, gt)
-
             dst_gt = [this_geo_x_origin, gt[1], 0.0, this_geo_y_origin, 0.0, gt[5]]
 
             for band in bands:
@@ -319,7 +326,6 @@ def dump(src_gdal, dst_xyz, dump_nodata = False):
             band_data = np.reshape(band_data, (srcwin[2], ))
             data.append(band_data)
 
-            #print nodata
         for x_i in range(0, srcwin[2], skip):
             x = x_i + srcwin[0]
 
@@ -334,7 +340,6 @@ def dump(src_gdal, dst_xyz, dump_nodata = False):
 
             line = format % (float(geo_x), float(geo_y), band_str)
 
-            #print nodata
             if dump_nodata:
                 dst_fh.write(line)
             else:
@@ -343,8 +348,12 @@ def dump(src_gdal, dst_xyz, dump_nodata = False):
 
     srcds = None
 
-def null(outfile, extent, cellsize, nodata = -9999, outformat = 'GTiff', verbose = False, overwrite = True):
+def null(outfile, extent, cellsize, nodata = -9999, outformat = 'GTiff'):
     '''generate a `null` grid with gdal'''
+
+    ## ==============================================    
+    ## Set the rows and columns for the output grid
+    ## ==============================================
 
     ysize = extent[3] - extent[2]
     xsize = extent[1] - extent[0]
@@ -542,26 +551,22 @@ def xyz2gdal(src_xyz, dst_gdal, extent, cellsize,
     dst_band = dst_ds.GetRasterBand(1)
     dst_band.SetNoDataValue(dst_nodata)
 
+    ## ==============================================
+    ## Process the XYZ data
+    ## ==============================================
+
     if zvalue == 'z': sumArray = np.zeros( (ycount, xcount) )
     ptArray = np.zeros( (ycount, xcount) )
     
     pointnum = 0
-    for xyz in src_xyz:
-        if pointnum == 0:
-            for i in _known_delims:
-                try:
-                    this_xyz = xyz.split(i)
-                    x = float(this_xyz[int(xloc)].strip())
-                    y = float(this_xyz[int(yloc)].strip())
-                    z = float(this_xyz[int(zloc)].strip())
-                    delim = i
-                    break
-                except: pass
-        else:
-            this_xyz = xyz.split(delim)
-            x = float(this_xyz[int(xloc)].strip())
-            y = float(this_xyz[int(yloc)].strip())
-            z = float(this_xyz[int(zloc)].strip())
+
+    if verbose:
+        print('geomods: processing xyz data...')
+
+    for this_xyz in xyz_parse(src_xyz):
+        x = float(this_xyz[xloc])
+        y = float(this_xyz[yloc])
+        z = float(this_xyz[int(zloc)].strip())
 
         ## ==============================================
         ## Determine which cell to apply this count
@@ -570,6 +575,7 @@ def xyz2gdal(src_xyz, dst_gdal, extent, cellsize,
         if x > extent[0] and x < extent[1]:
             if y > extent[2] and y < extent[3]:
                 xpos, ypos = _geo2pixel(x, y, dst_gt)
+                ptArray[ypos, xpos] = 1
 
                 if zvalue == 'z': sumArray[ypos, xpos] += float(z)
                 if zvalue == 'd' or zvalue == 'z': 
@@ -581,6 +587,9 @@ def xyz2gdal(src_xyz, dst_gdal, extent, cellsize,
         outarray = sumArray / ptArray
     elif zvalue == 'd': outarray = ptArray
     else: outarray = ptArray
+
+    if verbose:
+        sys.stderr.write('ok\n')
 
     ## ==============================================
     ## write the output grid
@@ -598,10 +607,8 @@ def xyz2gdal(src_xyz, dst_gdal, extent, cellsize,
 
 def xyz_gmask(src_xyz, dst_gdal, extent, cellsize,
               dst_format='GTiff', xloc=0, yloc=1, zloc=2, 
-              delim=' ', verbose=False, overwrite=False):
+              delim=' ', verbose=False):
     '''Create a num grid mask of xyz data'''
-
-    dst_nodata=-9999
     
     ## ==============================================
     ## Set the rows and columns for the output grid
@@ -616,6 +623,8 @@ def xyz_gmask(src_xyz, dst_gdal, extent, cellsize,
     ## Create the output GDAL Raster
     ## ==============================================
 
+    dst_nodata=-9999
+
     if dst_format == "AAIGrid":
         driver = gdal.GetDriverByName("MEM")
     else: driver = gdal.GetDriverByName(dst_format)
@@ -629,36 +638,24 @@ def xyz_gmask(src_xyz, dst_gdal, extent, cellsize,
     dst_band = dst_ds.GetRasterBand(1)
     dst_band.SetNoDataValue(dst_nodata)
 
-    ptArray = np.zeros((ycount, xcount))
-
     ## ==============================================
     ## Process the XYZ data
     ## ==============================================
 
+    ptArray = np.zeros((ycount, xcount))
+
     if verbose:
         print('geomods: processing xyz data...')
 
-    pointnum = 0
-    for xyz in src_xyz:
-        if pointnum == 0:
-            for i in _known_delims:
-                try:
-                    this_xyz = xyz.split(i)
-                    x = float(this_xyz[xloc].strip())
-                    y = float(this_xyz[yloc].strip())
-                    delim = i
-                    pointnum = 1
-                    break
-                except: pass
-        else:
-            this_xyz = xyz.split(delim)
-            x = float(this_xyz[xloc].strip())
-            y = float(this_xyz[yloc].strip())
+    for this_xyz in xyz_parse(src_xyz):
+        x = float(this_xyz[xloc])
+        y = float(this_xyz[yloc])
 
         if x > extent[0] and x < extent[1]:
             if y > extent[2] and y < extent[3]:
                 xpos, ypos = _geo2pixel(x, y, dst_gt)
                 ptArray[ypos, xpos] = 1
+
     if verbose:
         sys.stderr.write('ok\n')
 
@@ -666,7 +663,7 @@ def xyz_gmask(src_xyz, dst_gdal, extent, cellsize,
     ## Write out the grid    
     ## ==============================================
 
-    ptArray[np.isnan(ptArray)] = dst_nodata
+    #ptArray[np.isnan(ptArray)] = dst_nodata
 
     dst_band.WriteArray(ptArray)
 
