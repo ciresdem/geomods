@@ -26,6 +26,19 @@ import time
 import subprocess
 import threading
 
+import ConfigParser
+
+def init_config():
+    co = ConfigParser.ConfigParser()
+    cf = os.path.expanduser('~/geomods.ini')
+
+    co['PATHINFO'] = {
+        'vdatum': None
+    }
+    
+    with open(cf, 'w') as conf:
+        co.write(conf)
+
 ## =============================================================================
 ##
 ## Command execution, et cetra
@@ -113,12 +126,26 @@ def run_cmd(cmd, verbose = False, prog = None):
 ## =============================================================================
 
 class vdatum:
-    def __init__(self, vdatum_path = None):
+    def __init__(self, vdatum_path = None, verbose = False):
         '''vdatum object to communicate with NOAA's VDatum'''
 
+        self.verbose = verbose
+        
         if vdatum_path is None:
-            self.vdatum_paths = self._find_vdatum()
-        else: self.vdatum_paths = [vdatum_path]
+
+            co = ConfigParser.ConfigParser()
+            try:
+                co.read(os.path.expanduser('~/geomods.ini'))
+                self.vdatum_path = co.get('VDATUM', 'jar')
+            except:
+
+                self.vdatum_path = self._find_vdatum()[0]
+                co.add_section('VDATUM')
+                co.set('VDATUM', 'jar', self.vdatum_path)
+            
+                with open(os.path.expanduser('~/geomods.ini'), 'w') as conf:
+                    co.write(conf)
+        else: self.vdatum_path = vdatum_path
         
         self._get_version()
         
@@ -134,9 +161,10 @@ class vdatum:
         self.ds_dir = 'result'
 
     def _get_version(self):
-        if len(self.vdatum_paths) > 0:
+        #if len(self.vdatum_paths) > 0:
+        if self.vdatum_path is not None:
             self._version = None
-            out, status = run_cmd('java -jar {} {}'.format(self.vdatum_paths[0], '-'))
+            out, status = run_cmd('java -jar {} {}'.format(self.vdatum_path, '-'))
             for i in out.split('\n'):
                 if '- v' in i.strip():
                     #print i.strip().split('v')[-1]
@@ -149,22 +177,29 @@ class vdatum:
 
         results = []
         status = 0
-        pb = _progress('checking for vdatum.')
+        if self.verbose:
+            pb = _progress('checking for vdatum.')
         for root, dirs, files in os.walk('/'):
             if 'vdatum.jar' in files:
                 results.append(os.path.join(root, 'vdatum.jar'))
         if len(results) <= 0:
             status = -1
-        pb.opm = '{}..{}'.format(pb.opm, results[0])
-        pb.end(status)
+        if self.verbose:
+            pb.opm = '{}..{}'.format(pb.opm, results[0])
+            pb.end(status)
 
         return results
 
     def run_vdatum(self, src_fn):
         '''Run vdatum on src_fn which is an XYZ file'''
-
+        
+        if self.verbose:
+            pb = 'transforming data with VDatum'
+        else: pb = None
+        
         vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},0,1,2:{}:{} region:{}'.format(self.ihorz, self.ivert, self.ohorz, self.overt, self.fd, src_fn, self.ds_dir, self.region)
-        out, status = run_cmd('java -jar {} {}'.format(self.vdatum_paths[0], vdc), False, 'transforming data with vdatum')
+        #out, status = run_cmd('java -jar {} {}'.format(self.vdatum_paths[0], vdc), False, 'transforming data with vdatum')
+        out, status = run_cmd('java -jar {} {}'.format(self.vdatum_path, vdc), False, pb)
 
         return status
 

@@ -67,7 +67,7 @@ _version = '0.1.3'
 ##
 ## =============================================================================
 
-_dem_mods = { 'mbgrid': [lambda x: x.mbgrid, 'generate a DEM with mbgrid', 'None'], 
+_dem_mods = { 'mbgrid': [lambda x: x.mbgrid, 'generate a DEM with mbgrid', 'None'],
               'gmt-surface': [lambda x: x.surface, 'generate a DEM with GMT', 'None'],
               'spatial-metadata': [lambda x: x.spatial_metadata, 'generate spatial-metadata', 'epsg'],
               'conversion-grid': [lambda x: x.conversion_grid, 'generate a conversion grid with vdatum', 'ivert:overt:region'],
@@ -95,7 +95,11 @@ Options:
   -I, --datalsit\tThe input datalist.
   -E, --increment\tThe desired cell-size in native units.
       note: use at least 7 digits precision with WGS84 units
-  -N, --name\t\tThe output naming prefix.
+
+  -P, --prefix\t\tThe output naming prefix.
+  -O, --name\t\tThe output basename.
+
+  -r\t\t\tuse grid-node registration, default is pixel-node
 
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
@@ -104,7 +108,7 @@ Options:
  Examples:
  % cudem.py -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 gmt-surface
  % cudem.py --datalist input.datalist --increment 0.000277777 --region input_tiles_ply.shp mbgrid spatial-metadata
- % cudem.py -R-82.5/-82.25/26.75/27 -E0.0000925 conversion-grid:navd88:mhw
+ % cudem.py -R-82.5/-82.25/26.75/27 -E0.0000925 conversion-grid:navd88:mhw:3 -P ncei -r
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version, '\n  '.join(dem_mod_desc(_dem_mods)))
 
@@ -189,7 +193,7 @@ def dem_interpolation_uncertainty(dem_surface):
         ## Generate the random-sample DEM            
         ## ==============================================
 
-        sub_surf = dem(sub_datalist, sub_region, iinc)
+        sub_surf = cudem(sub_datalist, sub_region, iinc)
         sub_surf.mbgrid()
             
         status = sub_surf.proximity()
@@ -231,8 +235,8 @@ def dem_interpolation_uncertainty(dem_surface):
 ##
 ## =============================================================================
 
-class dem(threading.Thread):
-    def __init__(self, idatalist, iregion, iinc = '0.000277777', oname = None, callback = lambda: False, verbose = False):
+class cudem(threading.Thread):
+    def __init__(self, idatalist, iregion, iinc = '0.000277777', oname = None, obname = None, callback = lambda: False, verbose = False):
         '''run a number of modules for DEM generation and analysis'''
 
         threading.Thread.__init__(self)
@@ -245,6 +249,7 @@ class dem(threading.Thread):
         self.datalist = idatalist
         self._module = self._valid_p
         self._module_args = ()
+        self.node = 'pixel'
 
         self.region = iregion
         self.proc_region = self.region.buffer(10 * self.inc)
@@ -252,13 +257,15 @@ class dem(threading.Thread):
 
         self.max_prox = self.max_num = None
 
-        if oname is None: 
-            if idatalist is None:
-                oname = 'cgrid'
-            else: oname = self.datalist._path_basename.split('.')[0]
+        if obname is None:
+            if oname is None: 
+                if idatalist is None:
+                    oname = 'cgrid'
+                else: oname = self.datalist._path_basename.split('.')[0]
 
-        str_inc = str(fractions.Fraction(str(self.inc * 3600)).limit_denominator(10)).replace('/', '')
-        self.oname = '{}{}_{}_{}'.format(oname, str_inc, self.region.fn, datetime.datetime.now().strftime('%Y'))
+            str_inc = str(fractions.Fraction(str(self.inc * 3600)).limit_denominator(10)).replace('/', '')
+            self.oname = '{}{}_{}_{}'.format(oname, str_inc, self.region.fn, datetime.datetime.now().strftime('%Y'))
+        else: self.oname = obname
 
     def run(self):
         if len(self._module_args) == 0:
@@ -409,8 +416,12 @@ class dem(threading.Thread):
         #num_cmd0 = ('cat {} | gmt xyz2grd -V {} -I{} -r -G{}_num.grd -An\
         #'.format(self.datalist._echo_datafiles(' '), self.dist_region.gmt, self.inc, self.oname))
 
-        num_cmd0 = ('gmt xyz2grd -V {} -I{} -r -G{}_num.grd -An\
-        '.format(self.dist_region.gmt, self.inc, self.oname))
+        if self.node == 'pixel':
+            num_cmd0 = ('gmt xyz2grd -V {} -I{} -r -G{}_num.grd -An\
+            '.format(self.dist_region.gmt, self.inc, self.oname))
+        else:
+            num_cmd0 = ('gmt xyz2grd -V {} -I{} -G{}_num.grd -An\
+            '.format(self.dist_region.gmt, self.inc, self.oname))
 
         num_cmd1 = ('gmt grdmath -V {}_num.grd 0 MUL 1 ADD 0 AND = {}_num_msk.tif=gd+n-9999:GTiff\
         '.format(self.oname, self.oname))
@@ -454,11 +465,18 @@ class dem(threading.Thread):
         ## OR GRID ALL DATA AND EXTRACT ZERO LINE AS BEST WE CAN
         ## TRY SURFACE -D OPTION FOR BREAKLINE DATA
 
-        dem_landmask_cmd = ('gmt grdlandmask -Gtmp_lm.grd -I{} {} -Df+ -V -r -N1/0\
-        '.format(self.inc, self.proc_region.gmt))
+        if self.node == 'pixel':
+            dem_landmask_cmd = ('gmt grdlandmask -Gtmp_lm.grd -I{} {} -Df+ -V -r -N1/0\
+            '.format(self.inc, self.proc_region.gmt))
 
-        dem_surf_cmd = ('gmt blockmean {} -I{} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -r -Lu0\
-        '.format(self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
+            dem_surf_cmd = ('gmt blockmean {} -I{} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -r -Lu0\
+            '.format(self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
+        else:
+            dem_landmask_cmd = ('gmt grdlandmask -Gtmp_lm.grd -I{} {} -Df+ -V -N1/0\
+            '.format(self.inc, self.proc_region.gmt))
+
+            dem_surf_cmd = ('gmt blockmean {} -I{} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -Lu0\
+            '.format(self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
 
         dem_landmask_cmd1 = ('gmt grdmath -V {}_p.grd tmp_lm.grd MUL 0 NAN = {}_p_bathy.grd\
         '.format(self.oname, self.oname))
@@ -523,8 +541,12 @@ class dem(threading.Thread):
         #dem_cmd = ('cat {} | gmt blockmean {} -I{} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -r -Lud -Lld\
         #'.format(self.datalist._echo_datafiles(' '), self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
 
-        dem_surf_cmd = ('gmt blockmean {} -I{} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -r -Lud -Lld\
-        '.format(self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
+        if self.node == 'pixel':
+            dem_surf_cmd = ('gmt blockmean {} -I{} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -r -Lud -Lld\
+            '.format(self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
+        else:
+            dem_surf_cmd = ('gmt blockmean {} -I{} -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -Lud -Lld\
+            '.format(self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
 
         dem_cut_cmd = ('gmt grdcut -V {}_p.grd -G{}.grd {}\
         '.format(self.oname, self.oname, self.dist_region.gmt))
@@ -550,7 +572,7 @@ class dem(threading.Thread):
 
         return(self.status)
 
-    def mbgrid(self, extras = False):
+    def mbgrid(self):
         '''Generate a DEM and num grid with MBSystem'''
 
         mbgrid_cmd = ('mbgrid -I{} {} -E{}/{}/degrees! -O{} -A2 -G100 -F1 -N -C10/3 -S0 -X0.1 -T35 -M\
@@ -564,13 +586,14 @@ class dem(threading.Thread):
             self.dem['dem-grd'] = '{}.grd'.format(self.oname)
             self.dem['num-grd'] = '{}_num.grd'.format(self.oname)
 
-            pb = 'resampling DEM to pixel-node registration'
-            out, self.status = geomods.utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['dem-grd']), self.verbose, pb)
-            os.rename('tmp.grd', self.dem['dem-grd'])
+            if self.node == 'pixel':
+                pb = 'resampling DEM to pixel-node registration'
+                out, self.status = geomods.utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['dem-grd']), self.verbose, pb)
+                os.rename('tmp.grd', self.dem['dem-grd'])
 
-            pb = 'resampling NUM grid to pixel-node registration'
-            out, self.status = geomods.utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['num-grd']), self.verbose, pb)
-            os.rename('tmp.grd', self.dem['num-grd'])
+                pb = 'resampling NUM grid to pixel-node registration'
+                out, self.status = geomods.utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['num-grd']), self.verbose, pb)
+                os.rename('tmp.grd', self.dem['num-grd'])                
 
             self.grd2tif(self.dem['dem-grd'])
             self.dem['dem'] = '{}.tif'.format(self.oname)
@@ -635,8 +658,12 @@ class dem(threading.Thread):
                 lu_switch = '-Lud'
             else: lu_switch = '-Lu0'
 
-            gc = 'gmt blockmean result/empty.xyz -V -I{} {} | gmt surface -I{} {} -G{}_{}to{}.tif=gd:GTiff -V -r -T0 {} {}\
-            '.format(self.inc, self.dist_region.gmt, self.inc, self.dist_region.gmt, self.oname, this_vd.ivert, this_vd.overt, ll_switch, lu_switch)
+            if self.node == 'pixel':
+                gc = 'gmt blockmean result/empty.xyz -V -I{} {} | gmt surface -I{} {} -G{}_{}to{}.tif=gd:GTiff -V -r -T0 {} {}\
+                '.format(self.inc, self.dist_region.gmt, self.inc, self.dist_region.gmt, self.oname, this_vd.ivert, this_vd.overt, ll_switch, lu_switch)
+            else:
+                gc = 'gmt blockmean result/empty.xyz -V -I{} {} | gmt surface -I{} {} -G{}_{}to{}.tif=gd:GTiff -V -T0 {} {}\
+                '.format(self.inc, self.dist_region.gmt, self.inc, self.dist_region.gmt, self.oname, this_vd.ivert, this_vd.overt, ll_switch, lu_switch)
             geomods.utils.run_cmd(gc, self.verbose, 'generating conversion grid')
 
             self.dem['{}to{}'.format(this_vd.ivert, this_vd.overt)] = '{}_{}to{}.tif'.format(self.oname, this_vd.ivert, this_vd.overt)
@@ -697,7 +724,7 @@ class dem(threading.Thread):
             ## Generate geometry for each datalist 
             ## and add to output layer
             ## ==============================================
-
+            
             for dl in self.datalist.datalist:
                 if not self.stop():
                     
@@ -708,7 +735,7 @@ class dem(threading.Thread):
                     pb = geomods.utils._progress('loading datalist...')
 
                     this_datalist = geomods.datalists.datalist(dl[0], self.dist_region)
-                    this_dem = dem(this_datalist, self.region, str(self.inc), verbose = self.verbose)
+                    this_dem = cudem(this_datalist, self.region, str(self.inc), verbose = self.verbose)
 
                     pb.opm = 'loading datalist...{}'.format(this_datalist._path_basename)
                     pb.end(0)
@@ -814,6 +841,8 @@ def main():
     want_verbose = False
     mod_opts = {}
     o_pre = None
+    o_bn = None
+    node_reg = 'pixel'
 
     argv = sys.argv
         
@@ -849,11 +878,20 @@ def main():
         elif arg[:2] == '-G':
             igrid = str(arg[2:])
 
-        elif arg == '--name' or arg == '-N':
+        elif arg == '--output-name' or arg == '-O':
+            o_bn = str(argv[i + 1])
+            i = i + 1
+        elif arg[:2] == '-O':
+            o_bn = str(arg[2:])
+
+        elif arg == '--prefix' or arg == '-P':
             o_pre = str(argv[i + 1])
             i = i + 1
-        elif arg[:2] == '-N':
+        elif arg[:2] == '-P':
             o_pre = str(arg[2:])
+
+        elif arg == '-r':
+            nod_reg = 'grid'
 
         elif arg == '--help' or arg == '-h':
             print(_usage)
@@ -962,8 +1000,9 @@ def main():
         ## Initialize the DEM CLASS
         ## ==============================================
 
-        this_surf = dem(this_datalist, this_region, iinc, callback = lambda: stop_threads, oname = o_pre, verbose = want_verbose)
-
+        this_surf = cudem(this_datalist, this_region, iinc, callback = lambda: stop_threads, oname = o_pre, obname = o_bn, verbose = want_verbose)        
+        this_surf.node = node_reg
+        
         for dem_mod in mod_opts.keys():
 
             if this_datalist is None:

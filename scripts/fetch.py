@@ -24,6 +24,7 @@ import os
 import sys
 import time
 import threading
+import Queue as queue
 
 try:
     import osgeo.ogr as ogr
@@ -86,12 +87,12 @@ Options:
   --version\t\tPrint the version information
 
 Examples:
- %% fetch.py --update
+ %% sudo fetch.py --update
  %% fetch.py nos charts -R -90.75/-88.1/28.7/31.25 -f "Date > 2000"
  %% fetch.py dc -R tiles.shp -p
- %% fetch.py dc -R tiles.shp -p -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
+ %% fetch.py dc -R tiles.shp -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
 
-CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version, geomods.fetches._version, '\n  '.join(fetch_desc(fetch_infos)))
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version, '\n  '.join(fetch_desc(fetch_infos)))
 
 
 ## =============================================================================
@@ -112,6 +113,7 @@ def main():
     fetch_class = []
     these_regions = []
     status = 0
+    q = queue.Queue()
 
     ## ==============================================
     ## process Command-Line
@@ -167,32 +169,33 @@ def main():
     tw.opm = 'checking platform - {}'.format(platform)
     tw.end(status)
 
-    tw = geomods.utils._progress('checking for GMT')
-    if geomods.utils.cmd_exists('gmt'): 
-        gmt_vers, status = geomods.utils.run_cmd('gmt --version')
-        tw.opm = 'checking for GMT - {}'.format(gmt_vers.rstrip())
-    else: status = -1
-    tw.end(status)
+    if want_proc:
+        tw = geomods.utils._progress('checking for GMT')
+        if geomods.utils.cmd_exists('gmt'): 
+            gmt_vers, status = geomods.utils.run_cmd('gmt --version')
+            tw.opm = 'checking for GMT - {}'.format(gmt_vers.rstrip())
+        else: status = -1
+        tw.end(status)
 
-    tw = geomods.utils._progress('checking for MBSystem')
-    if geomods.utils.cmd_exists('mbgrid'): 
-        mbs_vers, status = geomods.utils.run_cmd('mbgrid -version')
-        tw.opm = 'checking for MBSystem - {}'.format(mbs_vers.split('\n')[3].rstrip().split()[2])
-    else: status = -1
-    tw.end(status)
+        tw = geomods.utils._progress('checking for MBSystem')
+        if geomods.utils.cmd_exists('mbgrid'): 
+            mbs_vers, status = geomods.utils.run_cmd('mbgrid -version')
+            tw.opm = 'checking for MBSystem - {}'.format(mbs_vers.split('\n')[3].rstrip().split()[2])
+        else: status = -1
+        tw.end(status)
 
-    tw = geomods.utils._progress('checking for LASTools')
-    if geomods.utils.cmd_exists('las2txt'): 
-        status = 0
-    else: status = -1
-    tw.end(status)
+        tw = geomods.utils._progress('checking for LASTools')
+        if geomods.utils.cmd_exists('las2txt'): 
+            status = 0
+        else: status = -1
+        tw.end(status)
 
-    tw = geomods.utils._progress('checking for GDAL command-line')
-    if geomods.utils.cmd_exists('gdal-config'): 
-        gdal_vers, status = geomods.utils.run_cmd('gdal-config --version')
-        tw.opm = 'checking for GDAL command-line - {}'.format(gdal_vers.rstrip())
-    else: status = -1
-    tw.end(status)
+        tw = geomods.utils._progress('checking for GDAL command-line')
+        if geomods.utils.cmd_exists('gdal-config'): 
+            gdal_vers, status = geomods.utils.run_cmd('gdal-config --version')
+            tw.opm = 'checking for GDAL command-line - {}'.format(gdal_vers.rstrip())
+        else: status = -1
+        tw.end(status)
 
     tw = geomods.utils._progress('checking for GDAL python bindings')
     if has_gdalpy: 
@@ -243,7 +246,7 @@ def main():
                 ## Run the Fetch Module
                 ## ==============================================
 
-                pb = geomods.utils._progress('fetching {} for region ({}/{}): {}\
+                pb = geomods.utils._progress('fetching {} region ({}/{}): {}\
                 '.format(fc, rn + 1, len(these_regions), this_region.region_string))
                 
                 fl = fetch_infos[fc][0](this_region.buffer(5, percentage = True), f, want_list, want_update, lambda: stop_threads)

@@ -66,6 +66,7 @@ def main():
     ivert = 'navd88:m:height'
     overt = 'mhw:m:height'
     region = '3'
+    verbose = False
 
     i = 1
 
@@ -79,29 +80,32 @@ def main():
             except: pass
             i = i + 1
 
-        if arg == '-o' or arg == '--overt':
+        elif arg == '-o' or arg == '--overt':
             try:
                 overt = argv[i + 1]
             except: pass
             i = i + 1
 
-        if arg == '-r' or arg == '--ihorz':
+        elif arg == '-r' or arg == '--ihorz':
             try:
                 ihorz = argv[i + 1]
             except: pass
             i = i + 1
 
-        if arg == '-z' or arg == '--ohorz':
+        elif arg == '-z' or arg == '--ohorz':
             try:
                 ohorz = argv[i + 1]
             except: pass
             i = i + 1
 
-        if arg == '-e' or arg == '--region':
+        elif arg == '-e' or arg == '--region':
             try:
                 region = argv[i + 1]
             except: pass
             i = i + 1
+
+        elif arg == '-V' or arg == '--verbose':
+            verbose = True
 
         elif arg == '-help' or arg == '--help' or arg == '-h':
             print(_usage)
@@ -129,7 +133,7 @@ def main():
     else: 
         #vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:space,0,1,2:{}:result region:{}'.format(ihorz, ivert, ohorz, overt, src_fn, region)
         #geomods.utils.run_vdatum(vdc)
-        geomods.utils.vdatum().run_vdatum(src_fn)
+        geomods.utils.vdatum(verbose=verbose).run_vdatum(src_fn)
 
 if __name__ == '__main__':
     main()

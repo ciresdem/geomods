@@ -34,6 +34,7 @@ import gzip
 import csv
 import json
 import threading
+import Queue as queue
 
 try:
     import numpy as np
@@ -60,7 +61,7 @@ import datalists
 import gdalfun
 import utils
 
-_version = '0.1.8'
+_version = '0.2.0'
 
 gdal.PushErrorHandler('CPLQuietErrorHandler')
 
@@ -68,7 +69,7 @@ gdal.PushErrorHandler('CPLQuietErrorHandler')
 ##
 ## Fetching Functions
 ##
-## Generic fetching functions, etc.
+## Generic fetching and processing functions, etc.
 ##
 ## =============================================================================
 
@@ -79,34 +80,50 @@ namespaces = {'gmd': 'http://www.isotc211.org/2005/gmd',
               'gco': 'http://www.isotc211.org/2005/gco',
               'gml': 'http://www.isotc211.org/2005/gml'}
 
+def fetch_queue(q):
+    '''fetch queue `q` of fetch results'''
+
+    while True:
+        try:
+            fetch_args = q.get(timeout=3)
+        except queue.Empty:
+            return
+
+        fetch_file(*tuple(fetch_args))
+
+        q.task_done()
+
 def fetch_file(src_url, dst_fn, params = None, callback = None):
     '''fetch src_url and save to dst_fn'''
     
     status = 0
     halt = callback
 
-    pb = utils._progress('fetching remote file: {}'.format(src_url))
+    if not halt():
+        pb = utils._progress('fetching remote file: {}'.format(src_url))
 
-    if not os.path.exists(os.path.dirname(dst_fn)):
-        os.makedirs(os.path.dirname(dst_fn))
+        if not os.path.exists(os.path.dirname(dst_fn)):
+            try:
+                os.makedirs(os.path.dirname(dst_fn))
+            except: pass 
 
-    req = requests.get(src_url, stream = True, params = params, headers = r_headers)
+        req = requests.get(src_url, stream = True, params = params, headers = r_headers)
 
-    if req:
-        status = 0
-        with open(dst_fn, 'wb') as local_file:
-            for chunk in req.iter_content(chunk_size = 50000):
-                if halt(): 
-                    status = -1
-                    break
-                local_file.write(chunk)
-                pb.update()
-        pb.end(status)
-        return(status)
-    else: 
-        status = -1
-        pb.end(status)
-        return(status)
+        if req:
+            status = 0
+            with open(dst_fn, 'wb') as local_file:
+                for chunk in req.iter_content(chunk_size = 50000):
+                    if halt(): 
+                        status = -1
+                        break
+                    local_file.write(chunk)
+                    pb.update()
+            pb.end(status)
+            return(status)
+        else: 
+            status = -1
+            pb.end(status)
+            return(status)
 
 def fetch_req(src_url, params = None, tries = 3, timeout = 1):
     '''fetch src_url and return the requests object'''
@@ -144,6 +161,268 @@ def fetch_csv(src_url):
         return(csv.reader(req.text.split('\n'), delimiter = ','))
     else: return(None)
 
+## =============================================================================
+##
+## Processing Classes and functions.
+## 
+## =============================================================================
+
+def proc_queue(q):
+    '''process queue `q` of fetched data'''
+
+    while True:
+        try:
+            work = q.get(timeout=3)
+        except queue.Empty: return
+
+        if not work[1]():
+            pb = utils._progress('processing local file: {}'.format(os.path.join(work[0][0], work[0][1])))
+            proc_d = proc(work[0], work[1])
+            
+            proc_d.start()
+            while True:
+                time.sleep(1)
+                pb.update()
+                if not proc_d.is_alive():
+                    break
+
+            pb.end(proc_d.status)
+        q.task_done()
+
+class proc(threading.Thread):
+    def __init__(self, s_file_info, callback = None):
+        '''Process fetched data to XYZ'''
+
+        threading.Thread.__init__(self)
+
+        self.stop = callback
+        self.status = 0
+        self.xyzs = []
+
+        self.s_dir = s_file_info[0]
+        self.s_fn = s_file_info[1]
+        self.o_fn = s_file_info[2]
+        self.s_t = s_file_info[3]
+        self.s_region = s_file_info[4]
+
+        self.this_vd = utils.vdatum()
+
+        self.xyz_dir = os.path.join(self.s_dir, self.s_t.lower(), 'xyz')
+
+        if not os.path.exists(self.xyz_dir):
+            try:
+                os.makedirs(self.xyz_dir)
+            except:
+                pass
+
+        self.o_fn_bn = os.path.basename(self.o_fn).split('.')[0]
+        self.o_fn_tmp = os.path.join(self.s_dir, '{}_tmp.xyz'.format(self.o_fn_bn.lower()))
+        self.o_fn_p_xyz = os.path.join(self.s_dir, '{}.xyz'.format(self.o_fn_bn))
+        self.o_fn_xyz = os.path.join(self.xyz_dir, '{}_{}.xyz'.format(self.o_fn_bn, self.s_region.fn))
+        self.o_fn_p_ras = os.path.join(self.s_dir, '{}.tif'.format(self.o_fn_bn))
+    
+    def run(self):
+        if not self.stop():
+            if self.s_t == 'GEODAS':
+                self._proc_geodas()
+
+            elif 'BAG' in self.s_t:
+                self._proc_bag()
+
+            elif self.s_t == 'las' or self.s_t == 'laz':
+                self._proc_dc_las()
+
+            elif self.s_t == 'tif' or self.s_t == 'img':
+                self._proc_dc_raster()
+
+            elif self.s_t == 'gmrt':
+                self._proc_gmrt()
+
+            elif self.s_t == 'ENCs':
+                self._proc_enc()
+
+            if self.status == 0:
+                self._add_to_datalist()
+                os.remove(self.o_fn)
+
+        else: self.status = -1
+
+    def _add_to_datalist(self):
+        for o_xyz in self.xyzs:
+            if os.stat(o_xyz).st_size != 0:
+
+                sdatalist = datalists.datalist(os.path.join(self.xyz_dir, '{}.datalist'.format(os.path.basename(self.s_dir))))
+                sdatalist._append_datafile('{}'.format(os.path.basename(o_xyz)), 168, 1)
+                sdatalist._reset()
+
+                out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(self.xyz_dir, '{}.datalist'.format(os.path.basename(self.s_dir)))), False, None)
+            else: os.remove(o_xyz)
+
+    def _proc_gmrt(self):
+        gdalfun.dump(self.o_fn, self.o_fn_xyz)
+        self.xyzs.append(self.o_fn_xyz)
+        
+    def _proc_geodas(self):
+
+        try:
+            in_f = gzip.open(os.path.join(self.s_dir, self.s_fn), 'rb')
+            s = in_f.read()
+            s_csv = csv.reader(s.split('\n'), delimiter = ',')
+            next(s_csv, None)
+        except: self.status = -1
+
+        if self.status == 0 and not self.stop():
+            with open(os.path.join(self.o_fn_tmp), 'w') as out_xyz:
+                d_csv = csv.writer(out_xyz, delimiter = ' ')
+
+                for row in s_csv:
+                    if len(row) > 2:
+                        this_xyz = [float(row[2]), float(row[1]), float(row[3]) * -1]
+                        d_csv.writerow(this_xyz)
+            in_f.close()
+
+            if len(self.this_vd.vdatum_paths) > 0:
+                self.this_vd.ivert = 'mllw'
+                self.this_vd.overt = 'navd88'
+                self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir, 'result'))
+
+                self.this_vd.run_vdatum(os.path.relpath(self.o_fn_tmp))
+
+                os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(self.o_fn_tmp)), self.o_fn_xyz)
+            else: os.rename(self.o_fn_tmp, self.o_fn_xyz)
+            os.remove(self.o_fn_tmp)
+
+            if os.path.exists(self.o_fn_xyz):
+                self.xyzs.append(self.o_fn_xyz)
+
+    def _proc_bag(self):
+        s_gz = os.path.join(self.s_dir, self.s_fn)
+
+        if s_gz.split('.')[-1] == 'gz':
+            with gzip.open(s_gz, 'rb') as in_bag:
+                s = in_bag.read()
+                with open(s_gz[:-3], 'w') as f:
+                    f.write(s)
+
+            s_bag = s_gz[:-3]
+        else: s_bag = s_gz
+
+        s_tif = os.path.join(self.s_dir, self.s_fn.split('.')[0].lower() + '.tif')            
+        s_xyz = s_gz.split('.')[0] + '.xyz'
+
+        out, status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(s_bag, s_tif), False, None)
+
+        if status == 0 and not self.stop():
+            out_chunks = gdalfun.chunks(s_tif, 1000)
+            os.remove(s_tif)
+
+            for i in out_chunks:
+                if not self.stop():
+                    i_xyz = i.split('.')[0] + '.xyz'
+                    o_xyz = os.path.join(self.xyz_dir, os.path.basename(i_xyz))
+
+                    gdalfun.dump(i, i_xyz)
+
+                    if os.stat(i_xyz).st_size == 0:
+                        os.remove(i_xyz)
+                    else:
+                        if len(self.this_vd.vdatum_paths) > 0:
+                            self.this_vd.ivert = 'mllw'
+                            self.this_vd.overt = 'navd88'
+                            self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir, 'result'))
+
+                            self.this_vd.run_vdatum(os.path.relpath(i_xyz))
+
+                            os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(i_xyz)), o_xyz)
+                            os.remove(i_xyz)
+                        else: os.rename(i_xyz, o_xyz)
+                        self.xyzs.append(o_xyz)
+
+                os.remove(i)
+
+    def _proc_dc_las(self):
+        out, self.status = utils.run_cmd('las2txt -verbose -parse xyz -keep_class 2 29 -i {}'.format(self.o_fn), False, None)
+
+        if status == 0:
+            self.o_fn_bn = os.path.basename(self.o_fn).split('.')[0]
+
+            self.o_fn_txt = os.path.join(self.s_dir, '{}.txt'.format(self.o_fn_bn))
+
+            out, self.status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
+            out, self.status = utils.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}'.format(self.o_fn_txt, self.s_region.gmt, self.o_fn_xyz), False, None)
+
+            os.remove(self.o_fn_txt)
+
+            if self.status == 0:
+                self.xyzs.append(self.o_fn_xyz)
+
+    def _proc_dc_raster(self):
+        out, self.status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(self.o_fn, self.o_fn_p_ras), False, None)
+
+        out_chunks = gdalfun.chunks(self.o_fn_p_ras, 1000)
+        os.remove(self.o_fn_p_ras)
+
+        for chunk in out_chunks:
+
+            i_xyz = chunk.split('.')[0] + '.xyz'
+            o_xyz = os.path.join(self.xyz_dir, os.path.basename(i_xyz))
+
+            gdalfun.dump(chunk, o_xyz)
+
+            if os.stat(o_xyz).st_size != 0:
+                self.xyzs.append(o_xyz)
+            else:
+                os.remove(o_xyz)
+
+            os.remove(i_xyz)
+
+    def _proc_enc(self):
+
+        zip_ref = zipfile.ZipFile(self.o_fn)
+        zip_ref.extractall(os.path.join(self.s_dir, 'enc'))
+        zip_ref.close()
+
+        s_fn_000 = os.path.join(self.s_dir, 'enc/ENC_ROOT/', self.o_fn_bn, '{}.000'.format(self.o_fn_bn))
+
+        ds_000 = ogr.Open(s_fn_000)
+        layer_s = ds_000.GetLayerByName('SOUNDG')
+        if layer_s is not None:
+            o_xyz = open(self.o_fn_p_xyz, 'w')
+            for f in layer_s:
+                g = json.loads(f.GetGeometryRef().ExportToJson())
+                for xyz in g['coordinates']:
+                    xyz_l = '{} {} {}\n'.format(xyz[0], xyz[1], xyz[2]*-1)
+                    o_xyz.write(xyz_l)
+            o_xyz.close()
+
+        if os.path.exists(self.o_fn_p_xyz):
+
+            if os.stat(self.o_fn_p_xyz).st_size != 0:
+                out, self.status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
+                out, self.status = utils.run_cmd('gmt gmtselect {} {} -V > {}'.format(self.o_fn_p_xyz, self.s_region.gmt, self.o_fn_tmp), False, None)
+
+                if os.stat(self.o_fn_tmp).st_size != 0:
+
+                    if len(self.this_vd.vdatum_paths) > 0:
+                        self.this_vd.ivert = 'mllw'
+                        self.this_vd.overt = 'navd88'
+                        self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir, 'result'))
+
+                        self.this_vd.run_vdatum(os.path.relpath(self.o_fn_tmp))
+
+                        os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(self.o_fn_tmp)), self.o_fn_xyz)
+                    else: os.rename(self.o_fn_tmp, self.o_fn_xyz)
+
+                    os.remove(self.o_fn_p_xyz)
+
+                    if os.stat(self.o_fn_xyz).st_size == 0:
+                        os.remove(self.o_fn_xyz)
+                    else:
+                        self.xyzs.append(self.o_fn_xyz)
+
+        if os.path.exists(self.o_fn_tmp):
+            os.remove(self.o_fn_tmp)
+        
 ## =============================================================================
 ##
 ## Reference Vector
@@ -289,6 +568,9 @@ class dc(threading.Thread):
                 self.print_results()
             else: self.fetch_results()
 
+            if self._want_proc:
+                self.proc_results()
+
     def _log_survey(self, surv_url):
         with open(self._log_fn, 'a') as local_file:
             local_file.write(surv_url + "\n")
@@ -344,20 +626,15 @@ class dc(threading.Thread):
 
                             sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
                             fetch_file(surv_url + sshpz, os.path.join('.', sshpz), callback = self.stop)
-                            
-                            #try:
+
                             zip_ref = zipfile.ZipFile(sshpz)
                             zip_ref.extractall('dc_tile_index')
                             zip_ref.close()
-                            #except BadZipFile:
-                            #    self.stop = lambda: True
-                            #    break
 
                             if os.path.exists('dc_tile_index'):
                                 ti = os.listdir('dc_tile_index')
 
                             ts = None
-
                             for i in ti:
                                 if ".shp" in i:
                                     ts = os.path.join('dc_tile_index/', i)
@@ -466,91 +743,6 @@ class dc(threading.Thread):
             self._surveys = []
             gmt2 = layer = None
 
-    def proc_data(self, s_dir, s_fn, o_fn, s_t):
-        '''Process a fetched file to xyz and add it to its datalist.
-        uses `las2txt` from lastools for las/laz files and
-        gdal (geomods.gdalfun) for raster files.'''
-
-        status = 0
-        xyz_dir = os.path.join(self._outdir, s_dir, 'xyz')
-        
-        if not os.path.exists(xyz_dir):
-            os.makedirs(xyz_dir)
-
-        o_fn_bn = os.path.basename(o_fn).split('.')[0]            
-        o_fn_p_ras = os.path.join(self._outdir, s_dir, '{}.tif'.format(o_fn_bn))
-        o_fn_xyz = os.path.join(xyz_dir, '{}_{}.xyz'.format(o_fn_bn, self.region.fn))
-
-        o_xyzs = []
-            
-        if s_t == 'las' or s_t == 'laz':
-
-            ## ==============================================
-            ## Convert to XYZ
-            ## ==============================================
-
-            out, status = utils.run_cmd('las2txt -verbose -parse xyz -keep_class 2 29 -i {}'.format(o_fn), False, None)
-
-            if status == 0:
-                o_fn_bn = os.path.basename(o_fn).split('.')[0]
-
-                o_fn_txt = os.path.join(self._outdir, s_dir, '{}.txt'.format(o_fn_bn))
-
-                ## ==============================================
-                ## Blockmedian the data
-                ## ==============================================
-
-                out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
-                out, status = utils.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}'.format(o_fn_txt, self.region.gmt, o_fn_xyz), False, None)
-
-                os.remove(o_fn_txt)
-
-                if status == 0:
-                    o_xyzs.append(o_fn_xyz)
-
-        elif s_t == 'tif' or s_t == 'img':
-
-            ## ==============================================
-            ## Convert to XYZ
-            ## Raster data should first be transformed to
-            ## WGS84 before dumping to xyz
-            ## ==============================================
-
-            out, status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(o_fn, o_fn_p_ras), False, None)
-
-            out_chunks = gdalfun.chunks(o_fn_p_ras, 1000)
-            os.remove(o_fn_p_ras)
-
-            for chunk in out_chunks:
-
-                i_xyz = chunk.split('.')[0] + '.xyz'
-                o_xyz = os.path.join(xyz_dir, os.path.basename(i_xyz))
-
-                gdalfun.dump(chunk, o_xyz)
-                
-                o_xyzs.append(o_xyz)
-
-
-        if status == 0:
-            
-            for o_xyz in o_xyzs:
-                
-                ## ==============================================        
-                ## Add xyz file to datalist
-                ## ==============================================
-
-                sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_dir)))
-                sdatalist._append_datafile('{}'.format(os.path.basename(o_xyz)), 168, 1)
-                sdatalist._reset()
-
-                ## ==============================================
-                ## Generate .inf file
-                ## ==============================================
-
-                out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_dir))), False, None)
-
-            os.remove(o_fn)
-
     def print_results(self):
         '''print the fetch results as a list of urls suitable 
         for use in `wget`, etc.'''
@@ -562,55 +754,52 @@ class dc(threading.Thread):
                 print(row)
         
     def fetch_results(self):
-        '''Fetch and possibly process the found fetch results.'''
+        '''Fetch the found fetch results.'''
+
+        fetch_q = queue.Queue()
 
         if len(self._results) == 0:
             self._status = -1
         else:
             for row in self._results:
-                if not self.stop():
+                surv_dir = row.split('/')[-2:][0]
+                if surv_dir == '.':
+                    surv_dir = row.split('/')[-3:][0]
 
-                    ## ==============================================
-                    ## Parse the result row
-                    ## ==============================================
+                surv_fn = row.split('/')[-2:][1]
+                outf = os.path.join(self._outdir, surv_dir, surv_fn)
 
-                    surv_dir = row.split('/')[-2:][0]
-                    if surv_dir == '.':
-                        surv_dir = row.split('/')[-3:][0]
+                fetch_q.put_nowait([row, outf, None, self.stop])
 
-                    surv_fn = row.split('/')[-2:][1]
-                    outf = os.path.join(self._outdir, surv_dir, surv_fn)
+            for _ in range(3):
+                threading.Thread(target = fetch_queue, args = (fetch_q,)).start()
 
-                    ## ==============================================
-                    ## Fetch and Log
-                    ## ==============================================
+            fetch_q.join()
 
-                    self._status = fetch_file(row, outf, callback = self.stop)
-                    
-                    if self._status == 0 and os.path.exists(outf):
+    def proc_results(self):
+        '''Proc the fetched NOS data to XYZ'''
 
-                        ## ==============================================                    
-                        ## validate downloaded file...
-                        ## ==============================================
+        proc_q = queue.Queue()
 
-                        if open(outf, 'rb').read(4) == 'LASF':
-                            self._status = 0
-                        elif gdal.Open(outf, gdal.GA_ReadOnly):
-                            self._status = 0
-                        else: self._status = -1
+        if len(self._results) == 0:
+            self._status = -1
+        else:
+            for row in self._results:
+                surv_dir = row.split('/')[-2:][0]
+                if surv_dir == '.':
+                    surv_dir = row.split('/')[-3:][0]
 
-                        self._log_survey(row)
+                surv_fn = row.split('/')[-2:][1]
+                outf = os.path.join(self._outdir, surv_dir, surv_fn)
+                surv_t = surv_fn.split('.')[1]
 
-                        ## ==============================================                    
-                        ## Process the data if wanted
-                        ## ==============================================
+                if os.path.exists(outf):
+                    proc_q.put_nowait([[surv_dir, surv_fn, outf, surv_t, self.region], self.stop])
 
-                        if self._status == 0 and self._want_proc:
-                            try:
-                                surv_t = surv_fn.split('.')[1]
-                            except: surv_t = ''
+            for _ in range(2):
+                threading.Thread(target = proc_queue, args = (proc_q,)).start()
 
-                            self.proc_data(surv_dir, surv_fn, outf, surv_t)
+            proc_q.join()
 
 ## =============================================================================
 ##
@@ -670,9 +859,15 @@ class nos(threading.Thread):
         else:
             self.search_gmt()
 
+            while ('' in self._results):
+                self._results.remove('')
+
             if self._want_list:
                 self.print_results()
             else: self.fetch_results()
+
+            if self._want_proc:
+                self.proc_results()
 
     def _parse_nos_xml(self, xml_url, sid):
         '''pare the NOS XML file and extract relavant infos.'''
@@ -784,167 +979,50 @@ class nos(threading.Thread):
                 else: self._has_vector = False
 
                 self._surveys = []
-
-    def proc_data(self, s_dir, s_fn, o_fn, s_t):
-        '''Process a fetched file to xyz (navd88) and add it to its datalist.'''
-
-        status = 0
-        xyz_dir = os.path.join(self._outdir, s_dir, s_t.lower(), 'xyz')
-        
-        if not os.path.exists(xyz_dir):
-            os.makedirs(xyz_dir)
-
-        o_fn_bn = os.path.basename(o_fn).split('.')[0]
-        o_fn_tmp = os.path.join(self._outdir, s_dir, '{}_tmp.xyz'.format(o_fn_bn.lower()))
-        o_fn_xyz = os.path.join(xyz_dir, '{}_{}.xyz'.format(o_fn_bn, self.region.fn))
-
-        ## ==============================================
-        ## NOS XYZ data comes as gzipped CSV
-        ## ==============================================
-        if s_t == 'GEODAS':
-
-            in_f = gzip.open(os.path.join(s_dir, s_fn), 'rb')
-            s = in_f.read()
-            s_csv = csv.reader(s.split('\n'), delimiter = ',')
-            next(s_csv, None)
-
-            with open(os.path.join(o_fn_tmp), 'w') as out_xyz:
-                d_csv = csv.writer(out_xyz, delimiter = ' ')
-                
-                for row in s_csv:
-                    if len(row) > 2:
-                        this_xyz = [float(row[2]), float(row[1]), float(row[3]) * -1]
-                        d_csv.writerow(this_xyz)
-            in_f.close()
-
-            if status == 0:
-
-                ## ==============================================
-                ## transform processed xyz file to NAVD88 
-                ## using vdatum
-                ## ==============================================
-
-                if len(self.this_vd.vdatum_paths) > 0:
-                    self.this_vd.ivert = 'mllw'
-                    self.this_vd.overt = 'navd88'
-                    self.this_vd.ds_dir = os.path.relpath(os.path.join(xyz_dir, 'result'))
-                    
-                    self.this_vd.run_vdatum(os.path.relpath(o_fn_tmp))
-                    
-                    os.rename(os.path.join(xyz_dir, 'result', os.path.basename(o_fn_tmp)), o_fn_xyz)
-                else: os.rename(o_fn_tmp, o_fn_xyz)
-
-                os.remove(o_fn_tmp)
-                if os.stat(o_fn_xyz).st_size == 0:
-                    os.remove(o_fn_xyz)
-                else:
-
-                    ## ==============================================
-                    ## Add xyz file to datalist
-                    ## ==============================================
-
-                    sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_t)))
-                    sdatalist._append_datafile('{}'.format(os.path.basename(o_fn_xyz)), 168, 1)
-                    sdatalist._reset()
-
-                    out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_t))), False, None)
-            os.remove(o_fn)
-
-        ## ==============================================
-        ## NOS BAG data comes as gzipped BAG or
-        ## sometimes just BAG
-        ## ==============================================
-
-        elif 'BAG' in s_t:
-            
-            s_gz = os.path.join(s_dir, s_fn)
-
-            if s_gz.split('.')[-1] == 'gz':
-                with gzip.open(s_gz, 'rb') as in_bag:
-                    s = in_bag.read()
-                    with open(s_gz[:-3], 'w') as f:
-                        f.write(s)
-
-                s_bag = s_gz[:-3]
-            else: s_bag = s_gz
-
-            s_tif = os.path.join(s_dir, s_fn.split('.')[0].lower() + '.tif')            
-            s_xyz = s_gz.split('.')[0] + '.xyz'
-
-            out, status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(s_bag, s_tif), True, 'transforming data to WGS84')
-
-            out_chunks = gdalfun.chunks(s_tif, 1000)
-            os.remove(s_tif)
-
-            for i in out_chunks:
-                i_xyz = i.split('.')[0] + '.xyz'
-                o_xyz = os.path.join(xyz_dir, os.path.basename(i_xyz))
-
-                gdalfun.dump(i, i_xyz)
-
-                ## ==============================================
-                ## transform processed xyz file to NAVD88 
-                ## using vdatum
-                ## ==============================================
-
-                if os.stat(i_xyz).st_size == 0:
-                    os.remove(i_xyz)
-                else:
-                    if len(self.this_vd.vdatum_paths) > 0:
-                        self.this_vd.ivert = 'mllw'
-                        self.this_vd.overt = 'navd88'
-                        self.this_vd.ds_dir = os.path.relpath(os.path.join(xyz_dir, 'result'))
-                        
-                        self.this_vd.run_vdatum(os.path.relpath(i_xyz))
-                        
-                        os.rename(os.path.join(xyz_dir, 'result', os.path.basename(i_xyz)), o_xyz)
-                        os.remove(i_xyz)
-                    else: os.rename(i_xyz, o_xyz)
-
-                    ## ==============================================
-                    ## Add xyz file to datalist
-                    ## ==============================================
-            
-                    if os.stat(o_xyz).st_size != 0:
-                        sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_t)))
-                        sdatalist._append_datafile('{}'.format(os.path.basename(o_xyz)), 168, 1)
-                        sdatalist._reset()
-
-                        out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_t))), False, None)
-                    else: os.remove(o_xyz)
-
-                os.remove(i)
                 
     def print_results(self):
         '''Print the data url(s) for each survey in results.'''
 
         for row in self._results:
-            if row:
-                print(row)
+            print(row)
 
     def fetch_results(self):
         '''Fetch NOS data in the given region and meeting any filters.'''
 
-        if self._want_proc:
-            self.this_vd = utils.vdatum()
+        fetch_q = queue.Queue()
 
-        for row in self._results:
-            if row:
-                if not self.stop():
+        if len(self._results) == 0:
+            self._status = -1
+        else:
+            for row in self._results:
+                fetch_q.put_nowait([row, os.path.join(self._outdir, os.path.basename(row)), None, self.stop])
 
-                    self._status = fetch_file(row, os.path.join(self._outdir, os.path.basename(row)), callback = self.stop)
+            for _ in range(3):
+                threading.Thread(target = fetch_queue, args = (fetch_q,)).start()
 
-                    ## ==============================================                    
-                    ## Process the data if wanted
-                    ## ==============================================
+            fetch_q.join()
 
-                    if self._status == 0 and self._want_proc:
-                        outf = os.path.join(self._outdir, os.path.basename(row))
-                        surv_dir = self._outdir
-                        surv_fn = os.path.basename(outf)
-                        surv_t = row.split('/')[-2]
+    def proc_results(self):
+        '''Proc the fetched NOS data to XYZ'''
 
-                        self.proc_data(surv_dir, surv_fn, outf, surv_t)
+        proc_q = queue.Queue()
+
+        if len(self._results) == 0:
+            self._status = -1
+        else:
+            for row in self._results:
+                outf = os.path.join(self._outdir, os.path.basename(row))
+                surv_dir = self._outdir
+                surv_fn = os.path.basename(outf)
+                surv_t = row.split('/')[-2]
+
+                if os.path.exists(outf):
+                    proc_q.put_nowait([[surv_dir, surv_fn, outf, surv_t, self.region], self.stop])
+
+            for _ in range(3):
+                threading.Thread(target = proc_queue, args = (proc_q,)).start()
+
+            proc_q.join()
 
 ## =============================================================================
 ##
@@ -1004,6 +1082,8 @@ class charts(threading.Thread):
             if self._want_list:
                 self.print_results()
             else: self.fetch_results()
+            if self._want_proc:
+                self.proc_results()
 
     def _parse_charts_xml(self, update = True):
         '''parse the charts XML and extract the survey results'''
@@ -1084,87 +1164,6 @@ class charts(threading.Thread):
 
             self._chart_feats = []
 
-    def proc_data(self, s_dir, s_fn, o_fn, s_t):
-        '''Process a fetched file to xyz (navd88) and add it to its datalist.'''
-
-        status = 0
-        xyz_dir = os.path.join(self._outdir, s_dir, 'xyz')
-        
-        if not os.path.exists(xyz_dir):
-            os.makedirs(xyz_dir)
-
-        o_fn_bn = os.path.basename(o_fn).split('.')[0]
-        o_fn_p_xyz = os.path.join(self._outdir, s_dir, '{}.xyz'.format(o_fn_bn))
-        o_fn_tmp = os.path.join(self._outdir, s_dir, '{}_tmp.xyz'.format(o_fn_bn.lower()))
-        o_fn_xyz = os.path.join(xyz_dir, '{}_{}.xyz'.format(o_fn_bn, self.region.fn))
-
-        if s_t == 'ENCs':
-
-            zip_ref = zipfile.ZipFile(o_fn)
-            zip_ref.extractall(os.path.join(s_dir, 'enc'))
-            zip_ref.close()
-
-            s_fn_000 = os.path.join(s_dir, 'enc/ENC_ROOT/', o_fn_bn, '{}.000'.format(o_fn_bn))
-
-            ds_000 = ogr.Open(s_fn_000)
-            layer_s = ds_000.GetLayerByName('SOUNDG')
-            if layer_s is not None:
-                o_xyz = open(o_fn_p_xyz, 'w')
-                for f in layer_s:
-                    g = json.loads(f.GetGeometryRef().ExportToJson())
-                    for xyz in g['coordinates']:
-                        xyz_l = '{} {} {}\n'.format(xyz[0], xyz[1], xyz[2]*-1)
-                        o_xyz.write(xyz_l)
-                o_xyz.close()
-            else: status = -1
-
-            if os.path.exists(o_fn_p_xyz):
-
-                out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
-                out, status = utils.run_cmd('gmt gmtselect {} {} -V > {}'.format(o_fn_p_xyz, self.region.gmt, o_fn_tmp), False, 'extracting data using gmt gmtselect')
-
-                if os.stat(o_fn_tmp).st_size == 0:
-                    status = -1
-            else: status = -1
-        else: status = -1
-
-        if status == 0:
-
-            ## ==============================================
-            ## transform processed xyz file to NAVD88 
-            ## using vdatum
-            ## ==============================================
-
-            if len(self.this_vd.vdatum_paths) > 0:
-                self.this_vd.ivert = 'mllw'
-                self.this_vd.overt = 'navd88'
-                self.this_vd.ds_dir = os.path.relpath(os.path.join(xyz_dir, 'result'))
-
-                self.this_vd.run_vdatum(os.path.relpath(o_fn_tmp))
-
-                os.rename(os.path.join(xyz_dir, 'result', os.path.basename(o_fn_tmp)), o_fn_xyz)
-            else: os.rename(o_fn_tmp, o_fn_xyz)
-
-            os.remove(o_fn_p_xyz)
-
-            if os.stat(o_fn_xyz).st_size == 0:
-                os.remove(o_fn_xyz)
-            else:
-
-                ## ==============================================
-                ## Add xyz file to datalist
-                ## ==============================================
-
-                sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_t)))
-                sdatalist._append_datafile('{}'.format(os.path.basename(o_fn_xyz)), 168, 1)
-                sdatalist._reset()
-
-                out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_t))), False, None)
-
-        if os.path.exists(o_fn_tmp):
-            os.remove(o_fn_tmp)
-        os.remove(o_fn)
-
     def print_results(self):
         '''print the resulting urls to stdout'''
 
@@ -1176,23 +1175,40 @@ class charts(threading.Thread):
         unprocessed data is in S57 (ENC) and KAPP (RNC) format.
         will only process ENC data to XYZ'''
 
-        if self._want_proc:
-            self.this_vd = utils.vdatum()
+        fetch_q = queue.Queue()
 
-        for row in self._results:
+        if len(self._results) == 0:
+            self._status = -1
+        else:
+            for row in self._results:
+                fetch_q.put_nowait([row, os.path.join(self._outdir, os.path.basename(row)), None, self.stop])
 
-            self._status = fetch_file(row, os.path.join(self._outdir, os.path.basename(row)), callback = self.stop)
+            for _ in range(3):
+                threading.Thread(target = fetch_queue, args = (fetch_q,)).start()
 
-            ## ==============================================                    
-            ## Process the data if wanted
-            ## ==============================================
+            fetch_q.join()
 
-            if self._status and self._want_proc:
+    def proc_results(self):
+        '''Proc the fetched NOS data to XYZ'''
+
+        proc_q = queue.Queue()
+
+        if len(self._results) == 0:
+            self._status = -1
+        else:
+            for row in self._results:
                 outf = os.path.join(self._outdir, os.path.basename(row))
                 surv_dir = self._outdir
                 surv_fn = os.path.basename(outf)
                 surv_t = row.split('/')[-2]
-                self.proc_data(surv_dir, surv_fn, outf, surv_t)
+
+                if os.path.exists(outf):
+                    proc_q.put_nowait([[surv_dir, surv_fn, outf, surv_t, self.region], self.stop])
+
+            for _ in range(3):
+                threading.Thread(target = proc_queue, args = (proc_q,)).start()
+
+            proc_q.join()
 
 ## =============================================================================
 ##
@@ -1453,41 +1469,10 @@ class gmrt(threading.Thread):
         if self._want_list:
             self.print_results()
         else: self.fetch_results()
+
+        if self._want_proc:
+            self.proc_results()
             
-    def proc_data(self, s_dir, s_fn, o_fn, s_t):
-        '''Process the GMRT data to XYZ and add it to a DATALIST.'''
-
-        status = 0
-        xyz_dir = os.path.join(self._outdir, s_dir, 'xyz')
-        
-        if not os.path.exists(xyz_dir):
-            os.makedirs(xyz_dir)
-
-        o_fn_bn = os.path.basename(o_fn).split('.')[0]
-        o_fn_xyz = os.path.join(xyz_dir, '{}.xyz'.format(o_fn_bn))
-
-        ## ==============================================
-        ## Dump the XYZ data from the GMRT TIF
-        ## ==============================================
-
-        gdalfun.dump(o_fn, o_fn_xyz)
-
-        ## ==============================================
-        ## Add xyz file to datalist
-        ## ==============================================
-
-        sdatalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(s_t)))
-        sdatalist._append_datafile('{}'.format(os.path.basename(o_fn_xyz)), 168, 1)
-        sdatalist._reset()
-
-        ## ==============================================
-        ## Generate an INF file for the XYZ data
-        ## Currently uses MBSystem - change to generate
-        ## in python or with GMT or GDAL.
-        ## ==============================================
-
-        out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, '{}.datalist'.format(s_t))), False, None)
-
     def print_results(self):
         '''print the appropriate URL for downloading the GMRT in the
         region of interest.'''
@@ -1504,22 +1489,29 @@ class gmrt(threading.Thread):
             if not os.path.exists(os.path.dirname(outf)):
                 os.makedirs(os.path.dirname(outf))
 
-            ## ==============================================                    
-            ## Fetch the GMRT GEOTIFF
-            ## ==============================================
-
             self._status = fetch_file(self._results.url, outf, callback = self.stop)
 
-            ## ==============================================                    
-            ## Process the data to XYZ if wanted
-            ## ==============================================
-
-            if self._status == 0 and self._want_proc:
-                surv_dir = self._outdir
-                surv_fn = os.path.basename(outf)
-                
-                self.proc_data(surv_dir, surv_fn, outf, 'gmrt')
         else: self._status = -1
+
+    def proc_results(self):
+        '''Process the GMRT results to XYZ'''
+
+        if self._results is not None:
+            proc_q = queue.Queue()
+
+            gmrt_fn = self._results.headers['content-disposition'].split('=')[1].strip()
+            outf = os.path.join(self._outdir, '{}_{}.{}'.format(gmrt_fn.split('.')[0], self.region.fn, gmrt_fn.split('.')[1]))
+
+            surv_dir = self._outdir
+            surv_fn = os.path.basename(outf)
+
+            if os.path.exists(outf):
+                proc_q.put_nowait([[surv_dir, surv_fn, outf, 'gmrt', self.region], self.stop])
+
+            for _ in range(1):
+                threading.Thread(target = proc_queue, args = (proc_q,)).start()
+
+            proc_q.join()
             
 ## =============================================================================
 ##
