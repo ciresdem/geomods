@@ -1,4 +1,4 @@
-## Copyright (c) 2012 - 2020 Matthew Love <matthew.love@colorado.edu>
+## Copyright (c) 2012 - 2020 CIRES Coastal DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -21,7 +21,7 @@ import os
 import sys
 import subprocess
 
-_version = '1.1'
+_version = '1.2'
 
 _license = '''geomods, version {}
 Copyright (c) 2012 - 2020 CIRES Coastal DEM Team

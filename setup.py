@@ -1,6 +1,6 @@
 ### setup.py
 ##
-## Copyright (c) 2020 Matthew Love <matthew.love@colorado.edu>
+## Copyright (c) 2020 CIRES Coastal DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -25,7 +25,7 @@ setup(
     version = '1.2',
     description = 'Modules and scripts for utilizing geographic data Digital Elevation Models',
     license = 'MIT',
-    author = 'CIRES DEM Team',
+    author = 'CIRES Coastal DEM Team',
     url = 'http://ciresgroups.colorado.edu/coastalDEM',
     packages = ['geomods'],  #same as name
     package_data = {'geomods': ['data/*.gmt']},
