@@ -25,8 +25,8 @@ Modules:
 
 Scripts:
 
- - cudem.py - Generate a Digital Elevation Model.
- - fetch.py - Fetch elevation data from various sources.
+ - cudem - Generate a Digital Elevation Model.
+ - fetch - Fetch elevation data from various sources.
  - gdal_chunk.py - Split a gdal grid into chunks.
  - gdal_crop.py - Crop a gdal grid by it's nodata value.
  - vdatum_cmd.py - Use NOAA's VDatum via command-line
@@ -34,22 +34,22 @@ Scripts:
 Examples:
 
  - fetch and process lidar data from NOAA's Digital Coast for all the regions found in tiles.shp 
-   % fetch.py dc -R tiles.shp -p
+   % fetch dc -R tiles.shp -p
 
  - list all the NOS hydrographic data in the given region
-   % fetch.py nos -R -90/-89/29/30 -l > nos.urls
+   % fetch nos -R -90/-89/29/30 -l > nos.urls
 
  - generate a DEM for each region found in tiles.shp using GMT
-   % cudem.py gmt-surface -R tiles.shp -E .00000925925 -I input_data.datalist --verbose
+   % cudem gmt-surface -R tiles.shp -E .00000925925 -I input_data.datalist --verbose
 
  - generate spatial-metadata from the datalist input_data.datalist
-   % cudem.py spatial-metadata -R tiles.shp -E .00000925925 -I input_data.datalist --verbose
+   % cudem spatial-metadata -R tiles.shp -E .00000925925 -I input_data.datalist --verbose
 
  - split grid file tmp.tif into chunks of 1000x1000 cells:
    % gdal_chunk.py tmp.tif -c 1000
 
  - generate a vertical datum conversion grid:
-   % cudem.py -R -90/-89/29/30 -E 0.00083333 conversion-grid:navd88:mhw
+   % cudem -R -90/-89/29/30 -E 0.00083333 conversion-grid:navd88:mhw
 
  - transform the vertical datum of an xyz data file:
    % vdatum_cmd.py elev_data.xyz -i lmsl:ft:sounding -o navd88:ft:height

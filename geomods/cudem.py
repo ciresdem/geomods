@@ -56,7 +56,10 @@ try:
 except ImportError:
     has_arcpy = False
 
-import geomods
+import regions
+import datalists
+import gdalfun
+import utils
 
 _version = '0.1.3'
 
@@ -159,7 +162,7 @@ def dem_interpolation_uncertainty(dem_surface):
     status = 0
     sub_count = 0
 
-    #tw = geomods.clis.prog_bar('preparing for interpolation uncertainty')._end(status)
+    #tw = clis.prog_bar('preparing for interpolation uncertainty')._end(status)
 
     this_region = dem_surface.region
     status = dem_surface.proximity()
@@ -185,7 +188,7 @@ def dem_interpolation_uncertainty(dem_surface):
 
         np.savetxt('sub_{}d_rest.xyz'.format(sub_count), sub_xyz[sx_len_pct:], '%f', ' ')
                 
-        sub_datalist =  geomods.datalists.datalist('sub_{}.datalist'.format(sub_count), sub_region)
+        sub_datalist =  datalists.datalist('sub_{}.datalist'.format(sub_count), sub_region)
         sub_datalist._append_datafile('sub_{}_rest.xyz'.format(sub_count), 168, 1)
         sub_datalist._reset()
 
@@ -203,14 +206,14 @@ def dem_interpolation_uncertainty(dem_surface):
         ## withheld data
         ## ==============================================
 
-        sub_xyd = geomods.gdalfun.query(sub_xyz[:sx_len_pct], sub_surf.dem['tif'], 'xyd')
+        sub_xyd = gdalfun.query(sub_xyz[:sx_len_pct], sub_surf.dem['tif'], 'xyd')
 
         ## ==============================================
         ## Query the random-sample proximity grid 
         ## with the withheld data
         ## ==============================================
 
-        sub_dp = geomods.gdalfun.query(sub_xyd, sub_surf.dem['prox'], 'zg')
+        sub_dp = gdalfun.query(sub_xyd, sub_surf.dem['prox'], 'zg')
         #print np.max(sub_dp[:,1])
             
         ## ==============================================
@@ -318,7 +321,7 @@ class cudem(threading.Thread):
             grd2tif_cmd = ('gmt grdconvert {} {}.tif=gd+n-9999:GTiff -V\
             '.format(src_grd, os.path.basename(src_grd).split('.')[0]))
             
-            out, self.status = geomods.utils.run_cmd(grd2tif_cmd, self.verbose)
+            out, self.status = utils.run_cmd(grd2tif_cmd, self.verbose)
         else: self.status = -1
 
         return(self.status)
@@ -331,7 +334,7 @@ class cudem(threading.Thread):
             return(self.status)
         else:
             grdinfo_cmd = ('gmt grdinfo {} -C'.format(src_grd))
-            out, self.status = geomods.utils.run_cmd(grdinfo_cmd, self.verbose)
+            out, self.status = utils.run_cmd(grdinfo_cmd, self.verbose)
             return(out.split())
 
     def grdcut(self, src_grd, src_region, dst_grd):
@@ -346,7 +349,7 @@ class cudem(threading.Thread):
         if mask:
             self.grdmask_cmd = ('gmt grdmath -V {} NOT {} = tmp.grd'.format(mask, src_grd))
 
-            out, self.status = geomods.utils.run_cmd(self.grdmask_cmd, self.verbose)
+            out, self.status = utils.run_cmd(self.grdmask_cmd, self.verbose)
             if self.status == 0: src_grd = 'tmp.grd'
 
         if region and region._valid:
@@ -354,7 +357,7 @@ class cudem(threading.Thread):
 
         else: self.grd2xyz_cmd = ('gmt grd2xyz {} -V -s > {}'.format(src_grd, dst_xyz))
             
-        out, self.status = geomods.utils.run_cmd(self.grd2xyz_cmd, self.verbose)
+        out, self.status = utils.run_cmd(self.grd2xyz_cmd, self.verbose)
 
         if self.status == 0:
             if mask:
@@ -377,10 +380,10 @@ class cudem(threading.Thread):
             slope_cmd1 = ('gmt grdmath -V {}_pslp.grd ATAN PI DIV 180 MUL = {}_slp.tif=gd+n-9999:GTiff\
             '.format(self.oname, self.oname))
 
-            out, self.status = geomods.utils.run_cmd(slope_cmd0, self.verbose)
+            out, self.status = utils.run_cmd(slope_cmd0, self.verbose)
 
             if self.status == 0:
-                out, self.status = geomods.utils.run_cmd(slope_cmd1, self.verbose)
+                out, self.status = utils.run_cmd(slope_cmd1, self.verbose)
 
                 if os.path.exists('{}_pslp.grd'.format(self.oname)):
                     os.remove('{}_pslp.grd'.format(self.oname))
@@ -428,13 +431,13 @@ class cudem(threading.Thread):
 
         pb = 'processing {} to NUM grid'.format(self.datalist._path_basename)
 
-        out, self.status = geomods.utils.run_cmd_with_input(num_cmd0, self.datalist._cat_port, verbose = self.verbose, prog = pb)
+        out, self.status = utils.run_cmd_with_input(num_cmd0, self.datalist._cat_port, verbose = self.verbose, prog = pb)
 
         if self.status == 0:
             if self.verbose:
                 pb = 'generating NUM-MSK grid using gmt grdmath 0 MUL 1 ADD 0 AND'
             else: pb = None
-            out, self.status = geomods.utils.run_cmd(num_cmd1, self.verbose, pb)
+            out, self.status = utils.run_cmd(num_cmd1, self.verbose, pb)
 
             if self.status == 0:
                 self.grd2tif('{}_num.grd'.format(self.oname))
@@ -451,7 +454,7 @@ class cudem(threading.Thread):
         return(self.status)
 
     def num_msk(self):
-        geomods.gdalfun.xyz_gmask(self.datalist._caty(), 
+        gdalfun.xyz_gmask(self.datalist._caty(), 
                                   '{}_num_msk.tif'.format(self.oname), 
                                   self.dist_region.region, 
                                   self.inc, verbose = self.verbose)
@@ -485,19 +488,19 @@ class cudem(threading.Thread):
         '.format(self.oname, self.oname, self.dist_region.gmt))
 
         if mask is None:
-            out, self.status = geomods.utils.run_cmd(dem_landmask_cmd, self.verbose, 'generating landmask from gsshg')
+            out, self.status = utils.run_cmd(dem_landmask_cmd, self.verbose, 'generating landmask from gsshg')
         
         pb = 'generating bathymetry surface using GMT'
 
-        out, self.status = geomods.utils.run_cmd_with_input(dem_surf_cmd, self.datalist._cat_port, self.verbose, pb)
+        out, self.status = utils.run_cmd_with_input(dem_surf_cmd, self.datalist._cat_port, self.verbose, pb)
 
         if self.status == 0:
 
             #if mask is None:
-            out, self.status = geomods.utils.run_cmd(dem_landmask_cmd1, self.verbose, 'masking bathy surface')
+            out, self.status = utils.run_cmd(dem_landmask_cmd1, self.verbose, 'masking bathy surface')
 
             pb = 'clipping DEM to final region'
-            out, self.status = geomods.utils.run_cmd(dem_cut_cmd, self.verbose, pb)
+            out, self.status = utils.run_cmd(dem_cut_cmd, self.verbose, pb)
             
             if self.status == 0:
 
@@ -523,7 +526,7 @@ class cudem(threading.Thread):
                 ## Add xyz file to datalist
                 ## ==============================================
 
-                sdatalist = geomods.datalists.datalist(os.path.join(xyz_dir, 'bathy.datalist'))
+                sdatalist = datalists.datalist(os.path.join(xyz_dir, 'bathy.datalist'))
                 sdatalist._append_datafile('{}'.format(os.path.basename(self.dem['xyz-bathy'])), 168, 1)
                 sdatalist._reset()
 
@@ -531,7 +534,7 @@ class cudem(threading.Thread):
                 ## Generate .inf file
                 ## ==============================================
 
-                out, status = geomods.utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, 'bathy.datalist')), False, None)
+                out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, 'bathy.datalist')), False, None)
 
         return(self.status)
 
@@ -553,11 +556,11 @@ class cudem(threading.Thread):
 
         pb = 'generating DEM using GMT'
 
-        out, self.status = geomods.utils.run_cmd_with_input(dem_surf_cmd, self.datalist._cat_port, self.verbose, pb)
+        out, self.status = utils.run_cmd_with_input(dem_surf_cmd, self.datalist._cat_port, self.verbose, pb)
 
         if self.status == 0:
             pb = 'clipping DEM to final region'
-            out, self.status = geomods.utils.run_cmd(dem_cut_cmd, self.verbose, pb)
+            out, self.status = utils.run_cmd(dem_cut_cmd, self.verbose, pb)
             
             if self.status == 0:
 
@@ -579,7 +582,7 @@ class cudem(threading.Thread):
         '.format(self.datalist._path, self.dist_region.gmt, self.inc, self.inc, self.oname))
 
         pb = 'generating DEM and NUM grid using gmt mbgrid -T35 -X0.1 -C10/3 -M'
-        out, self.status = geomods.utils.run_cmd(mbgrid_cmd, self.verbose, pb)
+        out, self.status = utils.run_cmd(mbgrid_cmd, self.verbose, pb)
 
         if self.status == 0:
         
@@ -588,11 +591,11 @@ class cudem(threading.Thread):
 
             if self.node == 'pixel':
                 pb = 'resampling DEM to pixel-node registration'
-                out, self.status = geomods.utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['dem-grd']), self.verbose, pb)
+                out, self.status = utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['dem-grd']), self.verbose, pb)
                 os.rename('tmp.grd', self.dem['dem-grd'])
 
                 pb = 'resampling NUM grid to pixel-node registration'
-                out, self.status = geomods.utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['num-grd']), self.verbose, pb)
+                out, self.status = utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['num-grd']), self.verbose, pb)
                 os.rename('tmp.grd', self.dem['num-grd'])                
 
             self.grd2tif(self.dem['dem-grd'])
@@ -615,7 +618,7 @@ class cudem(threading.Thread):
             '.format(self.dem['num-grd'], self.oname))
 
             pb = 'generating NUM-MSK grid using gmt grdmath 0 MUL 1 ADD 0 AND'
-            out, self.status = geomods.utils.run_cmd(num_msk_cmd, self.verbose, pb)
+            out, self.status = utils.run_cmd(num_msk_cmd, self.verbose, pb)
 
             if self.status == 0:
                 self.dem['num-msk'] = ('{}_num_msk.tif'.format(self.oname))
@@ -629,14 +632,14 @@ class cudem(threading.Thread):
         ## Create empty grid and transform to xy0
         ## ==============================================
 
-        geomods.gdalfun.null('empty.tif', self.dist_region.region, 0.00083333, nodata = 0)
-        geomods.gdalfun.dump('empty.tif', 'empty.xyz', dump_nodata = True)
+        gdalfun.null('empty.tif', self.dist_region.region, 0.00083333, nodata = 0)
+        gdalfun.dump('empty.tif', 'empty.xyz', dump_nodata = True)
 
         ## ==============================================
         ## pass empty.xyz through vdatum
         ## ==============================================
 
-        this_vd = geomods.utils.vdatum()
+        this_vd = utils.vdatum()
         this_vd.ivert = ivert
         this_vd.overt = overt
 
@@ -647,7 +650,7 @@ class cudem(threading.Thread):
         ## ==============================================
 
         if os.stat('result/empty.xyz').st_size != 0:
-            out, status = geomods.utils.run_cmd('gmt gmtinfo result/empty.xyz -C')
+            out, status = utils.run_cmd('gmt gmtinfo result/empty.xyz -C')
             empty_infos = out.split()
 
             if empty_infos[4] > 0:
@@ -664,7 +667,7 @@ class cudem(threading.Thread):
             else:
                 gc = 'gmt blockmean result/empty.xyz -V -I{} {} | gmt surface -I{} {} -G{}_{}to{}.tif=gd:GTiff -V -T0 {} {}\
                 '.format(self.inc, self.dist_region.gmt, self.inc, self.dist_region.gmt, self.oname, this_vd.ivert, this_vd.overt, ll_switch, lu_switch)
-            geomods.utils.run_cmd(gc, self.verbose, 'generating conversion grid')
+            utils.run_cmd(gc, self.verbose, 'generating conversion grid')
 
             self.dem['{}to{}'.format(this_vd.ivert, this_vd.overt)] = '{}_{}to{}.tif'.format(self.oname, this_vd.ivert, this_vd.overt)
         else: self.status = -1
@@ -709,7 +712,7 @@ class cudem(threading.Thread):
             try:
                 int(epsg)
             except: epsg = 4326
-            geomods.gdalfun._prj_file('{}.prj'.format(os.path.basename(dst_vec).split('.')[0]), int(epsg))
+            gdalfun._prj_file('{}.prj'.format(os.path.basename(dst_vec).split('.')[0]), int(epsg))
 
             layer = ds.CreateLayer('{}'.format(os.path.basename(dst_vec).split('.')[0]), None, ogr.wkbMultiPolygon)
             defn = layer.GetLayerDefn()
@@ -732,9 +735,9 @@ class cudem(threading.Thread):
                     ## Load the sub DATALIST
                     ## ==============================================
                     
-                    pb = geomods.utils._progress('loading datalist...')
+                    pb = utils._progress('loading datalist...')
 
-                    this_datalist = geomods.datalists.datalist(dl[0], self.dist_region)
+                    this_datalist = datalists.datalist(dl[0], self.dist_region)
                     this_dem = cudem(this_datalist, self.region, str(self.inc), verbose = self.verbose)
 
                     pb.opm = 'loading datalist...{}'.format(this_datalist._path_basename)
@@ -748,7 +751,7 @@ class cudem(threading.Thread):
                     ## Gererate the NUM-MSK
                     ## ==============================================
                     
-                    #pb1 = geomods.utils._progress('generating {} mask'.format(this_datalist._path_basename))
+                    #pb1 = utils._progress('generating {} mask'.format(this_datalist._path_basename))
                     #this_dem.num_msk()
                     #pb1.end(self.status)
 
@@ -756,7 +759,7 @@ class cudem(threading.Thread):
                     this_dem._dem_remove('num')
                     this_dem._dem_remove('num-grd')
 
-                    pb = geomods.utils._progress('gathering geometries from {}'.format(this_datalist._path_basename))
+                    pb = utils._progress('gathering geometries from {}'.format(this_datalist._path_basename))
 
                     if self.status == 0:
                         src_ds = gdal.Open(this_dem.dem['num-msk'])
@@ -776,7 +779,7 @@ class cudem(threading.Thread):
                         tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(this_dem.oname), None, ogr.wkbMultiPolygon)
                         tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
                         
-                        pb1 = geomods.utils._progress('polygonizing {} mask'.format(this_datalist._path_basename))
+                        pb1 = utils._progress('polygonizing {} mask'.format(this_datalist._path_basename))
                         result = gdal.Polygonize(srcband, None, tmp_layer, 0, [], callback = None)
 
                         multi = ogr.Geometry(ogr.wkbMultiPolygon)
@@ -898,7 +901,7 @@ def main():
             sys.exit(1)
 
         elif arg == '--version' or arg == '-v':
-            print('cudem.py, version {}\n{}'.format(_version, geomods._license))
+            print('cudem.py, version {}\n{}'.format(_version, utils._license))
             sys.exit(1)
 
         elif arg == '--verbose' or arg == '-V':
@@ -922,27 +925,27 @@ def main():
     ## check platform and installed software
     ## ==============================================
 
-    pb = geomods.utils._progress('checking platform.')
+    pb = utils._progress('checking platform.')
     platform = sys.platform
     pb.opm = 'checking platform...{}'.format(platform)
     pb.end(0)
 
-    pb = geomods.utils._progress('checking for GMT...')
-    if geomods.utils.cmd_exists('gmt'): 
-        gmt_vers, status = geomods.utils.run_cmd('gmt --version')
+    pb = utils._progress('checking for GMT...')
+    if utils.cmd_exists('gmt'): 
+        gmt_vers, status = utils.run_cmd('gmt --version')
     else: status = -1
     pb.opm = 'checking for GMT...{}'.format(gmt_vers.rstrip())
     pb.end(status)
 
-    pb = geomods.utils._progress('checking for MBSystem...')
-    if geomods.utils.cmd_exists('mbgrid'): 
-        mbs_vers, status = geomods.utils.run_cmd('mbgrid -version')
+    pb = utils._progress('checking for MBSystem...')
+    if utils.cmd_exists('mbgrid'): 
+        mbs_vers, status = utils.run_cmd('mbgrid -version')
         mbs_vers = mbs_vers.split('\n')[3].rstrip().split()[2]
     else: status = -1
     pb.opm = 'checking for MBSystem...{}'.format(mbs_vers)
     pb.end(status)
 
-    pb = geomods.utils._progress('checking for GDAL...')
+    pb = utils._progress('checking for GDAL...')
     if has_gdalpy: 
         status = 0
         gdal_vers = gdal.__version__
@@ -954,16 +957,16 @@ def main():
     ## process input region(s) and loop
     ## ==============================================
 
-    pb = geomods.utils._progress('processing region(s)...')
+    pb = utils._progress('processing region(s)...')
     try: 
-        these_regions = [geomods.regions.region(iregion)]
+        these_regions = [regions.region(iregion)]
     except:
         if os.path.exists(iregion):
             _poly = ogr.Open(iregion)
             _player = _poly.GetLayer(0)
             for pf in _player:
                 _pgeom = pf.GetGeometryRef()
-                these_regions.append(geomods.regions.region('/'.join(map(str, _pgeom.GetEnvelope()))))
+                these_regions.append(regions.region('/'.join(map(str, _pgeom.GetEnvelope()))))
 
     if len(these_regions) == 0:
         status = -1
@@ -985,8 +988,8 @@ def main():
         ## ==============================================
 
         if idatalist is not None:
-            pb = geomods.utils._progress('loading datalist...')
-            this_datalist = geomods.datalists.datalist(idatalist, this_region)
+            pb = utils._progress('loading datalist...')
+            this_datalist = datalists.datalist(idatalist, this_region)
             if not this_datalist._valid: 
                 status = -1
 
@@ -1016,7 +1019,7 @@ def main():
 
             args = tuple(mod_opts[dem_mod])
                         
-            pb = geomods.utils._progress('geomods: running {} module'.format(dem_mod))
+            pb = utils._progress('geomods: running {} module'.format(dem_mod))
             this_surf._module = _dem_mods[dem_mod][0](this_surf)
             this_surf._module_args = args
 
