@@ -30,8 +30,9 @@ setup(
     packages = ['geomods'],  #same as name
     package_data = {'geomods': ['data/*.gmt']},
     install_requires = [
-        'numpy', 
         'GDAL',
+        'numpy',
+        'requests',
     ], 
     entry_points = {
         'console_scripts': [
@@ -43,6 +44,7 @@ setup(
         'scripts/gdal_chunk.py',
         'scripts/gdal_crop.py',
         'scripts/vdatum_cmd.py',
+        'scripts/smooth_dem_bathy.py',
     ],
     #python_requires = '>=2.7, <3',
     #project_urls = {

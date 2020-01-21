@@ -99,7 +99,7 @@ Options:
       note: use at least 7 digits precision with WGS84 units
 
   -P, --prefix\t\tThe output naming prefix.
-  -O, --name\t\tThe output basename.
+  -O, --output-name\tThe output basename.
 
   -r\t\t\tuse grid-node registration, default is pixel-node
 
