@@ -891,7 +891,7 @@ def main():
             o_pre = str(arg[2:])
 
         elif arg == '-r':
-            nod_reg = 'grid'
+            node_reg = 'grid'
 
         elif arg == '--help' or arg == '-h':
             print(_usage)
@@ -1002,7 +1002,7 @@ def main():
 
         this_surf = cudem(this_datalist, this_region, iinc, callback = lambda: stop_threads, oname = o_pre, obname = o_bn, verbose = want_verbose)        
         this_surf.node = node_reg
-        
+
         for dem_mod in mod_opts.keys():
 
             if this_datalist is None:
