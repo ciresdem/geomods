@@ -34,22 +34,18 @@ setup(
         'numpy', 
         'GDAL',
     ], 
-    # entry_points = {
-    #     'console_scripts': [
-    #         'scripts/fetch.py',
-    #         'scripts/cudem.py',
-    #         'scripts/gdal_chunk.py',
-    #         'scripts/gdal_crop.py',
-    #         'scripts/vdatum_cmd.py'
-    #     ],
-    # },
+    entry_points = {
+        'console_scripts': [
+            'cudem = geomods.cudem:main',
+        ],
+    },
     #project_urls = {
     #    'Source': 'https://github.com/ciresdem/geomods',
     #},
-    scripts = [
-        'scripts/fetch.py',
-        'scripts/cudem.py',
-        'scripts/gdal_chunk.py',
-        'scripts/gdal_crop.py',
-        'scripts/vdatum_cmd.py']
+    # scripts = [
+    #     'scripts/fetch.py',
+    #     'scripts/cudem.py',
+    #     'scripts/gdal_chunk.py',
+    #     'scripts/gdal_crop.py',
+    #     'scripts/vdatum_cmd.py']
 )
