@@ -87,10 +87,10 @@ Options:
   --version\t\tPrint the version information
 
 Examples:
- %% sudo fetch.py --update
- %% fetch.py nos charts -R -90.75/-88.1/28.7/31.25 -f "Date > 2000"
- %% fetch.py dc -R tiles.shp -p
- %% fetch.py dc -R tiles.shp -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
+ % sudo fetch.py --update
+ % fetch.py nos charts -R -90.75/-88.1/28.7/31.25 -f "Date > 2000"
+ % fetch.py dc -R tiles.shp -p
+ % fetch.py dc -R tiles.shp -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version, '\n  '.join(fetch_desc(fetch_infos)))
 

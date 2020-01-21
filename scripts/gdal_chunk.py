@@ -45,7 +45,7 @@ usage: gdal_chunk.py [ file ]
   --version\tPrint the version information
 
  Examples:
- %% gdal_chunk.py input.tif --chunk 1000
+ % gdal_chunk.py input.tif --chunk 1000
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version)
 

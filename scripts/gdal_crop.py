@@ -43,7 +43,7 @@ usage: gdal_crop.py [ file ]
   --version\tPrint the version information
 
  Examples:
- %% gdal_crop.py input.tif
+ % gdal_crop.py input.tif
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version)
 
