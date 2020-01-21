@@ -80,9 +80,9 @@ def fetch_desc(x):
         fd.append('{:10}\t\t{}'.format(key, x[key][1]))
     return fd
 
-_usage = '''fetch.py ({}): Fetch geographic elevation data.
+_usage = '''fetch ({}): Fetch geographic elevation data.
 
-usage: fetch.py [ -fhlpRuv [ args ] ] module(s) ...
+usage: fetch [ -fhlpRuv [ args ] ] module(s) ...
 
 Modules:
   {}
@@ -101,10 +101,10 @@ Options:
   --version\t\tPrint the version information
 
 Examples:
- % sudo fetch.py --update
- % fetch.py nos charts -R -90.75/-88.1/28.7/31.25 -f "Date > 2000"
- % fetch.py dc -R tiles.shp -p
- % fetch.py dc -R tiles.shp -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
+ % sudo fetch --update
+ % fetch nos charts -R -90.75/-88.1/28.7/31.25 -f "Date > 2000"
+ % fetch dc -R tiles.shp -p
+ % fetch dc -R tiles.shp -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version, '\n  '.join(fetch_desc(fetch_infos)))
 

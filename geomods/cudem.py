@@ -1,4 +1,3 @@
-#!/usr/bin/env python
 ### cudem.py
 ##
 ## Copyright (c) 2013 - 2020 CIRES Coastal DEM Team
@@ -83,9 +82,9 @@ def dem_mod_desc(x):
         dmd.append('{:16}\t{} [{}]'.format(key, x[key][1], x[key][2]))
     return dmd
 
-_usage = '''cudem.py ({}): Process and generate Digital Elevation Models and derivatives
+_usage = '''cudem ({}): Process and generate Digital Elevation Models and derivatives
 
-usage: cudem.py [ -hvAIER [ args ] ] module[:option1:option2] ...
+usage: cudem [ -hvAIER [ args ] ] module[:option1:option2] ...
 
 Modules:
   {}
@@ -109,9 +108,9 @@ Options:
   --verbose\t\tIncrease the verbosity
 
  Examples:
- % cudem.py -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 gmt-surface
- % cudem.py --datalist input.datalist --increment 0.000277777 --region input_tiles_ply.shp mbgrid spatial-metadata
- % cudem.py -R-82.5/-82.25/26.75/27 -E0.0000925 conversion-grid:navd88:mhw:3 -P ncei -r
+ % cudem -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 gmt-surface
+ % cudem --datalist input.datalist --increment 0.000277777 --region input_tiles_ply.shp mbgrid spatial-metadata
+ % cudem -R-82.5/-82.25/26.75/27 -E0.0000925 conversion-grid:navd88:mhw:3 -P ncei -r
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version, '\n  '.join(dem_mod_desc(_dem_mods)))
 
@@ -901,7 +900,7 @@ def main():
             sys.exit(1)
 
         elif arg == '--version' or arg == '-v':
-            print('cudem.py, version {}\n{}'.format(_version, utils._license))
+            print('cudem, version {}\n{}'.format(_version, utils._license))
             sys.exit(1)
 
         elif arg == '--verbose' or arg == '-V':
