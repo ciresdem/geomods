@@ -22,14 +22,30 @@ from setuptools import setup
 
 setup(
     name = 'geomods',
-    version = '1.2',
+    version = '0.1.0',
     description = 'Modules and scripts for utilizing geographic data Digital Elevation Models',
     license = 'MIT',
     author = 'CIRES Coastal DEM Team',
     url = 'http://ciresgroups.colorado.edu/coastalDEM',
     packages = ['geomods'],  #same as name
     package_data = {'geomods': ['data/*.gmt']},
-    #install_requires=['numpy', 'gdal', 'ogr'], #external packages as dependencies
+    #python_requires = '>=2.7, <3',
+    install_requires = [
+        'numpy', 
+        'GDAL',
+    ], 
+    # entry_points = {
+    #     'console_scripts': [
+    #         'scripts/fetch.py',
+    #         'scripts/cudem.py',
+    #         'scripts/gdal_chunk.py',
+    #         'scripts/gdal_crop.py',
+    #         'scripts/vdatum_cmd.py'
+    #     ],
+    # },
+    #project_urls = {
+    #    'Source': 'https://github.com/ciresdem/geomods',
+    #},
     scripts = [
         'scripts/fetch.py',
         'scripts/cudem.py',

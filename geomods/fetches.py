@@ -1605,6 +1605,7 @@ class ngs(threading.Thread):
         self._want_update = want_update
         self._filters = filters
 
+        self.region = extent
         if extent is not None:
             self.data = { 'maxlon':extent.east,
                           'minlon':extent.west,
@@ -1631,8 +1632,7 @@ class ngs(threading.Thread):
                 if not os.path.exists(self._outdir):
                     os.makedirs(self._outdir)
 
-                dt_now_str = datetime.datetime.now().strftime('%d%Y')
-                outfile = open(os.path.join(self._outdir, 'ngs_results_{}.csv'.format(dt_now_str)), 'w')
+                outfile = open(os.path.join(self._outdir, 'ngs_results_{}.csv'.format(self.region.fn)), 'w')
             
                 outcsv = csv.writer(outfile)
                 outcsv.writerow(r[0].keys())

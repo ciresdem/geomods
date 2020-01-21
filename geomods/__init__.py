@@ -21,7 +21,7 @@ import os
 import sys
 import subprocess
 
-_version = '1.2'
+_version = '0.1.0'
 
 _license = '''geomods, version {}
 Copyright (c) 2012 - 2020 CIRES Coastal DEM Team
