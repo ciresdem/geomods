@@ -281,7 +281,7 @@ class proc(threading.Thread):
                         d_csv.writerow(this_xyz)
             in_f.close()
 
-            if len(self.this_vd.vdatum_paths) > 0:
+            if self.this_vd.vdatum_path is not None:
                 self.this_vd.ivert = 'mllw'
                 self.this_vd.overt = 'navd88'
                 self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir, 'result'))
@@ -326,7 +326,7 @@ class proc(threading.Thread):
                     if os.stat(i_xyz).st_size == 0:
                         os.remove(i_xyz)
                     else:
-                        if len(self.this_vd.vdatum_paths) > 0:
+                        if self.this_vd.vdatum_path is not None:
                             self.this_vd.ivert = 'mllw'
                             self.this_vd.overt = 'navd88'
                             self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir, 'result'))
@@ -403,7 +403,7 @@ class proc(threading.Thread):
 
                 if os.stat(self.o_fn_tmp).st_size != 0:
 
-                    if len(self.this_vd.vdatum_paths) > 0:
+                    if self.this_vd.vdatum_path is not None:
                         self.this_vd.ivert = 'mllw'
                         self.this_vd.overt = 'navd88'
                         self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir, 'result'))
