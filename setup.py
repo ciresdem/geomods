@@ -29,7 +29,6 @@ setup(
     url = 'http://ciresgroups.colorado.edu/coastalDEM',
     packages = ['geomods'],  #same as name
     package_data = {'geomods': ['data/*.gmt']},
-    #python_requires = '>=2.7, <3',
     install_requires = [
         'numpy', 
         'GDAL',
@@ -40,13 +39,13 @@ setup(
             'fetch = geomods.fetches:main',
         ],
     },
+    scripts = [
+        'scripts/gdal_chunk.py',
+        'scripts/gdal_crop.py',
+        'scripts/vdatum_cmd.py',
+    ],
+    #python_requires = '>=2.7, <3',
     #project_urls = {
     #    'Source': 'https://github.com/ciresdem/geomods',
     #},
-    # scripts = [
-    #     'scripts/fetch.py',
-    #     'scripts/cudem.py',
-    #     'scripts/gdal_chunk.py',
-    #     'scripts/gdal_crop.py',
-    #     'scripts/vdatum_cmd.py']
 )

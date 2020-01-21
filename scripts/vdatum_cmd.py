@@ -131,10 +131,10 @@ def main():
     if not os.path.exists(src_fn):
         print('Error: {} is not a valid file'.format(src_fn))
     else: 
-        #vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:space,0,1,2:{}:result region:{}'.format(ihorz, ivert, ohorz, overt, src_fn, region)
-        #geomods.utils.run_vdatum(vdc)
-        geomods.utils.vdatum(verbose=verbose).run_vdatum(src_fn)
-
+        vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:space,0,1,2:{}:result region:{}'.format(ihorz, ivert, ohorz, overt, src_fn, region)
+        geomods.utils.run_vdatum(vdc)
+        #geomods.utils.vdatum(verbose=verbose).run_vdatum(src_fn)
+        
 if __name__ == '__main__':
     main()
 
