@@ -1857,4 +1857,7 @@ def main():
                     stop_threads = True
                 pb.end(fl._status)
 
+if __name__ == '__main__':
+    main()
+
 ### End
