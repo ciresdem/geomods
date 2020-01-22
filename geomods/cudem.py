@@ -575,10 +575,11 @@ class cudem(threading.Thread):
     def mbgrid(self):
         '''Generate a DEM and num grid with MBSystem'''
 
-        mbgrid_cmd = ('mbgrid -I{} {} -E{:.7f}/{:.7f}/degrees! -O{} -A2 -G100 -F1 -N -C10/3 -S0 -X0.1 -T35 -M\
-        '.format(self.datalist._path, self.dist_region.gmt, self.inc, self.inc, self.oname))
+        ## mbgrid will cause popen to hang if stdout is not cleared...should add output file to send to...
 
-        pb = 'generating DEM and NUM grid using gmt mbgrid -T35 -X0.1 -C10/3 -M'
+        pb = 'generating DEM and NUM grid using mbgrid -T35 -X0.1 -C10/3 -M'
+        mbgrid_cmd = ('mbgrid -I{} {} -E{:.7f}/{:.7f}/degrees! -O{} -A2 -G100 -F1 -N -C10/3 -S0 -X0.1 -T35 -M > /dev/null 2> /dev/null \
+        '.format(self.datalist._path, self.dist_region.gmt, self.inc, self.inc, self.oname))
         out, self.status = utils.run_cmd(mbgrid_cmd, self.verbose, pb)
 
         if self.status == 0:
