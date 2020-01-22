@@ -3,20 +3,35 @@
 Geomods is a set of Python modules and scripts for utilizing geographic data and Digital Elevation Models.
 
 Python Dependencies:
- - GDAL and GDAL-Python
+ - GDAL
  - NumPy
 
 External Dependencies for DEM generation and data processing:
+ - GDAL
  - GMT
  - MBSystem
  - LASTools
  - VDatum
 
-Installation:
+Install:
 
- % sudo python setup.py install
+ % git clone https://github.com/ciresdem/geomods.git
+ % cd geomods
+ % sudo python setup.py install --record geomods.install
 
-Modules:
+Uninstall:
+ 
+ % sudo python setup.py clean
+ % sudo xargs rm -r < geomods.install
+
+Update:
+
+ % git pull
+ % sudo python setup.py clean
+ % sudo xargs rm -r < geomods.install
+ % sudo python setup.py install --record geomods.install
+
+Python Modules:
 
  - datalists - MBSystem style datalists
  - regions - Geographic regions
@@ -24,8 +39,8 @@ Modules:
  - gdalfun - GDAL related functions
  - waffles - DEMs, etc.
 
-Scripts:
-
+Console Scripts:
+ 
  - waffles - Generate a Digital Elevation Model.
  - fetches - Fetch elevation data from various sources.
  - gdal_chunk.py - Split a gdal grid into chunks.
@@ -35,22 +50,22 @@ Scripts:
 Examples:
 
  - fetch and process lidar data from NOAA's Digital Coast for all the regions found in tiles.shp 
-   % fetches dc -R tiles.shp -p
+   % fetches dc -R tiles.shp -p -f 'Datatype LIKE "lidar%"'
 
- - list all the NOS hydrographic data in the given region
+ - list all the NOS hydrographic data urls in the given region
    % fetches nos -R -90/-89/29/30 -l > nos.urls
 
- - generate a DEM for each region found in tiles.shp using GMT
+ - generate a DEM for each region found in tiles.shp using GMT surface
    % waffles gmt-surface -R tiles.shp -E .00000925925 -I input_data.datalist --verbose
 
  - generate spatial-metadata from the datalist input_data.datalist
    % waffles spatial-metadata -R tiles.shp -E .00000925925 -I input_data.datalist --verbose
 
- - split grid file tmp.tif into chunks of 1000x1000 cells:
-   % gdal_chunk.py tmp.tif -c 1000
-
  - generate a vertical datum conversion grid:
    % waffles -R -90/-89/29/30 -E 0.00083333 conversion-grid:navd88:mhw
+
+ - split grid file tmp.tif into chunks of 1000x1000 cells:
+   % gdal_chunk.py tmp.tif -c 1000
 
  - transform the vertical datum of an xyz data file:
    % vdatum_cmd.py elev_data.xyz -i lmsl:ft:sounding -o navd88:ft:height
