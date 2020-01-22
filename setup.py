@@ -52,6 +52,7 @@ setup(
         'scripts/gdal_mask.py',
         'scripts/xyz2shp.py',
         'scripts/xyz_histogram.py',
+        'scripts/x360.py',
     ],
     #python_requires = '>=2.7, <3',
     #project_urls = {
