@@ -1784,14 +1784,6 @@ def main():
         else: status = -1
         tw.end(status)
 
-    tw = utils._progress('checking for GDAL python bindings')
-    if has_gdalpy: 
-        status = 0
-        gdal_vers = gdal.__version__
-        tw.opm = 'checking for GDAL python bindings - {}'.format(gdal_vers)
-    else: status = -1
-    tw.end(status)
-
     ## ==============================================
     ## process input region(s)
     ## ==============================================

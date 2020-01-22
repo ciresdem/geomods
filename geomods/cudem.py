@@ -96,8 +96,6 @@ Options:
 \t\t\tIf a vector file is supplied it will search each region found therein.
   -I, --datalsit\tThe input datalist.
   -E, --increment\tThe desired cell-size in native units.
-      note: use at least 7 digits precision with WGS84 units
-
   -P, --prefix\t\tThe output naming prefix.
   -O, --output-name\tThe output basename.
 
@@ -419,10 +417,10 @@ class cudem(threading.Thread):
         #'.format(self.datalist._echo_datafiles(' '), self.dist_region.gmt, self.inc, self.oname))
 
         if self.node == 'pixel':
-            num_cmd0 = ('gmt xyz2grd -V {} -I{} -r -G{}_num.grd -An\
+            num_cmd0 = ('gmt xyz2grd -V {} -I{:7f} -r -G{}_num.grd -An\
             '.format(self.dist_region.gmt, self.inc, self.oname))
         else:
-            num_cmd0 = ('gmt xyz2grd -V {} -I{} -G{}_num.grd -An\
+            num_cmd0 = ('gmt xyz2grd -V {} -I{:7f} -G{}_num.grd -An\
             '.format(self.dist_region.gmt, self.inc, self.oname))
 
         num_cmd1 = ('gmt grdmath -V {}_num.grd 0 MUL 1 ADD 0 AND = {}_num_msk.tif=gd+n-9999:GTiff\
@@ -468,16 +466,16 @@ class cudem(threading.Thread):
         ## TRY SURFACE -D OPTION FOR BREAKLINE DATA
 
         if self.node == 'pixel':
-            dem_landmask_cmd = ('gmt grdlandmask -Gtmp_lm.grd -I{} {} -Df+ -V -r -N1/0\
+            dem_landmask_cmd = ('gmt grdlandmask -Gtmp_lm.grd -I{:7f} {} -Df+ -V -r -N1/0\
             '.format(self.inc, self.proc_region.gmt))
 
-            dem_surf_cmd = ('gmt blockmean {} -I{} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -r -Lu0\
+            dem_surf_cmd = ('gmt blockmean {} -I{:7f} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -r -Lu0\
             '.format(self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
         else:
             dem_landmask_cmd = ('gmt grdlandmask -Gtmp_lm.grd -I{} {} -Df+ -V -N1/0\
             '.format(self.inc, self.proc_region.gmt))
 
-            dem_surf_cmd = ('gmt blockmean {} -I{} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -Lu0\
+            dem_surf_cmd = ('gmt blockmean {} -I{:7f} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -Lu0\
             '.format(self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
 
         dem_landmask_cmd1 = ('gmt grdmath -V {}_p.grd tmp_lm.grd MUL 0 NAN = {}_p_bathy.grd\
@@ -544,10 +542,10 @@ class cudem(threading.Thread):
         #'.format(self.datalist._echo_datafiles(' '), self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
 
         if self.node == 'pixel':
-            dem_surf_cmd = ('gmt blockmean {} -I{} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -r -Lud -Lld\
+            dem_surf_cmd = ('gmt blockmean {} -I{:7f} -r -V | gmt surface -V {} -I{:7f} -G{}_p.grd -T.35 -Z1.2 -r -Lud -Lld\
             '.format(self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
         else:
-            dem_surf_cmd = ('gmt blockmean {} -I{} -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -Lud -Lld\
+            dem_surf_cmd = ('gmt blockmean {} -I{:7f} -V | gmt surface -V {} -I{:7f} -G{}_p.grd -T.35 -Z1.2 -Lud -Lld\
             '.format(self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
 
         dem_cut_cmd = ('gmt grdcut -V {}_p.grd -G{}.grd {}\
@@ -577,7 +575,7 @@ class cudem(threading.Thread):
     def mbgrid(self):
         '''Generate a DEM and num grid with MBSystem'''
 
-        mbgrid_cmd = ('mbgrid -I{} {} -E{}/{}/degrees! -O{} -A2 -G100 -F1 -N -C10/3 -S0 -X0.1 -T35 -M\
+        mbgrid_cmd = ('mbgrid -I{} {} -E{:7f}/{:7f}/degrees! -O{} -A2 -G100 -F1 -N -C10/3 -S0 -X0.1 -T35 -M\
         '.format(self.datalist._path, self.dist_region.gmt, self.inc, self.inc, self.oname))
 
         pb = 'generating DEM and NUM grid using gmt mbgrid -T35 -X0.1 -C10/3 -M'
@@ -944,12 +942,11 @@ def main():
     pb.opm = 'checking for MBSystem...{}'.format(mbs_vers)
     pb.end(status)
 
-    pb = utils._progress('checking for GDAL...')
-    if has_gdalpy: 
-        status = 0
-        gdal_vers = gdal.__version__
+    pb = utils._progress('checking for GDAL command-line')
+    if utils.cmd_exists('gdal-config'): 
+        gdal_vers, status = utils.run_cmd('gdal-config --version')
+        pb.opm = 'checking for GDAL command-line - {}'.format(gdal_vers.rstrip())
     else: status = -1
-    pb.opm = 'checking for GDAL...{}'.format(gdal_vers)
     pb.end(status)
 
     ## ==============================================
