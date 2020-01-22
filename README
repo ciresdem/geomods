@@ -1,6 +1,6 @@
 [ g e o m o d s ]
 
-Geomods is a set of Python modules and scripts for utilizing geographic data and Digital Elevation Models.
+Geomods is a set of Python modules and console scripts for utilizing elevation data and Digital Elevation Models.
 
 Python Dependencies:
  - GDAL
