@@ -79,9 +79,9 @@ def fetch_desc(x):
         fd.append('{:10}\t\t{}'.format(key, x[key][1]))
     return fd
 
-_usage = '''fetch ({}): Fetch geographic elevation data.
+_usage = '''{} ({}): Fetch geographic elevation data.
 
-usage: fetch [ -fhlpRuv [ args ] ] module(s) ...
+usage: {} [ -fhlpRuv [ args ] ] module(s) ...
 
 Modules:
   {}
@@ -100,12 +100,20 @@ Options:
   --version\t\tPrint the version information
 
 Examples:
- % sudo fetch --update
- % fetch nos charts -R -90.75/-88.1/28.7/31.25 -f "Date > 2000"
- % fetch dc -R tiles.shp -p
- % fetch dc -R tiles.shp -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
+ % sudo {} --update
+ % {} nos charts -R -90.75/-88.1/28.7/31.25 -f "Date > 2000"
+ % {} dc -R tiles.shp -p
+ % {} dc -R tiles.shp -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
 
-CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version, '\n  '.join(fetch_desc(fetch_infos)))
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
+'''.format(os.path.basename(sys.argv[0]),
+           _version, 
+           os.path.basename(sys.argv[0]), 
+           '\n  '.join(fetch_desc(fetch_infos)),
+           os.path.basename(sys.argv[0]), 
+           os.path.basename(sys.argv[0]), 
+           os.path.basename(sys.argv[0]), 
+           os.path.basename(sys.argv[0]))
 
 
 gdal.PushErrorHandler('CPLQuietErrorHandler')
@@ -1024,9 +1032,11 @@ class nos(threading.Thread):
                 
     def print_results(self):
         '''Print the data url(s) for each survey in results.'''
-
-        for row in self._results:
-            print(row)
+        if len(self._results) == 0:
+            self._status = -1
+        else:
+            for row in self._results:
+                print(row)
 
     def fetch_results(self):
         '''Fetch NOS data in the given region and meeting any filters.'''
@@ -1053,13 +1063,14 @@ class nos(threading.Thread):
             self._status = -1
         else:
             for row in self._results:
-                outf = os.path.join(self._outdir, os.path.basename(row))
-                surv_dir = self._outdir
-                surv_fn = os.path.basename(outf)
-                surv_t = row.split('/')[-2]
+                if not 'ombined' in row:
+                    outf = os.path.join(self._outdir, os.path.basename(row))
+                    surv_dir = self._outdir
+                    surv_fn = os.path.basename(outf)
+                    surv_t = row.split('/')[-2]
 
-                if os.path.exists(outf):
-                    proc_q.put_nowait([[surv_dir, surv_fn, outf, surv_t, self.region], self.stop])
+                    if os.path.exists(outf):
+                        proc_q.put_nowait([[surv_dir, surv_fn, outf, surv_t, self.region], self.stop])
 
             for _ in range(3):
                 threading.Thread(target = proc_queue, args = (proc_q,)).start()

@@ -68,7 +68,8 @@ class datalist:
 
     ## 'Validate' the datalist (does it have datafiles?)
     def _valid_p(self):
-        if len(self.datafiles) > 0: return(True)
+        if len(self.datafiles) > 0: 
+            return(True)
         else: return(False)
 
     ## Read MBSystem .inf file and extract minmax info
@@ -96,7 +97,8 @@ class datalist:
         fob = open(self._path, 'r')
         for dl in fob:
             if dl[0] != '#' and dl[0] != '\n' and dl[0] != '':
-                self.datalist.append( dl.split(' '))
+                if len(dl.split(' ')) > 3:
+                    self.datalist.append( dl.split(' '))
         fob.close()
 
     ## Recurse through the datalist and gather xyz data

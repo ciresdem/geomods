@@ -37,8 +37,9 @@ setup(
     ], 
     entry_points = {
         'console_scripts': [
-            'cudem = geomods.cudem:main',
-            'fetch = geomods.fetches:main',
+            'cudem = geomods.waffles:main',
+            'waffles = geomods.waffles:main',
+            'fetches = geomods.fetches:main',
         ],
     },
     scripts = [

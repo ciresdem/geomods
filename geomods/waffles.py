@@ -82,9 +82,9 @@ def dem_mod_desc(x):
         dmd.append('{:16}\t{} [{}]'.format(key, x[key][1], x[key][2]))
     return dmd
 
-_usage = '''cudem ({}): Process and generate Digital Elevation Models and derivatives
+_usage = '''{} ({}): Process and generate Digital Elevation Models and derivatives
 
-usage: cudem [ -hvAIER [ args ] ] module[:option1:option2] ...
+usage: {} [ -hvAIER [ args ] ] module[:option1:option2] ...
 
 Modules:
   {}
@@ -106,11 +106,18 @@ Options:
   --verbose\t\tIncrease the verbosity
 
  Examples:
- % cudem -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 gmt-surface
- % cudem --datalist input.datalist --increment 0.000277777 --region input_tiles_ply.shp mbgrid spatial-metadata
- % cudem -R-82.5/-82.25/26.75/27 -E0.0000925 conversion-grid:navd88:mhw:3 -P ncei -r
+ % {} -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 gmt-surface
+ % {} --datalist input.datalist --increment 0.000277777 --region input_tiles_ply.shp mbgrid spatial-metadata
+ % {} -R-82.5/-82.25/26.75/27 -E0.0000925 conversion-grid:navd88:mhw:3 -P ncei -r
 
-CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version, '\n  '.join(dem_mod_desc(_dem_mods)))
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
+'''.format( os.path.basename(sys.argv[0]), 
+            _version, 
+            os.path.basename(sys.argv[0]), 
+            '\n  '.join(dem_mod_desc(_dem_mods)),
+            os.path.basename(sys.argv[0]), 
+            os.path.basename(sys.argv[0]), 
+            os.path.basename(sys.argv[0]))
 
 ## =============================================================================
 ##
@@ -1016,7 +1023,7 @@ def main():
             args = tuple(mod_opts[dem_mod])
                         
             pb = utils._progress('geomods: running {} module'.format(dem_mod))
-            pb = utils._progress('running cudem module {} on region ({}/{}): {}\
+            pb = utils._progress('running geomods dem module {} on region ({}/{}): {}\
             '.format(dem_mod, rn + 1, len(these_regions), this_region.region_string))
 
             this_surf._module = _dem_mods[dem_mod][0](this_surf)
