@@ -97,8 +97,8 @@ class datalist:
         with open(self._path, 'r') as fob:
             for dl in fob:
                 if dl[0] != '#' and dl[0] != '\n' and dl[0] != '':
-                    if len(dl.split(' ')) >= 3:
-                        self.datalist.append( dl.split(' '))
+                    if len(dl.split(' ')) >= 2:
+                        self.datalist.append(dl.split(' '))
 
     ## Recurse through the datalist and gather xyz data
     def _proc(self, datafiles = []):

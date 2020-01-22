@@ -1000,7 +1000,9 @@ def main():
             pb.end(status)
         else: this_datalist = None
 
-        if status != 0: break
+        if status != 0: 
+            status = 0
+            break
 
         ## ==============================================
         ## Initialize the DEM CLASS
