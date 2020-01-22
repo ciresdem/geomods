@@ -11,12 +11,13 @@ External Dependencies for DEM generation and data processing:
  - GMT
  - MBSystem
  - LASTools
- - VDatum
+ - VDatum 4.x
 
 Install:
 
  % git clone https://github.com/ciresdem/geomods.git
  % cd geomods
+ % python setup.py build
  % sudo python setup.py install --record geomods.install
 
 Uninstall:
@@ -29,6 +30,7 @@ Update:
  % git pull
  % sudo python setup.py clean
  % sudo xargs rm -r < geomods.install
+ % python setup.py build
  % sudo python setup.py install --record geomods.install
 
 Python Modules:
