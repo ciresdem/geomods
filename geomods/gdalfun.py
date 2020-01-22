@@ -215,6 +215,7 @@ def chunks(src_fn, n_chunk = 10):
                 ods = gdal.GetDriverByName('GTiff').Create(dst_fn, this_x_size, this_y_size, 1, ds_config['dt'])
                 ods.SetGeoTransform(dst_gt)
                 ods.SetProjection(ds_config['proj'])
+                #print ds_config['ndv']
                 ods.GetRasterBand(1).SetNoDataValue(ds_config['ndv'])
                 ods.GetRasterBand(1).WriteArray(band_data)
 

@@ -350,6 +350,8 @@ class proc(threading.Thread):
                 self.xyzs.append(self.o_fn_xyz)
 
     def _proc_bag(self):
+        status = 0
+
         s_gz = os.path.join(self.s_dir, self.s_fn)
 
         if s_gz.split('.')[-1] == 'gz':
@@ -364,18 +366,21 @@ class proc(threading.Thread):
         s_tif = os.path.join(self.s_dir, self.s_fn.split('.')[0].lower() + '.tif')            
         s_xyz = s_gz.split('.')[0] + '.xyz'
 
-        out, status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(s_bag, s_tif), False, None)
-
         if status == 0 and not self.stop():
-            out_chunks = gdalfun.chunks(s_tif, 1000)
-            os.remove(s_tif)
+            out_chunks = gdalfun.chunks(s_bag, 1000)
+            os.remove(s_bag)
 
             for i in out_chunks:
                 if not self.stop():
                     i_xyz = i.split('.')[0] + '.xyz'
-                    o_xyz = os.path.join(self.xyz_dir, os.path.basename(i_xyz))
+                    i_tif = i.split('.')[0] + '_wgs.tif'
+                    o_xyz = os.path.join(self.xyz_dir, os.path.basename(i_xyz).lower())
+                    o_tif = os.path.join(self.xyz_dir, os.path.basename(i_xyz).lower())
 
-                    gdalfun.dump(i, i_xyz)
+                    out, status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(i, i_tif), False, None)
+
+                    gdalfun.dump(i_tif, i_xyz)
+                    os.remove(i_tif)
 
                     if os.stat(i_xyz).st_size == 0:
                         os.remove(i_xyz)
@@ -1746,7 +1751,10 @@ def main():
             sys.exit(1)
 
         elif arg == '--version' or arg == '-v':
-            print('fetches.py, version {}\n{}'.format(_version, utils._license))
+            print('{}, version {}\n{}\
+            '.format(os.path.basename(sys.argv[0]), 
+                     _version, 
+                     utils._license))
             sys.exit(1)
 
         else: fetch_class.append(sys.argv[i])

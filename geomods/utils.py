@@ -1,6 +1,6 @@
 ### utils.py
 ##
-## Copyright (c) 2012 - 2020 CIRES Coastal DEM Team
+## Copyright (c) 2010 - 2020 CIRES Coastal DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -31,7 +31,7 @@ import ConfigParser
 _version = '0.1.0'
 
 _license = '''geomods, version {}
-Copyright (c) 2012 - 2020 CIRES Coastal DEM Team
+Copyright (c) 2010 - 2020 CIRES Coastal DEM Team
 
 Permission is hereby granted, free of charge, to any person obtaining a copy 
 of this software and associated documentation files (the "Software"), to deal 

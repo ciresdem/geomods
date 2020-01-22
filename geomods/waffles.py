@@ -1,4 +1,4 @@
-### cudem.py
+### waffles.py
 ##
 ## Copyright (c) 2013 - 2020 CIRES Coastal DEM Team
 ##
@@ -60,7 +60,7 @@ import datalists
 import gdalfun
 import utils
 
-_version = '0.1.3'
+_version = '0.1.4'
 
 ## =============================================================================
 ##
@@ -906,7 +906,7 @@ def main():
             sys.exit(1)
 
         elif arg == '--version' or arg == '-v':
-            print('cudem, version {}\n{}'.format(_version, utils._license))
+            print('{}, version {}\n{}'.format(os.path.basename(sys.argv[0]), _version, utils._license))
             sys.exit(1)
 
         elif arg == '--verbose' or arg == '-V':
