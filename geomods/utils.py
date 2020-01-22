@@ -87,19 +87,21 @@ def run_cmd_with_input(cmd, data_fun, verbose = False, prog = None):
     t = threading.Thread(target = data_fun, args = (p.stdin,))
     t.start()
 
-    while True:
-        time.sleep(4)
-        if prog is not None:
+    if prog is not None:
+        while True:
+            time.sleep(4)
             prog.update()
-        if not t.is_alive():
-            break
-        
+
+            if not t.is_alive():
+                break
+
     out, err = p.communicate()
-    
+
     if verbose:
         _progress()._clear_stderr()
-        print err
-
+        sys.stdout.write(out)
+        sys.stderr.write(err)
+    
     if prog is not None:
         prog.end(p.returncode)
 
@@ -114,27 +116,32 @@ def run_cmd(cmd, verbose = False, prog = None):
         prog = _progress('{}'.format(prog))
     
     p = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)
-    
-    if want_poll(verbose, prog):
-        while p.poll() is None:
-            if verbose:
-                l = p.stderr.readline()
-                _progress()._clear_stderr()
-                if l: sys.stderr.write('{}\n'.format(l.strip()))
-            elif prog is not None:
-                prog.update()
-                time.sleep(3)
 
-        if verbose:
-            l = p.stderr.read()
-            _progress()._clear_stderr()
-            if l: sys.stderr.write('{}\n'.format(l.strip()))
+    if prog is not None:
+        while True:
+            time.sleep(3)
+            prog.update()
+            if p.poll() is not None:
+                break
+
+    # if verbose:
+    #     _progress()._clear_stderr()
+    #     for line in iter(p.stderr.readline, ''):
+    #         sys.stderr.write(line)
+    #         #l = p.stderr.readline()
+    #         #if l: sys.stderr.write(l)
 
     out, err = p.communicate()
 
     if verbose:
-        p.stderr.close()
+        _progress()._clear_stderr()
+        sys.stdout.write(out)
+        sys.stderr.write(err)
 
+    # if verbose:
+    #     _progress()._clear_stderr()
+    #     sys.stderr.write(err)
+    #     p.stderr.close()
     if prog is not None:
         prog.end(p.returncode)
 
