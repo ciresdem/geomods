@@ -331,9 +331,10 @@ class proc(threading.Thread):
                 self.this_vd.overt = 'navd88'
                 self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir, 'result'))
 
-                self.this_vd.run_vdatum(os.path.relpath(self.o_fn_tmp))
+                self.status = self.this_vd.run_vdatum(os.path.relpath(self.o_fn_tmp))
 
-                os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(self.o_fn_tmp)), self.o_fn_xyz)
+                if self.status == 0 and os.path.exists(os.path.join(self.xyz_dir, 'result', os.path.basename(self.o_fn_tmp))): 
+                    os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(self.o_fn_tmp)), self.o_fn_xyz)
             else: os.rename(self.o_fn_tmp, self.o_fn_xyz)
             os.remove(self.o_fn_tmp)
 
@@ -898,7 +899,8 @@ class nos(threading.Thread):
             self._update()
         else:
             self.search_gmt()
-
+            self._results = list(set(self._results))
+            
             while ('' in self._results):
                 self._results.remove('')
 
