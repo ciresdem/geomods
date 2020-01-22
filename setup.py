@@ -33,6 +33,7 @@ setup(
         'GDAL',
         'numpy',
         'requests',
+        'lxml',
     ], 
     entry_points = {
         'console_scripts': [
@@ -45,6 +46,12 @@ setup(
         'scripts/gdal_crop.py',
         'scripts/vdatum_cmd.py',
         'scripts/smooth_dem_bathy.py',
+        'scripts/gdal_null.py',
+        'scripts/clip_xyz.sh',
+        'scripts/xyz_clip.py',
+        'scripts/gdal_mask.py',
+        'scripts/xyz2shp.py',
+        'scripts/xyz_histogram.py',
     ],
     #python_requires = '>=2.7, <3',
     #project_urls = {

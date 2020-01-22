@@ -22,7 +22,6 @@
 import os
 import sys
 import time
-import datetime
 import math
 
 import requests
@@ -574,7 +573,6 @@ class dc(threading.Thread):
 
         self._ref_vector = os.path.join(fetchdata, 'dc.gmt')
         self._outdir = os.path.join(os.getcwd(), 'dc')
-        self._log_fn = 'fetch_dc_%s.log' %(datetime.datetime.now().strftime('%d%Y'))
 
         self._status = 0
         self._surveys = []
@@ -617,10 +615,6 @@ class dc(threading.Thread):
             if self._want_proc:
                 self.proc_results()
 
-    def _log_survey(self, surv_url):
-        with open(self._log_fn, 'a') as local_file:
-            local_file.write(surv_url + "\n")
-                
     def search_gmt(self):
         '''Search for data in the reference vector file'''
 
