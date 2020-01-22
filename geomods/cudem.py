@@ -977,8 +977,7 @@ def main():
         print(_usage)
         sys.exit(1)
 
-    for this_region in these_regions:
-
+    for rn, this_region in enumerate(these_regions):
         ## ==============================================
         ## Load the input datalist
         ## ==============================================
@@ -1016,6 +1015,9 @@ def main():
             args = tuple(mod_opts[dem_mod])
                         
             pb = utils._progress('geomods: running {} module'.format(dem_mod))
+            pb = utils._progress('running cudem module {} on region ({}/{}): {}\
+            '.format(dem_mod, rn + 1, len(these_regions), this_region.region_string))
+
             this_surf._module = _dem_mods[dem_mod][0](this_surf)
             this_surf._module_args = args
 
