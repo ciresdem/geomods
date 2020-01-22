@@ -94,12 +94,11 @@ class datalist:
                      
     ## Load and Process a datalist file.
     def _load(self):
-        fob = open(self._path, 'r')
-        for dl in fob:
-            if dl[0] != '#' and dl[0] != '\n' and dl[0] != '':
-                if len(dl.split(' ')) > 3:
-                    self.datalist.append( dl.split(' '))
-        fob.close()
+        with open(self._path, 'r') as fob:
+            for dl in fob:
+                if dl[0] != '#' and dl[0] != '\n' and dl[0] != '':
+                    if len(dl.split(' ')) >= 3:
+                        self.datalist.append( dl.split(' '))
 
     ## Recurse through the datalist and gather xyz data
     def _proc(self, datafiles = []):
