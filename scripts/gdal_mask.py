@@ -27,7 +27,7 @@
 import os
 import sys
 import numpy as np
-from osgeo import gdal
+import gdal
 
 try:
     progress = gdal.TermProgress_nocb

@@ -23,19 +23,11 @@ import sys
 import os
 import math
 
-try:
-    import numpy as np
-except ImportError:
-    print 'NumPy must be installed'
-    sys.exit(-1)
-try:
-    import osgeo.ogr as ogr
-    import osgeo.gdal as gdal
-    import osgeo.osr as osr
-    from gdalconst import *
-except ImportError:
-    print 'GDAL must be installed'
-    sys.exit(-1)
+import numpy as np
+import ogr
+import gdal
+import osr
+from gdalconst import *
 
 GDAL_OPTS = ["COMPRESS=LZW", "INTERLEAVE=PIXEL", "TILED=YES",\
         "SPARSE_OK=TRUE", "BIGTIFF=YES" ]
@@ -43,6 +35,8 @@ GDAL_OPTS = ["COMPRESS=LZW", "INTERLEAVE=PIXEL", "TILED=YES",\
 _known_delims = [',', ' ', '\t', '/', ':']
 
 def xyz_parse(src_xyz):
+    '''xyz file parsing generator'''
+    
     for xyz in src_xyz:
         this_line = xyz.strip()
 
@@ -212,10 +206,13 @@ def chunks(src_fn, n_chunk = 10):
                 
                 o_chunks.append(dst_fn)
 
-                ods = gdal.GetDriverByName('GTiff').Create(dst_fn, this_x_size, this_y_size, 1, ds_config['dt'])
+                ods = gdal.GetDriverByName('GTiff').Create(dst_fn,
+                                                           this_x_size,
+                                                           this_y_size,
+                                                           1,
+                                                           ds_config['dt'])
                 ods.SetGeoTransform(dst_gt)
                 ods.SetProjection(ds_config['proj'])
-                #print ds_config['ndv']
                 ods.GetRasterBand(1).SetNoDataValue(ds_config['ndv'])
                 ods.GetRasterBand(1).WriteArray(band_data)
 
@@ -420,7 +417,12 @@ def proximity(self, src_fn, dst_fn):
 
     if dst_ds is None:
         drv = gdal.GetDriverByName('GTiff')
-        dst_ds = drv.Create(dst_fn, src_ds.RasterXSize, src_ds.RasterYSize, 1, gdal.GetDataTypeByName('Float32'), [])
+        dst_ds = drv.Create(dst_fn,
+                            src_ds.RasterXSize,
+                            src_ds.RasterYSize,
+                            1,
+                            gdal.GetDataTypeByName('Float32'),
+                            [])
 
     dst_ds.SetGeoTransform(src_ds.GetGeoTransform())
     dst_ds.SetProjection(src_ds.GetProjectionRef())

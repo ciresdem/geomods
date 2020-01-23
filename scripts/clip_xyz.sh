@@ -93,9 +93,9 @@ fi
 # Generate the null grid
 
 if [ $verbose ] ; then
-    gdal_null.py -region $(gmt minmax -C $inxyz | awk '{print $1,$2,$3,$4}') -cell_size $inc -verbose -overwrite $msk
+    gdal_null.py -region $(gmt gmtinfo -C $inxyz | awk '{print $1,$2,$3,$4}') -cell_size $inc -verbose -overwrite $msk
 else
-    gdal_null.py -region $(gmt minmax -C $inxyz | awk '{print $1,$2,$3,$4}') -cell_size $inc -overwrite $msk
+    gdal_null.py -region $(gmt gmtinfo -C $inxyz | awk '{print $1,$2,$3,$4}') -cell_size $inc -overwrite $msk
 fi
 
 # Burn the polygon onto the null grid - use -i to invert the polygon

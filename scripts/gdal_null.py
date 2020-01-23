@@ -27,31 +27,30 @@
 import sys
 import os
 import numpy as np
-from osgeo import gdal
+import gdal
 
 try:
     progress = gdal.TermProgress_nocb
 except:
     progress = gdal.TermProgress
 
-_version = "0.1.6"
+_version = '0.1.7'
 
-_usage = """
+_usage = '''gdal_null.py ({}): generate a null grid
 usage: gdal_null.py [-region xmin xmax ymin ymax] [-cell_size value]
                     [-t_nodata value] [-d_format grid-format] [-overwrite]
                     [-copy grid] [-verbose] output_grid
 
-gdal_null v.%s 
-""" %(_version)
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version)
 
 def verbosePrint(xcount, ycount, extent, cellsize, outf):
-    print '--'
-    print 'xcols: ',xcount,' ycols: ',ycount
-    print 'xmax: ',extent[1],'xmin: ',extent[0]
-    print 'ymax: ',extent[3],'ymin: ',extent[2]
-    print 'cellsize: ',cellsize
-    print 'output grid format: ',outf
-    print '--'
+    print('--')
+    print('xcols: {} ycols: {}'.format(xcount, ycount))
+    print('xmax: {} xmin: {}'.format(extent[1], extent[0]))
+    print('ymax: {} ymin: {}'.format(extent[3], extent[2]))
+    print('cellsize: {}'.format(cellsize))
+    print('output grid format: {}'.format(outf))
+    print('--')
 
 def createNullCopy(srcfile, outfile, nodata, outformat, verbose, overwrite):
     ds = gdal.Open(srcfile)
@@ -111,9 +110,6 @@ overwrite of the output file." %(outfile))
     progress( 1.0 )
     
 def createGrid(outfile, extent, cellsize, nodata, outformat, verbose, overwrite):
-
-    # if verbose:
-    #     print extent
 
     # Set the rows and columns for the output grid
     ysize = extent[3] - extent[2]
