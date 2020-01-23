@@ -47,6 +47,8 @@ _version = '0.0.2'
 ##
 ## =============================================================================
 class datalist:
+    '''MBSystem style datalists for elevation data.'''
+
     def __init__(self, idatalist, iregion = None):
         if not os.path.exists(idatalist): 
             open(idatalist, 'a').close()
@@ -58,22 +60,25 @@ class datalist:
         self._path_dl_name = os.path.basename(self._path).split('.')[0]
         self._reset()
 
-    ## Reload the datalist
     def _reset(self):
+        '''reload the datalist'''
+
         self.datalist = []
         self.datafiles = []
         self._load()
         self._proc(self.datafiles)
         self._valid = self._valid_p()
 
-    ## 'Validate' the datalist (does it have datafiles?)
     def _valid_p(self):
+        '''validate the datalist'''
+
         if len(self.datafiles) > 0: 
             return(True)
         else: return(False)
 
-    ## Read MBSystem .inf file and extract minmax info
     def _read_inf(self, path_i):
+        '''Read MBSystem .inf file and extract minmax info'''
+
         minmax = [0, 0, 0, 0]
         if os.path.exists(path_i):
             self.iob = open(path_i)
@@ -92,16 +97,17 @@ class datalist:
         except: oregion = False
         return(oregion)
                      
-    ## Load and Process a datalist file.
     def _load(self):
+        '''load and process a datalist'''
+
         with open(self._path, 'r') as fob:
             for dl in fob:
                 if dl[0] != '#' and dl[0] != '\n' and dl[0] != '':
                     if len(dl.split(' ')) >= 2:
                         self.datalist.append(dl.split(' '))
 
-    ## Recurse through the datalist and gather xyz data
     def _proc(self, datafiles = []):
+        '''Recurse through the datalist and gather xyz data'''
 
         for i in self.datalist:
             dpath = i[0]
@@ -126,34 +132,29 @@ class datalist:
                 if usable:
                     datafiles.append(path_d)
 
-    ## Add XYZ data to datalist
     def _append_datafile(self, dfile, dformat, weight):
+        '''append xyz data to a datalist'''
+
         with open(self._path, 'a') as outfile:
             outfile.write('{} {} {}\n'.format(dfile, dformat, weight))
 
-    ## Process XYZ data
     def _echo_datafiles(self, osep='/n'):
+        '''return a string of datafiles in the datalist'''
+
         return(osep.join(self.datafiles))
 
-    ## Catenate the xyz data from the datalist
-    ## Depreciated, use _cat_port
-    def _cat(self, dst_xyz):
-        with open(dst_xyz, 'w') as outfile:
-            for fn in self.datafiles:
-                with open(fn) as infile:
-                    for line in infile:
-                        outfile.write(line)
-
-    ## Catenate the xyz data from the datalist
     def _cat_port(self, dst_port):
+        '''Catenate the xyz data from the datalist'''
+
         for fn in self.datafiles:
             with open(fn) as infile:
                 for line in infile:
                     dst_port.write(line)
 
-    ## Catenate the xyz data from the datalist to a generator
-    ## usage: for line in self._caty(): proc(line)
     def _caty(self):
+        '''Catenate the xyz data from the datalist to a generator
+        usage: for line in self._caty(): proc(line)'''
+
         for fn in self.datafiles:
             with open(fn) as infile:
                 for line in infile:

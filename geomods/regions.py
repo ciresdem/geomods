@@ -29,6 +29,7 @@ _version = '0.0.2'
 ## region object made from the region_string 'east/west/south/north'
 ##
 ## =============================================================================
+
 def regions_intersect_p(region_a, region_b):
     '''Return True if region_a and region_b intersect.'''
     
@@ -53,6 +54,8 @@ def regions_intersect_p(region_a, region_b):
 
 
 class region:
+    '''geographic bounding box regtions 'w/e/s/n' '''
+
     def __init__(self, region_string):
         self.region_string = region_string
         self.region = map( float, region_string.split('/'))
@@ -68,19 +71,25 @@ class region:
         self._format_fn()
         self._valid = self._valid_p()        
 
-    ## 'Validate' Region
     def _valid_p(self):
+        '''validate region'''
+
         if self.west < self.east and self.south < self.north: return(True)
         else: return(False)
 
-    ## Format region
     def _format_gmt(self):
+        '''format region to GMT string'''
+
         self.gmt = '-R' + '/'.join(map(str, self.region))
 
     def _format_bbox(self):
+        '''format region to bbox string'''
+
         self.bbox = ','.join([str(self.west), str(self.south), str(self.east), str(self.north)])
 
     def _format_fn(self):
+        '''format region to filename string'''
+
         if self.north < 0: ns = 's'
         else: ns = 'n'
         if self.east < 0: ew = 'w'
@@ -88,8 +97,9 @@ class region:
         self.fn = ('{}{:02d}x{:02d}_{}{:03d}x{:02d}'.format(ns, abs(int(self.north)), abs(int(self.north * 100) % 100), 
                                                             ew, abs(int(self.east)), abs(int(self.east * 100) % 100)))
 
-    ## Process Region
     def buffer(self, bv, percentage = False):
+        '''buffer region'''
+
         if percentage: bv = self.pct(bv)
 
         region_b = [self.region[0]-bv, self.region[1] + bv, self.region[2] - bv, self.region[3] + bv]
@@ -102,8 +112,8 @@ class region:
 
         return((ewp + nsp) / 2)
 
-    ## Split Region
     def split(self, sv):
+        '''split region by split-value `sv`'''
         
         split_regions = []
         

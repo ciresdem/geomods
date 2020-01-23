@@ -227,6 +227,8 @@ class vdatum:
 ## =============================================================================
 
 class _progress:
+    '''geomods minimal progress indicator'''
+
     def __init__(self, message=''):
         self.tw = 5
         self.count = 0
