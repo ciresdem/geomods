@@ -35,24 +35,16 @@ import json
 import threading
 import Queue as queue
 
-try:
-    import numpy as np
-except ImportError:
-    print 'NumPy must be installed'
-    sys.exit(-1)
+import numpy as np
 
 try:
     import osgeo.ogr as ogr
     import osgeo.gdal as gdal
-    has_gdalpy = True
 except ImportError:
     try:
         import ogr
         import gdal
-        has_gdalpy = True
     except ImportError:
-        has_gdalpy = False
-        print 'GDAL must be installed'
         sys.exit(-1)
 
 import regions
@@ -61,60 +53,6 @@ import gdalfun
 import utils
 
 _version = '0.2.1'
-
-fetch_infos = { 
-    'dc':[lambda x, f, wl, wu, c: dc(x, f, wl, wu, callback = c), 'digital coast'],
-    'nos':[lambda x, f, wl, wu, c: nos(x, f, wl, wu, callback = c), 'noaa nos bathymetry'],
-    'mb':[lambda x, f, wl, wu, c: mb(x, f, wl, wu, callback = c), 'noaa multibeam'],
-    'gmrt':[lambda x, f, wl, wu, c: gmrt(x, f, wl, wu, callback = c), 'gmrt'],
-    'srtm':[lambda x, f, wl, wu, c: srtm_cgiar(x, f, wl, wu, callback = c), 'srtm from cgiar'],
-    'charts':[lambda x, f, wl, wu, c: charts(x, f, wl, wu, callback = c), 'noaa nautical charts'],
-    'tnm':[lambda x, f, wl, wu, c: tnm(x, f, wl, wu, callback = c), 'the national map'],
-    'ngs':[lambda x, f, wl, wu, c: ngs(x, f, wl, wu, callback = c), 'ngs monuments'],
-    'usace':[lambda x, f, wl, wu, c: usace(x, f, wl, wu, callback = c), 'usace bathymetry'] }    
-
-def fetch_desc(x):
-    fd = []
-    for key in x: 
-        fd.append('{:10}\t\t{}'.format(key, x[key][1]))
-    return fd
-
-_usage = '''{} ({}): Fetch geographic elevation data.
-
-usage: {} [ -fhlpRuv [ args ] ] module(s) ...
-
-Modules:
-  {}
-
-Options:
-  -R, --region\t\tSpecifies the desired region to search;
-\t\t\tThis can either be a GMT-style region ( -R xmin/xmax/ymin/ymax )
-\t\t\tor an OGR-compatible vector file with regional polygons. 
-\t\t\tIf a vector file is supplied it will search each region found therein.
-  -l, --list-only\tOnly fetch a list of surveys in the given region.
-  -f, --filter\t\tSQL style attribute filter; use ? to see available field names.
-  -p, --process\t\tProcess fetched data to ASCII XYZ format.
-
-  --update\t\tUpdate the stored list of surveys.
-  --help\t\tPrint the usage text
-  --version\t\tPrint the version information
-
-Examples:
- % sudo {} --update
- % {} nos charts -R -90.75/-88.1/28.7/31.25 -f "Date > 2000"
- % {} dc -R tiles.shp -p
- % {} dc -R tiles.shp -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
-
-CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
-'''.format(os.path.basename(sys.argv[0]),
-           _version, 
-           os.path.basename(sys.argv[0]), 
-           '\n  '.join(fetch_desc(fetch_infos)),
-           os.path.basename(sys.argv[0]), 
-           os.path.basename(sys.argv[0]), 
-           os.path.basename(sys.argv[0]), 
-           os.path.basename(sys.argv[0]))
-
 
 gdal.PushErrorHandler('CPLQuietErrorHandler')
 
@@ -243,9 +181,9 @@ def proc_queue(q):
         q.task_done()
 
 class proc(threading.Thread):
-    def __init__(self, s_file_info, callback = None):
-        '''Process fetched data to XYZ'''
+    '''Process fetched data to XYZ'''
 
+    def __init__(self, s_file_info, callback = None):
         threading.Thread.__init__(self)
 
         self.stop = callback
@@ -368,7 +306,9 @@ class proc(threading.Thread):
 
         if status == 0 and not self.stop():
             out_chunks = gdalfun.chunks(s_bag, 1000)
-            os.remove(s_bag)
+
+            if s_gz.split('.')[-1] == 'gz':
+                os.remove(s_bag)
 
             for i in out_chunks:
                 if not self.stop():
@@ -576,9 +516,9 @@ def update_ref_vector(src_vec, surveys, update=True):
 ## =============================================================================
 
 class dc(threading.Thread):
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
-        '''Fetch elevation data from the Digital Coast'''
+    '''Fetch elevation data from the Digital Coast'''
 
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         threading.Thread.__init__(self)
 
         self._dc_htdata_url = 'https://coast.noaa.gov/htdata/'
@@ -597,10 +537,6 @@ class dc(threading.Thread):
         if os.path.exists(self._ref_vector): 
             self._has_vector = True
         else: self._has_vector = False
-
-        ## ==============================================
-        ## Class inputs
-        ## ==============================================
 
         self.stop = callback
         self._want_proc = True
@@ -866,9 +802,9 @@ class dc(threading.Thread):
 ## =============================================================================
 
 class nos(threading.Thread):
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
-        '''Fetch NOS BAG and XYZ sounding data from NOAA'''
+    '''Fetch NOS BAG and XYZ sounding data from NOAA'''
 
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         threading.Thread.__init__(self)
 
         self._nos_xml_url = lambda nd: 'https://data.noaa.gov/waf/NOAA/NESDIS/NGDC/MGG/NOS/%siso_u/xml/' %(nd)
@@ -889,10 +825,6 @@ class nos(threading.Thread):
         self._surveys = []
         self._xml_results = []
         self._results = []
-
-        ## ==============================================
-        ## Class inputs
-        ## ==============================================
 
         self.stop = callback
         self._want_proc = True
@@ -1091,9 +1023,9 @@ class nos(threading.Thread):
 ## =============================================================================
 
 class charts(threading.Thread):
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
-        '''Fetch digital chart data from NOAA'''
+    '''Fetch digital chart data from NOAA'''
 
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         threading.Thread.__init__(self)
 
         self._enc_data_catalog = 'http://www.charts.noaa.gov/ENCs/ENCProdCat_19115.xml'
@@ -1113,10 +1045,6 @@ class charts(threading.Thread):
         self._status = 0
         self._results = []
         self._chart_feats = []
-
-        ## ==============================================
-        ## Class inputs
-        ## ==============================================
 
         self.stop = callback
         self._want_proc = True
@@ -1278,9 +1206,9 @@ class charts(threading.Thread):
 ## =============================================================================
 
 class tnm(threading.Thread):
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
-        '''Fetch elevation data from The National Map'''
+    '''Fetch elevation data from The National Map'''
 
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         threading.Thread.__init__(self)
 
         self._tnm_api_url = "http://viewer.nationalmap.gov/tnmaccess/"
@@ -1296,10 +1224,6 @@ class tnm(threading.Thread):
 
         self._tnm_ds = [1, 2]
         self._tnm_df = ['IMG']
-
-        ## ==============================================
-        ## Class inputs
-        ## ==============================================
 
         self.stop = callback
         self._want_proc = True
@@ -1346,9 +1270,9 @@ class tnm(threading.Thread):
 ## =============================================================================
 
 class mb(threading.Thread):
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
-        '''Fetch multibeam bathymetry from NOAA'''
+    '''Fetch multibeam bathymetry from NOAA'''
 
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         threading.Thread.__init__(self)
 
         self._mb_data_url = "https://data.ngdc.noaa.gov/platforms/"
@@ -1360,10 +1284,6 @@ class mb(threading.Thread):
         self._surveys = []
         self._survey_list = []
         self._ref_vector = None
-
-        ## ==============================================
-        ## Class inputs
-        ## ==============================================
 
         self.stop = callback
         self._want_proc = True
@@ -1428,9 +1348,9 @@ class mb(threading.Thread):
 ## =============================================================================
 
 class usace(threading.Thread):
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
-        '''Fetch USACE bathymetric surveys'''
+    '''Fetch USACE bathymetric surveys'''
 
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         threading.Thread.__init__(self)
 
         self._usace_gj_api_url = 'https://opendata.arcgis.com/datasets/80a394bae6b547f1b5788074261e11f1_0.geojson'
@@ -1441,10 +1361,6 @@ class usace(threading.Thread):
         self._results = []
         self._survey_list = []
         self._ref_vector = None
-
-        ## ==============================================
-        ## Class inputs
-        ## ==============================================
 
         self.stop = callback
         self._want_proc = True
@@ -1486,9 +1402,9 @@ class usace(threading.Thread):
 ## =============================================================================
 
 class gmrt(threading.Thread):
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
-        '''Fetch raster data from the GMRT'''
+    '''Fetch raster data from the GMRT'''
 
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         threading.Thread.__init__(self)
 
         self._gmrt_grid_url = "https://www.gmrt.org/services/GridServer?"
@@ -1498,10 +1414,6 @@ class gmrt(threading.Thread):
         self._status = 0
         self._results = None
         self._ref_vector = None
-
-        ## ==============================================
-        ## Class inputs
-        ## ==============================================
 
         self.stop = callback
         self._want_proc = True
@@ -1580,9 +1492,9 @@ class gmrt(threading.Thread):
 ## =============================================================================
 
 class srtm_cgiar(threading.Thread):
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
-        '''Fetch SRTM data from CGIAR'''
+    '''Fetch SRTM data from CGIAR'''
 
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         threading.Thread.__init__(self)
 
         self._srtm_url = 'http://srtm.csi.cgiar.org'
@@ -1645,9 +1557,9 @@ class srtm_cgiar(threading.Thread):
 ## =============================================================================
 
 class ngs(threading.Thread):
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
-        '''Fetch NGS monuments from NGS'''
+    '''Fetch NGS monuments from NGS'''
 
+    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
         threading.Thread.__init__(self)
 
         self._ngs_search_url = 'http://geodesy.noaa.gov/api/nde/bounds?'
@@ -1706,24 +1618,77 @@ class ngs(threading.Thread):
 ##
 ## =============================================================================
 
+fetch_infos = { 
+    'dc':[lambda x, f, wl, wu, c: dc(x, f, wl, wu, callback = c), 'digital coast'],
+    'nos':[lambda x, f, wl, wu, c: nos(x, f, wl, wu, callback = c), 'noaa nos bathymetry'],
+    'mb':[lambda x, f, wl, wu, c: mb(x, f, wl, wu, callback = c), 'noaa multibeam'],
+    'gmrt':[lambda x, f, wl, wu, c: gmrt(x, f, wl, wu, callback = c), 'gmrt'],
+    'srtm':[lambda x, f, wl, wu, c: srtm_cgiar(x, f, wl, wu, callback = c), 'srtm from cgiar'],
+    'charts':[lambda x, f, wl, wu, c: charts(x, f, wl, wu, callback = c), 'noaa nautical charts'],
+    'tnm':[lambda x, f, wl, wu, c: tnm(x, f, wl, wu, callback = c), 'the national map'],
+    'ngs':[lambda x, f, wl, wu, c: ngs(x, f, wl, wu, callback = c), 'ngs monuments'],
+    'usace':[lambda x, f, wl, wu, c: usace(x, f, wl, wu, callback = c), 'usace bathymetry'] 
+}
+
+def fetch_desc(x):
+    fd = []
+    for key in x: 
+        fd.append('{:10}\t\t{}'.format(key, x[key][1]))
+    return fd
+
+_usage = '''{} ({}): Fetch geographic elevation data.
+
+usage: {} [ -fhlpRuv [ args ] ] module(s) ...
+
+Modules:
+  {}
+
+Options:
+  -R, --region\t\tSpecifies the desired region to search;
+\t\t\tThis can either be a GMT-style region ( -R xmin/xmax/ymin/ymax )
+\t\t\tor an OGR-compatible vector file with regional polygons. 
+\t\t\tIf a vector file is supplied it will search each region found therein.
+  -l, --list-only\tOnly fetch a list of surveys in the given region.
+  -f, --filter\t\tSQL style attribute filter; use ? to see available field names.
+  -p, --process\t\tProcess fetched data to ASCII XYZ format.
+
+  --update\t\tUpdate the stored list of surveys.
+  --help\t\tPrint the usage text
+  --version\t\tPrint the version information
+
+Examples:
+ % sudo {} --update
+ % {} nos charts -R -90.75/-88.1/28.7/31.25 -f "Date > 2000"
+ % {} dc -R tiles.shp -p
+ % {} dc -R tiles.shp -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
+
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
+'''.format(os.path.basename(sys.argv[0]),
+           _version, 
+           os.path.basename(sys.argv[0]), 
+           '\n  '.join(fetch_desc(fetch_infos)),
+           os.path.basename(sys.argv[0]), 
+           os.path.basename(sys.argv[0]), 
+           os.path.basename(sys.argv[0]), 
+           os.path.basename(sys.argv[0]))
+
 def main():
+    status = 0
     extent = None
-    poly = False
     want_list = False
     want_update = False
     want_proc = False
     stop_threads = False
+
     f = []
-    i = 1
     fetch_class = []
     these_regions = []
-    status = 0
-    q = queue.Queue()
 
     ## ==============================================
     ## process Command-Line
     ## ==============================================
 
+    i = 1
     while i < len(sys.argv):
         arg = sys.argv[i]
 
@@ -1862,6 +1827,7 @@ def main():
                 except (KeyboardInterrupt, SystemExit): 
                     fl._status = -1
                     stop_threads = True
+
                 pb.end(fl._status)
 
 if __name__ == '__main__':

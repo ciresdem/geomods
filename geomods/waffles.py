@@ -17,14 +17,10 @@
 ## FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, 
 ## ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ##
-### Commentary: 
-## Process DEMs
-##
 ### Code:
 
 import sys
 import os
-import re
 import math
 import glob
 
@@ -39,21 +35,13 @@ try:
     import osgeo.ogr as ogr
     import osgeo.osr as osr
     import osgeo.gdal as gdal
-    has_gdalpy = True
 except ImportError:
     try:
         import ogr
         import osr
         import gdal
-        has_gdalpy = True
     except ImportError:
-        has_gdalpy = False
-
-try:
-    import arcpy
-    has_arcpy = True
-except ImportError:
-    has_arcpy = False
+        sys.exit(-1)
 
 import regions
 import datalists
@@ -61,63 +49,6 @@ import gdalfun
 import utils
 
 _version = '0.1.4'
-
-## =============================================================================
-##
-## DEM Modules
-## { mod-name: [module-function, module-description, module-function arguments]}
-##
-## =============================================================================
-
-_dem_mods = { 'mbgrid': [lambda x: x.mbgrid, 'generate a DEM with mbgrid', 'None'],
-              'gmt-surface': [lambda x: x.surface, 'generate a DEM with GMT', 'None'],
-              'spatial-metadata': [lambda x: x.spatial_metadata, 'generate spatial-metadata', 'epsg'],
-              'conversion-grid': [lambda x: x.conversion_grid, 'generate a conversion grid with vdatum', 'ivert:overt:region'],
-              'bathy-surface': [lambda x: x.masked_surface, 'generate a bathymetry surface with GMT', 'coastline']
-}
-
-def dem_mod_desc(x):
-    dmd = []
-    for key in x: 
-        dmd.append('{:16}\t{} [{}]'.format(key, x[key][1], x[key][2]))
-    return dmd
-
-_usage = '''{} ({}): Process and generate Digital Elevation Models and derivatives
-
-usage: {} [ -hvAIER [ args ] ] module[:option1:option2] ...
-
-Modules:
-  {}
-
-Options:
-  -R, --region\t\tSpecifies the desired region;
-\t\t\tThis can either be a GMT-style region ( -R xmin/xmax/ymin/ymax )
-\t\t\tor an OGR-compatible vector file with regional polygons. 
-\t\t\tIf a vector file is supplied it will search each region found therein.
-  -I, --datalsit\tThe input datalist.
-  -E, --increment\tThe desired cell-size in native units.
-  -P, --prefix\t\tThe output naming prefix.
-  -O, --output-name\tThe output basename.
-
-  -r\t\t\tuse grid-node registration, default is pixel-node
-
-  --help\t\tPrint the usage text
-  --version\t\tPrint the version information
-  --verbose\t\tIncrease the verbosity
-
- Examples:
- % {} -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 gmt-surface
- % {} --datalist input.datalist --increment 0.000277777 --region input_tiles_ply.shp mbgrid spatial-metadata
- % {} -R-82.5/-82.25/26.75/27 -E0.0000925 conversion-grid:navd88:mhw:3 -P ncei -r
-
-CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
-'''.format( os.path.basename(sys.argv[0]), 
-            _version, 
-            os.path.basename(sys.argv[0]), 
-            '\n  '.join(dem_mod_desc(_dem_mods)),
-            os.path.basename(sys.argv[0]), 
-            os.path.basename(sys.argv[0]), 
-            os.path.basename(sys.argv[0]))
 
 ## =============================================================================
 ##
@@ -243,9 +174,9 @@ def dem_interpolation_uncertainty(dem_surface):
 ## =============================================================================
 
 class cudem(threading.Thread):
-    def __init__(self, idatalist, iregion, iinc = '0.000277777', oname = None, obname = None, callback = lambda: False, verbose = False):
-        '''run a number of modules for DEM generation and analysis'''
+    '''Run a number of modules for DEM generation and analysis'''
 
+    def __init__(self, idatalist, iregion, iinc = '0.000277777', oname = None, obname = None, callback = lambda: False, verbose = False):
         threading.Thread.__init__(self)
 
         self.status = 0
@@ -280,35 +211,24 @@ class cudem(threading.Thread):
         else: self._module(*self._module_args)
 
     def _valid_p(self):
-        '''make sure all files referenced in dec dict exist'''
-
         for key in self.dem:
             if not os.path.exists(self.dem[key]):
                 return(False)
         return(True)
 
     def _rectify(self):
-        '''reove keys from the dem dictionary if their references
-        don't exist'''
- 
         for key in self.dem:
             if not os.path.exists(self.dem[key]):
                 del self.dem[key]
                 
     def _set_dem(self, key, value):
-        '''Set a key/value in the dem dictionary'''
-
         self.dem[key] = value
 
     def _print_dem(self):
-        '''Print out the key/value pairs from the dem dictionary'''
-
         for key in self.dem:
             print(key, self.dem[key])
 
     def _dem_remove(self, key):
-        '''Remove file associated with key in the dem dictionary'''
-
         try: 
             os.remove(self.dem[key])
             return(0)
@@ -420,9 +340,6 @@ class cudem(threading.Thread):
     def num(self):
         '''Generate a num and num-msk grid with GMT'''
 
-        #num_cmd0 = ('cat {} | gmt xyz2grd -V {} -I{} -r -G{}_num.grd -An\
-        #'.format(self.datalist._echo_datafiles(' '), self.dist_region.gmt, self.inc, self.oname))
-
         if self.node == 'pixel':
             num_cmd0 = ('gmt xyz2grd -V {} -I{:.7f} -r -G{}_num.grd -An\
             '.format(self.dist_region.gmt, self.inc, self.oname))
@@ -468,10 +385,6 @@ class cudem(threading.Thread):
     def masked_surface(self, mask = None):
         '''Generate a masked surface with GMT surface and a breakline mask polygon'''
 
-        ## GMT GRDLANDMASK FOR COASTLINE WHEN COASTLINE IS NONE
-        ## OR GRID ALL DATA AND EXTRACT ZERO LINE AS BEST WE CAN
-        ## TRY SURFACE -D OPTION FOR BREAKLINE DATA
-
         if self.node == 'pixel':
             dem_landmask_cmd = ('gmt grdlandmask -Gtmp_lm.grd -I{:.7f} {} -Df+ -V -r -N1/0\
             '.format(self.inc, self.proc_region.gmt))
@@ -514,8 +427,6 @@ class cudem(threading.Thread):
                 if os.path.exists('{}_p_bathy.grd'.format(self.oname)):
                     os.remove('{}_p_bathy.grd'.format(self.oname))
 
-                ## DUMP TO XYZ AND ADD TO DATALIST
-
                 xyz_dir = os.path.join(os.getcwd(), 'xyz')
         
                 if not os.path.exists(xyz_dir):
@@ -544,9 +455,6 @@ class cudem(threading.Thread):
 
     def surface(self):
         '''Generate a DEM with GMT surface'''
-
-        #dem_cmd = ('cat {} | gmt blockmean {} -I{} -r -V | gmt surface -V {} -I{} -G{}_p.grd -T.35 -Z1.2 -r -Lud -Lld\
-        #'.format(self.datalist._echo_datafiles(' '), self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, self.oname))
 
         if self.node == 'pixel':
             dem_surf_cmd = ('gmt blockmean {} -I{:.7f} -r -V | gmt surface -V {} -I{:.7f} -G{}_p.grd -T.35 -Z1.2 -r -Lud -Lld\
@@ -834,17 +742,69 @@ class cudem(threading.Thread):
 ##
 ## Run cudem.py from command-line
 ##
+## DEM Modules are
+## { mod-name: [module-function, module-description, module-function arguments]}
+##
 ## =============================================================================
 
-def main():
+_dem_mods = { 
+    'mbgrid': [lambda x: x.mbgrid, 'generate a DEM with mbgrid', 'None'],
+    'gmt-surface': [lambda x: x.surface, 'generate a DEM with GMT', 'None'],
+    'spatial-metadata': [lambda x: x.spatial_metadata, 'generate spatial-metadata', 'epsg'],
+    'conversion-grid': [lambda x: x.conversion_grid, 'generate a conversion grid with vdatum', 'ivert:overt:region'],
+    'bathy-surface': [lambda x: x.masked_surface, 'generate a bathymetry surface with GMT', 'coastline']
+}
 
+def dem_mod_desc(x):
+    dmd = []
+    for key in x: 
+        dmd.append('{:16}\t{} [{}]'.format(key, x[key][1], x[key][2]))
+    return dmd
+
+_usage = '''{} ({}): Process and generate Digital Elevation Models and derivatives
+
+usage: {} [ -hvAIER [ args ] ] module[:option1:option2] ...
+
+Modules:
+  {}
+
+Options:
+  -R, --region\t\tSpecifies the desired region;
+\t\t\tThis can either be a GMT-style region ( -R xmin/xmax/ymin/ymax )
+\t\t\tor an OGR-compatible vector file with regional polygons. 
+\t\t\tIf a vector file is supplied it will search each region found therein.
+  -I, --datalsit\tThe input datalist.
+  -E, --increment\tThe desired cell-size in native units.
+  -P, --prefix\t\tThe output naming prefix.
+  -O, --output-name\tThe output basename.
+
+  -r\t\t\tuse grid-node registration, default is pixel-node
+
+  --help\t\tPrint the usage text
+  --version\t\tPrint the version information
+  --verbose\t\tIncrease the verbosity
+
+ Examples:
+ % {} -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 gmt-surface
+ % {} --datalist input.datalist --increment 0.000277777 --region input_tiles_ply.shp mbgrid spatial-metadata
+ % {} -R-82.5/-82.25/26.75/27 -E0.0000925 conversion-grid:navd88:mhw:3 -P ncei -r
+
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
+'''.format( os.path.basename(sys.argv[0]), 
+            _version, 
+            os.path.basename(sys.argv[0]), 
+            '\n  '.join(dem_mod_desc(_dem_mods)),
+            os.path.basename(sys.argv[0]), 
+            os.path.basename(sys.argv[0]), 
+            os.path.basename(sys.argv[0]))
+
+def main():
+    status = 0
     iregion = None
     idatalist = None
     igrid = None
     iinc = '0.000277777'
-    status = 0
     these_regions = []
-    do_unc = False
     stop_threads = False
     want_verbose = False
     mod_opts = {}

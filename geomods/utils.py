@@ -124,13 +124,6 @@ def run_cmd(cmd, verbose = False, prog = None):
             if p.poll() is not None:
                 break
 
-    # if verbose:
-    #     _progress()._clear_stderr()
-    #     for line in iter(p.stderr.readline, ''):
-    #         sys.stderr.write(line)
-    #         #l = p.stderr.readline()
-    #         #if l: sys.stderr.write(l)
-
     out, err = p.communicate()
 
     if verbose:
@@ -138,10 +131,6 @@ def run_cmd(cmd, verbose = False, prog = None):
         sys.stdout.write(out)
         sys.stderr.write(err)
 
-    # if verbose:
-    #     _progress()._clear_stderr()
-    #     sys.stderr.write(err)
-    #     p.stderr.close()
     if prog is not None:
         prog.end(p.returncode)
 
@@ -155,11 +144,10 @@ def run_cmd(cmd, verbose = False, prog = None):
 ## =============================================================================
 
 class vdatum:
-    def __init__(self, vdatum_path = None, verbose = False):
-        '''vdatum object to communicate with NOAA's VDatum'''
+    '''vdatum object to communicate with NOAA's VDatum'''
 
+    def __init__(self, vdatum_path = None, verbose = False):
         self.verbose = verbose
-        
         if vdatum_path is None:
 
             co = ConfigParser.ConfigParser()
@@ -190,13 +178,11 @@ class vdatum:
         self.ds_dir = 'result'
 
     def _get_version(self):
-        #if len(self.vdatum_paths) > 0:
         if self.vdatum_path is not None:
             self._version = None
             out, status = run_cmd('java -jar {} {}'.format(self.vdatum_path, '-'))
             for i in out.split('\n'):
                 if '- v' in i.strip():
-                    #print i.strip().split('v')[-1]
                     self._version = i.strip().split('v')[-1]
                     break
 
@@ -227,7 +213,6 @@ class vdatum:
         else: pb = None
         
         vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},0,1,2:{}:{} region:{}'.format(self.ihorz, self.ivert, self.ohorz, self.overt, self.fd, src_fn, self.ds_dir, self.region)
-        #out, status = run_cmd('java -jar {} {}'.format(self.vdatum_paths[0], vdc), False, 'transforming data with vdatum')
         out, status = run_cmd('java -jar {} {}'.format(self.vdatum_path, vdc), False, pb)
 
         return status
