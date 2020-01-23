@@ -1,4 +1,25 @@
 #!/usr/bin/env python
+### gdalfun.py
+##
+## Copyright (c) 2012 - 2020 CIRES Coastal DEM Team
+##
+## Permission is hereby granted, free of charge, to any person obtaining a copy 
+## of this software and associated documentation files (the "Software"), to deal 
+## in the Software without restriction, including without limitation the rights 
+## to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies 
+## of the Software, and to permit persons to whom the Software is furnished to do so, 
+## subject to the following conditions:
+##
+## The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+##
+## THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, 
+## INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR 
+## PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE 
+## FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, 
+## ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+##
+### Code:
+
 import os
 import sys
 import numpy as np
@@ -9,13 +30,13 @@ from gdalconst import *
 from osgeo import osr
 from osgeo import gdal
 
-_version = "0.0.5"
+_version = '0.0.5'
 
-_license = """
-version %s
-    """ %(_version)
+_license = '''
+version {}
+    '''.format(_version)
 
-_usage = """
+_usage = '''smooth_dem_bathy.py ({}): smooth the bathymetry in a DEM
 smooth_dem_bathy.py: A script that smooths the bathy areas of DEM (below 0) and merges back with original, unsmoothed topo.
 
 usage: smooth_dem_bathy.py [ si [ args ] ] [ file ]
@@ -30,9 +51,7 @@ Options:
 
 Example:
 smooth_dem_bathy.py input.tif -s 12
-
-smooth_dem_bathy.py v.%s 
-""" %(_version)
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version)
 
 def open_file_list(in_list, smooth_factor):
     il = open(in_list, 'r')
@@ -42,6 +61,8 @@ def open_file_list(in_list, smooth_factor):
     il.close()
 
 def gaussian_blur(in_array, size):
+    '''blur an array'''
+    
     # expand in_array to fit edge of kernel
     padded_array = np.pad(in_array, size, 'symmetric')
     # build kernel
@@ -61,6 +82,8 @@ def gaussian_blur(in_array, size):
 
 # Function to read the original file's projection:
 def GetGeoInfo(FileName):
+    '''get some info from the input gdal file'''
+    
     SourceDS = gdal.Open(FileName, GA_ReadOnly)
     NDV = SourceDS.GetRasterBand(1).GetNoDataValue()
     xsize = SourceDS.RasterXSize
@@ -75,6 +98,8 @@ def GetGeoInfo(FileName):
 # Function to write a new file.
 def CreateGeoTiff(Name, Array, driver,
                   xsize, ysize, GeoT, Projection, DataType, NDV):
+    '''create a geotiff'''
+    
     # if DataType == 'Float32':
     #     DataType = gdal.GDT_Float32
     NewFileName = Name+'.tif'
@@ -99,6 +124,8 @@ def CreateGeoTiff(Name, Array, driver,
     return NewFileName
 
 def proc_elev(elev, smooth_factor):
+    '''process the elev array'''
+    
     if not os.path.exists(elev):
         print("Error: %s is not a valid file" %(elev))
     else:
@@ -194,3 +221,5 @@ if __name__ == '__main__':
 
     if in_list: open_file_list(in_list, smooth_factor)
     else: proc_elev(elev, smooth_factor)
+
+### End
