@@ -575,14 +575,20 @@ class cudem(threading.Thread):
             else: lu_switch = '-Lu0'
 
             if self.node == 'pixel':
-                gc = 'gmt blockmean result/empty.xyz -V -I{} {} | gmt surface -I{} {} -G{}_{}to{}.tif=gd:GTiff -V -r -T0 {} {}\
-                '.format(self.inc, self.dist_region.gmt, self.inc, self.dist_region.gmt, self.oname, this_vd.ivert, this_vd.overt, ll_switch, lu_switch)
+                gc = 'gmt blockmean result/empty.xyz -V -I{} {} \
+                | gmt surface -I{} {} -G{}_{}to{}.tif=gd:GTiff -V -r -T0 {} {}\
+                '.format(self.inc, self.dist_region.gmt, self.inc, self.dist_region.gmt,
+                         self.oname, this_vd.ivert,
+                         this_vd.overt, ll_switch, lu_switch)
             else:
-                gc = 'gmt blockmean result/empty.xyz -V -I{} {} | gmt surface -I{} {} -G{}_{}to{}.tif=gd:GTiff -V -T0 {} {}\
-                '.format(self.inc, self.dist_region.gmt, self.inc, self.dist_region.gmt, self.oname, this_vd.ivert, this_vd.overt, ll_switch, lu_switch)
+                gc = 'gmt blockmean result/empty.xyz -V -I{} {} \
+                | gmt surface -I{} {} -G{}_{}to{}.tif=gd:GTiff -V -T0 {} {}\
+                '.format(self.inc, self.dist_region.gmt, self.inc, self.dist_region.gmt,
+                         self.oname, this_vd.ivert, this_vd.overt, ll_switch, lu_switch)
             utils.run_cmd(gc, self.verbose, 'generating conversion grid')
 
-            self.dem['{}to{}'.format(this_vd.ivert, this_vd.overt)] = '{}_{}to{}.tif'.format(self.oname, this_vd.ivert, this_vd.overt)
+            dem_name = '{}to{}'.format(this_vd.ivert, this_vd.overt)
+            self.dem[dem_name] = dem_name
         else: self.status = -1
 
         ## ==============================================
@@ -605,8 +611,10 @@ class cudem(threading.Thread):
         ## starting at position 3 (from 0)
         ## ==============================================
 
-        v_fields = ['Name', 'Agency', 'Date', 'Type', 'Resolution', 'HDatum', 'VDatum', 'URL']
-        t_fields = [ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString]
+        v_fields = ['Name', 'Agency', 'Date', 'Type',
+                    'Resolution', 'HDatum', 'VDatum', 'URL']
+        t_fields = [ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString,
+                    ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString]
     
         dst_vec = '{}_sm.shp'.format(self.oname, self.region.fn)
         dst_layername = os.path.basename(dst_vec).split('.')[0]
@@ -898,16 +906,19 @@ def main():
     pb = utils._progress('checking for GMT...')
     if utils.cmd_exists('gmt'): 
         gmt_vers, status = utils.run_cmd('gmt --version')
+        pb.opm = 'checking for GMT...{}'.format(gmt_vers.rstrip())
     else: status = -1
-    pb.opm = 'checking for GMT...{}'.format(gmt_vers.rstrip())
     pb.end(status)
 
     pb = utils._progress('checking for MBSystem...')
     if utils.cmd_exists('mbgrid'): 
         mbs_vers, status = utils.run_cmd('mbgrid -version')
-        mbs_vers = mbs_vers.split('\n')[3].rstrip().split()[2]
+        try:
+            mbs_vers = mbs_vers.split('\n')[3].rstrip().split()[2]
+        except:
+            mbs_vers = mbs_vers.split('\n')[2].rstrip().split()[2]
+        pb.opm = 'checking for MBSystem...{}'.format(mbs_vers)
     else: status = -1
-    pb.opm = 'checking for MBSystem...{}'.format(mbs_vers)
     pb.end(status)
 
     pb = utils._progress('checking for GDAL command-line')
@@ -950,6 +961,9 @@ def main():
         ## Load the input datalist
         ## ==============================================
 
+        if stop_threads:
+            break
+        
         if idatalist is not None:
             pb = utils._progress('loading datalist...')
             this_datalist = datalists.datalist(idatalist, this_region)
@@ -968,7 +982,13 @@ def main():
         ## Initialize the DEM CLASS
         ## ==============================================
 
-        this_surf = cudem(this_datalist, this_region, iinc, callback = lambda: stop_threads, oname = o_pre, obname = o_bn, verbose = want_verbose)        
+        this_surf = cudem(this_datalist,
+                          this_region,
+                          iinc,
+                          callback = lambda: stop_threads,
+                          oname = o_pre,
+                          obname = o_bn,
+                          verbose = want_verbose)        
         this_surf.node = node_reg
 
         for dem_mod in mod_opts.keys():
