@@ -146,6 +146,10 @@ def _prj_file(dst_fn, epsg):
 ##
 ## GDAL Functions for external use
 ##
+## TODO: Allow for specified output format
+##       Allow for export to XYZ
+##       Allow for return of chunks list
+##
 ## =============================================================================
 
 def chunks(src_fn, n_chunk = 10):
@@ -201,20 +205,20 @@ def chunks(src_fn, n_chunk = 10):
 
             for band in bands:
                 band_data = band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])    
-                
-                dst_fn = '{}_chnk{}x{}.tif'.format(src_fn.split('.')[0], x_i_chunk, i_chunk)
-                
-                o_chunks.append(dst_fn)
+                if not np.all(band_data == band_data[0,:]):
+                    dst_fn = '{}_chnk{}x{}.tif'.format(src_fn.split('.')[0], x_i_chunk, i_chunk)
 
-                ods = gdal.GetDriverByName('GTiff').Create(dst_fn,
-                                                           this_x_size,
-                                                           this_y_size,
-                                                           1,
-                                                           ds_config['dt'])
-                ods.SetGeoTransform(dst_gt)
-                ods.SetProjection(ds_config['proj'])
-                ods.GetRasterBand(1).SetNoDataValue(ds_config['ndv'])
-                ods.GetRasterBand(1).WriteArray(band_data)
+                    o_chunks.append(dst_fn)
+
+                    ods = gdal.GetDriverByName('GTiff').Create(dst_fn,
+                                                               this_x_size,
+                                                               this_y_size,
+                                                               1,
+                                                               ds_config['dt'])
+                    ods.SetGeoTransform(dst_gt)
+                    ods.SetProjection(ds_config['proj'])
+                    ods.GetRasterBand(1).SetNoDataValue(ds_config['ndv'])
+                    ods.GetRasterBand(1).WriteArray(band_data)
 
             if y_chunk > ds_config['ny']:
                 break
@@ -504,6 +508,59 @@ def query(src_xyz, src_grd, out_form):
     dsband = ds = None
 
     return(np.array(xyzl, dtype = dsdt))
+
+def scan(src_gdal, fail_if_nodata = False):
+    '''Dump `src_gdal` GDAL file to ASCII XYZ
+    Function taken from GDAL's `gdal2xyz.py` script.'''
+
+    status = 0
+    band_nums = []
+    srcwin = None
+    skip = 1
+    
+    if band_nums == []: band_nums = [1]
+
+    srcds = gdal.Open(src_gdal)
+
+    if srcds is None:
+        status = -1
+        return(status)
+
+    bands = []
+    for band_num in band_nums: 
+        band = srcds.GetRasterBand(band_num)
+        if band is None:
+            status = -1
+            return(status)
+        bands.append(band)
+
+    gt = srcds.GetGeoTransform()
+  
+    if srcwin is None:
+        srcwin = (0,0,srcds.RasterXSize,srcds.RasterYSize)
+
+    for y in range(srcwin[1], srcwin[1] + srcwin[3], skip):
+
+        nodata = ['-9999', 'nan']
+        data = []
+        for band in bands:
+            if band.GetNoDataValue() is not None:
+                nodata.append(band_format % band.GetNoDataValue())
+            band_data = band.ReadAsArray(srcwin[0], y, srcwin[2], 1)    
+            band_data = np.reshape(band_data, (srcwin[2], ))
+            data.append(band_data)
+
+        for x_i in range(0, srcwin[2], skip):
+            x = x_i + srcwin[0]
+
+            # geo_x = gt[0] + (x + 0.5) * gt[1] + (y + 0.5) * gt[2]
+            # geo_y = gt[3] + (x + 0.5) * gt[4] + (y + 0.5) * gt[5]
+            
+            # x_i_data = []
+            # for i in range(len(bands)):
+            #     x_i_data.append(data[i][x_i])
+            
+    srcds = None
 
 def transform(src_gdal):
     ##Getting spatial reference of input raster

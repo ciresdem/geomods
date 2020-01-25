@@ -280,7 +280,8 @@ class proc(threading.Thread):
                 self.status = self.this_vd.run_vdatum(os.path.relpath(self.o_fn_tmp))
 
                 if self.status == 0 and os.path.exists(os.path.join(self.xyz_dir, 'result', os.path.basename(self.o_fn_tmp))): 
-                    os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(self.o_fn_tmp)), self.o_fn_xyz)
+                    os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(self.o_fn_tmp)),
+                              self.o_fn_xyz)
             else: os.rename(self.o_fn_tmp, self.o_fn_xyz)
             os.remove(self.o_fn_tmp)
 
@@ -305,19 +306,22 @@ class proc(threading.Thread):
         s_xyz = s_gz.split('.')[0] + '.xyz'
 
         if status == 0 and not self.stop():
-            out_chunks = gdalfun.chunks(s_bag, 1000)
+            out_chunks = gdalfun.chunks(s_bag, 5000)
 
             if s_gz.split('.')[-1] == 'gz':
                 os.remove(s_bag)
 
-            for i in out_chunks:
+            ## CHUNKS OVERWRITE EACH OTHER IN DIFF REGIONS; APPEND REGION FN
+            for chunk in out_chunks:
                 if not self.stop():
-                    i_xyz = i.split('.')[0] + '.xyz'
-                    i_tif = i.split('.')[0] + '_wgs.tif'
+                    #i_xyz = chunk.split('.')[0] + '.xyz'
+                    i_xyz = '{}_{}.xyz'.format(chunk.split('.')[0], self.s_region.fn)
+                    i_tif = chunk.split('.')[0] + '_wgs.tif'
                     o_xyz = os.path.join(self.xyz_dir, os.path.basename(i_xyz).lower())
                     o_tif = os.path.join(self.xyz_dir, os.path.basename(i_xyz).lower())
 
-                    out, status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(i, i_tif), False, None)
+                    out, status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(chunk, i_tif),
+                                                False, None)
 
                     gdalfun.dump(i_tif, i_xyz)
                     os.remove(i_tif)
@@ -328,16 +332,18 @@ class proc(threading.Thread):
                         if self.this_vd.vdatum_path is not None:
                             self.this_vd.ivert = 'mllw'
                             self.this_vd.overt = 'navd88'
-                            self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir, 'result'))
+                            self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir,
+                                                                               'result'))
 
                             self.this_vd.run_vdatum(os.path.relpath(i_xyz))
 
-                            os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(i_xyz)), o_xyz)
+                            os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(i_xyz)),
+                                      o_xyz)
                             os.remove(i_xyz)
                         else: os.rename(i_xyz, o_xyz)
                         self.xyzs.append(o_xyz)
 
-                os.remove(i)
+                os.remove(chunk)
 
     def _proc_dc_las(self):
         out, self.status = utils.run_cmd('las2txt -verbose -parse xyz -keep_class 2 29 -i {}'.format(self.o_fn), False, None)
@@ -518,7 +524,8 @@ def update_ref_vector(src_vec, surveys, update=True):
 class dc(threading.Thread):
     '''Fetch elevation data from the Digital Coast'''
 
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
+    def __init__(self, extent = None, filters = [],
+                 want_list = False, want_update = False, callback = None):
         threading.Thread.__init__(self)
 
         self._dc_htdata_url = 'https://coast.noaa.gov/htdata/'
@@ -602,7 +609,8 @@ class dc(threading.Thread):
 
                             for tile in dc_csv:
                                 if len(tile) > 3:
-                                    tb = [float(tile[1]), float(tile[2]), float(tile[3]), float(tile[4])]
+                                    tb = [float(tile[1]), float(tile[2]),
+                                          float(tile[3]), float(tile[4])]
                                     tile_geom = bounds2geom(tb)
                                     if tile_geom.Intersects(self._boundsGeom):
                                         self._results.append(os.path.join(surv_url, tile[0]))
@@ -615,7 +623,8 @@ class dc(threading.Thread):
                             ## ==============================================
 
                             sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
-                            fetch_file(surv_url + sshpz, os.path.join('.', sshpz), callback = self.stop)
+                            fetch_file(surv_url + sshpz, os.path.join('.', sshpz),
+                                       callback = self.stop)
 
                             zip_ref = zipfile.ZipFile(sshpz)
                             zip_ref.extractall('dc_tile_index')
@@ -694,12 +703,17 @@ class dc(threading.Thread):
                         if 'Metadata' in dc.keys():
                             xml_doc = fetch_nos_xml(dc['Metadata'])
 
-                            wl = xml_doc.find('.//gmd:westBoundLongitude/gco:Decimal', namespaces = namespaces)
-                            el = xml_doc.find('.//gmd:eastBoundLongitude/gco:Decimal', namespaces = namespaces)
-                            sl = xml_doc.find('.//gmd:southBoundLatitude/gco:Decimal', namespaces = namespaces)
-                            nl = xml_doc.find('.//gmd:northBoundLatitude/gco:Decimal', namespaces = namespaces)
+                            wl = xml_doc.find('.//gmd:westBoundLongitude/gco:Decimal',
+                                              namespaces = namespaces)
+                            el = xml_doc.find('.//gmd:eastBoundLongitude/gco:Decimal',
+                                              namespaces = namespaces)
+                            sl = xml_doc.find('.//gmd:southBoundLatitude/gco:Decimal',
+                                              namespaces = namespaces)
+                            nl = xml_doc.find('.//gmd:northBoundLatitude/gco:Decimal',
+                                              namespaces = namespaces)
                             if wl is not None:
-                                obbox = bounds2geom([float(wl.text), float(el.text), float(sl.text), float(nl.text)])
+                                obbox = bounds2geom([float(wl.text), float(el.text),
+                                                     float(sl.text), float(nl.text)])
 
                                 try: 
                                     odate = int(dc['Year'][:4])
@@ -887,8 +901,10 @@ class nos(threading.Thread):
         ## Get all the data URLs
         ## ==============================================
 
-        dfs = xml_doc.findall('.//gmd:MD_Format/gmd:name/gco:CharacterString', namespaces = namespaces)
-        dus = xml_doc.findall('.//gmd:onLine/gmd:CI_OnlineResource/gmd:linkage/gmd:URL', namespaces = namespaces)
+        dfs = xml_doc.findall('.//gmd:MD_Format/gmd:name/gco:CharacterString',
+                              namespaces = namespaces)
+        dus = xml_doc.findall('.//gmd:onLine/gmd:CI_OnlineResource/gmd:linkage/gmd:URL',
+                              namespaces = namespaces)
         if dus is not None:
             for i,j in enumerate(dus):
                 if dfs is not None:
@@ -1389,8 +1405,8 @@ class usace(threading.Thread):
 
     def fetch_results(self):
         for feature in self._survey_list['features']:
-            self._status = fetch_file(feature['attributes']['SOURCEDATALOCATION'], \
-                                      os.path.join(self._outdir, os.path.basename(feature['attributes']['SOURCEDATALOCATION'])), 
+            fetch_fn = feature['attributes']['SOURCEDATALOCATION']
+            self._status = fetch_file(fetch_fn, os.path.join(self._outdir, fetch_fn),
                                       callback = self.stop)
 
 ## =============================================================================
@@ -1404,7 +1420,8 @@ class usace(threading.Thread):
 class gmrt(threading.Thread):
     '''Fetch raster data from the GMRT'''
 
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
+    def __init__(self, extent = None, filters = [],
+                 want_list = False, want_update = False, callback = None):
         threading.Thread.__init__(self)
 
         self._gmrt_grid_url = "https://www.gmrt.org/services/GridServer?"
@@ -1454,7 +1471,10 @@ class gmrt(threading.Thread):
 
         if self._results is not None:
             gmrt_fn = self._results.headers['content-disposition'].split('=')[1].strip()
-            outf = os.path.join(self._outdir, '{}_{}.{}'.format(gmrt_fn.split('.')[0], self.region.fn, gmrt_fn.split('.')[1]))
+            outf = os.path.join(self._outdir,
+                                '{}_{}.{}'.format(gmrt_fn.split('.')[0],
+                                                  self.region.fn,
+                                                  gmrt_fn.split('.')[1]))
         
             if not os.path.exists(os.path.dirname(outf)):
                 os.makedirs(os.path.dirname(outf))
@@ -1470,7 +1490,9 @@ class gmrt(threading.Thread):
             proc_q = queue.Queue()
 
             gmrt_fn = self._results.headers['content-disposition'].split('=')[1].strip()
-            outf = os.path.join(self._outdir, '{}_{}.{}'.format(gmrt_fn.split('.')[0], self.region.fn, gmrt_fn.split('.')[1]))
+            outf = os.path.join(self._outdir,
+                                '{}_{}.{}'.format(gmrt_fn.split('.')[0],
+                                                  self.region.fn, gmrt_fn.split('.')[1]))
 
             surv_dir = self._outdir
             surv_fn = os.path.basename(outf)
@@ -1494,7 +1516,8 @@ class gmrt(threading.Thread):
 class srtm_cgiar(threading.Thread):
     '''Fetch SRTM data from CGIAR'''
 
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
+    def __init__(self, extent = None, filters = [],
+                 want_list = False, want_update = False, callback = None):
         threading.Thread.__init__(self)
 
         self._srtm_url = 'http://srtm.csi.cgiar.org'
@@ -1546,7 +1569,9 @@ class srtm_cgiar(threading.Thread):
 
     def fetch_results(self):
         for row in self._results:
-            self._status = fetch_file('{}{}'.format(self._srtm_dl_url, row), os.path.join(self._outdir, os.path.basename(row)), callback = self.stop)
+            self._status = fetch_file('{}{}'.format(self._srtm_dl_url, row),
+                                      os.path.join(self._outdir, os.path.basename(row)),
+                                      callback = self.stop)
 
 ## =============================================================================
 ##
@@ -1559,7 +1584,8 @@ class srtm_cgiar(threading.Thread):
 class ngs(threading.Thread):
     '''Fetch NGS monuments from NGS'''
 
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
+    def __init__(self, extent = None, filters = [],
+                 want_list = False, want_update = False, callback = None):
         threading.Thread.__init__(self)
 
         self._ngs_search_url = 'http://geodesy.noaa.gov/api/nde/bounds?'
@@ -1602,7 +1628,8 @@ class ngs(threading.Thread):
                 if not os.path.exists(self._outdir):
                     os.makedirs(self._outdir)
 
-                outfile = open(os.path.join(self._outdir, 'ngs_results_{}.csv'.format(self.region.fn)), 'w')
+                outfile = open(os.path.join(self._outdir,
+                                            'ngs_results_{}.csv'.format(self.region.fn)), 'w')
             
                 outcsv = csv.writer(outfile)
                 outcsv.writerow(r[0].keys())
@@ -1753,7 +1780,11 @@ def main():
         tw = utils._progress('checking for MBSystem')
         if utils.cmd_exists('mbgrid'): 
             mbs_vers, status = utils.run_cmd('mbgrid -version')
-            tw.opm = 'checking for MBSystem - {}'.format(mbs_vers.split('\n')[3].rstrip().split()[2])
+            try:
+                mbs_vers = mbs_vers.split('\n')[3].rstrip().split()[2]
+            except:
+                mbs_vers = mbs_vers.split('\n')[2].rstrip().split()[2]
+            tw.opm = 'checking for MBSystem - {}'.format(mbs_vers)
         else: status = -1
         tw.end(status)
 
@@ -1814,7 +1845,8 @@ def main():
                 pb = utils._progress('fetching {} region ({}/{}): {}\
                 '.format(fc, rn + 1, len(these_regions), this_region.region_string))
                 
-                fl = fetch_infos[fc][0](this_region.buffer(5, percentage = True), f, want_list, want_update, lambda: stop_threads)
+                fl = fetch_infos[fc][0](this_region.buffer(5, percentage = True),
+                                        f, want_list, want_update, lambda: stop_threads)
                 fl._want_proc = want_proc
                 
                 try:
