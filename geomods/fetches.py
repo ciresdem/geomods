@@ -739,74 +739,78 @@ class dc:
         ## ==============================================
 
         for feature1 in layer:
-            if not self.stop():
-                geom = feature1.GetGeometryRef()
-                if self._boundsGeom.Intersects(geom):
-                    surv_url = feature1.GetField('Data')
-                    surv_dt = feature1.GetField('Datatype')
-                    suh = fetch_html(surv_url)
-                    if suh is None: self._status = -1
+            if self.stop() or self._status != 0:
+                break
 
-                    if self._status == 0:
-                        if 'lidar' in surv_dt:
+            geom = feature1.GetGeometryRef()
+            if self._boundsGeom.Intersects(geom):
+                surv_url = feature1.GetField('Data')
+                surv_dt = feature1.GetField('Datatype')
+                suh = fetch_html(surv_url)
+                if suh is None: 
+                    self._status = -1
+                    break
 
-                            ## ==============================================
-                            ## Lidar data has a minmax.csv file to get extent
-                            ## for each survey file.
-                            ## ==============================================
+                #if self._status == 0:
+                if 'lidar' in surv_dt:
 
-                            scsv = suh.xpath('//a[contains(@href, ".csv")]/@href')[0]
-                            dc_csv = fetch_csv(surv_url + scsv)
-                            next(dc_csv, None)
+                    ## ==============================================
+                    ## Lidar data has a minmax.csv file to get extent
+                    ## for each survey file.
+                    ## ==============================================
 
-                            for tile in dc_csv:
-                                if len(tile) > 3:
-                                    tb = [float(tile[1]), float(tile[2]),
-                                          float(tile[3]), float(tile[4])]
-                                    tile_geom = bounds2geom(tb)
-                                    if tile_geom.Intersects(self._boundsGeom):
-                                        self._results.append(os.path.join(surv_url, tile[0]))
+                    scsv = suh.xpath('//a[contains(@href, ".csv")]/@href')[0]
+                    dc_csv = fetch_csv(surv_url + scsv)
+                    next(dc_csv, None)
 
-                        elif 'raster' in surv_dt:
-                            
-                            ## ==============================================
-                            ## Raster data has a tileindex shapefile 
-                            ## to get extent
-                            ## ==============================================
+                    for tile in dc_csv:
+                        if len(tile) > 3:
+                            tb = [float(tile[1]), float(tile[2]),
+                                  float(tile[3]), float(tile[4])]
+                            tile_geom = bounds2geom(tb)
+                            if tile_geom.Intersects(self._boundsGeom):
+                                self._results.append([os.path.join(surv_url, tile[0]), tile[0]])
 
-                            sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
-                            fetch_file(surv_url + sshpz, os.path.join('.', sshpz),
-                                       callback = self.stop)
+                elif 'raster' in surv_dt:
 
-                            zip_ref = zipfile.ZipFile(sshpz)
-                            zip_ref.extractall('dc_tile_index')
-                            zip_ref.close()
+                    ## ==============================================
+                    ## Raster data has a tileindex shapefile 
+                    ## to get extent
+                    ## ==============================================
 
-                            if os.path.exists('dc_tile_index'):
-                                ti = os.listdir('dc_tile_index')
+                    sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
+                    fetch_file(surv_url + sshpz, os.path.join('.', sshpz),
+                               callback = self.stop)
 
-                            ts = None
-                            for i in ti:
-                                if ".shp" in i:
-                                    ts = os.path.join('dc_tile_index/', i)
+                    zip_ref = zipfile.ZipFile(sshpz)
+                    zip_ref.extractall('dc_tile_index')
+                    zip_ref.close()
 
-                            if ts is not None:
-                                shp1 = ogr.Open(ts)
-                                slay1 = shp1.GetLayer(0)
+                    if os.path.exists('dc_tile_index'):
+                        ti = os.listdir('dc_tile_index')
 
-                                for sf1 in slay1:
-                                    geom = sf1.GetGeometryRef()
+                    ts = None
+                    for i in ti:
+                        if ".shp" in i:
+                            ts = os.path.join('dc_tile_index/', i)
 
-                                    if geom.Intersects(self._boundsGeom):
-                                        tile_url = sf1.GetField('URL').strip()
-                                        self._results.append([tile_url, tile_url.split('/')[-1]])
+                    if ts is not None:
+                        shp1 = ogr.Open(ts)
+                        slay1 = shp1.GetLayer(0)
 
-                                shp1 = slay1 = None
+                        for sf1 in slay1:
+                            geom = sf1.GetGeometryRef()
 
-                            for i in ti:
-                                ts = os.remove(os.path.join('dc_tile_index/', i))
-                            os.removedirs(os.path.join('.', 'dc_tile_index'))
-                            os.remove(os.path.join('.', sshpz))
+                            if geom.Intersects(self._boundsGeom):
+                                tile_url = sf1.GetField('URL').strip()
+                                self._results.append([tile_url, tile_url.split('/')[-1]])
+
+                        shp1 = slay1 = None
+
+                    for i in ti:
+                        ts = os.remove(os.path.join('dc_tile_index/', i))
+                    os.removedirs(os.path.join('.', 'dc_tile_index'))
+                    os.remove(os.path.join('.', sshpz))
         if len(self._results) == 0: self._status = -1
         gmt1 = layer = None
 
