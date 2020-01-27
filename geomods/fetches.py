@@ -130,10 +130,8 @@ def fetch_req(src_url, params = None, tries = 5, timeout = 2):
 
     if tries <= 0: return(None)
     try:
-        return(requests.get(src_url, stream = True, params = params, 
-                            timeout = timeout, headers = r_headers))
-    except: return(fetch_req(src_url, params = params, 
-                             tries = tries - 1, timeout = timeout + 1))
+        return(requests.get(src_url, stream = True, params = params, timeout = timeout, headers = r_headers))
+    except: return(fetch_req(src_url, params = params, tries = tries - 1, timeout = timeout + 1))
 
 def fetch_nos_xml(src_url):
     '''fetch src_url and return it as an XML object'''
