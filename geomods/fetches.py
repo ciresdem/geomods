@@ -726,6 +726,7 @@ class dc:
     def search_gmt(self):
         '''Search for data in the reference vector file'''
 
+        tw = utils._progress('filtering Digital Coast reference vector...')
         gmt1 = ogr.Open(self._ref_vector)
         layer = gmt1.GetLayer(0)
 
@@ -808,6 +809,9 @@ class dc:
                             os.remove(os.path.join('.', sshpz))
         if len(self._results) == 0: self._status = -1
         gmt1 = layer = None
+
+        tw.opm = 'filtered \033[1m{}\033[m data files from Digital Coast reference vector'.format(len(self._results))
+        tw.end(self._status)
 
 ## =============================================================================
 ##
@@ -981,7 +985,7 @@ class nos:
         '''Search the NOS reference vector and append the results
         to the results list.'''
 
-        tw = utils._progress('filtering NOS reference vector')
+        tw = utils._progress('filtering NOS reference vector...')
         gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
         layer = gmt1.GetLayer()
 
@@ -998,7 +1002,7 @@ class nos:
                         self._results.append([i, i.split('/')[-1]])
 
         gmt1 = layer = None
-        tw.opm = 'filtered NOS reference vector'
+        tw.opm = 'filtered \033[1m{}\033[m data files from NOS reference vector'.format(len(self._results))
         tw.end(self._status)
 
 ## =============================================================================
@@ -1131,7 +1135,6 @@ class charts():
         '''Search for data in the reference vector file'''
 
         tw = utils._progress('filtering CHARTS reference vector...')
-
         ds = ogr.Open(self._ref_vector)
         layer = ds.GetLayer(0)
 
@@ -1144,7 +1147,7 @@ class charts():
                 self._results.append([feature1.GetField('Data'), feature1.GetField('Data').split('/')[-1]])
 
         ds = layer = None
-        tw.opm = 'filtered \033[1m{}\033[m surveys from CHARTS reference vector.'.format(len(self._results))
+        tw.opm = 'filtered \033[1m{}\033[m data files from CHARTS reference vector.'.format(len(self._results))
         tw.end(self._status)
 
 ## =============================================================================
@@ -1198,6 +1201,7 @@ class srtm_cgiar:
     ## ==============================================
 
     def search_gmt(self):
+        tw = utils._progress('filtering SRTM reference vector...')
         gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
         layer = gmt1.GetLayer()
 
@@ -1213,6 +1217,9 @@ class srtm_cgiar:
                 srtm_lat = int(math.ceil(abs((60 - geo_env[3]) / 5)))
                 out_srtm = 'srtm_{:02}_{:02}.zip'.format(srtm_lon, srtm_lat)
                 self._results.append(['{}{}'.format(self._srtm_dl_url, out_srtm), out_srtm])
+
+        tw.opm = 'filtered \033[1m{}\033[m data files from SRTM reference vector.'.format(len(self._results))
+        tw.end(self._status)
 
 ## =============================================================================
 ##
