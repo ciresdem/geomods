@@ -271,7 +271,8 @@ class proc:
 
             if self.status == 0:
                 self._add_to_datalist()
-                os.remove(self.o_fn)
+                if os.path.exists(self.o_fn):
+                    os.remove(self.o_fn)
         else: self.status = -1
 
         pb.opm = 'processed local file: \033[1m{}\033[m'.format(self.s_fn)
@@ -328,10 +329,11 @@ class proc:
                 self.status = self.this_vd.run_vdatum(os.path.relpath(self.o_fn_tmp))
 
                 if self.status == 0 and os.path.exists(os.path.join(self.xyz_dir, 'result', os.path.basename(self.o_fn_tmp))): 
-                    os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(self.o_fn_tmp)),
-                              self.o_fn_xyz)
+                    os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(self.o_fn_tmp)), self.o_fn_xyz)
             else: os.rename(self.o_fn_tmp, self.o_fn_xyz)
-            os.remove(self.o_fn_tmp)
+
+            if os.path.exists(self.o_fn_tmp):
+                os.remove(self.o_fn_tmp)
 
             if os.path.exists(self.o_fn_xyz):
                 self.xyzs.append(self.o_fn_xyz)
