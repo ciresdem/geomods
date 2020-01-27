@@ -1719,7 +1719,8 @@ def main():
             ## Run the Fetch Module
             ## ==============================================
 
-            pb = utils._progress('running fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...'.format(fc, this_region.region_string, rn+1, len(these_regions)))
+            pb = utils._progress('running fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...\
+            '.format(fc, this_region.region_string, rn+1, len(these_regions)))
             fl = fetch_infos[fc][0](this_region.buffer(5, percentage = True), f, lambda: stop_threads)
             fl._want_update = want_update
             r = fl.run()
@@ -1745,7 +1746,8 @@ def main():
                         stop_threads = True
 
                     fr.join()
-            pb.opm = 'ran fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...'.format(fc, this_region.region_string, rn+1, len(these_regions))
+            pb.opm = 'ran fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...\
+            '.format(fc, this_region.region_string, rn+1, len(these_regions))
             pb.end(status)
 
 if __name__ == '__main__':
