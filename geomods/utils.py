@@ -230,7 +230,7 @@ class _progress:
     '''geomods minimal progress indicator'''
 
     def __init__(self, message=''):
-        self.tw = 5
+        self.tw = 7
         self.count = 0
         self.pc = self.count % self.tw
 
@@ -240,10 +240,10 @@ class _progress:
 
         self._clear_stderr()
 
-        sys.stderr.write('\r[{}] {:40}\r'.format(" " * (self.tw-1), self.opm))
+        sys.stderr.write('\r {}  {:40}\n'.format(" " * (self.tw-1), self.opm))
         sys.stderr.flush()
 
-        self.spinner = ['*   ', '**  ', '*** ', ' ***', '  **', '   *']
+        self.spinner = ['*     ', '**    ', '***   ', ' ***  ', '  *** ', '   ***', '    **', '     *']
         self.add_one = lambda x: x + 1
         self.sub_one = lambda x: x - 1
         self.spin_way = self.add_one
@@ -253,12 +253,8 @@ class _progress:
             self.spin_way = self.sub_one
         else: self.spin_way = self.add_one
 
-    def _terminal_size(self):
-        return os.popen('stty size', 'r').read().split()
-
     def _clear_stderr(self, slen = 79):
-        #sys.stderr.write('\r{}\r'.format(' ' * int(self._terminal_size()[1])))
-        sys.stderr.write('\x1b[2K')
+        sys.stderr.write('\x1b[2K\r')
         sys.stderr.flush()
 
     def update(self):
@@ -266,7 +262,7 @@ class _progress:
         self.sc = (self.count % (self.tw+1))
         self._clear_stderr()
 
-        sys.stderr.write('\r[\033[32m{:4}\033[m] {:40}\r'.format(self.spinner[self.sc], self.pm))
+        sys.stderr.write('\r[\033[36m{:6}\033[m] {:40}\r'.format(self.spinner[self.sc], self.pm))
         sys.stderr.flush()
 
         if self.count == self.tw: self.spin_way = self.sub_one
@@ -278,9 +274,9 @@ class _progress:
         self._clear_stderr()
 
         if status != 0:
-            sys.stderr.write('\r[\033[31mfail\033[m] {:40}\n'.format(self.opm))
+            sys.stderr.write('\r[\033[31m\033[1m{:^6}\033[m] {:40}\n'.format('fail', self.opm))
         else:
-            sys.stderr.write('\r[\033[32m{:^4}\033[m] {:40}\n'.format('ok', self.opm))
+            sys.stderr.write('\r[\033[32m\033[1m{:^6}\033[m] {:40}\n'.format('ok', self.opm))
 
         sys.stderr.flush()
 

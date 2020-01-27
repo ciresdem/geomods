@@ -52,7 +52,7 @@ import datalists
 import gdalfun
 import utils
 
-_version = '0.2.1'
+_version = '0.3.0'
 
 gdal.PushErrorHandler('CPLQuietErrorHandler')
 
@@ -71,16 +71,23 @@ namespaces = {'gmd': 'http://www.isotc211.org/2005/gmd',
               'gco': 'http://www.isotc211.org/2005/gco',
               'gml': 'http://www.isotc211.org/2005/gml'}
 
-def fetch_queue(q):
+def fetch_queue(q, p = None):
     '''fetch queue `q` of fetch results'''
 
     while True:
-        try:
-            fetch_args = q.get(timeout=3)
-        except queue.Empty:
-            return
+        fetch_args = q.get()
+        this_region = fetch_args[2]
+        fetch_args[2] = None
 
-        fetch_file(*tuple(fetch_args))
+        if not fetch_args[3]():
+            fetch_file(*tuple(fetch_args))
+            if p is not None:
+                outf = fetch_args[1]
+                surv_dir = os.path.dirname(outf)
+                surv_fn = os.path.basename(outf)
+                surv_t = fetch_args[0].split('/')[-2]
+                if os.path.exists(outf):
+                    p.put([[surv_dir, surv_fn, outf, surv_t, this_region], fetch_args[3]])
 
         q.task_done()
 
@@ -89,40 +96,46 @@ def fetch_file(src_url, dst_fn, params = None, callback = None):
     
     status = 0
     halt = callback
+    pb = utils._progress('\033[37mfetching remote file:\033[m \033[1m{}\033[m...'.format(os.path.basename(src_url)))
 
-    if not halt():
-        pb = utils._progress('fetching remote file: {}'.format(src_url))
+    if not os.path.exists(os.path.dirname(dst_fn)):
+        try:
+            os.makedirs(os.path.dirname(dst_fn))
+        except: pass 
 
-        if not os.path.exists(os.path.dirname(dst_fn)):
-            try:
-                os.makedirs(os.path.dirname(dst_fn))
-            except: pass 
+    req = requests.get(src_url, stream = True, params = params, headers = r_headers)
 
-        req = requests.get(src_url, stream = True, params = params, headers = r_headers)
-
-        if req:
-            status = 0
-            with open(dst_fn, 'wb') as local_file:
-                for chunk in req.iter_content(chunk_size = 50000):
+    if req:
+        #so_far = 0
+        #req_len = int(req.headers['Content-length'])
+        with open(dst_fn, 'wb') as local_file:
+            for chunk in req.iter_content(chunk_size = 50000):
+                if chunk:
+                    #so_far += 50000
                     if halt(): 
                         status = -1
                         break
                     local_file.write(chunk)
-                    pb.update()
-            pb.end(status)
-            return(status)
-        else: 
-            status = -1
-            pb.end(status)
-            return(status)
+                    #pb.update()
+                    #perc = so_far * 1e2 / req_len
+                    #if perc > 100: perc = 100
+                    #sys.stderr.write('\x1b[2K\r')
+                    #sys.stderr.write('fetching remote file: {}...{:4.0f}%\r'.format(os.path.basename(src_url), perc))
+                    #pb.update(message = '{:4.0f}%'.format(perc))
 
-def fetch_req(src_url, params = None, tries = 3, timeout = 1):
+        pb.opm = '\033[37mfetched remote file:\033[m \033[1m{}\033[m.'.format(os.path.basename(src_url))
+        pb.end(status)
+        return(status)
+
+def fetch_req(src_url, params = None, tries = 5, timeout = 2):
     '''fetch src_url and return the requests object'''
 
     if tries <= 0: return(None)
     try:
-        return(requests.get(src_url, stream = True, params = params, timeout = timeout, headers = r_headers))
-    except: return(fetch_req(src_url, params = params, tries = tries - 1, timeout = timeout + 1))
+        return(requests.get(src_url, stream = True, params = params, 
+                            timeout = timeout, headers = r_headers))
+    except: return(fetch_req(src_url, params = params, 
+                             tries = tries - 1, timeout = timeout + 1))
 
 def fetch_nos_xml(src_url):
     '''fetch src_url and return it as an XML object'''
@@ -152,39 +165,74 @@ def fetch_csv(src_url):
         return(csv.reader(req.text.split('\n'), delimiter = ','))
     else: return(None)
 
+class fetch_results(threading.Thread):
+    '''fetch results'''
+
+    def __init__(self, results, region, out_dir, want_proc = False, stop_threads = lambda: False):
+        threading.Thread.__init__(self)
+
+        self.fetch_q = queue.Queue()
+
+        self.results = results
+        self.region = region
+        self._outdir = out_dir
+        self.want_proc = want_proc
+        self.stop_threads = stop_threads
+        
+    def run(self):
+        if self.want_proc:
+            proc_q = queue.Queue()
+            for _ in range(3):
+                p = threading.Thread(target = proc_queue, args = (proc_q,))
+                p.daemon = True
+                p.start()
+        else: proc_q = None
+
+        for _ in range(3):
+            t = threading.Thread(target = fetch_queue, args = (self.fetch_q, proc_q))
+            t.daemon = True
+            t.start()
+
+        for row in self.results:
+            self.fetch_q.put([row[0], os.path.join(self._outdir, row[1]), self.region, self.stop_threads])
+
+        self.fetch_q.join()
+        if self.want_proc:
+            proc_q.join()
+
 ## =============================================================================
 ##
 ## Processing Classes and functions.
 ## 
 ## =============================================================================
 
+proc_infos = { 
+    'GEODAS':lambda x: x.proc_geodas(),
+    'BAG':lambda x: x.proc_bag(),
+    'ENCs':lambda x: x.proc_enc(),
+    'las':lambda x: x.proc_dc_las(),
+    'las':lambda x: x.proc_dc_las(),
+    'tif':lambda x: x.proc_dc_raster(),
+    'tiff':lambda x: x.proc_dc_raster(),
+    'img':lambda x: x.proc_dc_raster(),
+}
+
 def proc_queue(q):
     '''process queue `q` of fetched data'''
 
     while True:
-        try:
-            work = q.get(timeout=3)
-        except queue.Empty: return
+        work = q.get()
 
+        proc_d = proc(work[0], work[1])
         if not work[1]():
-            pb = utils._progress('processing local file: {}'.format(os.path.join(work[0][0], work[0][1])))
-            proc_d = proc(work[0], work[1])
-            
-            proc_d.start()
-            while True:
-                time.sleep(1)
-                pb.update()
-                if not proc_d.is_alive():
-                    break
-
-            pb.end(proc_d.status)
+            proc_d.run()
+        
         q.task_done()
 
-class proc(threading.Thread):
+class proc:
     '''Process fetched data to XYZ'''
 
     def __init__(self, s_file_info, callback = None):
-        threading.Thread.__init__(self)
 
         self.stop = callback
         self.status = 0
@@ -203,8 +251,7 @@ class proc(threading.Thread):
         if not os.path.exists(self.xyz_dir):
             try:
                 os.makedirs(self.xyz_dir)
-            except:
-                pass
+            except: self.status = -1
 
         self.o_fn_bn = os.path.basename(self.o_fn).split('.')[0]
         self.o_fn_tmp = os.path.join(self.s_dir, '{}_tmp.xyz'.format(self.o_fn_bn.lower()))
@@ -213,32 +260,26 @@ class proc(threading.Thread):
         self.o_fn_p_ras = os.path.join(self.s_dir, '{}.tif'.format(self.o_fn_bn))
     
     def run(self):
-        if not self.stop():
-            if self.s_t == 'GEODAS':
-                self._proc_geodas()
+        '''Run the elevation data processor.
+        Process data to WGS84/NAVD88 XYZ and append
+        to a DATALIST.'''
 
-            elif 'BAG' in self.s_t:
-                self._proc_bag()
+        pb = utils._progress('processing local file: \033[1m{}\033[m'.format(self.s_fn))
 
-            elif self.s_t == 'las' or self.s_t == 'laz':
-                self._proc_dc_las()
-
-            elif self.s_t == 'tif' or self.s_t == 'img':
-                self._proc_dc_raster()
-
-            elif self.s_t == 'gmrt':
-                self._proc_gmrt()
-
-            elif self.s_t == 'ENCs':
-                self._proc_enc()
+        if self.s_t in proc_infos.keys():
+            proc_infos[self.s_t](self)
 
             if self.status == 0:
                 self._add_to_datalist()
                 os.remove(self.o_fn)
-
         else: self.status = -1
 
+        pb.opm = 'processed local file: \033[1m{}\033[m'.format(self.s_fn)
+        pb.end(self.status)
+
     def _add_to_datalist(self):
+        '''Add xyz files in self.xyzs to the datalist.'''
+
         for o_xyz in self.xyzs:
             if os.stat(o_xyz).st_size != 0:
 
@@ -249,11 +290,18 @@ class proc(threading.Thread):
                 out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(self.xyz_dir, '{}.datalist'.format(os.path.basename(self.s_dir)))), False, None)
             else: os.remove(o_xyz)
 
-    def _proc_gmrt(self):
+    def proc_gmrt(self):
+        '''Process GMRT geotiff to XYZ.'''
+
         gdalfun.dump(self.o_fn, self.o_fn_xyz)
-        self.xyzs.append(self.o_fn_xyz)
+        if os.stat(self.o_fn_xyz).st_size != 0:
+            self.xyzs.append(self.o_fn_xyz)
+        else: 
+            self.status = -1
+            os.remove(self.o_fn_xyz)
         
-    def _proc_geodas(self):
+    def proc_geodas(self):
+        '''Process NOAA NOS data to WGS84/NAVD88 XYZ'''
 
         try:
             in_f = gzip.open(os.path.join(self.s_dir, self.s_fn), 'rb')
@@ -288,8 +336,8 @@ class proc(threading.Thread):
             if os.path.exists(self.o_fn_xyz):
                 self.xyzs.append(self.o_fn_xyz)
 
-    def _proc_bag(self):
-        status = 0
+    def proc_bag(self):
+        '''Process NOAA NOS BAG data to WGS84/NAVD88 XYZ.'''
 
         s_gz = os.path.join(self.s_dir, self.s_fn)
 
@@ -305,52 +353,55 @@ class proc(threading.Thread):
         s_tif = os.path.join(self.s_dir, self.s_fn.split('.')[0].lower() + '.tif')            
         s_xyz = s_gz.split('.')[0] + '.xyz'
 
-        if status == 0 and not self.stop():
+        if self.status == 0 and not self.stop():
             out_chunks = gdalfun.chunks(s_bag, 5000)
 
             if s_gz.split('.')[-1] == 'gz':
                 os.remove(s_bag)
 
-            ## CHUNKS OVERWRITE EACH OTHER IN DIFF REGIONS; APPEND REGION FN
             for chunk in out_chunks:
-                if not self.stop():
-                    #i_xyz = chunk.split('.')[0] + '.xyz'
-                    i_xyz = '{}_{}.xyz'.format(chunk.split('.')[0], self.s_region.fn)
-                    i_tif = chunk.split('.')[0] + '_wgs.tif'
-                    o_xyz = os.path.join(self.xyz_dir, os.path.basename(i_xyz).lower())
-                    o_tif = os.path.join(self.xyz_dir, os.path.basename(i_xyz).lower())
+                if self.stop():
+                    break
 
-                    out, status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(chunk, i_tif),
-                                                False, None)
+                i_xyz = '{}_{}.xyz'.format(chunk.split('.')[0], self.s_region.fn)
+                i_tif = chunk.split('.')[0] + '_wgs.tif'
+                o_xyz = os.path.join(self.xyz_dir, os.path.basename(i_xyz).lower())
 
-                    gdalfun.dump(i_tif, i_xyz)
-                    os.remove(i_tif)
-
-                    if os.stat(i_xyz).st_size == 0:
-                        os.remove(i_xyz)
-                    else:
-                        if self.this_vd.vdatum_path is not None:
-                            self.this_vd.ivert = 'mllw'
-                            self.this_vd.overt = 'navd88'
-                            self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir,
-                                                                               'result'))
-
-                            self.this_vd.run_vdatum(os.path.relpath(i_xyz))
-
-                            os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(i_xyz)),
-                                      o_xyz)
-                            os.remove(i_xyz)
-                        else: os.rename(i_xyz, o_xyz)
-                        self.xyzs.append(o_xyz)
+                out, self.status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(chunk, i_tif), False, None)
+                
+                if self.status != 0 or self.stop():
+                    os.remove(chunk)
+                    break
 
                 os.remove(chunk)
+                gdalfun.dump(i_tif, i_xyz)
+                os.remove(i_tif)
 
-    def _proc_dc_las(self):
+                if os.stat(i_xyz).st_size == 0:
+                    self.status = -1
+                    os.remove(i_xyz)
+                    break
+
+                if self.this_vd.vdatum_path is not None:
+                    self.this_vd.ivert = 'mllw'
+                    self.this_vd.overt = 'navd88'
+                    self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir, 'result'))
+                    
+                    self.this_vd.run_vdatum(os.path.relpath(i_xyz))
+                    
+                    os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(i_xyz)), o_xyz)
+                    os.remove(i_xyz)
+                else: os.rename(i_xyz, o_xyz)
+
+                self.xyzs.append(o_xyz)
+
+    def proc_dc_las(self):
+        '''Process NOAA Digital Coast lidar data (las/laz) to Ground XYZ.'''
+
         out, self.status = utils.run_cmd('las2txt -verbose -parse xyz -keep_class 2 29 -i {}'.format(self.o_fn), False, None)
 
-        if status == 0:
+        if self.status == 0:
             self.o_fn_bn = os.path.basename(self.o_fn).split('.')[0]
-
             self.o_fn_txt = os.path.join(self.s_dir, '{}.txt'.format(self.o_fn_bn))
 
             out, self.status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
@@ -361,7 +412,9 @@ class proc(threading.Thread):
             if self.status == 0:
                 self.xyzs.append(self.o_fn_xyz)
 
-    def _proc_dc_raster(self):
+    def proc_dc_raster(self):
+        '''Process NOAA Digital Coast raster data to WGS84 XYZ chunks.'''
+
         out, self.status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(self.o_fn, self.o_fn_p_ras), False, None)
 
         out_chunks = gdalfun.chunks(self.o_fn_p_ras, 1000)
@@ -381,7 +434,8 @@ class proc(threading.Thread):
 
             os.remove(i_xyz)
 
-    def _proc_enc(self):
+    def proc_enc(self):
+        '''Proces Electronic Nautical Charts to NAVD88 XYZ.'''
 
         zip_ref = zipfile.ZipFile(self.o_fn)
         zip_ref.extractall(os.path.join(self.s_dir, 'enc'))
@@ -399,35 +453,36 @@ class proc(threading.Thread):
                     xyz_l = '{} {} {}\n'.format(xyz[0], xyz[1], xyz[2]*-1)
                     o_xyz.write(xyz_l)
             o_xyz.close()
+        else: self.status = -1
 
-        if os.path.exists(self.o_fn_p_xyz):
+        if os.path.exists(self.o_fn_p_xyz) and os.stat(self.o_fn_p_xyz).st_size != 0:
 
-            if os.stat(self.o_fn_p_xyz).st_size != 0:
-                out, self.status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
-                out, self.status = utils.run_cmd('gmt gmtselect {} {} -V > {}'.format(self.o_fn_p_xyz, self.s_region.gmt, self.o_fn_tmp), False, None)
+            out, self.status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
+            out, self.status = utils.run_cmd('gmt gmtselect {} {} -V > {}'.format(self.o_fn_p_xyz, self.s_region.gmt, self.o_fn_tmp), False, None)
 
-                if os.stat(self.o_fn_tmp).st_size != 0:
+            if os.stat(self.o_fn_tmp).st_size != 0:
 
-                    if self.this_vd.vdatum_path is not None:
-                        self.this_vd.ivert = 'mllw'
-                        self.this_vd.overt = 'navd88'
-                        self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir, 'result'))
+                if self.this_vd.vdatum_path is not None:
+                    self.this_vd.ivert = 'mllw'
+                    self.this_vd.overt = 'navd88'
+                    self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir, 'result'))
 
-                        self.this_vd.run_vdatum(os.path.relpath(self.o_fn_tmp))
+                    self.this_vd.run_vdatum(os.path.relpath(self.o_fn_tmp))
 
-                        os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(self.o_fn_tmp)), self.o_fn_xyz)
-                    else: os.rename(self.o_fn_tmp, self.o_fn_xyz)
+                    os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(self.o_fn_tmp)), self.o_fn_xyz)
+                else: os.rename(self.o_fn_tmp, self.o_fn_xyz)
 
-                    os.remove(self.o_fn_p_xyz)
+                os.remove(self.o_fn_p_xyz)
 
-                    if os.stat(self.o_fn_xyz).st_size == 0:
-                        os.remove(self.o_fn_xyz)
-                    else:
-                        self.xyzs.append(self.o_fn_xyz)
+                if os.stat(self.o_fn_xyz).st_size == 0:
+                    os.remove(self.o_fn_xyz)
+                    self.status = -1
+                else:
+                    self.xyzs.append(self.o_fn_xyz)
 
         if os.path.exists(self.o_fn_tmp):
             os.remove(self.o_fn_tmp)
-        
+
 ## =============================================================================
 ##
 ## Reference Vector
@@ -484,9 +539,12 @@ def addf_ref_vector(ogr_layer, survey):
 def update_ref_vector(src_vec, surveys, update=True):
     '''update or create a reference vector'''
 
+    layer = None
+
     if update:
         ds = ogr.GetDriverByName('GMT').Open(src_vec, 1)
-        layer = ds.GetLayer()
+        if ds is not None:
+            layer = ds.GetLayer()
     else:
         ds = ogr.GetDriverByName('GMT').CreateDataSource(src_vec)
         layer = ds.CreateLayer('%s' %(os.path.basename(src_vec).split('.')[0]), None, ogr.wkbPolygon)
@@ -498,12 +556,13 @@ def update_ref_vector(src_vec, surveys, update=True):
         data_field.SetWidth(1000)
         layer.CreateField(data_field)
         layer.CreateField(ogr.FieldDefn('Datatype', ogr.OFTString))
-            
-    for feature in layer:
-        layer.SetFeature(feature)
+  
+    if layer is not None:
+        for feature in layer:
+            layer.SetFeature(feature)
 
-    for i in surveys:
-        addf_ref_vector(layer, i)
+        for i in surveys:
+            addf_ref_vector(layer, i)
 
     ds = layer = None
 
@@ -521,13 +580,11 @@ def update_ref_vector(src_vec, surveys, update=True):
 ##
 ## =============================================================================
 
-class dc(threading.Thread):
+class dc:
     '''Fetch elevation data from the Digital Coast'''
 
-    def __init__(self, extent = None, filters = [],
-                 want_list = False, want_update = False, callback = None):
-        threading.Thread.__init__(self)
-
+    def __init__(self, extent = None, filters = [], callback = None):
+        pb = utils._progress('loading Digital Coast fetch module...')
         self._dc_htdata_url = 'https://coast.noaa.gov/htdata/'
         self._dc_dav_id = 'https://coast.noaa.gov/dataviewer/#/lidar/search/where:ID='
         self._dc_dirs = ['lidar1_z', 'lidar2_z', 'raster2']
@@ -547,15 +604,16 @@ class dc(threading.Thread):
 
         self.stop = callback
         self._want_proc = True
-        self._want_list = want_list
-        self._want_update = want_update
+        self._want_update = False
         self._filters = filters
 
+        self.region = extent
         if extent is not None: 
             self._boundsGeom = bounds2geom(extent.region)
         else: self._status = -1
 
-        self.region = extent
+        pb.opm = 'loaded Digital Coast fetch module.'
+        pb.end(self._status)
         
     def run(self):
         '''Run the Digital Coast fetching module'''
@@ -563,100 +621,12 @@ class dc(threading.Thread):
         if self._want_update:
             self._update()
         else:
-            self.search_gmt()
+            self.search_gmt()            
+            return(self._results)
 
-            if self._want_list:
-                self.print_results()
-            else: self.fetch_results()
-
-            if self._want_proc:
-                self.proc_results()
-
-    def search_gmt(self):
-        '''Search for data in the reference vector file'''
-
-        gmt1 = ogr.Open(self._ref_vector)
-        layer = gmt1.GetLayer(0)
-
-        for filt in self._filters:
-            layer.SetAttributeFilter('{}'.format(filt))
-
-        ## ==============================================
-        ## Find surveys that fit all filters and within
-        ## the region of interest.
-        ## ==============================================
-
-        for feature1 in layer:
-            if not self.stop():
-                geom = feature1.GetGeometryRef()
-                if self._boundsGeom.Intersects(geom):
-                    surv_url = feature1.GetField('Data')
-                    surv_dt = feature1.GetField('Datatype')
-                    suh = fetch_html(surv_url)
-                    if suh is None: self._status = -1
-
-                    if self._status == 0:
-                        if 'lidar' in surv_dt:
-
-                            ## ==============================================
-                            ## Lidar data has a minmax.csv file to get extent
-                            ## for each survey file.
-                            ## ==============================================
-
-                            scsv = suh.xpath('//a[contains(@href, ".csv")]/@href')[0]
-                            dc_csv = fetch_csv(surv_url + scsv)
-                            next(dc_csv, None)
-
-                            for tile in dc_csv:
-                                if len(tile) > 3:
-                                    tb = [float(tile[1]), float(tile[2]),
-                                          float(tile[3]), float(tile[4])]
-                                    tile_geom = bounds2geom(tb)
-                                    if tile_geom.Intersects(self._boundsGeom):
-                                        self._results.append(os.path.join(surv_url, tile[0]))
-
-                        elif 'raster' in surv_dt:
-                            
-                            ## ==============================================
-                            ## Raster data has a tileindex shapefile 
-                            ## to get extent
-                            ## ==============================================
-
-                            sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
-                            fetch_file(surv_url + sshpz, os.path.join('.', sshpz),
-                                       callback = self.stop)
-
-                            zip_ref = zipfile.ZipFile(sshpz)
-                            zip_ref.extractall('dc_tile_index')
-                            zip_ref.close()
-
-                            if os.path.exists('dc_tile_index'):
-                                ti = os.listdir('dc_tile_index')
-
-                            ts = None
-                            for i in ti:
-                                if ".shp" in i:
-                                    ts = os.path.join('dc_tile_index/', i)
-
-                            if ts is not None:
-                                shp1 = ogr.Open(ts)
-                                slay1 = shp1.GetLayer(0)
-
-                                for sf1 in slay1:
-                                    geom = sf1.GetGeometryRef()
-
-                                    if geom.Intersects(self._boundsGeom):
-                                        tile_url = sf1.GetField('URL').strip()
-                                        self._results.append(tile_url)
-
-                                shp1 = slay1 = None
-
-                            for i in ti:
-                                ts = os.remove(os.path.join('dc_tile_index/', i))
-                            os.removedirs(os.path.join('.', 'dc_tile_index'))
-                            os.remove(os.path.join('.', sshpz))
-        if len(self._results) == 0: self._status = -1
-        gmt1 = layer = None
+    ## ==============================================
+    ## Reference Vector Generation
+    ## ==============================================
 
     def _update(self):
         '''Update the DC reference vector after scanning
@@ -747,63 +717,95 @@ class dc(threading.Thread):
             self._surveys = []
             gmt2 = layer = None
 
-    def print_results(self):
-        '''print the fetch results as a list of urls suitable 
-        for use in `wget`, etc.'''
-        
-        if len(self._results) == 0:
-            self._status = -1
-        else:
-            for row in self._results:
-                print(row)
-        
-    def fetch_results(self):
-        '''Fetch the found fetch results.'''
+    ## ==============================================
+    ## Filter for results
+    ## ==============================================
 
-        fetch_q = queue.Queue()
+    def search_gmt(self):
+        '''Search for data in the reference vector file'''
 
-        if len(self._results) == 0:
-            self._status = -1
-        else:
-            for row in self._results:
-                surv_dir = row.split('/')[-2:][0]
-                if surv_dir == '.':
-                    surv_dir = row.split('/')[-3:][0]
+        gmt1 = ogr.Open(self._ref_vector)
+        layer = gmt1.GetLayer(0)
 
-                surv_fn = row.split('/')[-2:][1]
-                outf = os.path.join(self._outdir, surv_dir, surv_fn)
+        for filt in self._filters:
+            layer.SetAttributeFilter('{}'.format(filt))
 
-                fetch_q.put_nowait([row, outf, None, self.stop])
+        ## ==============================================
+        ## Find surveys that fit all filters and within
+        ## the region of interest.
+        ## ==============================================
 
-            for _ in range(3):
-                threading.Thread(target = fetch_queue, args = (fetch_q,)).start()
+        for feature1 in layer:
+            if not self.stop():
+                geom = feature1.GetGeometryRef()
+                if self._boundsGeom.Intersects(geom):
+                    surv_url = feature1.GetField('Data')
+                    surv_dt = feature1.GetField('Datatype')
+                    suh = fetch_html(surv_url)
+                    if suh is None: self._status = -1
 
-            fetch_q.join()
+                    if self._status == 0:
+                        if 'lidar' in surv_dt:
 
-    def proc_results(self):
-        '''Proc the fetched NOS data to XYZ'''
+                            ## ==============================================
+                            ## Lidar data has a minmax.csv file to get extent
+                            ## for each survey file.
+                            ## ==============================================
 
-        proc_q = queue.Queue()
+                            scsv = suh.xpath('//a[contains(@href, ".csv")]/@href')[0]
+                            dc_csv = fetch_csv(surv_url + scsv)
+                            next(dc_csv, None)
 
-        if len(self._results) == 0:
-            self._status = -1
-        else:
-            for row in self._results:
-                surv_dir = row.split('/')[-2:][0]
-                if surv_dir == '.':
-                    surv_dir = row.split('/')[-3:][0]
+                            for tile in dc_csv:
+                                if len(tile) > 3:
+                                    tb = [float(tile[1]), float(tile[2]),
+                                          float(tile[3]), float(tile[4])]
+                                    tile_geom = bounds2geom(tb)
+                                    if tile_geom.Intersects(self._boundsGeom):
+                                        self._results.append(os.path.join(surv_url, tile[0]))
 
-                surv_fn = row.split('/')[-2:][1]
-                outf = os.path.join(self._outdir, surv_dir, surv_fn)
-                surv_t = surv_fn.split('.')[1]
+                        elif 'raster' in surv_dt:
+                            
+                            ## ==============================================
+                            ## Raster data has a tileindex shapefile 
+                            ## to get extent
+                            ## ==============================================
 
-                if os.path.exists(outf):
-                    proc_q.put_nowait([[surv_dir, surv_fn, outf, surv_t, self.region], self.stop])
+                            sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
+                            fetch_file(surv_url + sshpz, os.path.join('.', sshpz),
+                                       callback = self.stop)
 
-            for _ in range(2):
-                threading.Thread(target = proc_queue, args = (proc_q,)).start()
+                            zip_ref = zipfile.ZipFile(sshpz)
+                            zip_ref.extractall('dc_tile_index')
+                            zip_ref.close()
 
-            proc_q.join()
+                            if os.path.exists('dc_tile_index'):
+                                ti = os.listdir('dc_tile_index')
+
+                            ts = None
+                            for i in ti:
+                                if ".shp" in i:
+                                    ts = os.path.join('dc_tile_index/', i)
+
+                            if ts is not None:
+                                shp1 = ogr.Open(ts)
+                                slay1 = shp1.GetLayer(0)
+
+                                for sf1 in slay1:
+                                    geom = sf1.GetGeometryRef()
+
+                                    if geom.Intersects(self._boundsGeom):
+                                        tile_url = sf1.GetField('URL').strip()
+                                        self._results.append([tile_url, tile_url.split('/')[-1]])
+
+                                shp1 = slay1 = None
+
+                            for i in ti:
+                                ts = os.remove(os.path.join('dc_tile_index/', i))
+                            os.removedirs(os.path.join('.', 'dc_tile_index'))
+                            os.remove(os.path.join('.', sshpz))
+        if len(self._results) == 0: self._status = -1
+        gmt1 = layer = None
 
 ## =============================================================================
 ##
@@ -815,12 +817,11 @@ class dc(threading.Thread):
 ##
 ## =============================================================================
 
-class nos(threading.Thread):
+class nos:
     '''Fetch NOS BAG and XYZ sounding data from NOAA'''
 
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
-        threading.Thread.__init__(self)
-
+    def __init__(self, extent = None, filters = [], callback = None):
+        pb = utils._progress('loading NOS fetch module...')
         self._nos_xml_url = lambda nd: 'https://data.noaa.gov/waf/NOAA/NESDIS/NGDC/MGG/NOS/%siso_u/xml/' %(nd)
         self._nos_directories = ["B00001-B02000/", "D00001-D02000/", "F00001-F02000/", \
                                  "H00001-H02000/", "H02001-H04000/", "H04001-H06000/", \
@@ -830,6 +831,7 @@ class nos(threading.Thread):
 
         self._outdir = os.path.join(os.getcwd(), 'nos')
         self._ref_vector = os.path.join(fetchdata, 'nos.gmt')
+        self._local_ref_vector = 'nos.gmt'
 
         if os.path.exists(self._ref_vector): 
             self._has_vector = True
@@ -837,19 +839,21 @@ class nos(threading.Thread):
 
         self._status = 0
         self._surveys = []
-        self._xml_results = []
         self._results = []
 
         self.stop = callback
         self._want_proc = True
-        self._want_list = want_list
-        self._want_update = want_update
+        self._want_update = False
         self._filters = filters
 
         self.region = extent
         if extent is not None: 
             self._bounds = bounds2geom(extent.region)
         else: self._status = -1
+
+        self.fetch_q = queue.Queue()
+        pb.opm = 'loaded NOS fetch module.'
+        pb.end(self._status)
 
     def run(self):
         '''Run the NOS fetching module.'''
@@ -858,17 +862,16 @@ class nos(threading.Thread):
             self._update()
         else:
             self.search_gmt()
-            self._results = list(set(self._results))
+            #self._results = list(set(self._results))
+            t = np.asarray(self._results)
+            p = t != ''
+            r = t[p.all(1)]
             
-            while ('' in self._results):
-                self._results.remove('')
+            return(r.tolist())
 
-            if self._want_list:
-                self.print_results()
-            else: self.fetch_results()
-
-            if self._want_proc:
-                self.proc_results()
+    ## ==============================================
+    ## Reference Vector Generation
+    ## ==============================================
 
     def _parse_nos_xml(self, xml_url, sid):
         '''pare the NOS XML file and extract relavant infos.'''
@@ -920,11 +923,9 @@ class nos(threading.Thread):
         '''Scan an NOS directory and parse the XML for each survey.'''
 
         if self._has_vector:
-            gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
+            gmt1 = ogr.GetDriverByName('GMT').Open(self._local_ref_vector, 0)
             layer = gmt1.GetLayer()
         else: layer = []
-
-        print('{:79}'.format(nosdir))
 
         xml_catalog = self._nos_xml_url(nosdir)
         page = fetch_html(xml_catalog)
@@ -936,24 +937,49 @@ class nos(threading.Thread):
         ## ==============================================
 
         for survey in rows:
-            if not self.stop():
-                sid = survey[:-4]
+            if self.stop():
+                break
+            sid = survey[:-4]
 
-                if self._has_vector:
-                    layer.SetAttributeFilter('ID = "{}"'.format(sid))
+            if self._has_vector:
+                layer.SetAttributeFilter('ID = "{}"'.format(sid))
 
-                if len(layer) == 0:
-                    xml_url = xml_catalog + survey
-                    s_entry = self._parse_nos_xml(xml_url, sid)
+            if len(layer) == 0:
+                xml_url = xml_catalog + survey
+                s_entry = self._parse_nos_xml(xml_url, sid)
 
-                    if s_entry[0]:
-                        self._surveys.append(s_entry)
+                if s_entry[0]:
+                    self._surveys.append(s_entry)
         gmt1 = layer = None
+
+    def _update(self):
+        '''Crawl the NOS database and update the NOS reference vector.'''
+
+        for j in self._nos_directories:
+            tw = utils._progress('scanning {}...'.format(j))
+            if self.stop():
+                break
+
+            if os.path.exists(self._local_ref_vector): 
+                self._has_vector = True
+            else: self._has_vector = False
+
+            self._scan_directory(j)
+            update_ref_vector(self._local_ref_vector, self._surveys, self._has_vector)
+
+            self._surveys = []
+            tw.opm = 'scanned {}...'.format(j)
+            tw.end(self._status)
+
+    ## ==============================================
+    ## Filter for results
+    ## ==============================================
 
     def search_gmt(self):
         '''Search the NOS reference vector and append the results
         to the results list.'''
 
+        tw = utils._progress('filtering NOS reference vector')
         gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
         layer = gmt1.GetLayer()
 
@@ -967,68 +993,11 @@ class nos(threading.Thread):
                     fldata = feature.GetField('Data').split(',')
 
                     for i in fldata:
-                        self._results.append(i)
+                        self._results.append([i, i.split('/')[-1]])
 
-    def _update(self):
-        '''Crawl the NOS database and update the NOS reference vector.'''
-
-        for j in self._nos_directories:
-            if not self.stop():
-                self._scan_directory(j)
-                update_ref_vector(self._ref_vector, self._surveys, self._has_vector)
-
-                if os.path.exists(self._ref_vector): 
-                    self._has_vector = True
-                else: self._has_vector = False
-
-                self._surveys = []
-                
-    def print_results(self):
-        '''Print the data url(s) for each survey in results.'''
-        if len(self._results) == 0:
-            self._status = -1
-        else:
-            for row in self._results:
-                print(row)
-
-    def fetch_results(self):
-        '''Fetch NOS data in the given region and meeting any filters.'''
-
-        fetch_q = queue.Queue()
-
-        if len(self._results) == 0:
-            self._status = -1
-        else:
-            for row in self._results:
-                fetch_q.put_nowait([row, os.path.join(self._outdir, os.path.basename(row)), None, self.stop])
-
-            for _ in range(3):
-                threading.Thread(target = fetch_queue, args = (fetch_q,)).start()
-
-            fetch_q.join()
-
-    def proc_results(self):
-        '''Proc the fetched NOS data to XYZ'''
-
-        proc_q = queue.Queue()
-
-        if len(self._results) == 0:
-            self._status = -1
-        else:
-            for row in self._results:
-                if not 'ombined' in row:
-                    outf = os.path.join(self._outdir, os.path.basename(row))
-                    surv_dir = self._outdir
-                    surv_fn = os.path.basename(outf)
-                    surv_t = row.split('/')[-2]
-
-                    if os.path.exists(outf):
-                        proc_q.put_nowait([[surv_dir, surv_fn, outf, surv_t, self.region], self.stop])
-
-            for _ in range(3):
-                threading.Thread(target = proc_queue, args = (proc_q,)).start()
-
-            proc_q.join()
+        gmt1 = layer = None
+        tw.opm = 'filtered NOS reference vector'
+        tw.end(self._status)
 
 ## =============================================================================
 ##
@@ -1038,11 +1007,12 @@ class nos(threading.Thread):
 ##
 ## =============================================================================
 
-class charts(threading.Thread):
+class charts():
     '''Fetch digital chart data from NOAA'''
 
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
-        threading.Thread.__init__(self)
+    def __init__(self, extent = None, filters = [], callback = None):
+        pb = utils._progress('loading CHARTS fetch module...')
+        self.fetch_q = queue.Queue()
 
         self._enc_data_catalog = 'http://www.charts.noaa.gov/ENCs/ENCProdCat_19115.xml'
         self._rnc_data_catalog = 'http://www.charts.noaa.gov/RNCs/RNCProdCat_19115.xml'
@@ -1063,15 +1033,16 @@ class charts(threading.Thread):
         self._chart_feats = []
 
         self.stop = callback
-        self._want_proc = True
-        self._want_list = want_list
-        self._want_update = want_update
+        self._want_update = False
         self._filters = filters
 
         self.region = extent
         if extent is not None: 
             self._boundsGeom = bounds2geom(extent.region)
         else: self._status = -1
+
+        pb.opm = 'loaded CHARTS fetch module.'
+        pb.end(self._status)
 
     def run(self):
         '''Run the charts fetching module.'''
@@ -1081,11 +1052,11 @@ class charts(threading.Thread):
         else:
             self.search_gmt()
 
-            if self._want_list:
-                self.print_results()
-            else: self.fetch_results()
-            if self._want_proc:
-                self.proc_results()
+            return self._results
+      
+    ## ==============================================
+    ## Reference Vector Generation
+    ## ==============================================
 
     def _parse_charts_xml(self, update = True):
         '''parse the charts XML and extract the survey results'''
@@ -1132,22 +1103,6 @@ class charts(threading.Thread):
 
         ds = layer = None
 
-    def search_gmt(self):
-        '''Search for data in the reference vector file'''
-
-        ds = ogr.Open(self._ref_vector)
-        layer = ds.GetLayer(0)
-
-        for filt in self._filters:
-            layer.SetAttributeFilter('{}'.format(filt))
-
-        for feature1 in layer:
-            geom = feature1.GetGeometryRef()
-            if self._boundsGeom.Intersects(geom):
-                self._results.append(feature1.GetField('Data'))
-
-        ds = layer = None
-
     def _update(self):
         '''Update or create the reference vector file'''
 
@@ -1166,51 +1121,96 @@ class charts(threading.Thread):
 
             self._chart_feats = []
 
-    def print_results(self):
-        '''print the resulting urls to stdout'''
+    ## ==============================================
+    ## Filter for results
+    ## ==============================================
 
-        for row in self._results:
-            print(row)
+    def search_gmt(self):
+        '''Search for data in the reference vector file'''
 
-    def fetch_results(self):
-        '''fetch the charts data and optionally process it.
-        unprocessed data is in S57 (ENC) and KAPP (RNC) format.
-        will only process ENC data to XYZ'''
+        tw = utils._progress('filtering CHARTS reference vector...')
 
-        fetch_q = queue.Queue()
+        ds = ogr.Open(self._ref_vector)
+        layer = ds.GetLayer(0)
 
-        if len(self._results) == 0:
+        for filt in self._filters:
+            layer.SetAttributeFilter('{}'.format(filt))
+
+        for feature1 in layer:
+            geom = feature1.GetGeometryRef()
+            if self._boundsGeom.Intersects(geom):
+                self._results.append([feature1.GetField('Data'), feature1.GetField('Data').split('/')[-1]])
+
+        ds = layer = None
+        tw.opm = 'filtered \033[1m{}\033[m surveys from CHARTS reference vector.'.format(len(self._results))
+        tw.end(self._status)
+
+## =============================================================================
+##
+## SRTM Fetch (cgiar)
+##
+## Fetch srtm tiles from cgiar.
+##
+## =============================================================================
+
+class srtm_cgiar:
+    '''Fetch SRTM data from CGIAR'''
+
+    def __init__(self, extent = None, filters = [], callback = None):
+        pb = utils._progress('loading SRMT (CGIAR) fetch module...')
+        self._srtm_url = 'http://srtm.csi.cgiar.org'
+        self._srtm_dl_url = 'http://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/'
+
+        self._status = 0
+        self._results = []
+        self._outdir = os.path.join(os.getcwd(), 'srtm')
+        self._ref_vector = os.path.join(fetchdata, 'srtm.gmt')
+        if not os.path.exists(self._ref_vector):
             self._status = -1
-        else:
-            for row in self._results:
-                fetch_q.put_nowait([row, os.path.join(self._outdir, os.path.basename(row)), None, self.stop])
 
-            for _ in range(3):
-                threading.Thread(target = fetch_queue, args = (fetch_q,)).start()
+        self.stop = callback
+        self._want_proc = True
+        self._want_update = False
+        self._filters = filters
 
-            fetch_q.join()
+        self._boundsGeom = None
+        if extent is not None: 
+            self._boundsGeom = bounds2geom(extent.region)
 
-    def proc_results(self):
-        '''Proc the fetched NOS data to XYZ'''
+        pb.opm = 'loaded SRTM (CGIAR) fetch module.'
+        pb.end(self._status)
 
-        proc_q = queue.Queue()
+    def run(self):
+        '''Run the SRTM fetching module.'''
 
-        if len(self._results) == 0:
-            self._status = -1
-        else:
-            for row in self._results:
-                outf = os.path.join(self._outdir, os.path.basename(row))
-                surv_dir = self._outdir
-                surv_fn = os.path.basename(outf)
-                surv_t = row.split('/')[-2]
+        self.search_gmt()
 
-                if os.path.exists(outf):
-                    proc_q.put_nowait([[surv_dir, surv_fn, outf, surv_t, self.region], self.stop])
+        return(self._results)
 
-            for _ in range(3):
-                threading.Thread(target = proc_queue, args = (proc_q,)).start()
+        if self._want_list:
+            self.print_results()
+        else: self.fetch_results()
 
-            proc_q.join()
+    ## ==============================================
+    ## Filter for results
+    ## ==============================================
+
+    def search_gmt(self):
+        gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
+        layer = gmt1.GetLayer()
+
+        for filt in self._filters:
+            layer.SetAttributeFilter('{}'.format(filt))
+
+        for feature in layer:
+            geom = feature.GetGeometryRef()
+
+            if geom.Intersects(self._boundsGeom):
+                geo_env = geom.GetEnvelope()
+                srtm_lon = int(math.ceil(abs((-180 - geo_env[1]) / 5)))
+                srtm_lat = int(math.ceil(abs((60 - geo_env[3]) / 5)))
+                out_srtm = 'srtm_{:02}_{:02}.zip'.format(srtm_lon, srtm_lat)
+                self._results.append(['{}{}'.format(self._srtm_dl_url, out_srtm), out_srtm])
 
 ## =============================================================================
 ##
@@ -1219,23 +1219,25 @@ class charts(threading.Thread):
 ## Fetch elevation data from The National Map
 ## NED, 3DEP, Etc.
 ##
+## TODO: Break up search regions on large regions 
+##
 ## =============================================================================
 
-class tnm(threading.Thread):
+class tnm:
     '''Fetch elevation data from The National Map'''
 
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
-        threading.Thread.__init__(self)
-
+    def __init__(self, extent = None, filters = [], callback = None):
+        pb = utils._progress('loading The National Map fetch module...')
         self._tnm_api_url = "http://viewer.nationalmap.gov/tnmaccess/"
         self._tnm_dataset_url = "http://viewer.nationalmap.gov/tnmaccess/api/datasets?"
         self._tnm_product_url = "http://viewer.nationalmap.gov/tnmaccess/api/products?"
 
         self._status = 0
-        self._results = None
+        self._req = None
+        self._results = []
+        self._dataset_results = {}
 
         self._outdir = os.path.join(os.getcwd(), 'tnm')
-        self._dataset_results = None
         self._ref_vector = None
 
         self._tnm_ds = [1, 2]
@@ -1243,13 +1245,12 @@ class tnm(threading.Thread):
 
         self.stop = callback
         self._want_proc = True
-        self._want_list = want_list
-        self._want_update = want_update
+        self._want_update = False
         self._filters = filters
 
         if extent is not None: 
-            self._results = fetch_req(self._tnm_dataset_url)
-            self._datasets = self._results.json()
+            self._req = fetch_req(self._tnm_dataset_url)
+            self._datasets = self._req.json()
 
             sbDTags = []
             for ds in self._tnm_ds:
@@ -1258,23 +1259,23 @@ class tnm(threading.Thread):
             self.data = { 'datasets':sbDTags,
                           'bbox':extent.bbox }
         
-            self._results = fetch_req(self._tnm_product_url, params = self.data)
-            self._dataset_results = self._results.json()
+            self._req = fetch_req(self._tnm_product_url, params = self.data)
+            if self._req is not None:
+                self._dataset_results = self._req.json()
+            else: self._status = -1
+
+        pb.opm = 'loaded The National Map fetch module.'
+        pb.end(self._status)
 
     def run(self):
         '''Run the TNM (National Map) fetching module.'''
 
-        if self._want_list:
-            self.print_results()
-        else: self.fetch_results()
+        if self._status == 0:
+            for i in self._dataset_results['items']:
+                f_url = i['downloadURL']
+                self._results.append([f_url, f_url.split('/')[-1]])
 
-    def print_results(self):
-        for i in self._dataset_results['items']:
-            print i['downloadURL']
-
-    def fetch_results(self):
-        for i in self._dataset_results['items']:
-            self._status = fetch_file(i['downloadURL'], os.path.join(self._outdir, os.path.basename(i['downloadURL'])), callback = self.stop)
+        return(self._results)
 
 ## =============================================================================
 ##
@@ -1285,41 +1286,53 @@ class tnm(threading.Thread):
 ##
 ## =============================================================================
 
-class mb(threading.Thread):
+class mb:
     '''Fetch multibeam bathymetry from NOAA'''
 
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
-        threading.Thread.__init__(self)
-
+    def __init__(self, extent = None, filters = [], callback = None):
+        pb = utils._progress('loading Multibeam fetch module...')
         self._mb_data_url = "https://data.ngdc.noaa.gov/platforms/"
         self._mb_search_url = "https://maps.ngdc.noaa.gov/mapviewer-support/multibeam/files.groovy?"
+        self._ref_vector = None
         self._outdir = os.path.join(os.getcwd(), 'mb')
 
         self._status = 0
-        self._results = None
+        self._req = None
+        self._results = []
         self._surveys = []
         self._survey_list = []
-        self._ref_vector = None
 
         self.stop = callback
         self._want_proc = True
-        self._want_list = want_list
-        self._want_update = want_update
+        self._want_update = False
         self._filters = filters
 
+        self.region = extent
         if extent is not None:
             self.data = { 'geometry':extent.bbox }
-            self._results = fetch_req(self._mb_search_url, params = self.data)
-            self._survey_list = self._results.content.split('\n')[:-1]
+            self._req = fetch_req(self._mb_search_url, params = self.data)
+            if self._req is not None:
+                self._survey_list = self._req.content.split('\n')[:-1]
+            else: self._status = -1
+        else: self._status = -1
+
+        pb.opm = 'loaded Multibeam fetch module.'
+        pb.end(self._status)
 
     def run(self):
         '''Run the MB (multibeam) fetching module.'''
+        if self._status == 0:
+            for r in self._survey_list:
+                dst_pfn = r.split(' ')[0]
+                dst_fn = r.split(' ')[0].split('/')[-1:][0]
+                survey = r.split(' ')[0].split('/')[6]
+                dn = r.split(' ')[0].split('/')[:-1]
+                data_url = self._mb_data_url + '/'.join(r.split('/')[3:])
+                self._results.append([data_url.split(' ')[0], '/'.join([survey, dst_fn])])
 
-        if self._want_list:
-            self.print_results()
-        else: self.fetch_results()
+        return(self._results)
         
-    def parse_results(self, local):
+    def proc_results(self, local):
         for res in self._survey_list:
             survey = res.split(' ')[0].split('/')[6]
             if survey not in self._surveys:
@@ -1337,24 +1350,6 @@ class mb(threading.Thread):
                 su.write('\n')
                 su.close()
 
-    def print_results(self):
-        for res in self._survey_list:
-            print self._mb_data_url + res.split(' ')[0]
-
-    def fetch_results(self):
-        for r in self._survey_list:
-            survey = r.split(' ')[0].split('/')[6]
-            dn = r.split(' ')[0].split('/')[:-1]
-            dst_dn = os.path.join(self._outdir, *dn)
-            
-            if not os.path.exists(dst_dn):
-                os.makedirs(dst_dn)
-
-            data_url = self._mb_data_url + '/'.join(r.split('/')[3:])
-            dst_fn = r.split(' ')[0].split('/')[-1:][0]
-            
-            self._status = fetch_file(data_url.split(' ')[0], os.path.join(dst_dn, dst_fn), callback = self.stop)
-
 ## =============================================================================
 ##
 ## USACE Fetch
@@ -1363,51 +1358,50 @@ class mb(threading.Thread):
 ##
 ## =============================================================================
 
-class usace(threading.Thread):
+class usace:
     '''Fetch USACE bathymetric surveys'''
 
-    def __init__(self, extent = None, filters = [], want_list = False, want_update = False, callback = None):
-        threading.Thread.__init__(self)
-
+    def __init__(self, extent = None, filters = [], callback = None):
+        pb = utils._progress('loading USACE fetch module...')
         self._usace_gj_api_url = 'https://opendata.arcgis.com/datasets/80a394bae6b547f1b5788074261e11f1_0.geojson'
         self._usace_gs_api_url = 'https://services7.arcgis.com/n1YM8pTrFmm7L4hs/arcgis/rest/services/eHydro_Survey_Data/FeatureServer/0/query?outFields=*&where=1%3D1'
+        self._outdir = os.path.join(os.getcwd(), 'usace')
+        self._ref_vector = None
 
         self._status = 0
-        self._outdir = os.path.join(os.getcwd(), 'usace')
+        self._req = None
         self._results = []
         self._survey_list = []
-        self._ref_vector = None
 
         self.stop = callback
         self._want_proc = True
-        self._want_list = want_list
-        self._want_update = want_update
+        self._want_update = False
         self._filters = filters
 
+        self.region = extent
         if extent is not None:
             self.data = { 'geometry':extent.bbox,
                           'inSR':4326,
                           'f':'pjson' }
  
-            self._results = fetch_req(self._usace_gs_api_url, params = self.data)
-            self._survey_list = self._results.json()
+            self._req = fetch_req(self._usace_gs_api_url, params = self.data)
+            if self._req is not None:
+                self._survey_list = self._req.json()
+            else: self._status = -1
+        else: self._status = -1
+
+        pb.opm = 'loaded USACE fetch module.'
+        pb.end(self._status)
 
     def run(self):
         '''Run the USACE fetching module'''
 
-        if self._want_list:
-            self.print_results()
-        else: self.fetch_results()
+        if self._status == 0:
+            for feature in self._survey_list['features']:
+                fetch_fn = feature['attributes']['SOURCEDATALOCATION']
+                self._results.append([fetch_fn, fetch_fn.split('/')[-1]])
 
-    def print_results(self):
-        for feature in self._survey_list['features']:
-            print feature['attributes']['SOURCEDATALOCATION']
-
-    def fetch_results(self):
-        for feature in self._survey_list['features']:
-            fetch_fn = feature['attributes']['SOURCEDATALOCATION']
-            self._status = fetch_file(fetch_fn, os.path.join(self._outdir, fetch_fn),
-                                      callback = self.stop)
+        return(self._results)
 
 ## =============================================================================
 ##
@@ -1417,25 +1411,21 @@ class usace(threading.Thread):
 ##
 ## =============================================================================
 
-class gmrt(threading.Thread):
+class gmrt:
     '''Fetch raster data from the GMRT'''
 
-    def __init__(self, extent = None, filters = [],
-                 want_list = False, want_update = False, callback = None):
-        threading.Thread.__init__(self)
-
+    def __init__(self, extent = None, filters = [], callback = None):
+        pb = utils._progress('loading GMRT fetch module...')
         self._gmrt_grid_url = "https://www.gmrt.org/services/GridServer?"
         self._outdir = os.path.join(os.getcwd(), 'gmrt')
-        self.outf = None
 
         self._status = 0
-        self._results = None
+        self._results = []
         self._ref_vector = None
 
         self.stop = callback
         self._want_proc = True
-        self._want_list = want_list
-        self._want_update = want_update
+        self._want_update = False
         self._filters = filters
 
         self.region = extent
@@ -1448,130 +1438,25 @@ class gmrt(threading.Thread):
                           'resolution':'max',
                           'format':'geotiff' }
         
-            self._results = fetch_req(self._gmrt_grid_url, params = self.data)
+            self._req = fetch_req(self._gmrt_grid_url, params = self.data, tries = 2)
 
-    def run(self):
-        '''Run the GMRT fetching module'''
-
-        if self._want_list:
-            self.print_results()
-        else: self.fetch_results()
-
-        if self._want_proc:
-            self.proc_results()
-            
-    def print_results(self):
-        '''print the appropriate URL for downloading the GMRT in the
-        region of interest.'''
-
-        print(self._results.url)
-
-    def fetch_results(self):
-        '''Fetch the GMRT data in the region of interest.'''
-
-        if self._results is not None:
-            gmrt_fn = self._results.headers['content-disposition'].split('=')[1].strip()
+            gmrt_fn = self._req.headers['content-disposition'].split('=')[1].strip()
             outf = os.path.join(self._outdir,
                                 '{}_{}.{}'.format(gmrt_fn.split('.')[0],
                                                   self.region.fn,
                                                   gmrt_fn.split('.')[1]))
-        
-            if not os.path.exists(os.path.dirname(outf)):
-                os.makedirs(os.path.dirname(outf))
 
-            self._status = fetch_file(self._results.url, outf, callback = self.stop)
-
-        else: self._status = -1
-
-    def proc_results(self):
-        '''Process the GMRT results to XYZ'''
-
-        if self._results is not None:
-            proc_q = queue.Queue()
-
-            gmrt_fn = self._results.headers['content-disposition'].split('=')[1].strip()
-            outf = os.path.join(self._outdir,
-                                '{}_{}.{}'.format(gmrt_fn.split('.')[0],
-                                                  self.region.fn, gmrt_fn.split('.')[1]))
-
-            surv_dir = self._outdir
-            surv_fn = os.path.basename(outf)
-
-            if os.path.exists(outf):
-                proc_q.put_nowait([[surv_dir, surv_fn, outf, 'gmrt', self.region], self.stop])
-
-            for _ in range(1):
-                threading.Thread(target = proc_queue, args = (proc_q,)).start()
-
-            proc_q.join()
+            self._results = [self._req.url, outf]
             
-## =============================================================================
-##
-## SRTM Fetch (cgiar)
-##
-## Fetch srtm tiles from cgiar.
-##
-## =============================================================================
-
-class srtm_cgiar(threading.Thread):
-    '''Fetch SRTM data from CGIAR'''
-
-    def __init__(self, extent = None, filters = [],
-                 want_list = False, want_update = False, callback = None):
-        threading.Thread.__init__(self)
-
-        self._srtm_url = 'http://srtm.csi.cgiar.org'
-        self._srtm_dl_url = 'http://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/'
-
-        self._status = 0
-        self._results = []
-        self._outdir = os.path.join(os.getcwd(), 'srtm')
-        self._ref_vector = os.path.join(fetchdata, 'srtm.gmt')
-
-        self.stop = callback
-        self._want_proc = True
-        self._want_list = want_list
-        self._want_update = want_update
-        self._filters = filters
-
-        self._boundsGeom = None
-        if extent is not None: 
-            self._boundsGeom = bounds2geom(extent.region)
+        pb.opm = 'loaded GMRT fetch module.'
+        pb.end(self._status)
 
     def run(self):
-        '''Run the SRTM fetching module.'''
-
-        self.search_gmt()
-
-        if self._want_list:
-            self.print_results()
-        else: self.fetch_results()
-
-    def search_gmt(self):
-        gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
-        layer = gmt1.GetLayer()
-
-        for filt in self._filters:
-            layer.SetAttributeFilter('{}'.format(filt))
-
-        for feature in layer:
-            geom = feature.GetGeometryRef()
-
-            if geom.Intersects(self._boundsGeom):
-                geo_env = geom.GetEnvelope()
-                srtm_lon = int(math.ceil(abs((-180 - geo_env[1]) / 5)))
-                srtm_lat = int(math.ceil(abs((60 - geo_env[3]) / 5)))
-                self._results.append('srtm_{:02}_{:02}.zip'.format(srtm_lon, srtm_lat))
-
-    def print_results(self):
-        for row in self._results:
-            print('{}{}'.format(self._srtm_dl_url, row))
-
-    def fetch_results(self):
-        for row in self._results:
-            self._status = fetch_file('{}{}'.format(self._srtm_dl_url, row),
-                                      os.path.join(self._outdir, os.path.basename(row)),
-                                      callback = self.stop)
+        '''Run the GMRT fetching module'''
+        
+        if self._req is not None:
+            return([self._results])
+        else: return([])            
 
 ## =============================================================================
 ##
@@ -1581,24 +1466,22 @@ class srtm_cgiar(threading.Thread):
 ##
 ## =============================================================================
 
-class ngs(threading.Thread):
+class ngs:
     '''Fetch NGS monuments from NGS'''
 
-    def __init__(self, extent = None, filters = [],
-                 want_list = False, want_update = False, callback = None):
-        threading.Thread.__init__(self)
-
+    def __init__(self, extent = None, filters = [], callback = None):
+        pb = utils._progress('loading NGS Monument fetch module...')
         self._ngs_search_url = 'http://geodesy.noaa.gov/api/nde/bounds?'
         self._outdir = os.path.join(os.getcwd(), 'ngs')
         self._ref_vector = None
 
         self._status = 0
-        self._results = None
+        self._req = None
+        self._results = []
 
         self.stop = callback
         self._want_proc = True
-        self._want_list = want_list
-        self._want_update = want_update
+        self._want_update = False
         self._filters = filters
 
         self.region = extent
@@ -1608,19 +1491,18 @@ class ngs(threading.Thread):
                           'maxlat':extent.north,
                           'minlat':extent.south }
 
-            self._results = fetch_req(self._ngs_search_url, params = self.data)
+            self._req = fetch_req(self._ngs_search_url, params = self.data)
+
+        pb.opm = 'loaded NGS Monument fetch module.'
+        pb.end(self._status)
 
     def run(self):
         '''Run the NGS (monuments) fetching module.'''
 
-        if self._want_list:
-            self.print_results()
-        else: self.fetch_results()
+        self._results.append([self._req.url, 'ngs_results_{}.txt'.format(self.region.fn)])
+        return(self._results)
         
-    def print_results(self):
-        print self._results.url
-
-    def fetch_results(self):
+    def proc_results(self):
         try:
             r = self._results.json()
 
@@ -1646,15 +1528,15 @@ class ngs(threading.Thread):
 ## =============================================================================
 
 fetch_infos = { 
-    'dc':[lambda x, f, wl, wu, c: dc(x, f, wl, wu, callback = c), 'digital coast'],
-    'nos':[lambda x, f, wl, wu, c: nos(x, f, wl, wu, callback = c), 'noaa nos bathymetry'],
-    'mb':[lambda x, f, wl, wu, c: mb(x, f, wl, wu, callback = c), 'noaa multibeam'],
-    'gmrt':[lambda x, f, wl, wu, c: gmrt(x, f, wl, wu, callback = c), 'gmrt'],
-    'srtm':[lambda x, f, wl, wu, c: srtm_cgiar(x, f, wl, wu, callback = c), 'srtm from cgiar'],
-    'charts':[lambda x, f, wl, wu, c: charts(x, f, wl, wu, callback = c), 'noaa nautical charts'],
-    'tnm':[lambda x, f, wl, wu, c: tnm(x, f, wl, wu, callback = c), 'the national map'],
-    'ngs':[lambda x, f, wl, wu, c: ngs(x, f, wl, wu, callback = c), 'ngs monuments'],
-    'usace':[lambda x, f, wl, wu, c: usace(x, f, wl, wu, callback = c), 'usace bathymetry'] 
+    'dc':[lambda x, f, c: dc(x, f, callback = c), 'digital coast'],
+    'nos':[lambda x, f, c: nos(x, f, callback = c), 'noaa nos bathymetry'],
+    'charts':[lambda x, f, c: charts(x, f, callback = c), 'noaa nautical charts'],
+    'srtm':[lambda x, f, c: srtm_cgiar(x, f, callback = c), 'srtm from cgiar'],
+    'tnm':[lambda x, f, c: tnm(x, f, callback = c), 'the national map'],
+    'mb':[lambda x, f, c: mb(x, f, callback = c), 'noaa multibeam'],
+    'gmrt':[lambda x, f, c: gmrt(x, f, callback = c), 'gmrt'],
+    'usace':[lambda x, f, c: usace(x, f, callback = c), 'usace bathymetry'],
+    'ngs':[lambda x, f, c: ngs(x, f, callback = c), 'ngs monuments'],
 }
 
 def fetch_desc(x):
@@ -1764,103 +1646,107 @@ def main():
     ## check platform and installed software
     ## ==============================================
 
-    tw = utils._progress('checking platform')
+    tw = utils._progress('checking system status...')
     platform = sys.platform
-    tw.opm = 'checking platform - {}'.format(platform)
+    tw.opm = 'platform is {}.'.format(platform)
     tw.end(status)
 
     if want_proc:
-        tw = utils._progress('checking for GMT')
+        tw.opm = 'checking for GMT'
         if utils.cmd_exists('gmt'): 
             gmt_vers, status = utils.run_cmd('gmt --version')
-            tw.opm = 'checking for GMT - {}'.format(gmt_vers.rstrip())
         else: status = -1
         tw.end(status)
 
-        tw = utils._progress('checking for MBSystem')
+        tw.opm = 'checking for MBSystem'
         if utils.cmd_exists('mbgrid'): 
             mbs_vers, status = utils.run_cmd('mbgrid -version')
-            try:
-                mbs_vers = mbs_vers.split('\n')[3].rstrip().split()[2]
-            except:
-                mbs_vers = mbs_vers.split('\n')[2].rstrip().split()[2]
-            tw.opm = 'checking for MBSystem - {}'.format(mbs_vers)
         else: status = -1
         tw.end(status)
 
-        tw = utils._progress('checking for LASTools')
+        tw.opm = 'checking for LASTools'
         if utils.cmd_exists('las2txt'): 
             status = 0
         else: status = -1
         tw.end(status)
 
-        tw = utils._progress('checking for GDAL command-line')
+        tw.opm = 'checking for GDAL command-line'
         if utils.cmd_exists('gdal-config'): 
             gdal_vers, status = utils.run_cmd('gdal-config --version')
-            tw.opm = 'checking for GDAL command-line - {}'.format(gdal_vers.rstrip())
         else: status = -1
         tw.end(status)
+
+    tw.opm = 'checked system status.'
+    tw.end(status)
 
     ## ==============================================
     ## process input region(s)
     ## ==============================================
 
-    if extent is None:
-        print(_usage)
-        sys.exit(1)
+    if extent is not None:
+        tw = utils._progress('processing region(s)...')
+        try: 
+            these_regions = [regions.region(extent)]
+        except:
+            if os.path.exists(extent):
+                _poly = ogr.Open(extent)
+                _player = _poly.GetLayer(0)
+                for pf in _player:
+                    _pgeom = pf.GetGeometryRef()
+                    these_regions.append(regions.region("/".join(map(str, _pgeom.GetEnvelope()))))
 
-    tw = utils._progress('processing region(s)')
-    try: 
-        these_regions = [regions.region(extent)]
-    except:
-        if os.path.exists(extent):
-            _poly = ogr.Open(extent)
-            _player = _poly.GetLayer(0)
-            for pf in _player:
-                _pgeom = pf.GetGeometryRef()
-                these_regions.append(regions.region("/".join(map(str, _pgeom.GetEnvelope()))))
-
-    if len(these_regions) == 0:
-        status = -1
-
-    for this_region in these_regions:
-        if not this_region._valid: 
+        if len(these_regions) == 0:
             status = -1
 
-    tw.opm = 'processing {} region(s)'.format(len(these_regions))
-    tw.end(status)
+        for this_region in these_regions:
+            if not this_region._valid: 
+                status = -1
+
+        tw.opm = 'processed {} region(s)'.format(len(these_regions))
+        tw.end(status)
+    else: these_regions = [regions.region('-180/180/0/90')]
 
     ## ==============================================
     ## fetch some data in each of the input regions
     ## ==============================================
 
     for rn, this_region in enumerate(these_regions):
-        if not stop_threads:
-            for fc in fetch_class:
+        if stop_threads:
+            break
+        for fc in fetch_class:
 
-                ## ==============================================
-                ## Run the Fetch Module
-                ## ==============================================
+            ## ==============================================
+            ## Run the Fetch Module
+            ## ==============================================
 
-                pb = utils._progress('fetching {} region ({}/{}): {}\
-                '.format(fc, rn + 1, len(these_regions), this_region.region_string))
-                
-                fl = fetch_infos[fc][0](this_region.buffer(5, percentage = True),
-                                        f, want_list, want_update, lambda: stop_threads)
-                fl._want_proc = want_proc
-                
-                try:
-                    fl.start()
-                    while True:
-                        time.sleep(2)
-                        pb.update()
-                        if not fl.is_alive():
-                            break
-                except (KeyboardInterrupt, SystemExit): 
-                    fl._status = -1
-                    stop_threads = True
+            pb = utils._progress('running fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...'.format(fc, this_region.region_string, rn+1, len(these_regions)))
+            fl = fetch_infos[fc][0](this_region.buffer(5, percentage = True), f, lambda: stop_threads)
+            fl._want_update = want_update
+            r = fl.run()
 
-                pb.end(fl._status)
+            if len(r) == 0:
+                status = -1
+            else:
+                if want_list:
+                    for result in r:
+                        print(result[0])
+                else:
+                    fr = fetch_results(r, this_region, fl._outdir, want_proc, lambda: stop_threads)
+
+                    try:
+                        fr.start()
+                        while True:
+                            time.sleep(1)
+                            pb.update()
+                            if not fr.is_alive():
+                                break
+                    except (KeyboardInterrupt, SystemExit): 
+                        fr._status = -1
+                        stop_threads = True
+
+                    fr.join()
+            pb.opm = 'ran fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...'.format(fc, this_region.region_string, rn+1, len(these_regions))
+            pb.end(status)
 
 if __name__ == '__main__':
     main()
