@@ -77,6 +77,7 @@ def fetch_queue(q, p = None):
     while True:
         fetch_args = q.get()
         this_region = fetch_args[2]
+        this_dt = fetch_args[4]
         fetch_args[2] = None
 
         if not fetch_args[3]():
@@ -85,47 +86,44 @@ def fetch_queue(q, p = None):
                 outf = fetch_args[1]
                 surv_dir = os.path.dirname(outf)
                 surv_fn = os.path.basename(outf)
-                surv_t = fetch_args[0].split('/')[-2]
+                #surv_t = fetch_args[0].split('/')[-2]
+
                 if os.path.exists(outf):
-                    p.put([[surv_dir, surv_fn, outf, surv_t, this_region], fetch_args[3]])
+                    p.put([[surv_dir, surv_fn, outf, this_dt, this_region], fetch_args[3]])
 
         q.task_done()
 
-def fetch_file(src_url, dst_fn, params = None, callback = None):
+def fetch_file(src_url, dst_fn, params = None, callback = None, datatype = None):
     '''fetch src_url and save to dst_fn'''
     
     status = 0
     halt = callback
-    pb = utils._progress('\033[37mfetching remote file:\033[m \033[1m{}\033[m...'.format(os.path.basename(src_url)))
+    pb = utils._progress('fetching remote file: \033[1m{}\033[m...'.format(os.path.basename(src_url)))
 
     if not os.path.exists(os.path.dirname(dst_fn)):
         try:
             os.makedirs(os.path.dirname(dst_fn))
         except: pass 
 
-    req = requests.get(src_url, stream = True, params = params, headers = r_headers)
+    try:
+        req = requests.get(src_url, stream = True, params = params, headers = r_headers)
+    except requestion.exceptions.RequestExceptions as e:
+        print 'Error: {}'.format(e)
+        req = None
+        status = -1
 
     if req:
-        #so_far = 0
-        #req_len = int(req.headers['Content-length'])
         with open(dst_fn, 'wb') as local_file:
             for chunk in req.iter_content(chunk_size = 50000):
                 if chunk:
-                    #so_far += 50000
                     if halt(): 
                         status = -1
                         break
                     local_file.write(chunk)
-                    #pb.update()
-                    #perc = so_far * 1e2 / req_len
-                    #if perc > 100: perc = 100
-                    #sys.stderr.write('\x1b[2K\r')
-                    #sys.stderr.write('fetching remote file: {}...{:4.0f}%\r'.format(os.path.basename(src_url), perc))
-                    #pb.update(message = '{:4.0f}%'.format(perc))
 
-        pb.opm = '\033[37mfetched remote file:\033[m \033[1m{}\033[m.'.format(os.path.basename(src_url))
-        pb.end(status)
-        return(status)
+    pb.opm = 'fetched remote file: \033[1m{}\033[m.'.format(os.path.basename(src_url))
+    pb.end(status)
+    return(status)
 
 def fetch_req(src_url, params = None, tries = 5, timeout = 2):
     '''fetch src_url and return the requests object'''
@@ -194,7 +192,7 @@ class fetch_results(threading.Thread):
             t.start()
 
         for row in self.results:
-            self.fetch_q.put([row[0], os.path.join(self._outdir, row[1]), self.region, self.stop_threads])
+            self.fetch_q.put([row[0], os.path.join(self._outdir, row[1]), self.region, self.stop_threads, row[2]])
 
         self.fetch_q.join()
         if self.want_proc:
@@ -207,14 +205,12 @@ class fetch_results(threading.Thread):
 ## =============================================================================
 
 proc_infos = { 
-    'GEODAS':lambda x: x.proc_geodas(),
-    'BAG':lambda x: x.proc_bag(),
-    'ENCs':lambda x: x.proc_enc(),
-    'las':lambda x: x.proc_dc_las(),
-    'las':lambda x: x.proc_dc_las(),
-    'tif':lambda x: x.proc_dc_raster(),
-    'tiff':lambda x: x.proc_dc_raster(),
-    'img':lambda x: x.proc_dc_raster(),
+    'GEODAS_XYZ':lambda x: x.proc_geodas(),
+    'GRID_BAG':lambda x: x.proc_bag(),
+    'ENC':lambda x: x.proc_enc(),
+    'lidar':lambda x: x.proc_dc_las(),
+    'raster':lambda x: x.proc_dc_raster(),
+    'srtm':lambda x: x.proc_dc_raster(),
 }
 
 def proc_queue(q):
@@ -265,7 +261,6 @@ class proc:
         to a DATALIST.'''
 
         pb = utils._progress('processing local file: \033[1m{}\033[m'.format(self.s_fn))
-
         if self.s_t in proc_infos.keys():
             proc_infos[self.s_t](self)
 
@@ -283,8 +278,7 @@ class proc:
 
         for o_xyz in self.xyzs:
             if os.stat(o_xyz).st_size != 0:
-
-                sdatalist = datalists.datalist(os.path.join(self.xyz_dir, '{}.datalist'.format(os.path.basename(self.s_dir))))
+                sdatalist = datalists.datalist(os.path.join(self.xyz_dir, '{}.datalist'.format(os.path.abspath(self.s_dir).split('/')[-1])))
                 sdatalist._append_datafile('{}'.format(os.path.basename(o_xyz)), 168, 1)
                 sdatalist._reset()
 
@@ -350,7 +344,12 @@ class proc:
                     f.write(s)
 
             s_bag = s_gz[:-3]
-        else: s_bag = s_gz
+        elif s_gz.split('.')[-1] == 'bag':
+            s_bag = s_gz
+        else: self.status = -1
+
+        if s_bag.split('.')[-1] != 'bag':
+            self.status = -1
 
         s_tif = os.path.join(self.s_dir, self.s_fn.split('.')[0].lower() + '.tif')            
         s_xyz = s_gz.split('.')[0] + '.xyz'
@@ -401,7 +400,6 @@ class proc:
         '''Process NOAA Digital Coast lidar data (las/laz) to Ground XYZ.'''
 
         out, self.status = utils.run_cmd('las2txt -verbose -parse xyz -keep_class 2 29 -i {}'.format(self.o_fn), False, None)
-
         if self.status == 0:
             self.o_fn_bn = os.path.basename(self.o_fn).split('.')[0]
             self.o_fn_txt = os.path.join(self.s_dir, '{}.txt'.format(self.o_fn_bn))
@@ -434,7 +432,7 @@ class proc:
             else:
                 os.remove(o_xyz)
 
-            os.remove(i_xyz)
+            #os.remove(i_xyz)
 
     def proc_enc(self):
         '''Proces Electronic Nautical Charts to NAVD88 XYZ.'''
@@ -745,6 +743,7 @@ class dc:
             geom = feature1.GetGeometryRef()
             if self._boundsGeom.Intersects(geom):
                 surv_url = feature1.GetField('Data')
+                surv_id = surv_url.split('/')[-2]
                 surv_dt = feature1.GetField('Datatype')
                 suh = fetch_html(surv_url)
                 if suh is None: 
@@ -769,7 +768,7 @@ class dc:
                                   float(tile[3]), float(tile[4])]
                             tile_geom = bounds2geom(tb)
                             if tile_geom.Intersects(self._boundsGeom):
-                                self._results.append([os.path.join(surv_url, tile[0]), tile[0]])
+                                self._results.append([os.path.join(surv_url, tile[0]), '{}/{}'.format(surv_id, tile[0]), 'lidar'])
 
                 elif 'raster' in surv_dt:
 
@@ -803,7 +802,7 @@ class dc:
 
                             if geom.Intersects(self._boundsGeom):
                                 tile_url = sf1.GetField('URL').strip()
-                                self._results.append([tile_url, tile_url.split('/')[-1]])
+                                self._results.append([tile_url, '{}/{}'.format(surv_id, tile_url.split('/')[-1]), 'raster'])
 
                         shp1 = slay1 = None
 
@@ -1003,7 +1002,7 @@ class nos:
                     fldata = feature.GetField('Data').split(',')
 
                     for i in fldata:
-                        self._results.append([i, i.split('/')[-1]])
+                        self._results.append([i, i.split('/')[-1], feature.GetField('Datatype')])
 
         gmt1 = layer = None
         tw.opm = 'filtered \033[1m{}\033[m data files from NOS reference vector'.format(len(self._results))
@@ -1148,7 +1147,7 @@ class charts():
         for feature1 in layer:
             geom = feature1.GetGeometryRef()
             if self._boundsGeom.Intersects(geom):
-                self._results.append([feature1.GetField('Data'), feature1.GetField('Data').split('/')[-1]])
+                self._results.append([feature1.GetField('Data'), feature1.GetField('Data').split('/')[-1], feature1.GetField('Datatype')])
 
         ds = layer = None
         tw.opm = 'filtered \033[1m{}\033[m data files from CHARTS reference vector.'.format(len(self._results))
@@ -1220,7 +1219,7 @@ class srtm_cgiar:
                 srtm_lon = int(math.ceil(abs((-180 - geo_env[1]) / 5)))
                 srtm_lat = int(math.ceil(abs((60 - geo_env[3]) / 5)))
                 out_srtm = 'srtm_{:02}_{:02}.zip'.format(srtm_lon, srtm_lat)
-                self._results.append(['{}{}'.format(self._srtm_dl_url, out_srtm), out_srtm])
+                self._results.append(['{}{}'.format(self._srtm_dl_url, out_srtm), out_srtm, 'srtm'])
 
         tw.opm = 'filtered \033[1m{}\033[m data files from SRTM reference vector.'.format(len(self._results))
         tw.end(self._status)
@@ -1286,7 +1285,7 @@ class tnm:
         if self._status == 0:
             for i in self._dataset_results['items']:
                 f_url = i['downloadURL']
-                self._results.append([f_url, f_url.split('/')[-1]])
+                self._results.append([f_url, f_url.split('/')[-1], 'tnm'])
 
         return(self._results)
 
@@ -1341,7 +1340,7 @@ class mb:
                 survey = r.split(' ')[0].split('/')[6]
                 dn = r.split(' ')[0].split('/')[:-1]
                 data_url = self._mb_data_url + '/'.join(r.split('/')[3:])
-                self._results.append([data_url.split(' ')[0], '/'.join([survey, dst_fn])])
+                self._results.append([data_url.split(' ')[0], '/'.join([survey, dst_fn]), 'mb'])
 
         return(self._results)
         
@@ -1412,7 +1411,7 @@ class usace:
         if self._status == 0:
             for feature in self._survey_list['features']:
                 fetch_fn = feature['attributes']['SOURCEDATALOCATION']
-                self._results.append([fetch_fn, fetch_fn.split('/')[-1]])
+                self._results.append([fetch_fn, fetch_fn.split('/')[-1], 'usace'])
 
         return(self._results)
 
@@ -1459,7 +1458,7 @@ class gmrt:
                                                   self.region.fn,
                                                   gmrt_fn.split('.')[1]))
 
-            self._results = [self._req.url, outf]
+            self._results = [self._req.url, outf, 'gmrt']
             
         pb.opm = 'loaded GMRT fetch module.'
         pb.end(self._status)
@@ -1512,7 +1511,7 @@ class ngs:
     def run(self):
         '''Run the NGS (monuments) fetching module.'''
 
-        self._results.append([self._req.url, 'ngs_results_{}.txt'.format(self.region.fn)])
+        self._results.append([self._req.url, 'ngs_results_{}.txt'.format(self.region.fn), 'ngs'])
         return(self._results)
         
     def proc_results(self):
@@ -1725,13 +1724,14 @@ def main():
 
     for rn, this_region in enumerate(these_regions):
         if stop_threads:
-            break
+            return
         for fc in fetch_class:
 
             ## ==============================================
             ## Run the Fetch Module
             ## ==============================================
 
+            status = 0
             pb = utils._progress('running fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...\
             '.format(fc, this_region.region_string, rn+1, len(these_regions)))
             fl = fetch_infos[fc][0](this_region.buffer(5, percentage = True), f, lambda: stop_threads)
