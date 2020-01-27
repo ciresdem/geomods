@@ -97,6 +97,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = None, datatype = None)
     '''fetch src_url and save to dst_fn'''
     
     status = 0
+    req = None
     halt = callback
     pb = utils._progress('fetching remote file: \033[1m{}\033[m...'.format(os.path.basename(src_url)))
 
@@ -109,10 +110,9 @@ def fetch_file(src_url, dst_fn, params = None, callback = None, datatype = None)
         req = requests.get(src_url, stream = True, params = params, headers = r_headers)
     except requestion.exceptions.RequestExceptions as e:
         print 'Error: {}'.format(e)
-        req = None
         status = -1
 
-    if req:
+    if req is not None:
         with open(dst_fn, 'wb') as local_file:
             for chunk in req.iter_content(chunk_size = 50000):
                 if chunk:
