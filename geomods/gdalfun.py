@@ -232,7 +232,7 @@ def chunks(src_fn, n_chunk = 10):
             x_chunk += n_chunk
             x_i_chunk += 1
 
-    return o_chunks
+    return(o_chunks)
 
 def crop(src_fn):
     '''Crop `src_fn` GDAL file by it's NoData value.
@@ -561,6 +561,47 @@ def scan(src_gdal, fail_if_nodata = False):
             #     x_i_data.append(data[i][x_i])
             
     srcds = None
+
+def split(elev, split_value = 0):
+    '''split raster into two peices based on z value'''
+
+    elev_g = gdal.Open(elev) 
+    
+    NDV = elev_g.GetRasterBand(1).GetNoDataValue()
+    xsize = elev_g.RasterXSize
+    ysize = elev_g.RasterYSize
+    GeoT = elev_g.GetGeoTransform()
+    DataType = elev_g.GetRasterBand(1).DataType
+    elev_prj = elev_g.GetProjectionRef()
+    
+    outFormat = elev_g.GetDriver().ShortName
+    output_upper=elev[:-4]+"_upper"+elev[-4:]
+    upper_array = elev_g.GetRasterBand(1).ReadAsArray( 0, 0, xsize, ysize ) 
+    upper_array[upper_array <= split_value] = NDV
+    
+    #Export Tif
+    UDataSet = gdal.GetDriverByName(outFormat).Create( output_upper, xsize, ysize, 1, DataType )
+    UDataSet.SetGeoTransform(GeoT)
+    UDataSet.SetProjection(elev_prj)
+    UDataSet.GetRasterBand(1).SetNoDataValue(NDV)
+    UDataSet.GetRasterBand(1).WriteArray( upper_array )
+    upper_array = UDataSet = None
+    output_lower=elev[:-4]+"_lower"+elev[-4:]
+    lower_array = elev_g.GetRasterBand(1).ReadAsArray( 0, 0, xsize, ysize )
+    lower_array[lower_array >= split_value] = NDV
+
+    #Export Tif
+    LDataSet = gdal.GetDriverByName(outFormat).Create( output_lower, xsize, ysize, 1, DataType )
+    LDataSet.SetGeoTransform(GeoT)
+    LDataSet.SetProjection(elev_prj)
+    LDataSet.GetRasterBand(1).SetNoDataValue(NDV)
+    
+    # Write the array
+    LDataSet.GetRasterBand(1).WriteArray( lower_array )
+    lower_array = LDataSet = None
+    elev_g = elev = None
+    
+    return([output_upper, output_lower])
 
 def transform(src_gdal):
     ##Getting spatial reference of input raster

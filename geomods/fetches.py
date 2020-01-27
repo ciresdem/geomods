@@ -81,7 +81,10 @@ def fetch_queue(q, p = None):
         fetch_args[2] = None
 
         if not fetch_args[3]():
-            fetch_file(*tuple(fetch_args))
+            if fetch_args[0].split(':')[0] == 'ftp':
+                fetch_ftp_file(*tuple(fetch_args))
+            else:
+                fetch_file(*tuple(fetch_args))
             if p is not None:
                 outf = fetch_args[1]
                 surv_dir = os.path.dirname(outf)
@@ -92,6 +95,31 @@ def fetch_queue(q, p = None):
                     p.put([[surv_dir, surv_fn, outf, this_dt, this_region], fetch_args[3]])
 
         q.task_done()
+
+def fetch_ftp_file(src_url, dst_fn, params = None, callback = None, datatype = None):
+    import urllib2
+
+    status = 0
+    f = None
+    halt = callback
+    pb = utils._progress('fetching remote ftp file: \033[1m{}\033[m...'.format(os.path.basename(src_url)))
+
+    if not os.path.exists(os.path.dirname(dst_fn)):
+        try:
+            os.makedirs(os.path.dirname(dst_fn))
+        except: pass 
+    try:
+        f = urllib2.urlopen(src_url)
+    except:
+        status - 1
+    
+    if f is not None:
+        with open(dst_fn, 'wb') as local_file:
+            local_file.write(f.read())
+
+    pb.opm = 'fetched remote ftp file: \033[1m{}\033[m.'.format(os.path.basename(src_url))
+    pb.end(status)
+    return(status)
 
 def fetch_file(src_url, dst_fn, params = None, callback = None, datatype = None):
     '''fetch src_url and save to dst_fn'''
@@ -108,7 +136,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = None, datatype = None)
 
     try:
         req = requests.get(src_url, stream = True, params = params, headers = r_headers)
-    except requestion.exceptions.RequestExceptions as e:
+    except requests.ConnectionError as e:
         print 'Error: {}'.format(e)
         status = -1
 
@@ -208,6 +236,7 @@ proc_infos = {
     'ENC':lambda x: x.proc_enc(),
     'lidar':lambda x: x.proc_dc_las(),
     'raster':lambda x: x.proc_dc_raster(),
+    'tnm':lambda x: x.proc_tnm_raster(),
     'srtm':lambda x: x.proc_dc_raster(),
 }
 
@@ -432,10 +461,53 @@ class proc:
 
             #os.remove(i_xyz)
 
+    def proc_tnm_raster(self):
+
+        zip_ref = zipfile.ZipFile(self.o_fn)
+        zip_files = zip_ref.namelist()
+        zip_ref.extractall(os.path.join(self.s_dir, self.s_t))
+        zip_ref.close()
+
+        self.o_fn_p_ras = os.path.join(self.s_dir, self.s_t, os.path.basename(self.o_fn).split('.')[0] + '.img')
+
+        out_chunks = gdalfun.chunks(self.o_fn_p_ras, 1000)
+        os.remove(self.o_fn_p_ras)
+
+        for chunk in out_chunks:
+
+            split_chunk = gdalfun.split(chunk, 0)
+
+            i_xyz = chunk.split('.')[0] + '.xyz'
+            o_xyz = os.path.join(self.xyz_dir, os.path.basename(i_xyz))
+
+            os.remove(chunk)
+
+            gdalfun.dump(split_chunk[0], o_xyz)
+            os.remove(split_chunk[0])
+            os.remove(split_chunk[1])
+
+            if os.stat(o_xyz).st_size != 0:
+                self.xyzs.append(o_xyz)
+            else:
+                os.remove(o_xyz)
+        
+        for i in zip_files:
+            i_file = os.path.join(self.s_dir, self.s_t, i)
+            if os.path.isfile(i_file):
+                os.remove(i_file)
+                zip_files = [x for x in zip_files if x != i]
+
+        if len(zip_files) > 0:
+            for i in zip_files:
+                i_file = os.path.join(self.s_dir, self.s_t, i)
+                if os.path.isdir(i_file):
+                    os.removedirs(i_file)
+
     def proc_enc(self):
         '''Proces Electronic Nautical Charts to NAVD88 XYZ.'''
 
         zip_ref = zipfile.ZipFile(self.o_fn)
+        zip_files = zip_ref.namelist()
         zip_ref.extractall(os.path.join(self.s_dir, 'enc'))
         zip_ref.close()
 
@@ -480,6 +552,20 @@ class proc:
 
         if os.path.exists(self.o_fn_tmp):
             os.remove(self.o_fn_tmp)
+
+        ds_000 = layer_s = None
+
+        # for i in zip_files:
+        #     i_file = os.path.join(self.s_dir, self.s_t, i)
+        #     if os.path.isfile(i_file):
+        #         os.remove(i_file)
+        #         zip_files = [x for x in zip_files if x != i]
+
+        # if len(zip_files) > 0:
+        #     for i in zip_files:
+        #         i_file = os.path.join(self.s_dir, 'enc', i)
+        #         if os.path.isdir(i_file):
+        #             os.removedirs(i_file)
 
 ## =============================================================================
 ##
@@ -873,7 +959,9 @@ class nos:
             t = np.asarray(self._results)
             p = t != ''
             r = t[p.all(1)]
-            
+            #rr = [tuple(row) for row in r]
+            #unique_results = np.unique(rr)
+
             return(r.tolist())
 
     ## ==============================================
@@ -1250,42 +1338,109 @@ class tnm:
         self._outdir = os.path.join(os.getcwd(), 'tnm')
         self._ref_vector = None
 
-        self._tnm_ds = [1, 2]
-        self._tnm_df = ['IMG']
+        self._tnm_ds = []
+        self._tnm_df = []
 
         self.stop = callback
         self._want_proc = True
         self._want_update = False
         self._filters = filters
-
+        self._req = None
+        
+        self.region = extent
         if extent is not None: 
             self._req = fetch_req(self._tnm_dataset_url)
-            self._datasets = self._req.json()
-
-            sbDTags = []
-            for ds in self._tnm_ds:
-                sbDTags.append(self._datasets[ds]['sbDatasetTag'])
-        
-            self.data = { 'datasets':sbDTags,
-                          'bbox':extent.bbox }
-        
-            self._req = fetch_req(self._tnm_product_url, params = self.data)
             if self._req is not None:
-                self._dataset_results = self._req.json()
+                try:
+                    self._datasets = self._req.json()
+                except:
+                    print 'error, try again'
+                    self._status = -1
             else: self._status = -1
+        else: self._status = -1
 
         pb.opm = 'loaded The National Map fetch module.'
         pb.end(self._status)
 
-    def run(self):
+    def run(self, index = None, dataset = None, subdataset = None, formats = None):
         '''Run the TNM (National Map) fetching module.'''
 
         if self._status == 0:
+            if index is not None:
+                self.print_datasets()
+                sys.exit()
+
+            if dataset is not None:
+                this_ds = [int(dataset)]
+                if subdataset is not None:
+                    this_ds.append(int(subdataset))
+
+                self._tnm_ds = [this_ds]
+            else: self._tnm_ds = [[1]]
+
+            if formats is not None:
+                self._tnm_df = formats.split(',')
+            else: self._tnm_df = ['IMG']
+
+            self.filter_datasets()
+        return(self._results)
+
+    def filter_datasets(self):
+        '''Filter TNM datasets.'''
+
+        tw = utils._progress('filtering TNM dataset results...')
+        req = None
+        sbDTags = []
+        for ds in self._tnm_ds:
+            dtags = self._datasets[ds[0]]['tags']
+
+            if len(ds) > 1:
+                dtag = dtags.keys()[ds[1]]
+                sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
+                if len(self._tnm_df) == 0:
+                    formats = self._datasets[ds[0]]['tags'][dtag]['formats']
+                    self._tnm_df = formats
+                sbDTags.append(sbDTag)
+            else:
+                if len(self._tnm_df) == 0:
+                    all_formats = True
+                else: all_formats = False
+
+                for dtag in dtags.keys():
+                    sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
+                    if all_formats:
+                        formats = self._datasets[ds[0]]['tags'][dtag]['formats']
+                        for ff in formats:
+                            self._tnm_df.append(ff)
+                    sbDTags.append(sbDTag)
+
+        self.data = { 'datasets':sbDTags,
+                      'bbox':self.region.bbox,
+                      'prodFormats': ','.join(self._tnm_df)}
+        
+        req = fetch_req(self._tnm_product_url, params = self.data)
+        if req is not None:
+            try:
+                self._dataset_results = req.json()
+            except ValueError:
+                print "tnm server error, try again"
+
+        else: self._status = -1
+
+        if len(self._dataset_results) > 0:
             for i in self._dataset_results['items']:
                 f_url = i['downloadURL']
                 self._results.append([f_url, f_url.split('/')[-1], 'tnm'])
 
-        return(self._results)
+        tw.opm = 'filtered \033[1m{}\033[m data files from TNM dataset results.'.format(len(self._results))
+        tw.end(self._status)
+
+
+    def print_datasets(self):
+        for i,j in enumerate(self._datasets):
+            print('%s: %s [ %s ]' %(i, j['title'], ", ".join(j['formats'])))
+            for m,n in enumerate(j['tags']):
+                print('\t%s: %s [ %s ]' %(m, n, ", ".join(j['tags'][n]['formats'])))
 
 ## =============================================================================
 ##
@@ -1542,11 +1697,11 @@ fetch_infos = {
     'nos':[lambda x, f, c: nos(x, f, callback = c), 'noaa nos bathymetry'],
     'charts':[lambda x, f, c: charts(x, f, callback = c), 'noaa nautical charts'],
     'srtm':[lambda x, f, c: srtm_cgiar(x, f, callback = c), 'srtm from cgiar'],
-    'tnm':[lambda x, f, c: tnm(x, f, callback = c), 'the national map'],
+    'tnm':[lambda x, f, c: tnm(x, f, callback = c), 'the national map [:index:dataset:subdataset:format,format,...]'],
     'mb':[lambda x, f, c: mb(x, f, callback = c), 'noaa multibeam'],
     'gmrt':[lambda x, f, c: gmrt(x, f, callback = c), 'gmrt'],
     'usace':[lambda x, f, c: usace(x, f, callback = c), 'usace bathymetry'],
-    'ngs':[lambda x, f, c: ngs(x, f, callback = c), 'ngs monuments'],
+    'ngs':[lambda x, f, c: ngs(x, f, callback = c), 'ngs monuments']
 }
 
 def fetch_desc(x):
@@ -1580,6 +1735,7 @@ Examples:
  % {} nos charts -R -90.75/-88.1/28.7/31.25 -f "Date > 2000"
  % {} dc -R tiles.shp -p
  % {} dc -R tiles.shp -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
+ % {} -R -89.75/-89.5/30.25/30.5 tnm::1:4
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
 '''.format(os.path.basename(sys.argv[0]),
@@ -1589,6 +1745,7 @@ CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
            os.path.basename(sys.argv[0]), 
            os.path.basename(sys.argv[0]), 
            os.path.basename(sys.argv[0]), 
+           os.path.basename(sys.argv[0]),
            os.path.basename(sys.argv[0]))
 
 def main():
@@ -1602,6 +1759,7 @@ def main():
     f = []
     fetch_class = []
     these_regions = []
+    mod_opts = {}
 
     ## ==============================================
     ## process Command-Line
@@ -1641,7 +1799,12 @@ def main():
                      utils._license))
             sys.exit(1)
 
-        else: fetch_class.append(sys.argv[i])
+        else: 
+            #fetch_class.append(sys.argv[i])
+            opts = arg.split(':')
+            opts_n = [None if x == '' else x for x in opts]
+            mod_opts[opts_n[0]] = list(opts_n[1:])
+            print opts_n
 
         i = i + 1
 
@@ -1649,8 +1812,8 @@ def main():
         print(_usage)
         sys.exit(1)
 
-    if len(fetch_class) == 0:
-        fetch_class = fetch_infos.keys()
+    #if len(fetch_class) == 0:
+    #    fetch_class = fetch_infos.keys()
 
     ## ==============================================
     ## check platform and installed software
@@ -1723,18 +1886,18 @@ def main():
     for rn, this_region in enumerate(these_regions):
         if stop_threads:
             return
-        for fc in fetch_class:
-
+        for fetch_mod in mod_opts.keys():
             ## ==============================================
             ## Run the Fetch Module
             ## ==============================================
 
             status = 0
+            args = tuple(mod_opts[fetch_mod])
             pb = utils._progress('running fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...\
-            '.format(fc, this_region.region_string, rn+1, len(these_regions)))
-            fl = fetch_infos[fc][0](this_region.buffer(5, percentage = True), f, lambda: stop_threads)
+            '.format(fetch_mod, this_region.region_string, rn+1, len(these_regions)))
+            fl = fetch_infos[fetch_mod][0](this_region.buffer(5, percentage = True), f, lambda: stop_threads)
             fl._want_update = want_update
-            r = fl.run()
+            r = fl.run(*args)
 
             if len(r) == 0:
                 status = -1
@@ -1758,7 +1921,7 @@ def main():
 
                     fr.join()
             pb.opm = 'ran fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...\
-            '.format(fc, this_region.region_string, rn+1, len(these_regions))
+            '.format(fetch_mod, this_region.region_string, rn+1, len(these_regions))
             pb.end(status)
 
 if __name__ == '__main__':

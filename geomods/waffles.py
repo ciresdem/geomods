@@ -606,6 +606,9 @@ class cudem(threading.Thread):
     def spatial_metadata(self, epsg = 4269):
         '''Geneate spatial metadata from a datalist'''
 
+        if self.inc < 0.0000925:
+            print 'warning, increments less than 1/3 arc-second may be slow.'
+
         ## ==============================================
         ## these fields should be found in the datalist 
         ## starting at position 3 (from 0)
