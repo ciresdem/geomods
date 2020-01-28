@@ -81,10 +81,11 @@ def fetch_queue(q, p = None):
         fetch_args[2] = None
 
         if not fetch_args[3]():
+            #print('queue length {}...'.format(q.qsize()))
             if fetch_args[0].split(':')[0] == 'ftp':
                 fetch_ftp_file(*tuple(fetch_args))
-            else:
-                fetch_file(*tuple(fetch_args))
+            else: fetch_file(*tuple(fetch_args))
+
             if p is not None:
                 outf = fetch_args[1]
                 surv_dir = os.path.dirname(outf)
@@ -395,7 +396,7 @@ class proc:
                 i_tif = chunk.split('.')[0] + '_wgs.tif'
                 o_xyz = os.path.join(self.xyz_dir, os.path.basename(i_xyz).lower())
 
-                out, self.status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(chunk, i_tif), False, None)
+                out, self.status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(chunk, i_tif), False, True)
                 
                 if self.status != 0 or self.stop():
                     os.remove(chunk)
@@ -1804,7 +1805,6 @@ def main():
             opts = arg.split(':')
             opts_n = [None if x == '' else x for x in opts]
             mod_opts[opts_n[0]] = list(opts_n[1:])
-            print opts_n
 
         i = i + 1
 
@@ -1827,13 +1827,13 @@ def main():
     if want_proc:
         tw.opm = 'checking for GMT'
         if utils.cmd_exists('gmt'): 
-            gmt_vers, status = utils.run_cmd('gmt --version')
+            gmt_vers, status = utils.run_cmd('gmt --version', prog = False)
         else: status = -1
         tw.end(status)
 
         tw.opm = 'checking for MBSystem'
         if utils.cmd_exists('mbgrid'): 
-            mbs_vers, status = utils.run_cmd('mbgrid -version')
+            mbs_vers, status = utils.run_cmd('mbgrid -version', prog = False)
         else: status = -1
         tw.end(status)
 
@@ -1845,7 +1845,7 @@ def main():
 
         tw.opm = 'checking for GDAL command-line'
         if utils.cmd_exists('gdal-config'): 
-            gdal_vers, status = utils.run_cmd('gdal-config --version')
+            gdal_vers, status = utils.run_cmd('gdal-config --version', prog = False)
         else: status = -1
         tw.end(status)
 
@@ -1857,7 +1857,7 @@ def main():
     ## ==============================================
 
     if extent is not None:
-        tw = utils._progress('processing region(s)...')
+        tw = utils._progress('loading region(s)...')
         try: 
             these_regions = [regions.region(extent)]
         except:
@@ -1875,7 +1875,7 @@ def main():
             if not this_region._valid: 
                 status = -1
 
-        tw.opm = 'processed {} region(s)'.format(len(these_regions))
+        tw.opm = 'loaded {} region(s)'.format(len(these_regions))
         tw.end(status)
     else: these_regions = [regions.region('-180/180/0/90')]
 
@@ -1886,7 +1886,9 @@ def main():
     for rn, this_region in enumerate(these_regions):
         if stop_threads:
             return
+
         for fetch_mod in mod_opts.keys():
+
             ## ==============================================
             ## Run the Fetch Module
             ## ==============================================

@@ -73,13 +73,11 @@ def init_config():
 
 cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ["PATH"].split(os.pathsep))
 
-def run_cmd_with_input(cmd, data_fun, verbose = False, prog = None):
+def run_cmd_with_input(cmd, data_fun, verbose = False, prog = True):
     '''Run a command with or without a progress bar while passing data'''
 
-    want_poll = lambda a, b: a or b is not None
-
-    if prog is not None:
-        prog = _progress('{}'.format(prog))
+    if prog:
+        pb = _progress('running cmd: {}...'.format(cmd[:44]))
 
     p = subprocess.Popen(cmd, shell = True, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)    
     
@@ -87,11 +85,10 @@ def run_cmd_with_input(cmd, data_fun, verbose = False, prog = None):
     t = threading.Thread(target = data_fun, args = (p.stdin,))
     t.start()
 
-    if prog is not None:
+    if prog:
         while True:
-            time.sleep(4)
-            prog.update()
-
+            time.sleep(3)
+            pb.update()
             if not t.is_alive():
                 break
 
@@ -102,25 +99,24 @@ def run_cmd_with_input(cmd, data_fun, verbose = False, prog = None):
         sys.stdout.write(out)
         sys.stderr.write(err)
     
-    if prog is not None:
-        prog.end(p.returncode)
+    if prog:
+        pb.opm = 'ran cmd: {}.'.format(cmd[:44])
+        pb.end(p.returncode)
 
     return out, p.returncode
 
-def run_cmd(cmd, verbose = False, prog = None):
+def run_cmd(cmd, verbose = False, prog = True):
     '''Run a command with or without a progress bar.'''
 
-    want_poll = lambda a, b: a or b is not None
-
-    if prog is not None:
-        prog = _progress('{}'.format(prog))
+    if prog:
+        pb = _progress('running cmd: {}...'.format(cmd[:44]))
     
     p = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)
 
-    if prog is not None:
+    if prog:
         while True:
             time.sleep(3)
-            prog.update()
+            pb.update()
             if p.poll() is not None:
                 break
 
@@ -131,8 +127,9 @@ def run_cmd(cmd, verbose = False, prog = None):
         sys.stdout.write(out)
         sys.stderr.write(err)
 
-    if prog is not None:
-        prog.end(p.returncode)
+    if prog:
+        pb.opm = 'ran cmd: {}.'.format(cmd[:44])
+        pb.end(p.returncode)
 
     return out, p.returncode
 
@@ -180,7 +177,7 @@ class vdatum:
     def _get_version(self):
         if self.vdatum_path is not None:
             self._version = None
-            out, status = run_cmd('java -jar {} {}'.format(self.vdatum_path, '-'))
+            out, status = run_cmd('java -jar {} {}'.format(self.vdatum_path, '-'), prog = False)
             for i in out.split('\n'):
                 if '- v' in i.strip():
                     self._version = i.strip().split('v')[-1]
@@ -213,7 +210,7 @@ class vdatum:
         else: pb = None
         
         vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},0,1,2:{}:{} region:{}'.format(self.ihorz, self.ivert, self.ohorz, self.overt, self.fd, src_fn, self.ds_dir, self.region)
-        out, status = run_cmd('java -jar {} {}'.format(self.vdatum_path, vdc), False, pb)
+        out, status = run_cmd('java -jar {} {}'.format(self.vdatum_path, vdc), False, self.verbose)
 
         return status
 

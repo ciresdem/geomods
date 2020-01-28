@@ -48,7 +48,7 @@ import datalists
 import gdalfun
 import utils
 
-_version = '0.1.4'
+_version = '0.2.0'
 
 ## =============================================================================
 ##
@@ -245,7 +245,7 @@ class cudem(threading.Thread):
             grd2tif_cmd = ('gmt grdconvert {} {}.tif=gd+n-9999:GTiff -V\
             '.format(src_grd, os.path.basename(src_grd).split('.')[0]))
             
-            out, self.status = utils.run_cmd(grd2tif_cmd, self.verbose)
+            out, self.status = utils.run_cmd(grd2tif_cmd, self.verbose, True)
         else: self.status = -1
 
         return(self.status)
@@ -258,7 +258,7 @@ class cudem(threading.Thread):
             return(self.status)
         else:
             grdinfo_cmd = ('gmt grdinfo {} -C'.format(src_grd))
-            out, self.status = utils.run_cmd(grdinfo_cmd, self.verbose)
+            out, self.status = utils.run_cmd(grdinfo_cmd, self.verbose, False)
             return(out.split())
 
     def grdcut(self, src_grd, src_region, dst_grd):
@@ -273,7 +273,7 @@ class cudem(threading.Thread):
         if mask:
             self.grdmask_cmd = ('gmt grdmath -V {} NOT {} = tmp.grd'.format(mask, src_grd))
 
-            out, self.status = utils.run_cmd(self.grdmask_cmd, self.verbose)
+            out, self.status = utils.run_cmd(self.grdmask_cmd, self.verbose, True)
             if self.status == 0: src_grd = 'tmp.grd'
 
         if region and region._valid:
@@ -281,7 +281,7 @@ class cudem(threading.Thread):
 
         else: self.grd2xyz_cmd = ('gmt grd2xyz {} -V -s > {}'.format(src_grd, dst_xyz))
             
-        out, self.status = utils.run_cmd(self.grd2xyz_cmd, self.verbose)
+        out, self.status = utils.run_cmd(self.grd2xyz_cmd, self.verbose, True)
 
         if self.status == 0:
             if mask:
@@ -304,10 +304,10 @@ class cudem(threading.Thread):
             slope_cmd1 = ('gmt grdmath -V {}_pslp.grd ATAN PI DIV 180 MUL = {}_slp.tif=gd+n-9999:GTiff\
             '.format(self.oname, self.oname))
 
-            out, self.status = utils.run_cmd(slope_cmd0, self.verbose)
+            out, self.status = utils.run_cmd(slope_cmd0, self.verbose, True)
 
             if self.status == 0:
-                out, self.status = utils.run_cmd(slope_cmd1, self.verbose)
+                out, self.status = utils.run_cmd(slope_cmd1, self.verbose, True)
 
                 if os.path.exists('{}_pslp.grd'.format(self.oname)):
                     os.remove('{}_pslp.grd'.format(self.oname))
@@ -350,15 +350,10 @@ class cudem(threading.Thread):
         num_cmd1 = ('gmt grdmath -V {}_num.grd 0 MUL 1 ADD 0 AND = {}_num_msk.tif=gd+n-9999:GTiff\
         '.format(self.oname, self.oname))
 
-        pb = 'processing {} to NUM grid'.format(self.datalist._path_basename)
-
-        out, self.status = utils.run_cmd_with_input(num_cmd0, self.datalist._cat_port, verbose = self.verbose, prog = pb)
+        out, self.status = utils.run_cmd_with_input(num_cmd0, self.datalist._cat_port, self.verbose, True)
 
         if self.status == 0:
-            if self.verbose:
-                pb = 'generating NUM-MSK grid using gmt grdmath 0 MUL 1 ADD 0 AND'
-            else: pb = None
-            out, self.status = utils.run_cmd(num_cmd1, self.verbose, pb)
+            out, self.status = utils.run_cmd(num_cmd1, self.verbose, True)
 
             if self.status == 0:
                 self.grd2tif('{}_num.grd'.format(self.oname))
@@ -405,22 +400,15 @@ class cudem(threading.Thread):
         '.format(self.oname, self.oname, self.dist_region.gmt))
 
         if mask is None:
-            out, self.status = utils.run_cmd(dem_landmask_cmd, self.verbose, 'generating landmask from gsshg')
+            out, self.status = utils.run_cmd(dem_landmask_cmd, self.verbose, True)
         
-        pb = 'generating bathymetry surface using GMT'
-
-        out, self.status = utils.run_cmd_with_input(dem_surf_cmd, self.datalist._cat_port, self.verbose, pb)
+        out, self.status = utils.run_cmd_with_input(dem_surf_cmd, self.datalist._cat_port, self.verbose, True)
 
         if self.status == 0:
-
-            #if mask is None:
-            out, self.status = utils.run_cmd(dem_landmask_cmd1, self.verbose, 'masking bathy surface')
-
-            pb = 'clipping DEM to final region'
-            out, self.status = utils.run_cmd(dem_cut_cmd, self.verbose, pb)
+            out, self.status = utils.run_cmd(dem_landmask_cmd1, self.verbose, True)
+            out, self.status = utils.run_cmd(dem_cut_cmd, self.verbose, True)
             
             if self.status == 0:
-
                 if os.path.exists('{}_p.grd'.format(self.oname)):
                     os.remove('{}_p.grd'.format(self.oname))
 
@@ -449,7 +437,7 @@ class cudem(threading.Thread):
                 ## Generate .inf file
                 ## ==============================================
 
-                out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, 'bathy.datalist')), False, None)
+                out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(xyz_dir, 'bathy.datalist')), False, True)
 
         return(self.status)
 
@@ -466,13 +454,10 @@ class cudem(threading.Thread):
         dem_cut_cmd = ('gmt grdcut -V {}_p.grd -G{}.grd {}\
         '.format(self.oname, self.oname, self.dist_region.gmt))
 
-        pb = 'generating DEM using GMT'
-
-        out, self.status = utils.run_cmd_with_input(dem_surf_cmd, self.datalist._cat_port, self.verbose, pb)
+        out, self.status = utils.run_cmd_with_input(dem_surf_cmd, self.datalist._cat_port, self.verbose, True)
 
         if self.status == 0:
-            pb = 'clipping DEM to final region'
-            out, self.status = utils.run_cmd(dem_cut_cmd, self.verbose, pb)
+            out, self.status = utils.run_cmd(dem_cut_cmd, self.verbose, True)
             
             if self.status == 0:
 
@@ -492,10 +477,9 @@ class cudem(threading.Thread):
 
         ## mbgrid will cause popen to hang if stdout is not cleared...should add output file to send to...
 
-        pb = 'generating DEM and NUM grid using mbgrid -T35 -X0.1 -C10/3 -M'
         mbgrid_cmd = ('mbgrid -I{} {} -E{:.7f}/{:.7f}/degrees! -O{} -A2 -G100 -F1 -N -C10/3 -S0 -X0.1 -T35 -M > /dev/null 2> /dev/null \
         '.format(self.datalist._path, self.dist_region.gmt, self.inc, self.inc, self.oname))
-        out, self.status = utils.run_cmd(mbgrid_cmd, self.verbose, pb)
+        out, self.status = utils.run_cmd(mbgrid_cmd, self.verbose, True)
 
         if self.status == 0:
         
@@ -503,12 +487,10 @@ class cudem(threading.Thread):
             self.dem['num-grd'] = '{}_num.grd'.format(self.oname)
 
             if self.node == 'pixel':
-                pb = 'resampling DEM to pixel-node registration'
-                out, self.status = utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['dem-grd']), self.verbose, pb)
+                out, self.status = utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['dem-grd']), self.verbose, True)
                 os.rename('tmp.grd', self.dem['dem-grd'])
 
-                pb = 'resampling NUM grid to pixel-node registration'
-                out, self.status = utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['num-grd']), self.verbose, pb)
+                out, self.status = utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['num-grd']), self.verbose, True)
                 os.rename('tmp.grd', self.dem['num-grd'])                
 
             self.grd2tif(self.dem['dem-grd'])
@@ -530,8 +512,7 @@ class cudem(threading.Thread):
             num_msk_cmd = ('gmt grdmath -V {} 0 MUL 1 ADD 0 AND = {}_num_msk.tif=gd+n-9999:GTiff\
             '.format(self.dem['num-grd'], self.oname))
 
-            pb = 'generating NUM-MSK grid using gmt grdmath 0 MUL 1 ADD 0 AND'
-            out, self.status = utils.run_cmd(num_msk_cmd, self.verbose, pb)
+            out, self.status = utils.run_cmd(num_msk_cmd, self.verbose, True)
 
             if self.status == 0:
                 self.dem['num-msk'] = ('{}_num_msk.tif'.format(self.oname))
@@ -664,7 +645,7 @@ class cudem(threading.Thread):
                     this_datalist = datalists.datalist(dl[0], self.dist_region)
                     this_dem = cudem(this_datalist, self.region, str(self.inc), verbose = self.verbose)
 
-                    pb.opm = 'loading datalist...{}'.format(this_datalist._path_basename)
+                    pb.opm = 'loaded datalist <<\033[1m{}\033[m>>'.format(this_datalist._path_basename)
                     pb.end(0)
 
                     try:
@@ -683,7 +664,7 @@ class cudem(threading.Thread):
                     this_dem._dem_remove('num')
                     this_dem._dem_remove('num-grd')
 
-                    pb = utils._progress('gathering geometries from {}'.format(this_datalist._path_basename))
+                    pb = utils._progress('gathering geometries from \033[1m{}\033[m...'.format(this_datalist._path_basename))
 
                     if self.status == 0:
                         src_ds = gdal.Open(this_dem.dem['num-msk'])
@@ -703,8 +684,26 @@ class cudem(threading.Thread):
                         tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(this_dem.oname), None, ogr.wkbMultiPolygon)
                         tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
                         
-                        pb1 = utils._progress('polygonizing {} mask'.format(this_datalist._path_basename))
-                        result = gdal.Polygonize(srcband, None, tmp_layer, 0, [], callback = None)
+                        pb1 = utils._progress('polygonizing \033[1m{}\033[m mask...'.format(this_datalist._path_basename))
+
+                        t = threading.Thread(target = gdal.Polygonize, args = (srcband, None, tmp_layer, 0, [], None))
+                        t.daemon = True
+
+                        try:
+                            t.start()
+                            while True:
+                                time.sleep(2)
+                                pb1.update()
+                                if not t.is_alive():
+                                    break
+                        except (KeyboardInterrupt, SystemExit): 
+                            self.status = -1
+                        t.join()
+
+                        #result = gdal.Polygonize(srcband, None, tmp_layer, 0, [], callback = None)
+
+                        pb1.opm = 'polygonized \033[1m{}\033[m mask.'.format(this_datalist._path_basename)
+                        pb1.end(self.status)
 
                         multi = ogr.Geometry(ogr.wkbMultiPolygon)
                         src_ds = srcband = None
@@ -743,9 +742,9 @@ class cudem(threading.Thread):
                         if len(shps) > 0:
                             for sh in shps:
                                 os.remove(sh)
-                        pb1.end(result)
 
                     this_dem._dem_remove('num-msk')
+                    pb.opm = 'gathered geometries from \033[1m{}\033[m.'.format(this_datalist._path_basename)
                     pb.end(self.status)
         ds = layer = None
 
@@ -901,41 +900,37 @@ def main():
     ## check platform and installed software
     ## ==============================================
 
-    pb = utils._progress('checking platform.')
+    pb = utils._progress('checking system status...')
     platform = sys.platform
-    pb.opm = 'checking platform...{}'.format(platform)
-    pb.end(0)
+    pb.opm = 'platform is {}'.format(platform)
+    pb.end(status)
 
-    pb = utils._progress('checking for GMT...')
+    pb.opm = 'checking for GMT.'
     if utils.cmd_exists('gmt'): 
-        gmt_vers, status = utils.run_cmd('gmt --version')
-        pb.opm = 'checking for GMT...{}'.format(gmt_vers.rstrip())
+        gmt_vers, status = utils.run_cmd('gmt --version', prog = False)
     else: status = -1
     pb.end(status)
 
-    pb = utils._progress('checking for MBSystem...')
+    pb.opm = 'checking for MBSystem.'
     if utils.cmd_exists('mbgrid'): 
-        mbs_vers, status = utils.run_cmd('mbgrid -version')
-        try:
-            mbs_vers = mbs_vers.split('\n')[3].rstrip().split()[2]
-        except:
-            mbs_vers = mbs_vers.split('\n')[2].rstrip().split()[2]
-        pb.opm = 'checking for MBSystem...{}'.format(mbs_vers)
+        mbs_vers, status = utils.run_cmd('mbgrid -version', prog = False)
     else: status = -1
     pb.end(status)
 
-    pb = utils._progress('checking for GDAL command-line')
+    pb.opm = 'checking for GDAL command-line'
     if utils.cmd_exists('gdal-config'): 
-        gdal_vers, status = utils.run_cmd('gdal-config --version')
-        pb.opm = 'checking for GDAL command-line - {}'.format(gdal_vers.rstrip())
+        gdal_vers, status = utils.run_cmd('gdal-config --version', prog = False)
     else: status = -1
+    pb.end(status)
+
+    pb.opm = 'checked system status.'
     pb.end(status)
 
     ## ==============================================
     ## process input region(s) and loop
     ## ==============================================
 
-    pb = utils._progress('processing region(s)...')
+    pb = utils._progress('loading region(s)...')
     try: 
         these_regions = [regions.region(iregion)]
     except:
@@ -952,7 +947,7 @@ def main():
     for this_region in these_regions:
         if not this_region._valid: 
           status = -1
-    pb.opm = 'processing region(s)...{}'.format(len(these_regions))
+    pb.opm = 'loaded \033[1m{}\033[m region(s).'.format(len(these_regions))
     pb.end(status)
             
     if status == -1:
@@ -973,7 +968,7 @@ def main():
             if not this_datalist._valid: 
                 status = -1
 
-            pb.opm = 'loading datalist...{}'.format(this_datalist._path_basename)
+            pb.opm = 'loaded datalist <<\033[1m{}\033[m>>'.format(this_datalist._path_basename)
             pb.end(status)
         else: this_datalist = None
 
@@ -1007,8 +1002,8 @@ def main():
 
             args = tuple(mod_opts[dem_mod])
                         
-            pb = utils._progress('geomods: running {} module'.format(dem_mod))
-            pb = utils._progress('running geomods dem module {} on region ({}/{}): {}\
+            #pb = utils._progress('geomods: running {} module'.format(dem_mod))
+            pb = utils._progress('running geomods dem module \033[1m{}\033[m on region ({}/{}): \033[1m{}\033[m...\
             '.format(dem_mod, rn + 1, len(these_regions), this_region.region_string))
 
             this_surf._module = _dem_mods[dem_mod][0](this_surf)
@@ -1025,6 +1020,8 @@ def main():
                 this_surf.status = -1
                 stop_threads = True
 
+            pb.opm = 'ran geomods dem module \033[1m{}\033[m on region ({}/{}): \033[1m{}\033[m...\
+            '.format(dem_mod, rn + 1, len(these_regions), this_region.region_string)
             pb.end(this_surf.status)
             
 if __name__ == '__main__':
