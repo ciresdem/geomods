@@ -917,7 +917,7 @@ def main():
     else: status = -1
     pb.end(status)
 
-    pb.opm = 'checking for GDAL command-line'
+    pb.opm = 'checking for GDAL command-line.'
     if utils.cmd_exists('gdal-config'): 
         gdal_vers, status = utils.run_cmd('gdal-config --version', prog = False)
     else: status = -1
