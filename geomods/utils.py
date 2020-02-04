@@ -109,7 +109,7 @@ def run_cmd(cmd, verbose = False, prog = True):
     '''Run a command with or without a progress bar.'''
 
     if prog:
-        pb = _progress('running cmd: \033[1m{}\033[m...'.format(cmd[:44]))
+        pb = _progress('running cmd: \033[1m{}\033[m...'.format(cmd[:64]))
     
     p = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)
 
@@ -128,7 +128,7 @@ def run_cmd(cmd, verbose = False, prog = True):
         sys.stderr.write(err)
 
     if prog:
-        pb.opm = 'ran cmd: \033[1m{}\033[m.'.format(cmd[:44])
+        pb.opm = 'ran cmd: \033[1m{}\033[m.'.format(cmd[:64])
         pb.end(p.returncode)
 
     return out, p.returncode
@@ -253,6 +253,10 @@ class _progress:
     def _clear_stderr(self, slen = 79):
         sys.stderr.write('\x1b[2K\r')
         sys.stderr.flush()
+
+    def err_msg(self, msg):
+        self._clear_stderr()
+        sys.stderr.write('{}\n'.format(msg))
 
     def update(self):
         self.pc = (self.count % self.tw)

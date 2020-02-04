@@ -82,9 +82,9 @@ def fetch_queue(q, p = None):
 
         if not fetch_args[3]():
             #print('queue length {}...'.format(q.qsize()))
-            if fetch_args[0].split(':')[0] == 'ftp':
-                fetch_ftp_file(*tuple(fetch_args))
-            else: fetch_file(*tuple(fetch_args))
+            #if fetch_args[0].split(':')[0] == 'ftp':
+            #    fetch_ftp_file(*tuple(fetch_args))
+            #else: fetch_file(*tuple(fetch_args))
 
             if p is not None:
                 outf = fetch_args[1]
@@ -288,7 +288,7 @@ class proc:
         Process data to WGS84/NAVD88 XYZ and append
         to a DATALIST.'''
 
-        pb = utils._progress('processing local file: \033[1m{}\033[m'.format(self.s_fn))
+        pb = utils._progress('processing local file: \033[1m{}\033[m...'.format(self.s_fn))
         if self.s_t in proc_infos.keys():
             proc_infos[self.s_t](self)
 
@@ -298,7 +298,7 @@ class proc:
                     os.remove(self.o_fn)
         else: self.status = -1
 
-        pb.opm = 'processed local file: \033[1m{}\033[m'.format(self.s_fn)
+        pb.opm = 'processed local file: \033[1m{}\033[m.'.format(self.s_fn)
         pb.end(self.status)
 
     def _add_to_datalist(self):
@@ -310,7 +310,7 @@ class proc:
                 sdatalist._append_datafile('{}'.format(os.path.basename(o_xyz)), 168, 1)
                 sdatalist._reset()
 
-                out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(self.xyz_dir, '{}.datalist'.format(os.path.basename(self.s_dir)))), False, None)
+                out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(self.xyz_dir, '{}.datalist'.format(os.path.abspath(self.s_dir).split('/')[-1]))), False, True)
             else: os.remove(o_xyz)
 
     def proc_gmrt(self):
@@ -379,50 +379,51 @@ class proc:
         if s_bag.split('.')[-1] != 'bag':
             self.status = -1
 
-        s_tif = os.path.join(self.s_dir, self.s_fn.split('.')[0].lower() + '.tif')            
-        s_xyz = s_gz.split('.')[0] + '.xyz'
-
         if self.status == 0 and not self.stop():
-            out_chunks = gdalfun.chunks(s_bag, 5000)
+            s_tif = os.path.join(self.s_dir, self.s_fn.split('.')[0].lower() + '.tif')            
+            s_xyz = s_gz.split('.')[0] + '.xyz'
 
-            if s_gz.split('.')[-1] == 'gz':
-                os.remove(s_bag)
+            if self.status == 0 and not self.stop():
+                out_chunks = gdalfun.chunks(s_bag, 5000)
 
-            for chunk in out_chunks:
-                if self.stop():
-                    break
+                if s_gz.split('.')[-1] == 'gz':
+                    os.remove(s_bag)
 
-                i_xyz = '{}_{}.xyz'.format(chunk.split('.')[0], self.s_region.fn)
-                i_tif = chunk.split('.')[0] + '_wgs.tif'
-                o_xyz = os.path.join(self.xyz_dir, os.path.basename(i_xyz).lower())
+                for chunk in out_chunks:
+                    if self.stop():
+                        break
 
-                out, self.status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(chunk, i_tif), False, True)
-                
-                if self.status != 0 or self.stop():
+                    i_xyz = '{}_{}.xyz'.format(chunk.split('.')[0], self.s_region.fn)
+                    i_tif = chunk.split('.')[0] + '_wgs.tif'
+                    o_xyz = os.path.join(self.xyz_dir, os.path.basename(i_xyz).lower())
+
+                    out, self.status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(chunk, i_tif), False, True)
+
+                    if self.status != 0 or self.stop():
+                        os.remove(chunk)
+                        break
+
                     os.remove(chunk)
-                    break
+                    gdalfun.dump(i_tif, i_xyz)
+                    os.remove(i_tif)
 
-                os.remove(chunk)
-                gdalfun.dump(i_tif, i_xyz)
-                os.remove(i_tif)
+                    if os.stat(i_xyz).st_size == 0:
+                        self.status = -1
+                        os.remove(i_xyz)
+                        break
 
-                if os.stat(i_xyz).st_size == 0:
-                    self.status = -1
-                    os.remove(i_xyz)
-                    break
+                    if self.this_vd.vdatum_path is not None:
+                        self.this_vd.ivert = 'mllw'
+                        self.this_vd.overt = 'navd88'
+                        self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir, 'result'))
 
-                if self.this_vd.vdatum_path is not None:
-                    self.this_vd.ivert = 'mllw'
-                    self.this_vd.overt = 'navd88'
-                    self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir, 'result'))
-                    
-                    self.this_vd.run_vdatum(os.path.relpath(i_xyz))
-                    
-                    os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(i_xyz)), o_xyz)
-                    os.remove(i_xyz)
-                else: os.rename(i_xyz, o_xyz)
+                        self.this_vd.run_vdatum(os.path.relpath(i_xyz))
 
-                self.xyzs.append(o_xyz)
+                        os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(i_xyz)), o_xyz)
+                        os.remove(i_xyz)
+                    else: os.rename(i_xyz, o_xyz)
+
+                    self.xyzs.append(o_xyz)
 
     def proc_dc_las(self):
         '''Process NOAA Digital Coast lidar data (las/laz) to Ground XYZ.'''
@@ -1281,10 +1282,6 @@ class srtm_cgiar:
         self.search_gmt()
 
         return(self._results)
-
-        if self._want_list:
-            self.print_results()
-        else: self.fetch_results()
 
     ## ==============================================
     ## Filter for results

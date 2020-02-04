@@ -56,11 +56,14 @@ _version = '0.2.0'
 ##
 ## =============================================================================
 
-def err2coeff(data):
+def err2coeff(my_data):
     '''data is 2 col file with `err dist`'''
-    try: 
-        my_data = np.loadtxt(data, delimiter=' ')
-    except: sys.exit(2)
+
+    from scipy import optimize
+    import matplotlib.pyplot as plt
+    #try: 
+    #    my_data = np.loadtxt(data, delimiter=' ')
+    #except: sys.exit(2)
 
     error=my_data[:,0]
     distance=my_data[:,1]
@@ -91,75 +94,31 @@ def err2coeff(data):
     errfunc = lambda p, x, y: y - fitfunc(p, x)
     
     out, cov, infodict, mesg, ier = optimize.leastsq(errfunc, coeff_guess, args = (xdata, ydata), full_output = True)
-    return(out)
 
-def dem_interpolation_uncertainty(dem_surface):
-    status = 0
-    sub_count = 0
-
-    #tw = clis.prog_bar('preparing for interpolation uncertainty')._end(status)
-
-    this_region = dem_surface.region
-    status = dem_surface.proximity()
+    # fit
     
-    for sub_region in this_region.split(4):
-        sub_count += 1
+    plt.plot(xdata, ydata, 'o')
+    plt.plot(xdata, fitfunc(out, xdata), '-')
+    plt.xlabel('distance')
+    plt.ylabel('error (m)')
+    #plt.show()
 
-        ## ==============================================            
-        ## Extract XYZ data for sub-region and 
-        ## randomly sample
-        ## ==============================================
+    out_png = 'unc_best_fit.png'
+    plt.savefig(out_png)   # save the figure to file
+    plt.close()
 
-        status = this_surf.grd2xyz(this_surf.dem['dem-grd'], 
-                                   '{}.xyz'.format(this_surf.oname), 
-                                   region = sub_region.buffer(10 * float(iinc)), 
-                                   mask = this_surf.dem['num-grd'])
-        
-        sub_xyz = np.loadtxt(this_surf.dem['xyz'], delimiter = ' ')
-                
-        np.random.shuffle(sub_xyz)
-        sx_len = len(sub_xyz)
-        sx_len_pct = int(sx_len * .5)
+    #scatter
 
-        np.savetxt('sub_{}d_rest.xyz'.format(sub_count), sub_xyz[sx_len_pct:], '%f', ' ')
-                
-        sub_datalist =  datalists.datalist('sub_{}.datalist'.format(sub_count), sub_region)
-        sub_datalist._append_datafile('sub_{}_rest.xyz'.format(sub_count), 168, 1)
-        sub_datalist._reset()
+    plt.scatter(distance, error)
+    plt.title('Scatter')
+    plt.xlabel('distance')
+    plt.ylabel('error (m)')
 
-        ## ==============================================
-        ## Generate the random-sample DEM            
-        ## ==============================================
+    out_png = 'unc_scatter.png'
+    plt.savefig(out_png)
+    plt.close()
 
-        sub_surf = cudem(sub_datalist, sub_region, iinc)
-        sub_surf.mbgrid()
-            
-        status = sub_surf.proximity()
-
-        ## ==============================================            
-        ## Query the random-sample DEM with the 
-        ## withheld data
-        ## ==============================================
-
-        sub_xyd = gdalfun.query(sub_xyz[:sx_len_pct], sub_surf.dem['tif'], 'xyd')
-
-        ## ==============================================
-        ## Query the random-sample proximity grid 
-        ## with the withheld data
-        ## ==============================================
-
-        sub_dp = gdalfun.query(sub_xyd, sub_surf.dem['prox'], 'zg')
-        #print np.max(sub_dp[:,1])
-            
-        ## ==============================================
-        ## Cleanup
-        ## ==============================================
-
-        fl = glob.glob('sub_{}*'.format(sub_count))
-        for f in fl:
-            try: 
-                os.remove(f)
-            except: pass
+    return(out)
 
 ## =============================================================================
 ##
@@ -245,7 +204,7 @@ class cudem(threading.Thread):
             grd2tif_cmd = ('gmt grdconvert {} {}.tif=gd+n-9999:GTiff -V\
             '.format(src_grd, os.path.basename(src_grd).split('.')[0]))
             
-            out, self.status = utils.run_cmd(grd2tif_cmd, self.verbose, True)
+            out, self.status = utils.run_cmd(grd2tif_cmd, self.verbose, self.verbose)
         else: self.status = -1
 
         return(self.status)
@@ -264,16 +223,18 @@ class cudem(threading.Thread):
     def grdcut(self, src_grd, src_region, dst_grd):
         '''Cut `src_grd` to `src_region` '''
 
-        if os.path.exists(src_grd):
-            self.cut_cmd1 = ('gmt grdcut -V {} -G{} {}'.format(src_grd, dst_grd, src_region.gmt))
+        #if os.path.exists(src_grd):
+        cut_cmd1 = ('gmt grdcut -V {} -G{} {}'.format(src_grd, dst_grd, src_region.gmt))
+        out, self.status = utils.run_cmd(cut_cmd1, self.verbose, self.verbose)
+        #else
 
     def grd2xyz(self, src_grd, dst_xyz, region = None, mask = None):
         '''Convert `src_grd` to xyz possibly using a nodata mask and/or a region'''
 
         if mask:
-            self.grdmask_cmd = ('gmt grdmath -V {} NOT {} = tmp.grd'.format(mask, src_grd))
+            self.grdmask_cmd = ('gmt grdmath -V {} {} OR = tmp.grd'.format(src_grd, mask))
 
-            out, self.status = utils.run_cmd(self.grdmask_cmd, self.verbose, True)
+            out, self.status = utils.run_cmd(self.grdmask_cmd, self.verbose, self.verbose)
             if self.status == 0: src_grd = 'tmp.grd'
 
         if region and region._valid:
@@ -281,14 +242,15 @@ class cudem(threading.Thread):
 
         else: self.grd2xyz_cmd = ('gmt grd2xyz {} -V -s > {}'.format(src_grd, dst_xyz))
             
-        out, self.status = utils.run_cmd(self.grd2xyz_cmd, self.verbose, True)
+        out, self.status = utils.run_cmd(self.grd2xyz_cmd, self.verbose, self.verbose)
 
-        if self.status == 0:
-            if mask:
-                if os.path.exists('tmp.grd'):
-                    os.remove('tmp.grd')
-
-        return(self.status)
+        #if self.status == 0:
+            #if mask:
+                #if os.path.exists('tmp.grd'):
+                #    os.remove('tmp.grd')
+                
+        self.dem['xyz'] = '{}'.format(dst_xyz)
+        #return(self.status)
 
     def slope(self):
         '''Generate a Slope grid from the DEM with GMT'''
@@ -329,9 +291,7 @@ class cudem(threading.Thread):
             gdalfun.proximity(self.dem['num-msk'], self.dem['prox'])
         
             self.max_prox = self.grdinfo(self.dem['prox'])[6]
-            print(self.max_prox)
-
-        return(self.status)
+            #print(self.max_prox)
         
     ## ==============================================
     ## Main DEM Modules
@@ -479,7 +439,7 @@ class cudem(threading.Thread):
 
         mbgrid_cmd = ('mbgrid -I{} {} -E{:.7f}/{:.7f}/degrees! -O{} -A2 -G100 -F1 -N -C10/3 -S0 -X0.1 -T35 -M > /dev/null 2> /dev/null \
         '.format(self.datalist._path, self.dist_region.gmt, self.inc, self.inc, self.oname))
-        out, self.status = utils.run_cmd(mbgrid_cmd, self.verbose, True)
+        out, self.status = utils.run_cmd(mbgrid_cmd, self.verbose, self.verbose)
 
         if self.status == 0:
         
@@ -487,10 +447,10 @@ class cudem(threading.Thread):
             self.dem['num-grd'] = '{}_num.grd'.format(self.oname)
 
             if self.node == 'pixel':
-                out, self.status = utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['dem-grd']), self.verbose, True)
+                out, self.status = utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['dem-grd']), self.verbose, self.verbose)
                 os.rename('tmp.grd', self.dem['dem-grd'])
 
-                out, self.status = utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['num-grd']), self.verbose, True)
+                out, self.status = utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem['num-grd']), self.verbose, self.verbose)
                 os.rename('tmp.grd', self.dem['num-grd'])                
 
             self.grd2tif(self.dem['dem-grd'])
@@ -512,7 +472,7 @@ class cudem(threading.Thread):
             num_msk_cmd = ('gmt grdmath -V {} 0 MUL 1 ADD 0 AND = {}_num_msk.tif=gd+n-9999:GTiff\
             '.format(self.dem['num-grd'], self.oname))
 
-            out, self.status = utils.run_cmd(num_msk_cmd, self.verbose, True)
+            out, self.status = utils.run_cmd(num_msk_cmd, self.verbose, self.verbose)
 
             if self.status == 0:
                 self.dem['num-msk'] = ('{}_num_msk.tif'.format(self.oname))
@@ -655,7 +615,7 @@ class cudem(threading.Thread):
                     ## ==============================================
                     ## Gererate the NUM-MSK
                     ## ==============================================
-                    
+
                     #pb1 = utils._progress('generating {} mask'.format(this_datalist._path_basename))
                     #this_dem.num_msk()
                     #pb1.end(self.status)
@@ -699,8 +659,6 @@ class cudem(threading.Thread):
                         except (KeyboardInterrupt, SystemExit): 
                             self.status = -1
                         t.join()
-
-                        #result = gdal.Polygonize(srcband, None, tmp_layer, 0, [], callback = None)
 
                         pb1.opm = 'polygonized \033[1m{}\033[m mask.'.format(this_datalist._path_basename)
                         pb1.end(self.status)
@@ -748,6 +706,174 @@ class cudem(threading.Thread):
                     pb.end(self.status)
         ds = layer = None
 
+    def uncertainty(self, grid_mod = None, dem = None):
+        sub_count = 0        
+        dp = None
+        tw = utils._progress('generating interpolation uncertainty')
+        this_region = self.region
+
+        if grid_mod is None:
+            grid_mod = 'mbgrid'
+
+        ## Generate a DEM and NUM grid if not provided...
+        if dem is not None:
+            self.dem['dem'] = '{}.tif'.format(dem)
+            self.dem['num'] = '{}_num.tif'.format(dem)
+            self.dem['num-msk'] = '{}_num_msk.tif'.format(dem)
+        self._rectify()
+
+        try:
+            self.dem['dem']
+            self.dem['num']
+            self.dem['num-msk']
+        except KeyError:
+            self.mbgrid()
+
+        num_sum = gdalfun.sum(self.dem['num-msk'])
+        gi = self.grdinfo(self.dem['num-msk'])
+        g_max = int(gi[9]) * int(gi[10])
+
+        num_perc = (num_sum / g_max) * 100
+
+        try:
+            self.dem['prox']
+        except KeyError:
+            self.proximity()
+
+        ## calculate 95th percentile of proximity
+        prox_perc_95 = gdalfun.percentile(self.dem['prox'], 95)
+        tw.err_msg('proximity 95th perc: {}'.format(prox_perc_95))
+
+        num_perc_5 = gdalfun.percentile(self.dem['num'], 5)
+        tw.err_msg('num 5th perc: {}'.format(num_perc_5))
+
+        sub_regions = this_region.chunk(self.inc, 200)
+        tw.err_msg('chunking into {} regions.'.format(len(sub_regions)))
+
+        for sub_region in sub_regions:
+            if self.stop():
+                break
+
+            ## ==============================================  
+            ## Extract XYZ data for sub-region and 
+            ## randomly sample
+            ##
+            ## Estimate data density and data sample-size
+            ## and looping variable
+            ##
+            ## ==============================================
+
+            sub_count += 1
+            tw = utils._progress('processing sub region...')
+
+            self.grd2xyz(self.dem['dem'], '{}.xyz'.format(self.oname), 
+                         region = sub_region.buffer(10*self.inc), 
+                         mask = self.dem['num'])
+
+            
+            gmts_inner = 'gmt gmtselect -V {} {} > sub_{}_inner.xyz'.format(self.dem['xyz'], sub_region.gmt, sub_count)
+            gmts_outer = 'gmt gmtselect -V {} {} -Ir > sub_{}_outer.xyz'.format(self.dem['xyz'], sub_region.gmt, sub_count)
+
+            out, self.status = utils.run_cmd(gmts_inner, self.verbose, False)
+            out, self.status = utils.run_cmd(gmts_outer, self.verbose, False)
+
+            #sub_xyz = np.loadtxt(self.dem['xyz'], ndmin=2, delimiter = ' ')
+            sub_xyz = np.loadtxt('sub_{}_inner.xyz'.format(sub_count), ndmin=2, delimiter = ' ')
+
+            ## ==============================================
+            ## Estimate density and sample size for sub-region
+            ## ==============================================
+
+            self.grdcut(self.dem['num-msk'], sub_region, 'tmp_sub.grd')
+            gi = self.grdinfo('tmp_sub.grd')
+            num_max = int(gi[9]) * int(gi[10])
+            tw.err_msg('waffles: total cells in subgrid is {}'.format(num_max))
+
+            self.grd2tif('tmp_sub.grd')
+            num_sub_sum = gdalfun.sum('tmp_sub.tif')
+            tw.err_msg('waffles: total filled cells in subgrid is {}'.format(num_sub_sum))
+
+            num_sub_perc = (num_sub_sum / num_max) * 100
+            tw.err_msg('waffles: {}% of cells have data'.format(num_sub_perc))
+            s_size = 100 - num_sub_perc
+            
+            if s_size >= 99:
+                #if num_sub_perc == 0:
+                n_loops = 0
+                #else: n_loops = int((s_size / num_perc) * 10)
+            else: n_loops = int((s_size / num_perc) +1)
+            #else: n_loops = 5
+            
+            tw.err_msg('waffles: loops for this subregion is {}'.format(n_loops))
+
+            ## ==============================================
+            ## Split Sample n_loops times
+            ## ==============================================
+
+            for i in range(0, n_loops):
+
+                if self.stop():
+                    break
+
+                np.random.shuffle(sub_xyz)
+                sx_len = len(sub_xyz)
+                sx_len_pct = int(sx_len * (num_sub_perc/100))
+                #if sx_len_pct == 0:
+                #    break
+                #tw.err_msg('waffles: extracting {} random data points out of {}'.format(sx_len_pct, sx_len))
+                np.savetxt('sub_{}_rest.xyz'.format(sub_count), sub_xyz[:sx_len_pct], '%f', ' ')
+
+                sub_datalist =  datalists.datalist('sub_{}.datalist'.format(sub_count), sub_region)
+                sub_datalist._append_datafile('sub_{}_rest.xyz'.format(sub_count), 168, 1)
+                sub_datalist._append_datafile('sub_{}_outer.xyz'.format(sub_count), 168, 1)
+                sub_datalist._reset()
+
+                ## ==============================================
+                ## Generate the random-sample DEM            
+                ## ==============================================
+
+                sub_surf = cudem(sub_datalist, sub_region, self.inc)
+                #print grid_mod
+                #_dem_mods[grid_mod][0](sub_surf)
+                sub_surf.mbgrid()
+                sub_surf.proximity()
+                
+                ## ==============================================            
+                ## Query the random-sample DEM with the 
+                ## withheld data
+                ## ==============================================
+                
+                sub_xyd = gdalfun.query(sub_xyz[sx_len_pct:], sub_surf.dem['dem'], 'xyd')
+
+                ## ==============================================
+                ## Query the random-sample proximity grid 
+                ## with the withheld data
+                ## ==============================================
+
+                sub_dp = gdalfun.query(sub_xyd, sub_surf.dem['prox'], 'zg')
+
+                if len(sub_dp) != 0:
+                    if dp is None:
+                        dp = sub_dp
+                    else: dp = np.concatenate((dp, sub_dp), axis = 0)
+
+                ## ==============================================
+                ## Cleanup
+                ## ==============================================
+
+                fl = glob.glob('sub_{}*'.format(sub_count))
+                for f in fl:
+                    try: 
+                        os.remove(f)
+                    except: pass
+            tw.opm = 'processed sub region {}.'.format(sub_count)
+            tw.end(self.status)
+        
+        dp = dp[dp[:,1]<prox_perc_95,:]
+        ec = err2coeff(dp)
+        print('error coefficient: {}'.format(ec))
+        np.savetxt('test.err', dp, '%f', ' ')
+
 ## =============================================================================
 ##
 ## Run cudem.py from command-line
@@ -762,7 +888,8 @@ _dem_mods = {
     'gmt-surface': [lambda x: x.surface, 'generate a DEM with GMT', 'None'],
     'spatial-metadata': [lambda x: x.spatial_metadata, 'generate spatial-metadata', 'epsg'],
     'conversion-grid': [lambda x: x.conversion_grid, 'generate a conversion grid with vdatum', 'ivert:overt:region'],
-    'bathy-surface': [lambda x: x.masked_surface, 'generate a bathymetry surface with GMT', 'coastline']
+    'bathy-surface': [lambda x: x.masked_surface, 'generate a bathymetry surface with GMT', 'coastline'],
+    'uncertainty': [lambda x: x.uncertainty, 'generate an uncertainty grid', 'gridding-module:dem']
 }
 
 def dem_mod_desc(x):

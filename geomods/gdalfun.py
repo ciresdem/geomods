@@ -162,6 +162,10 @@ def chunks(src_fn, n_chunk = 10):
     if band_nums == []: band_nums = [1]
 
     src_ds = gdal.Open(src_fn)
+    if src_ds is None:
+        print('Error, unable to load file {}'.format(src_fn))
+        return(o_chunks)
+              
     ds_config = _gather_infos(src_ds)
 
     bands = []
@@ -405,7 +409,29 @@ def null(outfile, extent, cellsize, nodata = -9999, outformat = 'GTiff'):
 
     dst_ds = dst_ds_aai = None
 
-def proximity(self, src_fn, dst_fn):
+def percentile(src_fn, perc = 95):
+
+    ds = gdal.Open(src_fn)
+    myarray = np.array(ds.GetRasterBand(1).ReadAsArray())
+    x_dim=myarray.shape[0]
+    myarray[myarray==0]=np.nan
+
+    myarray_flat=myarray.flatten()
+    
+    #p = np.nanpercentile(myarray_flat, perc)
+    #p = np.percentile(myarray_flat, perc)
+    myarray_flat = myarray_flat[~np.isnan(myarray_flat)]
+    p = np.percentile(myarray_flat, perc)
+
+    if p==p:
+        percentile=p
+        if percentile < 2:
+            percentile = 2
+    else: percentile = 1
+
+    return(percentile)
+
+def proximity(src_fn, dst_fn):
     '''Compute a proximity grid via GDAL'''
 
     dst_ds = None
@@ -491,19 +517,18 @@ def query(src_xyz, src_grd, out_form):
             except: g = dsnodata
 
             d = c = m = s = dsnodata
-                
             if g != dsnodata:
                 d = z - g
                 m = z + g
                 c = _con_dec(math.fabs(float(d / (g + 0.00000001) * 100)), 2)
                 s = _con_dec(math.fabs(d / (z + (g + 0.00000001))), 4)
                     
-            d = _con_dec(d, 4)
+                d = _con_dec(d, 4)
 
-            outs = []
-            for i in out_form:
-                outs.append(vars()[i])
-            xyzl.append(np.array(outs, dtype = dsdt))
+                outs = []
+                for i in out_form:
+                    outs.append(vars()[i])
+                xyzl.append(np.array(outs, dtype = dsdt))
 
     dsband = ds = None
 
@@ -602,6 +627,15 @@ def split(elev, split_value = 0):
     elev_g = elev = None
     
     return([output_upper, output_lower])
+
+def sum(src_gdal):
+    elev = gdal.Open(src_gdal)
+    
+    elev_array = elev.GetRasterBand(1).ReadAsArray() 
+    sums = np.sum(elev_array)
+    
+    elev = elev_array = None
+    return(sums)
 
 def transform(src_gdal):
     ##Getting spatial reference of input raster

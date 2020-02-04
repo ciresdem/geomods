@@ -19,7 +19,7 @@
 ##
 ### Code:
 
-_version = '0.0.2'
+_version = '0.0.3'
 
 ## =============================================================================
 ##
@@ -51,7 +51,6 @@ def regions_intersect_p(region_a, region_b):
     else: region_c[3] = region_b.north
     
     return(region('/'.join(map(str, region_c)))._valid)
-
 
 class region:
     '''geographic bounding box regtions 'w/e/s/n' '''
@@ -105,6 +104,65 @@ class region:
         region_b = [self.region[0]-bv, self.region[1] + bv, self.region[2] - bv, self.region[3] + bv]
 
         return(region("/".join(map(str, region_b))))
+
+    def chunk(self, inc, n_chunk = 10):
+
+        import math
+
+        region_x_size = math.floor((self.east - self.west) / inc)
+        region_y_size = math.floor((self.north - self.south) / inc)
+
+        print region_x_size
+        print region_y_size
+
+        i_chunk = 0
+        x_i_chunk = 0
+        x_chunk = n_chunk
+        o_chunks = []
+
+        while True:
+            y_chunk = n_chunk
+
+            while True:
+                #if x_chunk > region_x_size:
+                #    this_x_chunk = region_x_size
+                #else: 
+                this_x_chunk = x_chunk
+
+                #if y_chunk > region_y_size:
+                #    this_y_chunk = region_y_size
+                #else: 
+                this_y_chunk = y_chunk
+
+                this_x_origin = x_chunk - n_chunk
+                this_y_origin = y_chunk - n_chunk
+                this_x_size = this_x_chunk - this_x_origin
+                this_y_size = this_y_chunk - this_y_origin
+
+                #print('x-origin {}'.format(this_x_origin))
+                #print('y-origin {}'.format(this_y_origin))
+
+                geo_x_o = self.west + this_x_origin * inc
+                geo_x_t = geo_x_o + this_x_size * inc
+                geo_y_o = self.south + this_y_origin * inc
+                geo_y_t = geo_y_o + this_y_size * inc
+
+                this_region = region('{}/{}/{}/{}'.format(geo_x_o, geo_x_t, geo_y_o, geo_y_t))
+                o_chunks.append(this_region)
+
+                if y_chunk >= region_y_size:
+                    break
+                else: 
+                    y_chunk += n_chunk
+                    i_chunk += 1
+
+            if x_chunk >= region_x_size:
+                break
+            else:
+                x_chunk += n_chunk
+                x_i_chunk += 1
+
+        return(o_chunks)
 
     def pct(self, pctv):
         ewp = (self.east - self.west) * (pctv * .01)
