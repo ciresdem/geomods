@@ -77,7 +77,7 @@ def run_cmd_with_input(cmd, data_fun, verbose = False, prog = True):
     '''Run a command with or without a progress bar while passing data'''
 
     if prog:
-        pb = _progress('running cmd: {}...'.format(cmd[:44]))
+        pb = _progress('running cmd: \033[1m{}\033[m...'.format(cmd[:44]))
 
     p = subprocess.Popen(cmd, shell = True, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)    
     
@@ -100,7 +100,7 @@ def run_cmd_with_input(cmd, data_fun, verbose = False, prog = True):
         sys.stderr.write(err)
     
     if prog:
-        pb.opm = 'ran cmd: {}.'.format(cmd[:44])
+        pb.opm = 'ran cmd: \033[1m{}\033[m.'.format(cmd[:44])
         pb.end(p.returncode)
 
     return out, p.returncode
@@ -132,6 +132,45 @@ def run_cmd(cmd, verbose = False, prog = True):
         pb.end(p.returncode)
 
     return out, p.returncode
+
+def _cmd_check():
+    status = 0
+    platform = None
+    gmt_vers = None
+    mbs_vers = None
+    gdal_vers = None
+
+    ## ==============================================
+    ## check platform and installed software
+    ## ==============================================
+
+    pb = _progress('checking system status...')
+    platform = sys.platform
+    pb.opm = 'platform is {}'.format(platform)
+    pb.end(status)
+
+    pb.opm = 'checking for GMT.'
+    if cmd_exists('gmt'): 
+        gmt_vers, status = run_cmd('gmt --version', prog = False)
+    else: status = -1
+    pb.end(status)
+
+    pb.opm = 'checking for MBSystem.'
+    if cmd_exists('mbgrid'): 
+        mbs_vers, status = run_cmd('mbgrid -version', prog = False)
+    else: status = -1
+    pb.end(status)
+
+    pb.opm = 'checking for GDAL command-line.'
+    if cmd_exists('gdal-config'): 
+        gdal_vers, status = run_cmd('gdal-config --version', prog = False)
+    else: status = -1
+    pb.end(status)
+
+    pb.opm = 'checked system status.'
+    pb.end(status)
+
+    return([platform, gmt_vers, mbs_vers, gdal_vers])
 
 ## =============================================================================
 ##

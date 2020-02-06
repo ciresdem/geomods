@@ -40,6 +40,7 @@ setup(
             'cudem.py = geomods.waffles:main',
             'waffles = geomods.waffles:main',
             'fetches = geomods.fetches:main',
+            'datalists = geomods.datalists:main',
         ],
     },
     scripts = [

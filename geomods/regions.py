@@ -112,8 +112,8 @@ class region:
         region_x_size = math.floor((self.east - self.west) / inc)
         region_y_size = math.floor((self.north - self.south) / inc)
 
-        print region_x_size
-        print region_y_size
+        #print region_x_size
+        #print region_y_size
 
         i_chunk = 0
         x_i_chunk = 0

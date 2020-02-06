@@ -19,10 +19,12 @@
 ##
 ### Code:
 
+import sys
 import os
 import regions
+import utils
 
-_version = '0.0.2'
+_version = '0.1.0'
 
 ## =============================================================================
 ##
@@ -58,7 +60,10 @@ class datalist:
         self._path_dirname = os.path.dirname(self._path)
         self._path_basename = os.path.basename(self._path)
         self._path_dl_name = os.path.basename(self._path).split('.')[0]
-        self._reset()
+        self.datalist = []
+        self.datafiles = []
+        self._load()
+        self._valid = self._valid_p()
 
     def _reset(self):
         '''reload the datalist'''
@@ -72,30 +77,43 @@ class datalist:
     def _valid_p(self):
         '''validate the datalist'''
 
-        if len(self.datafiles) > 0: 
+        if len(self.datalist) > 0: 
             return(True)
         else: return(False)
 
     def _read_inf(self, path_i):
-        '''Read MBSystem .inf file and extract minmax info'''
+        '''Read .inf file and extract minmax info.
+        the .inf file can either be an MBSystem style inf file
+        or the result of `gmt gmtinfo file.xyz -C`, which is
+        a 6 column line with minmax info, etc.'''
 
         minmax = [0, 0, 0, 0]
         if os.path.exists(path_i):
-            self.iob = open(path_i)
-            for il in self.iob:
+            iob = open(path_i)
+            for il in iob:
                 til = il.split()
-                if len( til ) > 1:
-                    if til[0] == 'Minimum':
-                        if til[1] == 'Longitude:':
-                            minmax[0] = til[2]
-                            minmax[1] = til[5]
-                        elif til[1] == 'Latitude:':
-                            minmax[2] = til[2]
-                            minmax[3] = til[5]
+                if len(til) > 1:
+                    ## GMT inf
+                    try:
+                        minmax[0] = float(til[0])
+                        minmax[1] = float(til[1])
+                        minmax[2] = float(til[2])
+                        minmax[3] = float(til[3])
+                    ## mbsystem inf
+                    except:
+                        if til[0] == 'Minimum':
+                            if til[1] == 'Longitude:':
+                                minmax[0] = til[2]
+                                minmax[1] = til[5]
+                            elif til[1] == 'Latitude:':
+                                minmax[2] = til[2]
+                                minmax[3] = til[5]
 
-        try: oregion = regions.region('/'.join(minmax))
-        except: oregion = False
-        return(oregion)
+        try: 
+            o_region = regions.region('/'.join(minmax))
+        except: o_region = None
+
+        return(o_region)
                      
     def _load(self):
         '''load and process a datalist'''
@@ -103,8 +121,13 @@ class datalist:
         with open(self._path, 'r') as fob:
             for dl in fob:
                 if dl[0] != '#' and dl[0] != '\n' and dl[0] != '':
-                    if len(dl.split(' ')) >= 2:
-                        self.datalist.append(dl.split(' '))
+                    dl_cols = dl.split(' ')
+                    if len(dl_cols) >= 2:
+                        dl_cols = [x.strip() for x in dl_cols]
+                        self.datalist.append(dl_cols)
+
+    def _load_data(self):
+        self._proc(self.datafiles)
 
     def _proc(self, datafiles = []):
         '''Recurse through the datalist and gather xyz data'''
@@ -117,17 +140,32 @@ class datalist:
                 dweight = i[2]
             else: dweight = 1
 
+            ## ==============================================
+            ## Datalist format -1
+            ## Open as a datalist and _proc
+            ## ==============================================
+
             if dformat == -1:
                 d = datalist(dpath, self.region)
                 d._proc(datafiles)
+
+            ## ==============================================
+            ## XYZ format 168
+            ## check if passes tests and append to datafiles if so.
+            ## ==============================================
+
             elif dformat == 168:
                 usable = True
                 path_d = os.path.join(self._path_dirname, dpath)
-                if not os.path.exists(path_d): usable = False
-                dinf = self._read_inf(path_d + '.inf')
+
+                if not os.path.exists(path_d): 
+                    usable = False
+
+                dinf_region = self._read_inf(path_d + '.inf')
                 
-                if self.region and dinf:
-                    usable = regions.regions_intersect_p(self.region, dinf)
+                if self.region is not None and dinf_region is not None:
+                    if not regions.regions_intersect_p(self.region, dinf_region):
+                        usable = False
 
                 if usable:
                     datafiles.append(path_d)
@@ -168,5 +206,110 @@ class datalist:
                     df.append(line)
 
         return osep.join(df)
+
+## =============================================================================
+##
+## Mainline - run datalists from console.
+##
+## =============================================================================
+
+_usage = '''{} ({}): Process and generate datalists
+
+usage: {} [ -hvR [ args ] ] datalist ...
+
+Options:
+  -R, --region\t\tSpecifies the desired region;
+
+  --help\t\tPrint the usage text
+  --version\t\tPrint the version information
+  --verbose\t\tIncrease the verbosity
+
+ Examples:
+ % {} my_data.datalist -R -90/-89/30/31
+
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
+'''.format( os.path.basename(sys.argv[0]), 
+            _version, 
+            os.path.basename(sys.argv[0]), 
+            os.path.basename(sys.argv[0]))
+
+def main():
+
+    status = 0
+    i_datalist = None
+    i_region = None
+    want_verbose = False
+
+    argv = sys.argv
+        
+    ## ==============================================
+    ## parse command line arguments.
+    ## ==============================================
+
+    i = 1
+    while i < len(argv):
+        arg = argv[i]
+
+        if arg == '--region' or arg == '-R':
+            i_region = str(argv[i + 1])
+            i = i + 1
+        elif arg[:2] == '-R':
+            i_region = str(arg[2:])
+
+        elif arg == '--help' or arg == '-h':
+            print(_usage)
+            sys.exit(1)
+
+        elif arg == '--version' or arg == '-v':
+            print('{}, version {}\n{}'.format(os.path.basename(sys.argv[0]), _version, utils._license))
+            sys.exit(1)
+
+        elif arg == '--verbose' or arg == '-V':
+            want_verbose = True
+
+        elif arg[0] == '-':
+            print(_usage)
+            sys.exit(0)
+
+        else: 
+            i_datalist = arg
+
+        i = i + 1
+
+    if i_datalist is None:
+        print (_usage)
+        sys.exit(1)
+
+    ## ==============================================
+    ## check platform and installed software
+    ## ==============================================
+
+    cmd_vers = utils._cmd_check()
+    
+    ## ==============================================
+    ## Load the input datalist
+    ## ==============================================
+    
+
+    pb = utils._progress('loading datalist...')
+    this_datalist = datalist(i_datalist, i_region)
+    if not this_datalist._valid: 
+        status = -1
+    pb.opm = 'loaded datalist <<\033[1m{}\033[m>>'.format(this_datalist._path_basename)
+    pb.end(status)
+
+    if status == 0:
+        this_datalist._load_data()
+
+        ## ==============================================
+        ## print the data to stdout
+        ## ==============================================
+
+        this_datalist._cat_port(sys.stdout)
+
+            
+if __name__ == '__main__':
+    main()
+
 
 ### End
