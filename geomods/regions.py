@@ -57,7 +57,7 @@ class region:
 
     def __init__(self, region_string):
         self.region_string = region_string
-        self.region = map( float, region_string.split('/'))
+        self.region = map(float, region_string.split('/'))
         self._reset()
 
     def _reset(self):
@@ -96,52 +96,40 @@ class region:
         self.fn = ('{}{:02d}x{:02d}_{}{:03d}x{:02d}'.format(ns, abs(int(self.north)), abs(int(self.north * 100) % 100), 
                                                             ew, abs(int(self.east)), abs(int(self.east * 100) % 100)))
 
+    def gdal2region(self):
+        '''extract the region from a GDAL file.'''
+
+        pass
+
     def buffer(self, bv, percentage = False):
         '''buffer region'''
 
         if percentage: bv = self.pct(bv)
-
         region_b = [self.region[0]-bv, self.region[1] + bv, self.region[2] - bv, self.region[3] + bv]
 
         return(region("/".join(map(str, region_b))))
 
     def chunk(self, inc, n_chunk = 10):
-
+        '''chunk the region into n_chunk by n_chunk cell regions, given inc.'''
         import math
-
-        region_x_size = math.floor((self.east - self.west) / inc)
-        region_y_size = math.floor((self.north - self.south) / inc)
-
-        #print region_x_size
-        #print region_y_size
 
         i_chunk = 0
         x_i_chunk = 0
         x_chunk = n_chunk
         o_chunks = []
+        region_x_size = math.floor((self.east - self.west) / inc)
+        region_y_size = math.floor((self.north - self.south) / inc)
 
         while True:
             y_chunk = n_chunk
 
             while True:
-                #if x_chunk > region_x_size:
-                #    this_x_chunk = region_x_size
-                #else: 
                 this_x_chunk = x_chunk
-
-                #if y_chunk > region_y_size:
-                #    this_y_chunk = region_y_size
-                #else: 
                 this_y_chunk = y_chunk
-
                 this_x_origin = x_chunk - n_chunk
                 this_y_origin = y_chunk - n_chunk
                 this_x_size = this_x_chunk - this_x_origin
                 this_y_size = this_y_chunk - this_y_origin
-
-                #print('x-origin {}'.format(this_x_origin))
-                #print('y-origin {}'.format(this_y_origin))
-
                 geo_x_o = self.west + this_x_origin * inc
                 geo_x_t = geo_x_o + this_x_size * inc
                 geo_y_o = self.south + this_y_origin * inc

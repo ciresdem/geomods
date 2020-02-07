@@ -62,6 +62,30 @@ def _ogr_get_fields(src_ogr):
     
     return(schema)
 
+def ogr_mask_union(src_layer, src_field, dst_defn = None):
+    '''`union` a `src_layer`'s features based on `src_field` where
+    `src_field` holds a value of 0 or 1. optionally, specify
+    an output layer defn for the unioned feature.'''
+
+    if dst_defn is None:
+        dst_defn = src_layer.GetLayerDefn()
+
+    multi = ogr.Geometry(ogr.wkbMultiPolygon)
+    for f in src_layer:
+        if f.GetField(src_field) == 0:
+            src_layer.DeleteFeature(f.GetFID())
+        elif f.GetField(src_field) == 1:
+            f.geometry().CloseRings()
+            wkt = f.geometry().ExportToWkt()
+            multi.AddGeometryDirectly(ogr.CreateGeometryFromWkt(wkt))
+            src_layer.DeleteFeature(f.GetFID())
+                        
+    union = multi.UnionCascaded()
+    out_feat = ogr.Feature(dst_defn)
+    out_feat.SetGeometry(union)
+
+    return(out_feat)
+
 def _gather_infos(src_ds):
     '''Gather information from `src_ds` GDAL dataset.'''
 
