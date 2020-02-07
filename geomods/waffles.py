@@ -23,11 +23,10 @@ import sys
 import os
 import math
 import glob
-
-import numpy as np
 import threading
 import time
 
+import numpy as np
 try:
     import osgeo.ogr as ogr
     import osgeo.osr as osr
@@ -277,7 +276,7 @@ def num_msk(num_grd, dst_msk, verbose = False):
 ## =============================================================================
 ##
 ## DEM module: generate a Digital Elevation Model using a variety of methods
-## dem modules include: 'mbgrid', 'surface', 'num', 'mean', 'bathy-surface'
+## dem modules include: 'mbgrid', 'surface', 'num', 'mean'
 ##
 ## Requires MBSystem, GMT and GDAL 
 ##
@@ -302,7 +301,6 @@ class dem:
             'surface': lambda: self.surface(),
             'num': lambda: self.num(),
             'mean': lambda: self.mean(),
-            'bathy-surface': lambda: self.bathy_surface(),
         }
 
         self.dem = { 
@@ -314,8 +312,6 @@ class dem:
             'num-msk-grd': None,
             'mean': None,
             'mean-grd': None,
-            'bathy-grd': None,
-            'bathy-xyz': None,
         }
 
         if o_b_name is None:
@@ -326,13 +322,17 @@ class dem:
             self.o_name = '{}{}_{}_{}'.format(o_name, str_inc, self.region.fn, this_year())
         else: self.o_name = o_b_name
 
-    def run(self, dem_mod = 'mbgrid', dem_mod_args = ()):
+    def run(self, dem_mod = 'mbgrid'):
         '''Run the DEM module `dem_mod` using args `dem_mod_args`.'''
 
+        dems = self.dem
         if dem_mod != 'mbgrid':
             self.datalist._load_data()
+            if len(self.datalist.datafiles) == 0:
+                self.status = -1
 
-        dems = self.dem_mods[dem_mod](*dem_mod_args)
+        if self.status == 0:
+            dems = self.dem_mods[dem_mod]()
 
         return(dems)
 
@@ -443,12 +443,58 @@ class dem:
         return(self.dem)
 
     ## ==============================================
-    ## with GMT, gererate a 'bathy-surface'.
-    ## specify the coastline mask shapefile with 'mask = '
-    ## if mask is not specified, will use gsshg.
-    ## returns a netcdf masked grid and an XYZ file
-    ## of the bathy surface points.
+    ## run GDAL gdal_grid on the datalist to generate
+    ## an Inverse Distance DEM
     ## ==============================================
+
+    def inv_dist(self):
+        '''Generate an inverse distance grid with GDAL'''
+
+        ## datalist ==> point shapefile (block on the way?)
+        ## gdal_grid point shpafile to out grid
+        pass
+
+## ==============================================
+## with GMT, gererate a 'bathy-surface'.
+## specify the coastline mask shapefile with 'mask = '
+## if mask is not specified, will use gsshg.
+## returns a netcdf masked grid and an XYZ file
+## of the bathy surface points.
+## ==============================================
+
+class bathy_surface:
+
+    def __init__(self, i_datalist, i_region, i_inc = '0.000277777', o_name = None, o_b_name = None, callback = lambda: False, verbose = False):
+        self.datalist = i_datalist
+        self.region = i_region
+        self.inc = float(i_inc)
+        self.proc_region = self.region.buffer(10 * self.inc)
+        self.dist_region = self.region.buffer(6 * self.inc)
+        self.node = 'pixel'
+
+        self.status = 0
+        self.stop = callback
+        self.verbose = verbose
+
+        self.dem = { 
+            'bathy-grd': None,
+            'bathy-xyz': None,
+        }
+
+        if o_b_name is None:
+            if o_name is None: 
+                o_name = self.datalist._path_basename.split('.')[0]
+
+            str_inc = inc2str_inc(self.inc)
+            self.o_name = '{}{}_{}_{}'.format(o_name, str_inc, self.region.fn, this_year())
+        else: self.o_name = o_b_name
+
+    def run(self, mask = None):
+        '''Run the bathy-surface module'''
+
+        self.bathy_surface(mask = mask)
+
+        return(self.dem)
 
     def bathy_surface(self, mask = None):
         '''Generate a masked surface with GMT surface and a breakline mask polygon.
@@ -476,27 +522,12 @@ class dem:
 
             grdcut('{}_p_bathy.grd'.format(self.o_name), self.dist_region, bathy_dem)
             remove_glob('{}_p*.grd'.format(self.o_name))
-            # try:
-            #     os.remove('{}_p.grd'.format(self.o_name))
-            #     os.remove('{}_p_bathy.grd'.format(self.o_name))
-            # except: pass
 
             if self.status == 0:
                 self.dem['bathy-grd'] = bathy_dem
-                bathy_xyz = 'xyz/{}_bs.xyz'.format(self.o_name)
-                
-                #xyz_dir = os.path.join(os.getcwd(), 'xyz')        
-                #if not os.path.exists(xyz_dir):
-                #    os.makedirs(xyz_dir)
-
+                bathy_xyz = 'xyz/{}_bs.xyz'.format(self.o_name)                
                 self.status = grd2xyz(self.dem['bathy-grd'], bathy_xyz, want_datalist = True)
 
-                #if self.status == 0:
-                #    s_datalist = datalists.datalist(os.path.join(xyz_dir, 'bathy.datalist'))
-                #    s_datalist._append_datafile('{}'.format(os.path.basename(bathy_xyz)), 168, 1)
-                #    s_datalist._reset()
-
-                #    out, self.status = utils.run_cmd('mbdatalist -O -I{}'.format(s_datalist._path), False, True)
                 if self.status == 0:
                     self.dem['bathy-xyz'] = bathy_xyz
 
@@ -806,6 +837,7 @@ class uncertainty:
         self.interpolation_uncertainty(dem_mod)
 
     def set_or_make_dem(self):
+        '''check if dem dict contains dems, otherwise generate them...'''
 
         tw = utils._progress('checking for DEMs...')
 
@@ -834,6 +866,26 @@ class uncertainty:
 
         tw.opm = 'checked for DEMs.'
         tw.end(self.status)        
+
+    def gmtselect_split(self, o_xyz, sub_region, sub_bn):
+        '''split an xyz file into an inner and outer region.'''
+
+        out_inner = None
+        out_outer = None
+
+        gmt_s_inner = 'gmt gmtselect -V {} {} > {}_inner.xyz'.format(o_xyz, sub_region.gmt, sub_bn)
+        out, self.status = utils.run_cmd(gmt_s_inner, self.verbose, False)
+        
+        if self.status == 0:
+            out_inner = '{}_inner.xyz'.format(sub_bn)
+
+        gmt_s_outer = 'gmt gmtselect -V {} {} -Ir > {}_outer.xyz'.format(o_xyz, sub_region.gmt, sub_bn)
+        out, self.status = utils.run_cmd(gmt_s_outer, self.verbose, False)
+
+        if self.status == 0:
+            out_outer = '{}_outer.xyz'.format(sub_bn)
+
+        return([out_inner, out_outer])
 
     def interpolation_uncertainty(self, dem_mod = 'mbgrid'):
         '''calculate the interpolation uncertainty.'''
@@ -878,14 +930,10 @@ class uncertainty:
                 tw.err_msg('waffles: error, no data in sub-region...')
                 self.status = -1
             else:
-                gmt_s_inner = 'gmt gmtselect -V {} {} > sub_{}_inner.xyz'.format(o_xyz, sub_region.gmt, sub_count)
-                out, self.status = utils.run_cmd(gmt_s_inner, self.verbose, False)
+                s_inner, s_outer = self.gmtselect_split(o_xyz, sub_region, 'sub_{}'.format(sub_count))
 
-                gmt_s_outer = 'gmt gmtselect -V {} {} -Ir > sub_{}_outer.xyz'.format(o_xyz, sub_region.gmt, sub_count)
-                out, self.status = utils.run_cmd(gmt_s_outer, self.verbose, False)
-
-                if os.stat('sub_{}_inner.xyz'.format(sub_count)).st_size != 0:
-                    sub_xyz = np.loadtxt('sub_{}_inner.xyz'.format(sub_count), ndmin=2, delimiter = ' ')
+                if os.stat(s_inner).st_size != 0:
+                    sub_xyz = np.loadtxt(s_inner, ndmin=2, delimiter = ' ')
                 else: self.status = -1
 
                 if self.status == 0 and not self.stop():
@@ -928,13 +976,14 @@ class uncertainty:
                             break
 
                         tw.err_msg('waffles: extracting {} random data points out of {}'.format(sx_len_pct, sx_len))
-                        np.savetxt('sub_{}_rest.xyz'.format(sub_count), sub_xyz[:sx_len_pct], '%f', ' ')
+                        sub_xyz_head = 'sub_{}_head.xyz'.format(sub_count)
+
+                        np.savetxt(sub_xyz_head, sub_xyz[:sx_len_pct], '%f', ' ')
 
                         sub_datalist =  datalists.datalist('sub_{}.datalist'.format(sub_count), sub_region)
-                        sub_datalist._append_datafile('sub_{}_rest.xyz'.format(sub_count), 168, 1)
-                        sub_datalist._append_datafile('sub_{}_outer.xyz'.format(sub_count), 168, 1)
-                        #sub_datalist._reset()
-                        sub_datalist._load_data()
+                        sub_datalist._append_datafile(s_outer, 168, 1)
+                        sub_datalist._append_datafile(sub_xyz_head, 168, 1)
+                        sub_datalist.reset()
 
                         pb = utils._progress('generating sub-region {} random-sample grid...{}/{}'.format(sub_count, i, n_loops))
 
@@ -958,16 +1007,13 @@ class uncertainty:
                                 if dp is None:
                                     dp = sub_dp
                                 else: dp = np.concatenate((dp, sub_dp), axis = 0)
+                        os.remove(sub_xyz_head)
+                        os.remove(sub_datalist._path)
 
                 remove_glob('sub_{}*'.format(sub_count))
-                #fl = glob.glob('sub_{}*'.format(sub_count))
-                #for f in fl:
-                #    try: 
-                #        os.remove(f)
-                #    except: pass
 
-                tw.opm = 'processed sub region \033[1m{}\033[m.'.format(sub_count)
-                tw.end(self.status)
+            tw.opm = 'processed sub region \033[1m{}\033[m.'.format(sub_count)
+            tw.end(self.status)
 
         ## ==============================================
         ## calculate the error coefficients and plot results
@@ -995,6 +1041,7 @@ class uncertainty:
 
 _dem_mods = { 
     'dem': [lambda d, r, i, o, b, c, v: dem(d, r, i, o, b, c, v), 'generate a DEM [:grid-module]'],
+    'bathy-surface': [lambda d, r, i, o, b, c, v: bathy_surface(d, r, i, o, b, c, v), 'generate a `bathy-surface` masked grid [:coastpoly]'],
     'conversion-grid': [lambda d, r, i, o, b, c, v: conversion_grid(d, r, i, o, b, c, v), 'generate a VDatum conversion grid [:i_vdatum:o_vdatum:vd_region]'],
     'spatial-metadata': [lambda d, r, i, o, b, c, v: spatial_metadata(d, r, i, o, b, c, v), 'generate spatial-metadata [:epsg]'],
     'uncertainty': [lambda d, r, i, o, b, c, v: uncertainty(d, r, i, o, b, c, v), 'calculate DEM uncertainty [:grid-module:dem:num]'],
@@ -1013,7 +1060,7 @@ usage: {} [ -hvAIER [ args ] ] module[:option1:option2] ...
 Modules:
   {}
 
- note: grid-modules include: `mbgrid`, `surface`, `num`, `mean`, and `bathy-surface`
+ note: grid-modules include: `mbgrid`, `surface`, `num`, `mean`
 
 Options:
   -R, --region\t\tSpecifies the desired region;
