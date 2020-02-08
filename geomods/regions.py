@@ -19,7 +19,9 @@
 ##
 ### Code:
 
-_version = '0.0.3'
+import gdalfun
+
+_version = '0.1.0'
 
 ## =============================================================================
 ##
@@ -30,7 +32,7 @@ _version = '0.0.3'
 ##
 ## =============================================================================
 
-def regions_intersect_p(region_a, region_b):
+def regions_intersect_p_depr(region_a, region_b):
     '''Return True if region_a and region_b intersect.'''
     
     region_c = [0, 0, 0, 0]
@@ -51,6 +53,14 @@ def regions_intersect_p(region_a, region_b):
     else: region_c[3] = region_b.north
     
     return(region('/'.join(map(str, region_c)))._valid)
+
+def regions_intersect_p(region_a, region_b):
+    geom_a = gdalfun.bounds2geom(region_a.region)
+    geom_b = gdalfun.bounds2geom(region_b.region)
+
+    if geom_a.Intersects(geom_b):
+        return(True)
+    else: return(False)
 
 class region:
     '''geographic bounding box regtions 'w/e/s/n' '''

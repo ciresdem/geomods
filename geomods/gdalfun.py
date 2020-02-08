@@ -48,6 +48,30 @@ def xyz_parse(src_xyz):
 
         yield this_xyz
 
+def _ogr_create_polygon(coords):
+    '''convert coords to Wkt'''
+
+    ring = ogr.Geometry(ogr.wkbLinearRing)
+    for coord in coords:
+        ring.AddPoint(coord[1], coord[0])
+
+    poly = ogr.Geometry(ogr.wkbPolygon)
+    poly.AddGeometry(ring)
+        
+    return(poly.ExportToWkt())
+
+def bounds2geom(bounds):
+    '''convert a bounds [west, east, south, north] to an 
+    OGR geometry'''
+
+    b1 = [[bounds[2], bounds[0]],
+          [bounds[2], bounds[1]],
+          [bounds[3], bounds[1]],
+          [bounds[3], bounds[0]],
+          [bounds[2], bounds[0]]]
+
+    return(ogr.CreateGeometryFromWkt(_ogr_create_polygon(b1)))
+
 def _ogr_get_fields(src_ogr):
     '''return all fields in src_ogr'''
 
