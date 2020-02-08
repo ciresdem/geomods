@@ -116,7 +116,10 @@ class datalist:
         return(o_region)
                      
     def _load(self):
-        '''load and process a datalist'''
+        '''read a datalist'''
+
+        status = 0
+        pb = utils._progress('reading datalist \033[1m{}\033[m...'.format(self._path_basename))
 
         with open(self._path, 'r') as fob:
             for dl in fob:
@@ -126,8 +129,24 @@ class datalist:
                         dl_cols = [x.strip() for x in dl_cols]
                         self.datalist.append(dl_cols)
 
+        if len(self.datalist) == 0:
+            status = -1
+
+        pb.opm = 'read datalist \033[1m{}\033[m.'.format(self._path_basename)
+        pb.end(status)
+
     def _load_data(self):
+        '''load a dalist and process datafiles'''
+
+        status = 0
+        pb = utils._progress('loading datalist \033[1m{}\033[m...'.format(self._path_basename))
         self._proc(self.datafiles)
+
+        if len(self.datafiles) == 0:
+            status = -1
+
+        pb.opm = 'loaded datalist \033[1m{}\033[m.'.format(self._path_basename)
+        pb.end(status)
 
     def _proc(self, datafiles = []):
         '''Recurse through the datalist and gather xyz data'''

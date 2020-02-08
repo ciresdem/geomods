@@ -677,11 +677,7 @@ class spatial_metadata:
         the polygon and add it to the output layer.'''
 
         defn = layer.GetLayerDefn()
-
-        pb = utils._progress('loading datalist...')
         this_datalist = datalists.datalist(dl[0], self.dist_region)
-        pb.opm = 'loaded datalist <<\033[1m{}\033[m>>'.format(this_datalist._path_basename)
-        pb.end(0)
 
         try:
             o_v_fields = [dl[3], dl[4], dl[5], dl[6], dl[7], dl[8], dl[9], dl[10].strip()]
@@ -1225,12 +1221,10 @@ def main():
             break
         
         if idatalist is not None:
-            pb = utils._progress('loading datalist...')
             this_datalist = datalists.datalist(idatalist, this_region)
             if not this_datalist._valid: 
                 status = -1
-            pb.opm = 'loaded datalist <<\033[1m{}\033[m>>'.format(this_datalist._path_basename)
-            pb.end(status)
+
         else: this_datalist = None
 
         if status != 0: 
