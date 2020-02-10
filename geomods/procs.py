@@ -117,7 +117,7 @@ class procs:
                 os.makedirs(self.xyz_dir)
             except: self.status = -1
 
-        self.gdal_exts = ['.tif', '.TIF', '.img', '.IMG', '.asc']
+        self.gdal_exts = ['.tif', '.img', '.asc']
         self.lidar_exts = ['.las', '.laz']
         self.ascii_exts = ['.xyz', '.ascii', '.csv', '.dat']
 
@@ -323,7 +323,7 @@ class procs:
 
             for ext in self.gdal_exts:
                 for zf in zips:
-                    if ext in zf:
+                    if ext in zf.lower():
                         src_gdal = os.path.join(self.proc_dir, zf)
                         break
         elif self.src_file.split('.')[-1].lower() == 'gz':
