@@ -253,7 +253,7 @@ class fetch_results(threading.Thread):
 this_dir, this_filename = os.path.split(__file__)
 fetchdata = os.path.join(this_dir, 'data')
 
-def create_polygon(coords):
+def _ogr_create_polygon(coords):
     '''convert coords to Wkt'''
 
     ring = ogr.Geometry(ogr.wkbLinearRing)
@@ -262,8 +262,11 @@ def create_polygon(coords):
 
     poly = ogr.Geometry(ogr.wkbPolygon)
     poly.AddGeometry(ring)
-        
-    return(poly.ExportToWkt())
+    
+    poly_wkt = poly.ExportToWkt()
+    poly = None
+    
+    return(poly_wkt)
 
 def bounds2geom(bounds):
     '''convert a bounds [west, east, south, north] to an 
@@ -275,7 +278,9 @@ def bounds2geom(bounds):
           [bounds[3], bounds[0]],
           [bounds[2], bounds[0]]]
 
-    return(ogr.CreateGeometryFromWkt(create_polygon(b1)))
+    geom = ogr.CreateGeometryFromWkt(_ogr_create_polygon(b1))
+    
+    return(geom)
 
 def addf_ref_vector(ogr_layer, survey):
     '''add a survey to the reference vector layer'''
