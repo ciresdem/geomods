@@ -282,6 +282,8 @@ def num_msk(num_grd, dst_msk, verbose = False):
 ## =============================================================================
 
 class dem:
+    '''Generate a Digital Elevation Model using one of the dem modules.
+    DEM Modules include, `mbgrid`, `surface`, `num`, `mean`'''
 
     def __init__(self, i_datalist, i_region, i_inc = '0.000277777', o_name = None, o_b_name = None, callback = lambda: False, verbose = False):
         self.datalist = i_datalist
@@ -453,13 +455,17 @@ class dem:
         ## gdal_grid point shpafile to out grid
         pass
 
-## ==============================================
+## =============================================================================
+##
+## Bathy-Surface module.
+##
 ## with GMT, gererate a 'bathy-surface'.
 ## specify the coastline mask shapefile with 'mask = '
 ## if mask is not specified, will use gsshg.
 ## returns a netcdf masked grid and an XYZ file
 ## of the bathy surface points.
-## ==============================================
+## 
+## =============================================================================
 
 class bathy_surface:
 
@@ -618,10 +624,21 @@ class conversion_grid:
 ##
 ## spatial-metadata module:
 ##
+## Generate spatial metadata from a datalist of xyz elevation data.
+## The output is a shapefile with the boundaries of each specific
+## datalist as a layer feature.
+##
+## Specify an input datalist, region and cell-size.
+## o_name is the output prefix: `o_name_<region>_sm.shp`
+## o_b_name is the output basename: `o_name_sm.shp`
+##
 ## =============================================================================
 
 class spatial_metadata:
-
+    '''Generate spatial metadata from a datalist of xyz elevation data.
+    The output is a shapefile with the boundaries of each specific
+    datalist as a layer feature.'''
+    
     def __init__(self, i_datalist, i_region, i_inc = '0.000277777', o_name = None, o_b_name = None, callback = lambda: False, verbose = False):
 
         import Queue as queue
@@ -724,7 +741,7 @@ class spatial_metadata:
 
                 layer.CreateFeature(out_feat)
 
-            tmp_ds = tmp_layer = None
+            tmp_ds = tmp_layer = out_feat = None
             remove_glob('{}_poly.*'.format(this_dem.o_name))
             os.remove(this_dem.dem['num-msk'])
 

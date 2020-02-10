@@ -57,8 +57,11 @@ def _ogr_create_polygon(coords):
 
     poly = ogr.Geometry(ogr.wkbPolygon)
     poly.AddGeometry(ring)
-        
-    return(poly.ExportToWkt())
+    
+    poly_wkt = poly.ExportToWkt()
+    poly = None
+    
+    return(poly_wkt)
 
 def bounds2geom(bounds):
     '''convert a bounds [west, east, south, north] to an 
@@ -70,7 +73,9 @@ def bounds2geom(bounds):
           [bounds[3], bounds[0]],
           [bounds[2], bounds[0]]]
 
-    return(ogr.CreateGeometryFromWkt(_ogr_create_polygon(b1)))
+    geom = ogr.CreateGeometryFromWkt(_ogr_create_polygon(b1))
+    
+    return(geom)
 
 def _ogr_get_fields(src_ogr):
     '''return all fields in src_ogr'''
@@ -107,6 +112,7 @@ def ogr_mask_union(src_layer, src_field, dst_defn = None):
     union = multi.UnionCascaded()
     out_feat = ogr.Feature(dst_defn)
     out_feat.SetGeometry(union)
+    union = multi = None
 
     return(out_feat)
 
@@ -193,6 +199,7 @@ def _prj_file(dst_fn, epsg):
     sr_f.write(sr.ExportToWkt())
     sr_f.close()
 
+    sr = None
 
 ## =============================================================================
 ##
@@ -262,7 +269,9 @@ def chunks(src_fn, n_chunk = 10):
             for band in bands:
                 band_data = band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])    
                 if not np.all(band_data == band_data[0,:]):
-                    dst_fn = os.path.join(os.path.dirname(src_fn), '{}_chnk{}x{}.tif'.format(os.path.basename(src_fn).split('.')[0], x_i_chunk, i_chunk))
+                    dst_fn = os.path.join(os.path.dirname(src_fn),
+                                          '{}_chnk{}x{}.tif\
+                                          '.format(os.path.basename(src_fn).split('.')[0], x_i_chunk, i_chunk))
                     o_chunks.append(dst_fn)
 
                     ods = gdal.GetDriverByName('GTiff').Create(dst_fn,
@@ -274,6 +283,9 @@ def chunks(src_fn, n_chunk = 10):
                     ods.SetProjection(ds_config['proj'])
                     ods.GetRasterBand(1).SetNoDataValue(ds_config['ndv'])
                     ods.GetRasterBand(1).WriteArray(band_data)
+
+                    ods = None
+                band_data = None
 
             if y_chunk > ds_config['ny']:
                 break
@@ -287,6 +299,7 @@ def chunks(src_fn, n_chunk = 10):
             x_chunk += n_chunk
             x_i_chunk += 1
 
+    src_ds = None
     return(o_chunks)
 
 def crop(src_fn):
@@ -325,7 +338,7 @@ def crop(src_fn):
     dst_geoT = [dst_x_origin, GeoT[1], 0.0, dst_y_origin, 0.0, GeoT[5]]
     ds_config['geoT'] = dst_geoT
     
-    return(out_array, ds_config)
+    return(dst_arr, ds_config)
 
 def dump(src_gdal, dst_xyz, dump_nodata = False):
     '''Dump `src_gdal` GDAL file to ASCII XYZ
@@ -480,6 +493,8 @@ def percentile(src_fn, perc = 95):
             percentile = 2
     else: percentile = 1
 
+    ds = myarray = None
+    
     return(percentile)
 
 def proximity(src_fn, dst_fn):
