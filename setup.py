@@ -41,6 +41,7 @@ setup(
             'waffles = geomods.waffles:main',
             'fetches = geomods.fetches:main',
             'datalists = geomods.datalists:main',
+            'procs = geomods.procs:main',
         ],
     },
     scripts = [

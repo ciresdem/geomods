@@ -18,11 +18,12 @@
 ### Code:
 
 ## Modules
-from fetches import *
+from utils import *
 from regions import *
 from datalists import *
 from gdalfun import *
-from utils import *
+from procs import *
+from fetches import *
 from waffles import *
         
 ### End

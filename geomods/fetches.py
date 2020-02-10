@@ -29,7 +29,6 @@ import lxml.html as lh
 import lxml.etree
 
 import zipfile
-import gzip
 import csv
 import json
 import threading
@@ -48,11 +47,10 @@ except ImportError:
         sys.exit(-1)
 
 import regions
-import datalists
-import gdalfun
 import utils
+import procs
 
-_version = '0.3.0'
+_version = '0.3.1'
 
 gdal.PushErrorHandler('CPLQuietErrorHandler')
 
@@ -77,27 +75,44 @@ def fetch_queue(q, p = None):
     while True:
         fetch_args = q.get()
         this_region = fetch_args[2]
-        this_dt = fetch_args[4]
+        this_dt = fetch_args[4].lower()
         fetch_args[2] = None
 
         if not fetch_args[3]():
             #print('queue length {}...'.format(q.qsize()))
-            #if fetch_args[0].split(':')[0] == 'ftp':
-            #    fetch_ftp_file(*tuple(fetch_args))
-            #else: fetch_file(*tuple(fetch_args))
+            if fetch_args[0].split(':')[0] == 'ftp':
+                fetch_ftp_file(*tuple(fetch_args))
+            else: fetch_file(*tuple(fetch_args))
 
+            ## initiate the processing module if desired
             if p is not None:
-                outf = fetch_args[1]
-                surv_dir = os.path.dirname(outf)
-                surv_fn = os.path.basename(outf)
-                #surv_t = fetch_args[0].split('/')[-2]
-
-                if os.path.exists(outf):
-                    p.put([[surv_dir, surv_fn, outf, this_dt, this_region], fetch_args[3]])
+                if this_dt == 'tnm':
+                    proc_mod = 'gdal'
+                    proc_opts = [0, True, None]
+                elif  this_dt == 'grid_bag':
+                    proc_mod = 'gdal'
+                    proc_opts = [None, True, 'mllw']
+                elif this_dt == 'gmrt' or this_dt == 'raster' or this_dt == 'srtm':
+                    proc_mod = 'gdal'
+                    proc_opts = [None, True, None]
+                elif this_dt == 'geodas_xyz':
+                    proc_mod = 'ascii'
+                    pric_opts = [',', '2,1,3', 1, True, 'mllw']
+                elif this_dt == 'lidar':
+                    proc_mod = 'lidar'
+                    proc_opts = [True, None]
+                else:
+                    proc_mod = 'None'
+                    proc_opts = []
+                
+                if os.path.exists(fetch_args[1]):
+                    p.put([[fetch_args[1], proc_mod, [this_region], fetch_args[3]], proc_opts])
 
         q.task_done()
 
 def fetch_ftp_file(src_url, dst_fn, params = None, callback = None, datatype = None):
+    '''fetch an ftp file via urllib2'''
+    
     import urllib2
 
     status = 0
@@ -135,20 +150,22 @@ def fetch_file(src_url, dst_fn, params = None, callback = None, datatype = None)
             os.makedirs(os.path.dirname(dst_fn))
         except: pass 
 
-    try:
-        req = requests.get(src_url, stream = True, params = params, headers = r_headers)
-    except requests.ConnectionError as e:
-        print 'Error: {}'.format(e)
-        status = -1
+    if not os.path.exists(dst_fn):
+        try:
+            req = requests.get(src_url, stream = True, params = params, headers = r_headers)
+        except requests.ConnectionError as e:
+            print 'Error: {}'.format(e)
+            status = -1
 
-    if req is not None:
-        with open(dst_fn, 'wb') as local_file:
-            for chunk in req.iter_content(chunk_size = 50000):
-                if chunk:
-                    if halt(): 
-                        status = -1
-                        break
-                    local_file.write(chunk)
+        if req is not None:
+            with open(dst_fn, 'wb') as local_file:
+                for chunk in req.iter_content(chunk_size = 50000):
+                    if chunk:
+                        if halt(): 
+                            status = -1
+                            break
+                        local_file.write(chunk)
+    else: status = -1
 
     pb.opm = 'fetched remote file: \033[1m{}\033[m.'.format(os.path.basename(src_url))
     pb.end(status)
@@ -193,7 +210,7 @@ def fetch_csv(src_url):
 class fetch_results(threading.Thread):
     '''fetch results'''
 
-    def __init__(self, results, region, out_dir, want_proc = False, stop_threads = lambda: False):
+    def __init__(self, results, region, out_dir, want_proc = False, callback = lambda: False):
         threading.Thread.__init__(self)
 
         self.fetch_q = queue.Queue()
@@ -202,13 +219,13 @@ class fetch_results(threading.Thread):
         self.region = region
         self._outdir = out_dir
         self.want_proc = want_proc
-        self.stop_threads = stop_threads
+        self.stop_threads = callback
         
     def run(self):
         if self.want_proc:
             proc_q = queue.Queue()
             for _ in range(3):
-                p = threading.Thread(target = proc_queue, args = (proc_q,))
+                p = threading.Thread(target = procs._proc_queue, args = (proc_q,))
                 p.daemon = True
                 p.start()
         else: proc_q = None
@@ -224,351 +241,7 @@ class fetch_results(threading.Thread):
         self.fetch_q.join()
         if self.want_proc:
             proc_q.join()
-
-## =============================================================================
-##
-## Processing Classes and functions.
-## 
-## =============================================================================
-
-proc_infos = { 
-    'GEODAS_XYZ':lambda x: x.proc_geodas(),
-    'GRID_BAG':lambda x: x.proc_bag(),
-    'ENC':lambda x: x.proc_enc(),
-    'lidar':lambda x: x.proc_dc_las(),
-    'raster':lambda x: x.proc_dc_raster(),
-    'tnm':lambda x: x.proc_tnm_raster(),
-    'srtm':lambda x: x.proc_dc_raster(),
-}
-
-def proc_queue(q):
-    '''process queue `q` of fetched data'''
-
-    while True:
-        work = q.get()
-
-        proc_d = proc(work[0], work[1])
-        if not work[1]():
-            proc_d.run()
         
-        q.task_done()
-
-class proc:
-    '''Process fetched data to XYZ'''
-
-    def __init__(self, s_file_info, callback = None):
-
-        self.stop = callback
-        self.status = 0
-        self.xyzs = []
-
-        self.s_dir = s_file_info[0]
-        self.s_fn = s_file_info[1]
-        self.o_fn = s_file_info[2]
-        self.s_t = s_file_info[3]
-        self.s_region = s_file_info[4]
-
-        self.this_vd = utils.vdatum()
-
-        self.xyz_dir = os.path.join(self.s_dir, self.s_t.lower(), 'xyz')
-
-        if not os.path.exists(self.xyz_dir):
-            try:
-                os.makedirs(self.xyz_dir)
-            except: self.status = -1
-
-        self.o_fn_bn = os.path.basename(self.o_fn).split('.')[0]
-        self.o_fn_tmp = os.path.join(self.s_dir, '{}_tmp.xyz'.format(self.o_fn_bn.lower()))
-        self.o_fn_p_xyz = os.path.join(self.s_dir, '{}.xyz'.format(self.o_fn_bn))
-        self.o_fn_xyz = os.path.join(self.xyz_dir, '{}_{}.xyz'.format(self.o_fn_bn, self.s_region.fn))
-        self.o_fn_p_ras = os.path.join(self.s_dir, '{}.tif'.format(self.o_fn_bn))
-    
-    def run(self):
-        '''Run the elevation data processor.
-        Process data to WGS84/NAVD88 XYZ and append
-        to a DATALIST.'''
-
-        pb = utils._progress('processing local file: \033[1m{}\033[m...'.format(self.s_fn))
-        if self.s_t in proc_infos.keys():
-            proc_infos[self.s_t](self)
-
-            if self.status == 0:
-                self._add_to_datalist()
-                if os.path.exists(self.o_fn):
-                    os.remove(self.o_fn)
-        else: self.status = -1
-
-        pb.opm = 'processed local file: \033[1m{}\033[m.'.format(self.s_fn)
-        pb.end(self.status)
-
-    def _add_to_datalist(self):
-        '''Add xyz files in self.xyzs to the datalist.'''
-
-        for o_xyz in self.xyzs:
-            if os.stat(o_xyz).st_size != 0:
-                sdatalist = datalists.datalist(os.path.join(self.xyz_dir, '{}.datalist'.format(os.path.abspath(self.s_dir).split('/')[-1])))
-                sdatalist._append_datafile('{}'.format(os.path.basename(o_xyz)), 168, 1)
-                sdatalist._reset()
-
-                out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(self.xyz_dir, '{}.datalist'.format(os.path.abspath(self.s_dir).split('/')[-1]))), False, True)
-            else: os.remove(o_xyz)
-
-    def proc_gmrt(self):
-        '''Process GMRT geotiff to XYZ.'''
-
-        gdalfun.dump(self.o_fn, self.o_fn_xyz)
-        if os.stat(self.o_fn_xyz).st_size != 0:
-            self.xyzs.append(self.o_fn_xyz)
-        else: 
-            self.status = -1
-            os.remove(self.o_fn_xyz)
-        
-    def proc_geodas(self):
-        '''Process NOAA NOS data to WGS84/NAVD88 XYZ'''
-
-        try:
-            in_f = gzip.open(os.path.join(self.s_dir, self.s_fn), 'rb')
-            s = in_f.read()
-            s_csv = csv.reader(s.split('\n'), delimiter = ',')
-            next(s_csv, None)
-        except: self.status = -1
-
-        if self.status == 0 and not self.stop():
-            with open(os.path.join(self.o_fn_tmp), 'w') as out_xyz:
-                d_csv = csv.writer(out_xyz, delimiter = ' ')
-
-                for row in s_csv:
-                    if len(row) > 2:
-                        this_xyz = [float(row[2]), float(row[1]), float(row[3]) * -1]
-                        d_csv.writerow(this_xyz)
-            in_f.close()
-
-            if self.this_vd.vdatum_path is not None:
-                self.this_vd.ivert = 'mllw'
-                self.this_vd.overt = 'navd88'
-                self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir, 'result'))
-
-                self.status = self.this_vd.run_vdatum(os.path.relpath(self.o_fn_tmp))
-
-                if self.status == 0 and os.path.exists(os.path.join(self.xyz_dir, 'result', os.path.basename(self.o_fn_tmp))): 
-                    os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(self.o_fn_tmp)), self.o_fn_xyz)
-            else: os.rename(self.o_fn_tmp, self.o_fn_xyz)
-
-            if os.path.exists(self.o_fn_tmp):
-                os.remove(self.o_fn_tmp)
-
-            if os.path.exists(self.o_fn_xyz):
-                self.xyzs.append(self.o_fn_xyz)
-
-    def proc_bag(self):
-        '''Process NOAA NOS BAG data to WGS84/NAVD88 XYZ.'''
-
-        s_gz = os.path.join(self.s_dir, self.s_fn)
-
-        if s_gz.split('.')[-1] == 'gz':
-            with gzip.open(s_gz, 'rb') as in_bag:
-                s = in_bag.read()
-                with open(s_gz[:-3], 'w') as f:
-                    f.write(s)
-
-            s_bag = s_gz[:-3]
-        elif s_gz.split('.')[-1] == 'bag':
-            s_bag = s_gz
-        else: self.status = -1
-
-        if s_bag.split('.')[-1] != 'bag':
-            self.status = -1
-
-        if self.status == 0 and not self.stop():
-            s_tif = os.path.join(self.s_dir, self.s_fn.split('.')[0].lower() + '.tif')            
-            s_xyz = s_gz.split('.')[0] + '.xyz'
-
-            if self.status == 0 and not self.stop():
-                out_chunks = gdalfun.chunks(s_bag, 5000)
-
-                if s_gz.split('.')[-1] == 'gz':
-                    os.remove(s_bag)
-
-                for chunk in out_chunks:
-                    if self.stop():
-                        break
-
-                    i_xyz = '{}_{}.xyz'.format(chunk.split('.')[0], self.s_region.fn)
-                    i_tif = chunk.split('.')[0] + '_wgs.tif'
-                    o_xyz = os.path.join(self.xyz_dir, os.path.basename(i_xyz).lower())
-
-                    out, self.status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(chunk, i_tif), False, True)
-
-                    if self.status != 0 or self.stop():
-                        os.remove(chunk)
-                        break
-
-                    os.remove(chunk)
-                    gdalfun.dump(i_tif, i_xyz)
-                    os.remove(i_tif)
-
-                    if os.stat(i_xyz).st_size == 0:
-                        self.status = -1
-                        os.remove(i_xyz)
-                        break
-
-                    if self.this_vd.vdatum_path is not None:
-                        self.this_vd.ivert = 'mllw'
-                        self.this_vd.overt = 'navd88'
-                        self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir, 'result'))
-
-                        self.this_vd.run_vdatum(os.path.relpath(i_xyz))
-
-                        os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(i_xyz)), o_xyz)
-                        os.remove(i_xyz)
-                    else: os.rename(i_xyz, o_xyz)
-
-                    self.xyzs.append(o_xyz)
-
-    def proc_dc_las(self):
-        '''Process NOAA Digital Coast lidar data (las/laz) to Ground XYZ.'''
-
-        out, self.status = utils.run_cmd('las2txt -verbose -parse xyz -keep_class 2 29 -i {}'.format(self.o_fn), False, None)
-        if self.status == 0:
-            self.o_fn_bn = os.path.basename(self.o_fn).split('.')[0]
-            self.o_fn_txt = os.path.join(self.s_dir, '{}.txt'.format(self.o_fn_bn))
-
-            out, self.status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
-            out, self.status = utils.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}'.format(self.o_fn_txt, self.s_region.gmt, self.o_fn_xyz), False, None)
-
-            os.remove(self.o_fn_txt)
-
-            if self.status == 0:
-                self.xyzs.append(self.o_fn_xyz)
-
-    def proc_dc_raster(self):
-        '''Process NOAA Digital Coast raster data to WGS84 XYZ chunks.'''
-
-        out, self.status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(self.o_fn, self.o_fn_p_ras), False, None)
-
-        out_chunks = gdalfun.chunks(self.o_fn_p_ras, 1000)
-        os.remove(self.o_fn_p_ras)
-
-        for chunk in out_chunks:
-
-            i_xyz = chunk.split('.')[0] + '.xyz'
-            o_xyz = os.path.join(self.xyz_dir, os.path.basename(i_xyz))
-
-            gdalfun.dump(chunk, o_xyz)
-
-            if os.stat(o_xyz).st_size != 0:
-                self.xyzs.append(o_xyz)
-            else:
-                os.remove(o_xyz)
-
-            #os.remove(i_xyz)
-
-    def proc_tnm_raster(self):
-
-        zip_ref = zipfile.ZipFile(self.o_fn)
-        zip_files = zip_ref.namelist()
-        zip_ref.extractall(os.path.join(self.s_dir, self.s_t))
-        zip_ref.close()
-
-        self.o_fn_p_ras = os.path.join(self.s_dir, self.s_t, os.path.basename(self.o_fn).split('.')[0] + '.img')
-
-        out_chunks = gdalfun.chunks(self.o_fn_p_ras, 1000)
-        os.remove(self.o_fn_p_ras)
-
-        for chunk in out_chunks:
-
-            split_chunk = gdalfun.split(chunk, 0)
-
-            i_xyz = chunk.split('.')[0] + '.xyz'
-            o_xyz = os.path.join(self.xyz_dir, os.path.basename(i_xyz))
-
-            os.remove(chunk)
-
-            gdalfun.dump(split_chunk[0], o_xyz)
-            os.remove(split_chunk[0])
-            os.remove(split_chunk[1])
-
-            if os.stat(o_xyz).st_size != 0:
-                self.xyzs.append(o_xyz)
-            else:
-                os.remove(o_xyz)
-        
-        for i in zip_files:
-            i_file = os.path.join(self.s_dir, self.s_t, i)
-            if os.path.isfile(i_file):
-                os.remove(i_file)
-                zip_files = [x for x in zip_files if x != i]
-
-        if len(zip_files) > 0:
-            for i in zip_files:
-                i_file = os.path.join(self.s_dir, self.s_t, i)
-                if os.path.isdir(i_file):
-                    os.removedirs(i_file)
-
-    def proc_enc(self):
-        '''Proces Electronic Nautical Charts to NAVD88 XYZ.'''
-
-        zip_ref = zipfile.ZipFile(self.o_fn)
-        zip_files = zip_ref.namelist()
-        zip_ref.extractall(os.path.join(self.s_dir, 'enc'))
-        zip_ref.close()
-
-        s_fn_000 = os.path.join(self.s_dir, 'enc/ENC_ROOT/', self.o_fn_bn, '{}.000'.format(self.o_fn_bn))
-
-        ds_000 = ogr.Open(s_fn_000)
-        layer_s = ds_000.GetLayerByName('SOUNDG')
-        if layer_s is not None:
-            o_xyz = open(self.o_fn_p_xyz, 'w')
-            for f in layer_s:
-                g = json.loads(f.GetGeometryRef().ExportToJson())
-                for xyz in g['coordinates']:
-                    xyz_l = '{} {} {}\n'.format(xyz[0], xyz[1], xyz[2]*-1)
-                    o_xyz.write(xyz_l)
-            o_xyz.close()
-        else: self.status = -1
-
-        if os.path.exists(self.o_fn_p_xyz) and os.stat(self.o_fn_p_xyz).st_size != 0:
-
-            out, self.status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, None)
-            out, self.status = utils.run_cmd('gmt gmtselect {} {} -V > {}'.format(self.o_fn_p_xyz, self.s_region.gmt, self.o_fn_tmp), False, None)
-
-            if os.stat(self.o_fn_tmp).st_size != 0:
-
-                if self.this_vd.vdatum_path is not None:
-                    self.this_vd.ivert = 'mllw'
-                    self.this_vd.overt = 'navd88'
-                    self.this_vd.ds_dir = os.path.relpath(os.path.join(self.xyz_dir, 'result'))
-
-                    self.this_vd.run_vdatum(os.path.relpath(self.o_fn_tmp))
-
-                    os.rename(os.path.join(self.xyz_dir, 'result', os.path.basename(self.o_fn_tmp)), self.o_fn_xyz)
-                else: os.rename(self.o_fn_tmp, self.o_fn_xyz)
-
-                os.remove(self.o_fn_p_xyz)
-
-                if os.stat(self.o_fn_xyz).st_size == 0:
-                    os.remove(self.o_fn_xyz)
-                    self.status = -1
-                else:
-                    self.xyzs.append(self.o_fn_xyz)
-
-        if os.path.exists(self.o_fn_tmp):
-            os.remove(self.o_fn_tmp)
-
-        ds_000 = layer_s = None
-
-        # for i in zip_files:
-        #     i_file = os.path.join(self.s_dir, self.s_t, i)
-        #     if os.path.isfile(i_file):
-        #         os.remove(i_file)
-        #         zip_files = [x for x in zip_files if x != i]
-
-        # if len(zip_files) > 0:
-        #     for i in zip_files:
-        #         i_file = os.path.join(self.s_dir, 'enc', i)
-        #         if os.path.isdir(i_file):
-        #             os.removedirs(i_file)
-
 ## =============================================================================
 ##
 ## Reference Vector
@@ -701,15 +374,17 @@ class dc:
         pb.opm = 'loaded Digital Coast fetch module.'
         pb.end(self._status)
         
-    def run(self):
+    def run(self, index = False):
         '''Run the Digital Coast fetching module'''
 
+        self._index = index
+        
         if self._want_update:
             self._update()
         else:
-            self.search_gmt()            
+            self.search_gmt()
             return(self._results)
-
+        
     ## ==============================================
     ## Reference Vector Generation
     ## ==============================================
@@ -831,71 +506,76 @@ class dc:
                 surv_url = feature1.GetField('Data')
                 surv_id = surv_url.split('/')[-2]
                 surv_dt = feature1.GetField('Datatype')
-                suh = fetch_html(surv_url)
-                if suh is None: 
-                    self._status = -1
-                    break
 
-                #if self._status == 0:
-                if 'lidar' in surv_dt:
+                if self._index:
+                    print("%s (%s): %s (%s) - %s" %(feature1.GetField("ID"),feature1.GetField("Datatype"),feature1.GetField("Name"),feature1.GetField("Date"),feature1.GetField("Data")))
+                else:
+                
+                    suh = fetch_html(surv_url)
+                    if suh is None: 
+                        self._status = -1
+                        break
 
-                    ## ==============================================
-                    ## Lidar data has a minmax.csv file to get extent
-                    ## for each survey file.
-                    ## ==============================================
+                    #if self._status == 0:
+                    if 'lidar' in surv_dt:
 
-                    scsv = suh.xpath('//a[contains(@href, ".csv")]/@href')[0]
-                    dc_csv = fetch_csv(surv_url + scsv)
-                    next(dc_csv, None)
+                        ## ==============================================
+                        ## Lidar data has a minmax.csv file to get extent
+                        ## for each survey file.
+                        ## ==============================================
 
-                    for tile in dc_csv:
-                        if len(tile) > 3:
-                            tb = [float(tile[1]), float(tile[2]),
-                                  float(tile[3]), float(tile[4])]
-                            tile_geom = bounds2geom(tb)
-                            if tile_geom.Intersects(self._boundsGeom):
-                                self._results.append([os.path.join(surv_url, tile[0]), '{}/{}'.format(surv_id, tile[0]), 'lidar'])
+                        scsv = suh.xpath('//a[contains(@href, ".csv")]/@href')[0]
+                        dc_csv = fetch_csv(surv_url + scsv)
+                        next(dc_csv, None)
 
-                elif 'raster' in surv_dt:
+                        for tile in dc_csv:
+                            if len(tile) > 3:
+                                tb = [float(tile[1]), float(tile[2]),
+                                      float(tile[3]), float(tile[4])]
+                                tile_geom = bounds2geom(tb)
+                                if tile_geom.Intersects(self._boundsGeom):
+                                    self._results.append([os.path.join(surv_url, tile[0]), '{}/{}'.format(surv_id, tile[0]), 'lidar'])
 
-                    ## ==============================================
-                    ## Raster data has a tileindex shapefile 
-                    ## to get extent
-                    ## ==============================================
+                    elif 'raster' in surv_dt:
 
-                    sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
-                    fetch_file(surv_url + sshpz, os.path.join('.', sshpz),
-                               callback = self.stop)
+                        ## ==============================================
+                        ## Raster data has a tileindex shapefile 
+                        ## to get extent
+                        ## ==============================================
 
-                    zip_ref = zipfile.ZipFile(sshpz)
-                    zip_ref.extractall('dc_tile_index')
-                    zip_ref.close()
+                        sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
+                        fetch_file(surv_url + sshpz, os.path.join('.', sshpz),
+                                   callback = self.stop)
 
-                    if os.path.exists('dc_tile_index'):
-                        ti = os.listdir('dc_tile_index')
+                        zip_ref = zipfile.ZipFile(sshpz)
+                        zip_ref.extractall('dc_tile_index')
+                        zip_ref.close()
 
-                    ts = None
-                    for i in ti:
-                        if ".shp" in i:
-                            ts = os.path.join('dc_tile_index/', i)
+                        if os.path.exists('dc_tile_index'):
+                            ti = os.listdir('dc_tile_index')
 
-                    if ts is not None:
-                        shp1 = ogr.Open(ts)
-                        slay1 = shp1.GetLayer(0)
+                        ts = None
+                        for i in ti:
+                            if ".shp" in i:
+                                ts = os.path.join('dc_tile_index/', i)
 
-                        for sf1 in slay1:
-                            geom = sf1.GetGeometryRef()
+                        if ts is not None:
+                            shp1 = ogr.Open(ts)
+                            slay1 = shp1.GetLayer(0)
 
-                            if geom.Intersects(self._boundsGeom):
-                                tile_url = sf1.GetField('URL').strip()
-                                self._results.append([tile_url, '{}/{}'.format(surv_id, tile_url.split('/')[-1]), 'raster'])
+                            for sf1 in slay1:
+                                geom = sf1.GetGeometryRef()
 
-                        shp1 = slay1 = None
+                                if geom.Intersects(self._boundsGeom):
+                                    tile_url = sf1.GetField('URL').strip()
+                                    self._results.append([tile_url, '{}/{}'.format(surv_id, tile_url.split('/')[-1]), 'raster'])
 
-                    for i in ti:
-                        ts = os.remove(os.path.join('dc_tile_index/', i))
-                    os.removedirs(os.path.join('.', 'dc_tile_index'))
-                    os.remove(os.path.join('.', sshpz))
+                            shp1 = slay1 = None
+
+                        for i in ti:
+                            ts = os.remove(os.path.join('dc_tile_index/', i))
+                        os.removedirs(os.path.join('.', 'dc_tile_index'))
+                        os.remove(os.path.join('.', sshpz))
         if len(self._results) == 0: self._status = -1
         gmt1 = layer = None
 
@@ -1601,7 +1281,7 @@ class gmrt:
                           'resolution':'max',
                           'format':'geotiff' }
         
-            self._req = fetch_req(self._gmrt_grid_url, params = self.data, tries = 2)
+            self._req = fetch_req(self._gmrt_grid_url, params = self.data, tries = 4)
 
             gmrt_fn = self._req.headers['content-disposition'].split('=')[1].strip()
             outf = os.path.join(self._outdir,
@@ -1691,7 +1371,7 @@ class ngs:
 ## =============================================================================
 
 fetch_infos = { 
-    'dc':[lambda x, f, c: dc(x, f, callback = c), 'digital coast'],
+    'dc':[lambda x, f, c: dc(x, f, callback = c), 'digital coast [:index]'],
     'nos':[lambda x, f, c: nos(x, f, callback = c), 'noaa nos bathymetry'],
     'charts':[lambda x, f, c: charts(x, f, callback = c), 'noaa nautical charts'],
     'srtm':[lambda x, f, c: srtm_cgiar(x, f, callback = c), 'srtm from cgiar'],
@@ -1798,10 +1478,8 @@ def main():
             sys.exit(1)
 
         else: 
-            #fetch_class.append(sys.argv[i])
             opts = arg.split(':')
-            opts_n = [None if x == '' else x for x in opts]
-            mod_opts[opts_n[0]] = list(opts_n[1:])
+            mod_opts[opts[0]] = list(opts[1:])
 
         i = i + 1
 
@@ -1809,45 +1487,14 @@ def main():
         print(_usage)
         sys.exit(1)
 
-    #if len(fetch_class) == 0:
-    #    fetch_class = fetch_infos.keys()
-
+    for key in mod_opts.keys():
+        mod_opts[key] = [None if x == '' else x for x in mod_opts[key]]
+        
     ## ==============================================
     ## check platform and installed software
     ## ==============================================
 
-    tw = utils._progress('checking system status...')
-    platform = sys.platform
-    tw.opm = 'platform is {}.'.format(platform)
-    tw.end(status)
-
-    if want_proc:
-        tw.opm = 'checking for GMT'
-        if utils.cmd_exists('gmt'): 
-            gmt_vers, status = utils.run_cmd('gmt --version', prog = False)
-        else: status = -1
-        tw.end(status)
-
-        tw.opm = 'checking for MBSystem'
-        if utils.cmd_exists('mbgrid'): 
-            mbs_vers, status = utils.run_cmd('mbgrid -version', prog = False)
-        else: status = -1
-        tw.end(status)
-
-        tw.opm = 'checking for LASTools'
-        if utils.cmd_exists('las2txt'): 
-            status = 0
-        else: status = -1
-        tw.end(status)
-
-        tw.opm = 'checking for GDAL command-line'
-        if utils.cmd_exists('gdal-config'): 
-            gdal_vers, status = utils.run_cmd('gdal-config --version', prog = False)
-        else: status = -1
-        tw.end(status)
-
-    tw.opm = 'checked system status.'
-    tw.end(status)
+    cmd_vers = utils._cmd_check()
 
     ## ==============================================
     ## process input region(s)

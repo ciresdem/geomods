@@ -122,7 +122,11 @@ def _gather_infos(src_ds):
     ds_config['proj'] = src_ds.GetProjectionRef()
     ds_config['dt'] = src_ds.GetRasterBand(1).DataType
     ds_config['ndv'] = src_ds.GetRasterBand(1).GetNoDataValue()
+    ds_config['fmt'] = src_ds.GetDriver().ShortName
 
+    if ds_config['ndv'] is None:
+        ds_config['ndv'] = -9999
+    
     return(ds_config)
 
 def _con_dec(x, dec):
@@ -258,8 +262,7 @@ def chunks(src_fn, n_chunk = 10):
             for band in bands:
                 band_data = band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])    
                 if not np.all(band_data == band_data[0,:]):
-                    dst_fn = '{}_chnk{}x{}.tif'.format(src_fn.split('.')[0], x_i_chunk, i_chunk)
-
+                    dst_fn = os.path.join(os.path.dirname(src_fn), '{}_chnk{}x{}.tif'.format(os.path.basename(src_fn).split('.')[0], x_i_chunk, i_chunk))
                     o_chunks.append(dst_fn)
 
                     ods = gdal.GetDriverByName('GTiff').Create(dst_fn,
@@ -635,46 +638,37 @@ def scan(src_gdal, fail_if_nodata = False):
             
     srcds = None
 
-def split(elev, split_value = 0):
+def _write_gdal(src_arr, dst_gdal, src_config, dst_fmt = 'GTiff'):
+
+    UDataSet = gdal.GetDriverByName(dst_fmt).Create(dst_gdal, src_config['nx'], src_config['ny'], 1, src_config['dt'])
+    UDataSet.SetGeoTransform(src_config['geoT'])
+    UDataSet.SetProjection(src_config['proj'])
+    UDataSet.GetRasterBand(1).SetNoDataValue(src_config['ndv'])
+    UDataSet.GetRasterBand(1).WriteArray(src_arr)
+    UDataset = None
+    
+def split(src_gdal, split_value = 0):
     '''split raster into two peices based on z value'''
 
-    elev_g = gdal.Open(elev) 
+    dst_upper = os.path.join(os.path.dirname(src_gdal), '{}_upper{}'.format(os.path.basename(src_gdal)[:-4], os.path.basename(src_gdal)[-4:]))
+    dst_lower = os.path.join(os.path.dirname(src_gdal), '{}_lower{}'.format(os.path.basename(src_gdal)[:-4], os.path.basename(src_gdal)[-4:]))
+                                         
+    src_ds = gdal.Open(src_gdal) 
+    src_config = _gather_infos(src_ds)
+                                     
+    ds_arr = src_ds.GetRasterBand(1).ReadAsArray(0, 0, src_config['nx'], src_config['ny']) 
     
-    NDV = elev_g.GetRasterBand(1).GetNoDataValue()
-    xsize = elev_g.RasterXSize
-    ysize = elev_g.RasterYSize
-    GeoT = elev_g.GetGeoTransform()
-    DataType = elev_g.GetRasterBand(1).DataType
-    elev_prj = elev_g.GetProjectionRef()
+    upper_array = ds_arr
+    upper_array[upper_array <= split_value] = src_config['ndv'] 
+    _write_gdal(upper_array, dst_upper, src_config, src_config['fmt'])
+    upper_array = None
     
-    outFormat = elev_g.GetDriver().ShortName
-    output_upper=elev[:-4]+"_upper"+elev[-4:]
-    upper_array = elev_g.GetRasterBand(1).ReadAsArray( 0, 0, xsize, ysize ) 
-    upper_array[upper_array <= split_value] = NDV
+    lower_array = ds_arr
+    lower_array[lower_array >= split_value] = src_config['ndv']
+    _write_gdal(lower_array, dst_lower, src_config, src_config['fmt'])
+    lower_array = src_ds = None
     
-    #Export Tif
-    UDataSet = gdal.GetDriverByName(outFormat).Create( output_upper, xsize, ysize, 1, DataType )
-    UDataSet.SetGeoTransform(GeoT)
-    UDataSet.SetProjection(elev_prj)
-    UDataSet.GetRasterBand(1).SetNoDataValue(NDV)
-    UDataSet.GetRasterBand(1).WriteArray( upper_array )
-    upper_array = UDataSet = None
-    output_lower=elev[:-4]+"_lower"+elev[-4:]
-    lower_array = elev_g.GetRasterBand(1).ReadAsArray( 0, 0, xsize, ysize )
-    lower_array[lower_array >= split_value] = NDV
-
-    #Export Tif
-    LDataSet = gdal.GetDriverByName(outFormat).Create( output_lower, xsize, ysize, 1, DataType )
-    LDataSet.SetGeoTransform(GeoT)
-    LDataSet.SetProjection(elev_prj)
-    LDataSet.GetRasterBand(1).SetNoDataValue(NDV)
-    
-    # Write the array
-    LDataSet.GetRasterBand(1).WriteArray( lower_array )
-    lower_array = LDataSet = None
-    elev_g = elev = None
-    
-    return([output_upper, output_lower])
+    return([dst_upper, dst_lower])
 
 def sum(src_gdal):
     elev = gdal.Open(src_gdal)

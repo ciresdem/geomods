@@ -167,10 +167,23 @@ def _cmd_check():
     else: status = -1
     pb.end(status)
 
+    pb.opm = 'checking for LASTools'
+    if cmd_exists('las2txt'): 
+        status = 0
+    else: status = -1
+    pb.end(status)
+
+    pb.opm = 'checking for VDatum'
+    if vdatum().vdatum_path is not None:
+        status = 0
+        vdatum_vers = vdatum()._version 
+    else: status = -1
+    pb.end(status)
+    
     pb.opm = 'checked system status.'
     pb.end(status)
 
-    return([platform, gmt_vers, mbs_vers, gdal_vers])
+    return([platform, gmt_vers, mbs_vers, gdal_vers, vdatum_vers])
 
 ## =============================================================================
 ##
@@ -184,6 +197,7 @@ class vdatum:
 
     def __init__(self, vdatum_path = None, verbose = False):
         self.verbose = verbose
+        self.status = 0
         if vdatum_path is None:
 
             co = ConfigParser.ConfigParser()
@@ -193,13 +207,16 @@ class vdatum:
             except:
 
                 self.vdatum_path = self._find_vdatum()[0]
-                co.add_section('VDATUM')
-                co.set('VDATUM', 'jar', self.vdatum_path)
+                if self.status == 0:
+                    co.add_section('VDATUM')
+                    co.set('VDATUM', 'jar', self.vdatum_path)
             
-                with open(os.path.expanduser('~/geomods.ini'), 'w') as conf:
-                    co.write(conf)
+                    with open(os.path.expanduser('~/geomods.ini'), 'w') as conf:
+                        co.write(conf)
+                else: self.vdatum_path = None
         else: self.vdatum_path = vdatum_path
-        
+
+        self._version = None
         self._get_version()
         
         self.ivert = 'navd88:m:height'
@@ -215,7 +232,6 @@ class vdatum:
 
     def _get_version(self):
         if self.vdatum_path is not None:
-            self._version = None
             out, status = run_cmd('java -jar {} {}'.format(self.vdatum_path, '-'), prog = False)
             for i in out.split('\n'):
                 if '- v' in i.strip():
@@ -227,17 +243,16 @@ class vdatum:
         return a list of found vdatum.jar paths'''
 
         results = []
-        status = 0
         if self.verbose:
             pb = _progress('checking for vdatum.')
         for root, dirs, files in os.walk('/'):
             if 'vdatum.jar' in files:
                 results.append(os.path.join(root, 'vdatum.jar'))
         if len(results) <= 0:
-            status = -1
+            self.status = -1
         if self.verbose:
             pb.opm = '{}..{}'.format(pb.opm, results[0])
-            pb.end(status)
+            pb.end(self.status)
 
         return results
 
@@ -248,9 +263,10 @@ class vdatum:
             pb = 'transforming data with VDatum'
         else: pb = None
         
-        vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},0,1,2:{}:{} region:{}'.format(self.ihorz, self.ivert, self.ohorz, self.overt, self.fd, src_fn, self.ds_dir, self.region)
-        #out, status = run_cmd('java -jar {} {}'.format(self.vdatum_path, vdc), self.verbose, self.verbose)
-        out, status = run_cmd('java -Djava.awt.headless=true -jar {} {}'.format(self.vdatum_path, vdc), self.verbose, self.verbose)
+        vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},0,1,2:{}:{} region:{}\
+        '.format(self.ihorz, self.ivert, self.ohorz, self.overt, self.fd, src_fn, self.ds_dir, self.region)
+        out, status = run_cmd('java -jar {} {}'.format(self.vdatum_path, vdc), self.verbose, self.verbose)
+        #out, status = run_cmd('java -Djava.awt.headless=true -jar {} {}'.format(self.vdatum_path, vdc), self.verbose, True)
 
         return status
 

@@ -348,7 +348,7 @@ class dem:
 
         mbgrid_cmd = ('mbgrid -I{} {} -E{:.7f}/{:.7f}/degrees! -O{} -A2 -G100 -F1 -N -C10/3 -S0 -X0.1 -T35 > /dev/null 2> /dev/null \
         '.format(self.datalist._path, self.dist_region.gmt, self.inc, self.inc, self.o_name))
-        out, self.status = utils.run_cmd(mbgrid_cmd, self.verbose, self.verbose)
+        out, self.status = utils.run_cmd(mbgrid_cmd, self.verbose, True)
 
         if self.status == 0:
             self.dem['dem-grd'] = '{}.grd'.format(self.o_name)
@@ -1176,6 +1176,9 @@ def main():
     if iregion is None:
         print(_usage)
         sys.exit(1)
+
+    for key in mod_opts.keys():
+        mod_opts[key] = [None if x == '' else x for x in mod_opts[key]]
 
     ## ==============================================
     ## check platform and installed software

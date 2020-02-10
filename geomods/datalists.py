@@ -119,8 +119,6 @@ class datalist:
         '''read a datalist'''
 
         status = 0
-        pb = utils._progress('reading datalist \033[1m{}\033[m...'.format(self._path_basename))
-
         with open(self._path, 'r') as fob:
             for dl in fob:
                 if dl[0] != '#' and dl[0] != '\n' and dl[0] != '':
@@ -131,9 +129,6 @@ class datalist:
 
         if len(self.datalist) == 0:
             status = -1
-
-        pb.opm = 'read datalist \033[1m{}\033[m.'.format(self._path_basename)
-        pb.end(status)
 
     def _load_data(self):
         '''load a dalist and process datafiles'''
