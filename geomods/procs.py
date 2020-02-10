@@ -226,7 +226,7 @@ class procs:
         ds_000 = layer_s = None
 
     def xyz_region(self, src_xyz):
-        out, self.status = utils.run_cmd('gmt gmtinfo {} -I-'.format(src_xyz), True, True)
+        out, self.status = utils.run_cmd('gmt gmtinfo {} -I-'.format(src_xyz), False, False)
         o_region = regions.region(out[2:])
         return(o_region)
         
@@ -296,7 +296,6 @@ class procs:
         else: src_ascii = self.src_file
 
         xyz_loc = map(int, xyz_cols.split(','))
-        #print xyz_loc
         tmp_ascii = os.path.join(self.proc_dir, '{}_tmp.ascii'.format(os.path.basename(src_ascii).split('.')[0]))
         
         with open(src_ascii, 'r') as in_ascii,\
@@ -338,7 +337,6 @@ class procs:
             if not self.stop():
                 if split is not None:
                     split_chunk = gdalfun.split(chunk, int(split))
-                    print split_chunk
                     chunk_gdal = split_chunk[0]
                 else: chunk_gdal = chunk
                 
