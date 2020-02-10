@@ -97,7 +97,7 @@ def fetch_queue(q, p = None):
                     proc_opts = [None, True, None]
                 elif this_dt == 'geodas_xyz':
                     proc_mod = 'ascii'
-                    pric_opts = [',', '2,1,3', 1, True, 'mllw']
+                    proc_opts = [',', '2,1,3', 1, True, 'mllw']
                 elif this_dt == 'lidar':
                     proc_mod = 'lidar'
                     proc_opts = [True, None]

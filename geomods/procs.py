@@ -24,7 +24,6 @@ import sys
 import time
 import zipfile
 import gzip
-import csv
 import threading
 import Queue as queue
 import ogr
@@ -186,11 +185,12 @@ class procs:
 
         for o_xyz in self.xyzs:
             if os.stat(o_xyz).st_size != 0:
-                s_datalist = datalists.datalist(os.path.join(self.xyz_dir, '{}.datalist'.format(os.path.abspath(self.src_dir).split('/')[-1])))
+                dl_f = '{}.datalist'.format(os.path.abspath(self.src_dir).split('/')[-1])
+                s_datalist = datalists.datalist(os.path.join(self.xyz_dir, dl_f))
                 s_datalist._append_datafile('{}'.format(os.path.basename(o_xyz)), 168, 1)
                 s_datalist._reset()
 
-                out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(self.xyz_dir, '{}.datalist'.format(os.path.abspath(self.src_dir).split('/')[-1]))), False, False)
+                out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(self.xyz_dir, dl_f)), False, False)
             else: os.remove(o_xyz)
 
     def run_vdatum(self, src_xyz, dst_xyz, i_vert = 'MLLW', o_vert = 'NAVD88'):
@@ -245,8 +245,11 @@ class procs:
 
                 out, self.status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, False)
                 if block is not None:
-                    out, self.status = utils.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}'.format(src_xyz, this_region.gmt, tmp_xyz), False, False)
-                else: out, self.status = utils.run_cmd('gmt gmtselect {} {} -V > {}'.format(src_xyz, this_region.gmt, tmp_xyz), False, False)
+                    out, self.status = utils.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}\
+                    '.format(src_xyz, this_region.gmt, tmp_xyz), False, False)
+                else:
+                    out, self.status = utils.run_cmd('gmt gmtselect {} {} -V > {}\
+                    '.format(src_xyz, this_region.gmt, tmp_xyz), False, False)
 
                 if os.stat(tmp_xyz).st_size != 0:
 
@@ -340,7 +343,8 @@ class procs:
                 
                 #if reproject:
                 tmp_gdal = os.path.join(self.proc_dir, '{}_tmp.tif'.format(os.path.basename(chunk_gdal).split('.')[0]))
-                out, self.status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326'.format(chunk_gdal, tmp_gdal), False, False)
+                out, self.status = utils.run_cmd('gdalwarp {} {} -t_srs EPSG:4326\
+                '.format(chunk_gdal, tmp_gdal), False, False)
                 #else: tmp_gdal = chunk_gdal
 
                 tmp_xyz = os.path.join(self.xyz_dir, '{}.tmp'.format(os.path.basename(chunk_gdal).split('.')[0]))                

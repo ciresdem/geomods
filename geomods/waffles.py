@@ -21,7 +21,6 @@
 
 import sys
 import os
-import math
 import glob
 import threading
 import time
