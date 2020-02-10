@@ -269,9 +269,9 @@ def chunks(src_fn, n_chunk = 10):
             for band in bands:
                 band_data = band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])    
                 if not np.all(band_data == band_data[0,:]):
-                    dst_fn = os.path.join(os.path.dirname(src_fn),
-                                          '{}_chnk{}x{}.tif\
-                                          '.format(os.path.basename(src_fn).split('.')[0], x_i_chunk, i_chunk))
+                    o_chunk = '{}_chnk{}x{}.tif'.format(os.path.basename(src_fn).split('.')[0], x_i_chunk, i_chunk)
+                    dst_fn = os.path.join(os.path.dirname(src_fn), o_chunk)
+                                          
                     o_chunks.append(dst_fn)
 
                     ods = gdal.GetDriverByName('GTiff').Create(dst_fn,
@@ -665,25 +665,26 @@ def _write_gdal(src_arr, dst_gdal, src_config, dst_fmt = 'GTiff'):
 def split(src_gdal, split_value = 0):
     '''split raster into two peices based on z value'''
 
-    dst_upper = os.path.join(os.path.dirname(src_gdal), '{}_upper{}'.format(os.path.basename(src_gdal)[:-4], os.path.basename(src_gdal)[-4:]))
-    dst_lower = os.path.join(os.path.dirname(src_gdal), '{}_lower{}'.format(os.path.basename(src_gdal)[:-4], os.path.basename(src_gdal)[-4:]))
+    dst_upper = os.path.join(os.path.dirname(src_gdal), '{}_upper.tif'.format(os.path.basename(src_gdal)[:-4]))
+    dst_lower = os.path.join(os.path.dirname(src_gdal), '{}_lower.tif'.format(os.path.basename(src_gdal)[:-4]))
                                          
-    src_ds = gdal.Open(src_gdal) 
-    src_config = _gather_infos(src_ds)
-                                     
-    ds_arr = src_ds.GetRasterBand(1).ReadAsArray(0, 0, src_config['nx'], src_config['ny']) 
-    
-    upper_array = ds_arr
-    upper_array[upper_array <= split_value] = src_config['ndv'] 
-    _write_gdal(upper_array, dst_upper, src_config, src_config['fmt'])
-    upper_array = None
-    
-    lower_array = ds_arr
-    lower_array[lower_array >= split_value] = src_config['ndv']
-    _write_gdal(lower_array, dst_lower, src_config, src_config['fmt'])
-    lower_array = src_ds = None
-    
-    return([dst_upper, dst_lower])
+    src_ds = gdal.Open(src_gdal)
+    if src_ds is not None:
+        src_config = _gather_infos(src_ds)
+
+        ds_arr = src_ds.GetRasterBand(1).ReadAsArray(0, 0, src_config['nx'], src_config['ny']) 
+
+        upper_array = ds_arr
+        upper_array[upper_array <= split_value] = src_config['ndv'] 
+        _write_gdal(upper_array, dst_upper, src_config)
+        upper_array = None
+
+        lower_array = ds_arr
+        lower_array[lower_array >= split_value] = src_config['ndv']
+        _write_gdal(lower_array, dst_lower, src_config)
+        lower_array = src_ds = None
+
+        return([dst_upper, dst_lower])
 
 def sum(src_gdal):
     elev = gdal.Open(src_gdal)

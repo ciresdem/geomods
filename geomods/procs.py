@@ -42,7 +42,7 @@ _version = '0.1.0'
 ## =============================================================================
 
 proc_infos = { 
-    'gdal':[lambda x, a: x.proc_gdal(*a), 'process gdal data to chunked XYZ [:split_value:block:input_vdatum]'],
+    'gdal':[lambda x, a: x.proc_gdal(*a), 'process gdal data to chunked XYZ [:split_value:input_vdatum]'],
     'lidar':[lambda x, a: x.proc_las(*a), 'process lidar las/laz data to XYZ [:block:input_vdatum]'],
     'ascii':[lambda x, a: x.proc_ascii(*a), 'process ascii xyz data to XYZ [:delim:x_loc,y_loc,z_loc:skip_lines:block:input_vdatum]'],
 }
@@ -62,7 +62,7 @@ def _proc_queue(q):
                 sys.stderr.write('\x1b[2K\r')
                 sys.stderr.write('procs: error, unknown error processing {}\n'.format(work[0][0]))
                 sys.stderr.flush()
-        
+       
         q.task_done()
 
 class procs_from_queue(threading.Thread):
@@ -128,9 +128,9 @@ class procs:
 
         pb = utils._progress('processing local file: \033[1m{}\033[m...'.format(self.src_bn))
         if self.proc_mod in proc_infos.keys():
-            try:
-                proc_infos[self.proc_mod][0](self, args)
-            except: self.status = -1
+            #try:
+            proc_infos[self.proc_mod][0](self, args)
+            #except: self.status = -1
         else: self.status = -1
 
         if self.status == 0:
@@ -226,46 +226,46 @@ class procs:
         ds_000 = layer_s = None
 
     def xyz_region(self, src_xyz):
-        out, self.status = utils.run_cmd('gmt gmtinfo {} -I-'.format(src_xyz), False, False)
+        out, self.status = utils.run_cmd('gmt gmtinfo {} -I-'.format(src_xyz), True, True)
         o_region = regions.region(out[2:])
         return(o_region)
         
     def proc_xyz(self, src_xyz, block = None, i_vert = None):
         '''process geographic XYZ data to NAVD88 XYZ via blockmedian and vdatum.'''
-
-        data_region = self.xyz_region(src_xyz)
         
-        for rn, this_region in enumerate(self.dst_regions):
-            self.status = 0
-            
-            if regions.regions_intersect_p(this_region, data_region):
-            
-                tmp_xyz = os.path.join(self.xyz_dir, '{}_tmp.xyz'.format(os.path.basename(src_xyz).split('.')[0]))
-                dst_xyz = os.path.join(self.xyz_dir, '{}_{}.xyz'.format(os.path.basename(src_xyz).split('.')[0], this_region.fn))
+        if os.stat(src_xyz).st_size != 0:
+            data_region = self.xyz_region(src_xyz)
 
-                out, self.status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, False)
-                if block is not None:
-                    out, self.status = utils.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}\
-                    '.format(src_xyz, this_region.gmt, tmp_xyz), False, False)
-                else:
-                    out, self.status = utils.run_cmd('gmt gmtselect {} {} -V > {}\
-                    '.format(src_xyz, this_region.gmt, tmp_xyz), False, False)
+            for rn, this_region in enumerate(self.dst_regions):
+                self.status = 0
 
-                if os.stat(tmp_xyz).st_size != 0:
+                if regions.regions_intersect_p(this_region, data_region):
 
-                    if i_vert is not None:
-                        self.run_vdatum(tmp_xyz, dst_xyz, i_vert = i_vert)
-                    else: os.rename(tmp_xyz, dst_xyz)
+                    tmp_xyz = os.path.join(self.xyz_dir, '{}_tmp.xyz'.format(os.path.basename(src_xyz).split('.')[0]))
+                    dst_xyz = os.path.join(self.xyz_dir, '{}_{}.xyz'.format(os.path.basename(src_xyz).split('.')[0], this_region.fn))
 
-                if os.path.exists(tmp_xyz):
-                    os.remove(tmp_xyz)
+                    out, self.status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, False)
+                    if block is not None:
+                        out, self.status = utils.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}\
+                        '.format(src_xyz, this_region.gmt, tmp_xyz), False, False)
+                    else:
+                        out, self.status = utils.run_cmd('gmt gmtselect {} {} -V > {}\
+                        '.format(src_xyz, this_region.gmt, tmp_xyz), False, False)
 
-                if not os.path.exists(dst_xyz):
-                    self.status = -1
-                elif os.stat(dst_xyz).st_size == 0:
-                    self.status = -1
-                    os.remove(dst_xyz)
-                else: self.xyzs.append(dst_xyz)
+                    if os.stat(tmp_xyz).st_size != 0:
+                        if i_vert is not None:
+                            self.run_vdatum(tmp_xyz, dst_xyz, i_vert = i_vert)
+                        else: os.rename(tmp_xyz, dst_xyz)
+                        
+                    if os.path.exists(tmp_xyz):
+                        os.remove(tmp_xyz)
+
+                    if not os.path.exists(dst_xyz):
+                        self.status = -1
+                    elif os.stat(dst_xyz).st_size == 0:
+                        self.status = -1
+                        os.remove(dst_xyz)
+                    else: self.xyzs.append(dst_xyz)
 
     def proc_las(self, block = None, i_vert = None):
         '''process las/laz lidar data to XYZ.'''
@@ -338,6 +338,7 @@ class procs:
             if not self.stop():
                 if split is not None:
                     split_chunk = gdalfun.split(chunk, int(split))
+                    print split_chunk
                     chunk_gdal = split_chunk[0]
                 else: chunk_gdal = chunk
                 
