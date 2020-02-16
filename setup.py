@@ -22,7 +22,7 @@ from setuptools import setup
 
 setup(
     name = 'geomods',
-    version = '0.1.1',
+    version = '0.1.5',
     description = 'Modules and scripts for utilizing geographic data Digital Elevation Models',
     license = 'MIT',
     author = 'CIRES Coastal DEM Team',

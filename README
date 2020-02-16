@@ -39,12 +39,15 @@ Python Modules:
  - regions - Geographic regions
  - fetches - Data fetching
  - gdalfun - GDAL related functions
+ - procs - elevation data processing
  - waffles - DEMs, etc.
 
 Console Scripts:
  
  - waffles - Generate a Digital Elevation Model.
  - fetches - Fetch elevation data from various sources.
+ - procs - Process elevation data to XYZ datalist.
+ - datalists - process and analyze datalists.
  - gdal_chunk.py - Split a gdal grid into chunks.
  - gdal_crop.py - Crop a gdal grid by it's nodata value.
  - vdatum_cmd.py - Use NOAA's VDatum via command-line
@@ -58,7 +61,7 @@ Examples:
    % fetches nos -R -90/-89/29/30 -l > nos.urls
 
  - generate a DEM for each region found in tiles.shp using GMT surface
-   % waffles gmt-surface -R tiles.shp -E .00000925925 -I input_data.datalist --verbose
+   % waffles dem:surface -R tiles.shp -E .00000925925 -I input_data.datalist --verbose
 
  - generate spatial-metadata from the datalist input_data.datalist
    % waffles spatial-metadata -R tiles.shp -E .00000925925 -I input_data.datalist --verbose

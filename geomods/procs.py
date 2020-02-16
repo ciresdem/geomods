@@ -42,9 +42,9 @@ _version = '0.1.0'
 ## =============================================================================
 
 proc_infos = { 
-    'gdal':[lambda x, a: x.proc_gdal(*a), 'process gdal data to chunked XYZ [:split_value:input_vdatum]'],
-    'lidar':[lambda x, a: x.proc_las(*a), 'process lidar las/laz data to XYZ [:block:input_vdatum]'],
-    'ascii':[lambda x, a: x.proc_ascii(*a), 'process ascii xyz data to XYZ [:delim:x_loc,y_loc,z_loc:skip_lines:block:input_vdatum]'],
+    'gdal':[lambda x, a: x.proc_gdal(*a), 'process gdal data to chunked XYZ [:split_value:increment:input_vdatum]'],
+    'lidar':[lambda x, a: x.proc_las(*a), 'process lidar las/laz data to XYZ [:increment:input_vdatum]'],
+    'ascii':[lambda x, a: x.proc_ascii(*a), 'process ascii xyz data to XYZ [:delim:x_loc,y_loc,z_loc:skip_lines:increment:input_vdatum]'],
 }
 
 def _proc_queue(q):
@@ -240,14 +240,16 @@ class procs:
                 self.status = 0
 
                 if regions.regions_intersect_p(this_region, data_region):
-
                     tmp_xyz = os.path.join(self.xyz_dir, '{}_tmp.xyz'.format(os.path.basename(src_xyz).split('.')[0]))
                     dst_xyz = os.path.join(self.xyz_dir, '{}_{}.xyz'.format(os.path.basename(src_xyz).split('.')[0], this_region.fn))
 
                     out, self.status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR=space', False, False)
                     if block is not None:
-                        out, self.status = utils.run_cmd('gmt blockmedian {} -I.1111111s {} -r -V > {}\
-                        '.format(src_xyz, this_region.gmt, tmp_xyz), False, False)
+                        try:
+                            inc = float(block)
+                        except: inc = .000030864
+                        out, self.status = utils.run_cmd('gmt blockmedian {} -I{} {} -r -V > {}\
+                        '.format(src_xyz, inc, this_region.gmt, tmp_xyz), False, False)
                     else:
                         out, self.status = utils.run_cmd('gmt gmtselect {} {} -V > {}\
                         '.format(src_xyz, this_region.gmt, tmp_xyz), False, False)
@@ -267,15 +269,15 @@ class procs:
                         os.remove(dst_xyz)
                     else: self.xyzs.append(dst_xyz)
 
-    def proc_las(self, block = None, i_vert = None):
+    def proc_las(self, block = None, i_vert = None, classes = '2 29'):
         '''process las/laz lidar data to XYZ.'''
 
-        out, self.status = utils.run_cmd('las2txt -verbose -parse xyz -keep_class 2 29 -i {}'.format(src_file), False, False)
+        out, self.status = utils.run_cmd('las2txt -verbose -parse xyz -keep_class {} -i {}'.format(classes, self.src_file), True, True)
 
         if self.status == 0:
             o_fn_txt = os.path.join(self.src_dir, '{}.txt'.format(self.src_file.split('.')[0]))
 
-            self.proc_xyz(o_fn_txt, True, i_vert)
+            self.proc_xyz(o_fn_txt, block, i_vert)
             os.remove(o_fn_txt)
 
     def proc_ascii(self, delim = ' ', xyz_cols = '0,1,2', skip = 0, block = None, i_vert = None):
@@ -309,13 +311,16 @@ class procs:
                         out_ascii.write(out_row)
                 l_n += 1
 
-        self.proc_xyz(tmp_ascii, True, i_vert)
+        self.proc_xyz(tmp_ascii, block, i_vert)
         os.remove(tmp_ascii)
         
     def proc_ogr(self):
         pass
-            
-    def proc_gdal(self, split = None, i_vert = None):
+
+    def proc_mb(self):
+        pass
+    
+    def proc_gdal(self, split = None, block = None, i_vert = None):
         '''process gdal grid data to XYZ.'''
         
         if self.src_file.split('.')[-1].lower() == 'zip':
@@ -346,9 +351,11 @@ class procs:
                 '.format(chunk_gdal, tmp_gdal), False, False)
                 #else: tmp_gdal = chunk_gdal
 
-                tmp_xyz = os.path.join(self.xyz_dir, '{}.tmp'.format(os.path.basename(chunk_gdal).split('.')[0]))                
-                gdalfun.dump(tmp_gdal, tmp_xyz)
-                self.proc_xyz(tmp_xyz, True, i_vert)
+                tmp_xyz = os.path.join(self.xyz_dir, '{}.tmp'.format(os.path.basename(chunk_gdal).split('.')[0]))
+                tmp_xyz_ob = open(tmp_xyz, 'wt')
+                gdalfun.dump(tmp_gdal, tmp_xyz_ob)
+                tmp_xyz_ob.close()
+                self.proc_xyz(tmp_xyz, block, i_vert)
 
                 os.remove(tmp_xyz)
                 os.remove(tmp_gdal)
@@ -386,10 +393,10 @@ Options:
   --verbose\t\tIncrease the verbosity
 
  Examples:
- % {} -R -90/-89/30/31 -M gdal dc_raster.img
+ % {} -R -90/-89/30/31 -M gdal::.0000925 dc_raster.img
  % {} -R tiles.shp -M gdal:0::mllw ned13.zip
- % {} -M ascii:,:2,1,3:1:T:mllw *.xyz.gz
- % {} -M lidar:T *.laz
+ % {} -M ascii:,:2,1,3:1::mllw *.xyz.gz
+ % {} -M lidar:.000030864 *.laz
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
 '''.format( os.path.basename(sys.argv[0]), 
@@ -471,11 +478,7 @@ def main():
     ## check platform and installed software
     ## ==============================================
 
-    cmd_vers = utils._cmd_check()
-
-    ## ==============================================
-    ## process input region(s) and loop
-    ## ==============================================
+    #cmd_vers = utils._cmd_check()
 
     pb = utils._progress('loading region(s)...')
     try: 

@@ -21,99 +21,19 @@
 
 import sys
 import os
-import glob
-import threading
-import time
-
-import numpy as np
-try:
-    import osgeo.ogr as ogr
-    import osgeo.osr as osr
-    import osgeo.gdal as gdal
-except ImportError:
-    try:
-        import ogr
-        import osr
-        import gdal
-    except ImportError:
-        sys.exit(-1)
+import ogr
 
 import regions
 import datalists
 import gdalfun
+import uncertainty
+import metadata
 import utils
 
-_version = '0.2.1'
-
-## =============================================================================
-##
-## Uncertainty Analysis
-##
-## =============================================================================
-
-def err2coeff(my_data):
-    '''data is 2 col file with `err dist`'''
-
-    from scipy import optimize
-    import matplotlib.pyplot as plt
-    #try: 
-    #    my_data = np.loadtxt(data, delimiter=' ')
-    #except: sys.exit(2)
-
-    error=my_data[:,0]
-    distance=my_data[:,1]
+import threading
+import time
         
-    max_int_dist = np.max(distance)
-    nbins = 10
-
-    coeff_guess=[0, 0.1, 0.2]
-    n, _ = np.histogram(distance, bins = nbins)
-
-    # want at least 2 values in each bin?
-    while 0 or 1 in n:
-        nbins -= 1
-        n, _ = np.histogram(distance, bins = nbins)
-
-    serror, _ = np.histogram(distance, bins = nbins, weights = error)
-    serror2, _ = np.histogram(distance, bins = nbins, weights = error**2)
-
-    mean = serror / n
-    std = np.sqrt(serror2 / n - mean * mean)
-
-    ydata = np.insert(std, 0, 0)
-    
-    bins_orig=(_[1:] + _[:-1]) / 2
-    xdata = np.insert(bins_orig, 0, 0)
-
-    fitfunc = lambda p, x: p[0] + p[1] * (abs(x) ** p[2])
-    errfunc = lambda p, x, y: y - fitfunc(p, x)
-    
-    out, cov, infodict, mesg, ier = optimize.leastsq(errfunc, coeff_guess, args = (xdata, ydata), full_output = True)
-
-    # fit
-    
-    plt.plot(xdata, ydata, 'o')
-    plt.plot(xdata, fitfunc(out, xdata), '-')
-    plt.xlabel('distance')
-    plt.ylabel('error (m)')
-    #plt.show()
-
-    out_png = 'unc_best_fit.png'
-    plt.savefig(out_png)   # save the figure to file
-    plt.close()
-
-    #scatter
-
-    plt.scatter(distance, error)
-    #plt.title('Scatter')
-    plt.xlabel('distance')
-    plt.ylabel('error (m)')
-
-    out_png = 'unc_scatter.png'
-    plt.savefig(out_png)
-    plt.close()
-
-    return(out)
+_version = '0.2.6'
 
 def inc2str_inc(inc):
     '''convert a WGS84 geographic increment to a str_inc (e.g. 0.0000925 ==> `13`)'''
@@ -131,17 +51,7 @@ def this_year():
 
     return(datetime.datetime.now().strftime('%Y'))
 
-def remove_glob(glob_str):
-    '''glob `glob_str` and os.remove results'''
-
-    globs = glob.glob(glob_str)
-    if len(globs) > 0:
-        for g in globs:
-            try:
-                os.remove(g)
-            except: pass
-
-## GMT Wrappers
+## GMT Wrapper Functions
 
 def grd2tif(src_grd, verbose = False):
     '''Convert the grd file to tif using GMT'''
@@ -156,6 +66,7 @@ def grd2tif(src_grd, verbose = False):
 
         if status != 0:
             dst_grd = None
+            #else: dst_grd = None
 
     return(dst_grd)
 
@@ -250,17 +161,6 @@ def proximity(src_num_msk, dst_prox):
 
     return(status)
 
-def num_msk_gdal(datalist, region, inc, verbose = False):
-    '''Generate a num-msk with GDAL from a datalist.'''
-
-    o_mask = '{}_num_msk.tif'.format(datalist._path_dl_name)
-    gdalfun.xyz_gmask(datalist._caty(), 
-                      o_mask,
-                      region.region, 
-                      inc, verbose = verbose)
-    
-    return(o_mask)
-
 def num_msk(num_grd, dst_msk, verbose = False):
     '''Generate a num-msk from a NUM grid.'''
 
@@ -271,6 +171,35 @@ def num_msk(num_grd, dst_msk, verbose = False):
     out, status = utils.run_cmd(num_msk_cmd, verbose, verbose)
 
     return(status)
+
+def xyz2grd(datalist, region, inc, dst_name, a = 'n', node = 'pixel', verbose = False):
+
+    status = 0
+    if node == 'pixel':
+        reg_str = '-r'
+    else: reg_str = ''
+    
+    num_cmd0 = ('gmt xyz2grd -V {} -I{:.7f} -G{}.grd -A{} {}\
+    '.format(region.gmt, inc, dst_name, a, reg_str))
+    out, status = utils.run_cmd_with_input(num_cmd0, datalist._cat_port, verbose, True)
+
+    return(out, status)
+
+def run_mbgrid(datalist, region, inc, dst_name, dist = '10/3', tension = 35, extras = False, verbose = False):
+
+    status = 0
+    if extras:
+        e_switch = '-M'
+    else: e_switch = ''
+
+    if len(dist.split('/')) == 1:
+        dist = dist + '/2'
+    
+    mbgrid_cmd = ('mbgrid -I{} {} -E{:.7f}/{:.7f}/degrees! -O{} -A2 -G100 -F1 -N -C{} -S0 -X0.1 -T{} {}> /dev/null 2> /dev/null \
+    '.format(datalist._path, region.gmt, inc, inc, dst_name, dist, tension, e_switch))
+    out, status = utils.run_cmd(mbgrid_cmd, verbose, True)
+
+    return(out, status)
 
 ## =============================================================================
 ##
@@ -283,9 +212,9 @@ def num_msk(num_grd, dst_msk, verbose = False):
 
 class dem:
     '''Generate a Digital Elevation Model using one of the dem modules.
-    DEM Modules include, `mbgrid`, `surface`, `num`, `mean`'''
+    DEM Modules include, `mbgrid`, `surface`, `num`, `mean`, `bathy`'''
 
-    def __init__(self, i_datalist, i_region, i_inc = '0.000277777', o_name = None, o_b_name = None, callback = lambda: False, verbose = False):
+    def __init__(self, i_datalist, i_region, i_inc = 0.000277777, o_name = None, o_b_name = None, callback = lambda: False, verbose = False):
         self.datalist = i_datalist
         self.region = i_region
         self.inc = float(i_inc)
@@ -298,10 +227,14 @@ class dem:
         self.verbose = verbose
 
         self.dem_mods = {
-            'mbgrid': lambda: self.mbgrid(),
-            'surface': lambda: self.surface(),
-            'num': lambda: self.num(),
-            'mean': lambda: self.mean(),
+            'mbgrid': self.mbgrid,
+            'surface': self.surface,
+            'num': self.num,
+            'mean': self.mean,
+            'bathy': self.bathy,
+            'conversion-grid': self.vdatum,
+            'spatial-metadata': self.spatial_metadata,
+            'uncertainty': self.uncertainty,
         }
 
         self.dem = { 
@@ -313,6 +246,8 @@ class dem:
             'num-msk-grd': None,
             'mean': None,
             'mean-grd': None,
+            'bathy-grd': None,
+            'bathy': None
         }
 
         if o_b_name is None:
@@ -323,34 +258,31 @@ class dem:
             self.o_name = '{}{}_{}_{}'.format(o_name, str_inc, self.region.fn, this_year())
         else: self.o_name = o_b_name
 
-    def run(self, dem_mod = 'mbgrid'):
+    def run(self, dem_mod = 'mbgrid', args = ()):
         '''Run the DEM module `dem_mod` using args `dem_mod_args`.'''
 
         dems = self.dem
-        if dem_mod != 'mbgrid':
+        if dem_mod != 'mbgrid' and dem_mod != 'vdatum' and dem_mod != 'metadata_spatial':
             self.datalist._load_data()
             if len(self.datalist.datafiles) == 0:
                 self.status = -1
 
         if self.status == 0:
-            dems = self.dem_mods[dem_mod]()
+            dems = self.dem_mods[dem_mod](*args)
 
         return(dems)
 
     ## ==============================================
-    ## run mbgrid on the datalist and generate the
-    ## dem and num grids
+    ## run mbgrid on the datalist and generate the DEM
     ## note: mbgrid will cause popen to hang if stdout 
     ## is not cleared...should add output file to send to...
     ## ==============================================
 
-    def mbgrid(self):
-        '''Generate a DEM and num grid with MBSystem's mbgrid program.'''
+    def mbgrid(self, dist = '10/3'):
+        '''Generate a DEM with MBSystem's mbgrid program.'''
 
-        mbgrid_cmd = ('mbgrid -I{} {} -E{:.7f}/{:.7f}/degrees! -O{} -A2 -G100 -F1 -N -C10/3 -S0 -X0.1 -T35 > /dev/null 2> /dev/null \
-        '.format(self.datalist._path, self.dist_region.gmt, self.inc, self.inc, self.o_name))
-        out, self.status = utils.run_cmd(mbgrid_cmd, self.verbose, True)
-
+        out, self.status = run_mbgrid(self.datalist, self.dist_region, self.inc, self.o_name, dist = dist, verbose = self.verbose)
+        
         if self.status == 0:
             self.dem['dem-grd'] = '{}.grd'.format(self.o_name)
 
@@ -359,7 +291,7 @@ class dem:
                 os.rename('tmp.grd', self.dem['dem-grd'])
 
             self.dem['dem'] = grd2tif(self.dem['dem-grd'])
-            remove_glob('*.cmd')
+            utils.remove_glob('*.cmd')
 
         return(self.dem)    
 
@@ -402,18 +334,13 @@ class dem:
     def num(self):
         '''Generate a num and num-msk grid with GMT'''
 
-        reg_str = ''
-        if self.node == 'pixel':
-            reg_str = '-r'
-
-        num_cmd0 = ('gmt xyz2grd -V {} -I{:.7f} -G{}_num.grd -An {}\
-        '.format(self.dist_region.gmt, self.inc, self.o_name, reg_str))
-        out, self.status = utils.run_cmd_with_input(num_cmd0, self.datalist._cat_port, self.verbose, True)
-
+        dst_name = '{}_num'.format(self.o_name)
+        out, self.status = xyz2grd(self.datalist, self.dist_region, self.inc, dst_name, 'n', self.node, verbose = self.verbose)
+        
         if self.status == 0:
-            self.dem['num-grd'] = '{}_num.grd'.format(self.o_name)
+            self.dem['num-grd'] = '{}.grd'.format(dst_name)
             self.dem['num'] = grd2tif(self.dem['num-grd'])
-            self.dem['num-msk-grd'] = '{}_num_msk.grd'.format(self.o_name)
+            self.dem['num-msk-grd'] = '{}_msk.grd'.format(dst_name)
 
             self.status = num_msk(self.dem['num-grd'], self.dem['num-msk-grd'])
             if self.status == 0:
@@ -428,17 +355,11 @@ class dem:
 
     def mean(self):
         '''Generate a num and num-msk grid with GMT'''
-
-        reg_str = ''
-        if self.node == 'pixel':
-            reg_str = '-r'
-
-        num_cmd0 = ('gmt xyz2grd -V {} -I{:.7f} -G{}_mean.grd {}\
-        '.format(self.dist_region.gmt, self.inc, self.o_name, reg_str))
-        out, self.status = utils.run_cmd_with_input(num_cmd0, self.datalist._cat_port, self.verbose, True)
-
+        dst_name = '{}_mean'.format(self.o_name)
+        out, self.status = xyz2grd(self.datalist, self.dist_region, self.inc, dst_name, 'm', self.node, verbose = self.verbose)
+        
         if self.status == 0:
-            self.dem['mean-grd'] = '{}_mean.grd'.format(self.o_name)
+            self.dem['mean-grd'] = '{}.grd'.format(dst_name)
             self.dem['mean'] = grd2tif(self.dem['mean-grd'])
 
         return(self.dem)
@@ -455,53 +376,17 @@ class dem:
         ## gdal_grid point shpafile to out grid
         pass
 
-## =============================================================================
-##
-## Bathy-Surface module.
-##
-## with GMT, gererate a 'bathy-surface'.
-## specify the coastline mask shapefile with 'mask = '
-## if mask is not specified, will use gsshg.
-## returns a netcdf masked grid and an XYZ file
-## of the bathy surface points.
-## 
-## =============================================================================
+    ## ==============================================
+    ## Bathy-Surface module.
+    ##
+    ## with GMT, gererate a 'bathy-surface'.
+    ## specify the coastline mask shapefile with 'mask = '
+    ## if mask is not specified, will use gsshg.
+    ## returns a netcdf masked grid and an XYZ file
+    ## of the bathy surface points.
+    ## ==============================================
 
-class bathy_surface:
-
-    def __init__(self, i_datalist, i_region, i_inc = '0.000277777', o_name = None, o_b_name = None, callback = lambda: False, verbose = False):
-        self.datalist = i_datalist
-        self.region = i_region
-        self.inc = float(i_inc)
-        self.proc_region = self.region.buffer(10 * self.inc)
-        self.dist_region = self.region.buffer(6 * self.inc)
-        self.node = 'pixel'
-
-        self.status = 0
-        self.stop = callback
-        self.verbose = verbose
-
-        self.dem = { 
-            'bathy-grd': None,
-            'bathy-xyz': None,
-        }
-
-        if o_b_name is None:
-            if o_name is None: 
-                o_name = self.datalist._path_basename.split('.')[0]
-
-            str_inc = inc2str_inc(self.inc)
-            self.o_name = '{}{}_{}_{}'.format(o_name, str_inc, self.region.fn, this_year())
-        else: self.o_name = o_b_name
-
-    def run(self, mask = None):
-        '''Run the bathy-surface module'''
-
-        self.bathy_surface(mask = mask)
-
-        return(self.dem)
-
-    def bathy_surface(self, mask = None):
+    def bathy(self, mask = None):
         '''Generate a masked surface with GMT surface and a breakline mask polygon.
         Use a coastline polygon mask to generatre a `bathy-surface` DEM.'''
 
@@ -526,7 +411,7 @@ class bathy_surface:
             out, self.status = utils.run_cmd(dem_landmask_cmd1, self.verbose, True)
 
             grdcut('{}_p_bathy.grd'.format(self.o_name), self.dist_region, bathy_dem)
-            remove_glob('{}_p*.grd'.format(self.o_name))
+            utils.remove_glob('{}_p*.grd'.format(self.o_name))
 
             if self.status == 0:
                 self.dem['bathy-grd'] = bathy_dem
@@ -538,42 +423,14 @@ class bathy_surface:
 
         return(self.dem)
 
-## =============================================================================
-##
-## conversion-grid module:
-## Generate a VDatum conversion grid
-##
-## Requires NOAA's VDatum version >= 4.x
-##
-## =============================================================================
+    ## ==============================================
+    ## conversion-grid module:
+    ## Generate a VDatum conversion grid
+    ##
+    ## Requires NOAA's VDatum version >= 4.x
+    ## ==============================================
 
-class conversion_grid:
-
-    def __init__(self, i_datalist, i_region, i_inc = '0.000277777', o_name = None, o_b_name = None, callback = lambda: False, verbose = False):
-        self.region = i_region
-        self.inc = float(i_inc)
-        self.dist_region = self.region.buffer(6 * self.inc)
-        self.node = 'pixel'
-
-        self.status = 0
-        self.stop = callback
-        self.verbose = verbose
-
-        self.dem = {}
-
-        if o_b_name is None:
-            if o_name is None: 
-                o_name = 'cgrid'
-
-            self.o_name = '{}{}_{}_{}'.format(o_name, inc2str_inc(self.inc), self.region.fn, this_year())
-        else: self.o_name = o_b_name
-
-    def run(self, ivert = 'navd88', overt = 'mllw', region = '3'):
-        '''Run the conversion grid module.'''
-
-        self.conversion_grid(ivert, overt, region)
-
-    def conversion_grid(self, ivert = 'navd88', overt = 'mllw', region = '3'):
+    def vdatum(self, ivert = 'navd88', overt = 'mllw', region = '3'):
         '''generate a vertical datum transformation grid with vdatum'''
 
         reg_str = ''
@@ -613,435 +470,21 @@ class conversion_grid:
         else: self.status = -1
 
         try:
-            remove_glob('empty.*')
-            remove_glob('result/*')
+            utils.remove_glob('empty.*')
+            utils.remove_glob('result/*')
             os.removedirs('result')
         except: pass
 
         return(self.dem)
 
-## =============================================================================
-##
-## spatial-metadata module:
-##
-## Generate spatial metadata from a datalist of xyz elevation data.
-## The output is a shapefile with the boundaries of each specific
-## datalist as a layer feature.
-##
-## Specify an input datalist, region and cell-size.
-## o_name is the output prefix: `o_name_<region>_sm.shp`
-## o_b_name is the output basename: `o_name_sm.shp`
-##
-## =============================================================================
-
-class spatial_metadata:
-    '''Generate spatial metadata from a datalist of xyz elevation data.
-    The output is a shapefile with the boundaries of each specific
-    datalist as a layer feature.'''
-    
-    def __init__(self, i_datalist, i_region, i_inc = '0.000277777', o_name = None, o_b_name = None, callback = lambda: False, verbose = False):
-
-        import Queue as queue
-
-        self.dl_q = queue.Queue()
-        self.datalist = i_datalist
-        self.region = i_region
-        self.inc = float(i_inc)
-        self.proc_region = self.region.buffer(10 * self.inc)
-        self.dist_region = self.region.buffer(6 * self.inc)
-        self.node = 'pixel'
-
-        self.status = 0
-        self.stop = callback
-        self.verbose = verbose
-
-        self.v_fields = ['Name', 'Agency', 'Date', 'Type',
-                         'Resolution', 'HDatum', 'VDatum', 'URL']
-        self.t_fields = [ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString,
-                         ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString]
-
-        if o_b_name is None:
-            if o_name is None: 
-                o_name = self.datalist._path_basename.split('.')[0]
-
-            self.o_name = '{}{}_{}_{}'.format(o_name, inc2str_inc(self.inc), self.region.fn, this_year())
-        else: self.o_name = o_b_name
-
-        #self.pb = utils._progress('generating spatial metadata from {}'.format(self.datalist._path_basename))
-
-    def run(self, epsg = 4269):
-        '''Run the spatial-metadata module'''
-
-        self.spatial_metadata(epsg)
-
-    def _gather_from_queue(self):
-        '''Gather geometries from a queue of [[datalist, layer], ...].'''
-
-        while True:
-            sm_args = self.dl_q.get()
-            dl = sm_args[0]
-            layer = sm_args[1]
-            
-            self._gather_from_datalist(dl, layer)
-            
-            self.dl_q.task_done()
-
-    def _gather_from_datalist(self, dl, layer):
-        '''gather geometries from datalist `dl` and append
-        results to ogr `layer`. Load the datalist, generate
-        a NUM-MSK grid, polygonize said NUM-MSK then union
-        the polygon and add it to the output layer.'''
-
-        defn = layer.GetLayerDefn()
-        this_datalist = datalists.datalist(dl[0], self.dist_region)
-
-        try:
-            o_v_fields = [dl[3], dl[4], dl[5], dl[6], dl[7], dl[8], dl[9], dl[10].strip()]
-        except: o_v_fields = [this_datalist._path_dl_name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
-
-        this_dem = dem(this_datalist, self.region, str(self.inc), verbose = self.verbose)
-        this_dem.run('num')
-
-        if this_dem.status == 0:
-            os.remove(this_dem.dem['num'])
-            os.remove(this_dem.dem['num-grd'])
-            os.remove(this_dem.dem['num-msk-grd'])
-
-            pb = utils._progress('gathering geometries from \033[1m{}\033[m...'.format(this_datalist._path_basename))
-            src_ds = gdal.Open(this_dem.dem['num-msk'])
-            srcband = src_ds.GetRasterBand(1)
-
-            remove_glob('{}_poly.*'.format(this_dem.o_name))
-
-            tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(this_dem.o_name))
-            tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(this_dem.o_name), None, ogr.wkbMultiPolygon)
-            tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
-
-            pb1 = utils._progress('polygonizing \033[1m{}\033[m mask...'.format(this_datalist._path_basename))
-            t = threading.Thread(target = gdal.Polygonize, args = (srcband, None, tmp_layer, 0, [], None))
-            t.daemon = True
-
-            t.start()
-            while True:
-                time.sleep(2)
-                pb1.update()
-                if not t.is_alive():
-                    break
-            t.join()
-
-            pb1.opm = 'polygonized \033[1m{}\033[m mask.'.format(this_datalist._path_basename)
-            pb1.end(self.status)
-
-            src_ds = srcband = None
-
-            if len(tmp_layer) > 1:
-                out_feat = gdalfun.ogr_mask_union(tmp_layer, 'DN', defn)
-                for i, f in enumerate(self.v_fields):
-                    out_feat.SetField(f, o_v_fields[i])
-
-                layer.CreateFeature(out_feat)
-
-            tmp_ds = tmp_layer = out_feat = None
-            remove_glob('{}_poly.*'.format(this_dem.o_name))
-            os.remove(this_dem.dem['num-msk'])
-
-            pb.opm = 'gathered geometries from \033[1m{}\033[m.'.format(this_datalist._path_basename)
-            pb.end(self.status)
-
     def spatial_metadata(self, epsg = 4269):
-        '''Geneate spatial metadata from the datalist'''
+        sm = metadata.spatial_metadata(self.datalist, self.region, self.inc, self.o_name, self.stop, self.verbose)
+        sm.spatial_metadata(epsg)
 
-        if self.inc < 0.0000925:
-            print 'warning, increments less than 1/3 arc-second may be slow.'
+    def uncertainty(self, dem_mod = 'mbgrid', dem = None, num = None, num_msk = None, prox = None):
+        unc = uncertainty.uncertainty(self.datalist, self.region, self.inc, self.o_name, self.stop, self.verbose)
+        unc.run(dem_mod, dem, num, num_msk, prox)
     
-        dst_vec = '{}_sm.shp'.format(self.o_name, self.region.fn)
-        dst_layername = os.path.basename(dst_vec).split('.')[0]
-
-        remove_glob('{}_sm.*'.format(self.o_name))
-
-        ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource(dst_vec)
-        if ds is not None:
-            try:
-                int(epsg)
-            except: epsg = 4326
-
-            gdalfun._prj_file('{}.prj'.format(os.path.basename(dst_vec).split('.')[0]), int(epsg))
-            layer = ds.CreateLayer('{}'.format(os.path.basename(dst_vec).split('.')[0]), None, ogr.wkbMultiPolygon)
-
-            for i, f in enumerate(self.v_fields):
-                layer.CreateField(ogr.FieldDefn('{}'.format(f), self.t_fields[i]))
-            
-            for feature in layer:
-                layer.SetFeature(feature)
-    
-            for _ in range(3):
-                t = threading.Thread(target = self._gather_from_queue, args = ())
-                t.daemon = True
-                t.start()
-
-            for dl in self.datalist.datalist:
-                #self._gather_from_datalist(dl, layer)
-                self.dl_q.put([dl, layer])
-
-            self.dl_q.join()
-
-        ds = layer = None
-        if not os.path.exists(dst_vec):
-            dst_vec = None
-
-        return(dst_vec)
-
-## =============================================================================
-##
-## uncertainty module:
-##
-## =============================================================================
-
-class uncertainty:
-
-    def __init__(self, i_datalist, i_region, i_inc = '0.000277777', o_name = None, o_b_name = None, callback = lambda: False, verbose = False):
-
-        import random
-
-        self.datalist = i_datalist
-        self.region = i_region
-        self.inc = float(i_inc)
-        self.proc_region = self.region.buffer(10 * self.inc)
-        self.dist_region = self.region.buffer(6 * self.inc)
-        self.node = 'pixel'
-        self.o_b_name = o_b_name
-
-        self.status = 0
-        self.stop = callback
-        self.verbose = verbose
-
-        self.dem = { 
-            'dem': None,
-            'num': None,
-            'num-grd': None,
-            'num-msk': None,
-            'prox': None,
-            'int-unc': None,
-        }
-
-        if o_b_name is None:
-            if o_name is None: 
-                o_name = self.datalist._path_basename.split('.')[0]
-            str_inc = inc2str_inc(self.inc)
-            self.o_name = '{}{}_{}_{}'.format(o_name, str_inc, self.region.fn, this_year())
-        else: self.o_name = o_b_name
-
-    def run(self, dem_mod = 'mbgrid', dem = None, num = None, num_msk = None, prox = None):
-
-        if dem is not None:
-            self.dem['dem'] = dem
-
-        if num is not None:
-            self.dem['num'] = num
-
-        if num_msk is not None:
-            self.dem['num-msk'] = num_msk
-
-        if prox is not None:
-            self.dem['prox'] = prox
-
-        self.datalist._load_data()
-        self.interpolation_uncertainty(dem_mod)
-
-    def set_or_make_dem(self):
-        '''check if dem dict contains dems, otherwise generate them...'''
-
-        tw = utils._progress('checking for DEMs...')
-
-        if self.dem['dem'] is None:
-            tw.err_msg('generating dem...')
-            dems = dem(self.datalist, self.region, str(self.inc)).run(dem_mod)
-            for key in dems.keys():
-                self.dem[key] = dems[key]
-
-        if self.dem['num'] is None:
-            tw.err_msg('generating NUM grid...')
-            dems = dem(self.datalist, self.region, str(self.inc)).run('num')
-            for key in dems.keys():
-                self.dem[key] = dems[key]
-
-        if self.dem['num-msk'] is None:
-            tw.err_msg('generating NUM mask...')
-            self.dem['num-grd-msk'] = '{}_msk.grd'.format(self.dem['num'].split('.')[0]) 
-            num_msk(self.dem['num'], self.dem['num-grd-msk'])
-            self.dem['num-msk'] = grd2tif(self.dem['num-grd-msk'])
-
-        if self.dem['prox'] is None:
-            tw.err_msg('generating proximity grid...')
-            self.dem['prox']  = '{}_prox.tif'.format(self.dem['num'].split('.')[0]) 
-            proximity(self.dem['num-msk'], self.dem['prox'])
-
-        tw.opm = 'checked for DEMs.'
-        tw.end(self.status)        
-
-    def gmtselect_split(self, o_xyz, sub_region, sub_bn):
-        '''split an xyz file into an inner and outer region.'''
-
-        out_inner = None
-        out_outer = None
-
-        gmt_s_inner = 'gmt gmtselect -V {} {} > {}_inner.xyz'.format(o_xyz, sub_region.gmt, sub_bn)
-        out, self.status = utils.run_cmd(gmt_s_inner, self.verbose, False)
-        
-        if self.status == 0:
-            out_inner = '{}_inner.xyz'.format(sub_bn)
-
-        gmt_s_outer = 'gmt gmtselect -V {} {} -Ir > {}_outer.xyz'.format(o_xyz, sub_region.gmt, sub_bn)
-        out, self.status = utils.run_cmd(gmt_s_outer, self.verbose, False)
-
-        if self.status == 0:
-            out_outer = '{}_outer.xyz'.format(sub_bn)
-
-        return([out_inner, out_outer])
-
-    def interpolation_uncertainty(self, dem_mod = 'mbgrid'):
-        '''calculate the interpolation uncertainty.'''
-
-        loop_count = 1
-        sub_count = 0        
-        this_region = self.region
-        dp = None
-
-        self.set_or_make_dem()
-        print self.dem
-
-        ## ==============================================
-        ## Calculate the percentage of filled cells
-        ## and proximity percentiles.
-        ## ==============================================
-        tw = utils._progress('')
-
-        num_sum = gdalfun.sum(self.dem['num-msk'])
-        gi = grdinfo(self.dem['num-msk'])
-        g_max = int(gi[9]) * int(gi[10])
-
-        num_perc = (num_sum / g_max) * 100
-        prox_perc_95 = gdalfun.percentile(self.dem['prox'], 75)
-        tw.err_msg('waffles: proximity 95th perc: {}'.format(prox_perc_95))
-
-        sub_regions = this_region.chunk(self.inc, 500)
-        tw.err_msg('waffles: chunking into {} regions.'.format(len(sub_regions)))
-        #tw.err_msg('waffles: processing {} regions {} times.'.format(len(sub_regions), loop_count))
-
-        for sub_region in sub_regions:
-            if self.stop(): break
-
-            self.status = 0
-            sub_count += 1
-            o_xyz = '{}.xyz'.format(self.o_name)
-
-            tw = utils._progress('processing sub region \033[1m{}\033[m...'.format(sub_count))
-
-            self.status = grd2xyz(self.dem['dem'], o_xyz, region = sub_region.buffer(10*self.inc), mask = self.dem['num'])
-            if os.stat(o_xyz).st_size == 0:
-                tw.err_msg('waffles: error, no data in sub-region...')
-                self.status = -1
-            else:
-                s_inner, s_outer = self.gmtselect_split(o_xyz, sub_region, 'sub_{}'.format(sub_count))
-
-                if os.stat(s_inner).st_size != 0:
-                    sub_xyz = np.loadtxt(s_inner, ndmin=2, delimiter = ' ')
-                else: self.status = -1
-
-                if self.status == 0 and not self.stop():
-                    self.status = grdcut(self.dem['num-msk'], sub_region, 'tmp_sub.grd')
-
-                    gi = grdinfo('tmp_sub.grd')
-                    num_max = int(gi[9]) * int(gi[10])
-
-                    tw.err_msg('waffles: total cells in subgrid is {}'.format(num_max))
-                    num_sub_sum = gdalfun.sum(grd2tif('tmp_sub.grd'))
-                    tw.err_msg('waffles: total filled cells in subgrid is {}'.format(num_sub_sum))
-
-                    try:
-                        os.remove('tmp_sub.grd')
-                        os.remove('tmp_sub.tif')
-                    except: pass
-
-                    num_sub_perc = (num_sub_sum / num_max) * 100
-                    tw.err_msg('waffles: {}% of cells have data'.format(num_sub_perc))
-                    s_size = 100 - num_sub_perc
-
-                    if s_size >= 100:
-                        n_loops = 0
-                    else: n_loops = int(((s_size / num_perc) * 2) + 1)
-
-                    tw.err_msg('waffles: loops for this subregion is {}'.format(n_loops))
-
-                    ## ==============================================
-                    ## Split Sample n_loops times
-                    ## ==============================================
-
-                    for i in range(0, n_loops):
-                        if self.stop(): break
-
-                        np.random.shuffle(sub_xyz)
-                        sx_len = len(sub_xyz)
-                        sx_len_pct = int(sx_len * (num_sub_perc / 100))
-
-                        if sx_len_pct == 0:
-                            break
-
-                        tw.err_msg('waffles: extracting {} random data points out of {}'.format(sx_len_pct, sx_len))
-                        sub_xyz_head = 'sub_{}_head.xyz'.format(sub_count)
-
-                        np.savetxt(sub_xyz_head, sub_xyz[:sx_len_pct], '%f', ' ')
-
-                        sub_datalist =  datalists.datalist('sub_{}.datalist'.format(sub_count), sub_region)
-                        sub_datalist._append_datafile(s_outer, 168, 1)
-                        sub_datalist._append_datafile(sub_xyz_head, 168, 1)
-                        sub_datalist.reset()
-
-                        pb = utils._progress('generating sub-region {} random-sample grid...{}/{}'.format(sub_count, i, n_loops))
-
-                        sub_surf = dem(sub_datalist, sub_region, str(self.inc))
-                        sub_surf.run(dem_mod)
-                        sub_surf.run('num')
-                        sub_dems = sub_surf.dem
-
-                        pb.opm = 'generated sub-region {} random-sample grid.{}/{}'.format(sub_count, i, n_loops)
-                        pb.end(sub_surf.status)
-
-                        if sub_dems['dem'] is not None:
-
-                            sub_prox = '{}_prox.tif'.format(sub_dems['num'].split(',')[0])
-                            self.status = proximity(sub_dems['num-msk'], sub_prox)
-                            
-                            sub_xyd = gdalfun.query(sub_xyz[sx_len_pct:], sub_dems['dem'], 'xyd')
-                            sub_dp = gdalfun.query(sub_xyd, sub_prox, 'zg')
-
-                            if len(sub_dp) != 0:
-                                if dp is None:
-                                    dp = sub_dp
-                                else: dp = np.concatenate((dp, sub_dp), axis = 0)
-                        os.remove(sub_xyz_head)
-                        os.remove(sub_datalist._path)
-
-                remove_glob('sub_{}*'.format(sub_count))
-
-            tw.opm = 'processed sub region \033[1m{}\033[m.'.format(sub_count)
-            tw.end(self.status)
-
-        ## ==============================================
-        ## calculate the error coefficients and plot results
-        ## ==============================================
-
-        if not self.stop():
-            dp = dp[dp[:,1]<prox_perc_95,:]
-            dp = dp[dp[:,1]>0,:]
-            ec = err2coeff(dp)
-            print('error coefficient: {}'.format(ec))
-            np.savetxt('test.err', dp, '%f', ' ')
-
-        ## ==============================================
-        ## apply error coefficient to full proximity grid
-        ## ==============================================
-
 ## =============================================================================
 ##
 ## Console Scripts
@@ -1051,28 +494,29 @@ class uncertainty:
 ##
 ## =============================================================================
 
-_dem_mods = { 
-    'dem': [lambda d, r, i, o, b, c, v: dem(d, r, i, o, b, c, v), 'generate a DEM [:grid-module]'],
-    'bathy-surface': [lambda d, r, i, o, b, c, v: bathy_surface(d, r, i, o, b, c, v), 'generate a `bathy-surface` masked grid [:coastpoly]'],
-    'conversion-grid': [lambda d, r, i, o, b, c, v: conversion_grid(d, r, i, o, b, c, v), 'generate a VDatum conversion grid [:i_vdatum:o_vdatum:vd_region]'],
-    'spatial-metadata': [lambda d, r, i, o, b, c, v: spatial_metadata(d, r, i, o, b, c, v), 'generate spatial-metadata [:epsg]'],
-    'uncertainty': [lambda d, r, i, o, b, c, v: uncertainty(d, r, i, o, b, c, v), 'calculate DEM uncertainty [:grid-module:dem:num]'],
+_dem_lambda = lambda d, r, i, o, b, c, v: dem(d, r, i, o, b, c, v)
+
+_dem_mods = {
+    'conversion-grid': 'generate a VDatum conversion grid [:i_vdatum:o_vdatum:vd_region]',
+    'bathy': 'generate a `bathy-surface` masked grid [:coastpoly]',
+    'surface': 'generate a DEM via GMT surface',
+    'mbgrid': 'generate a DEM via mbgrid [:dist]',
+    'spatial-metadata': 'generate DEM spatial metadata [:epsg]',
+    'uncertainty': 'calculate DEM uncertainty [:dem_module]',
 }
 
 def dem_mod_desc(x):
     dmd = []
     for key in x: 
-        dmd.append('{:16}\t{}'.format(key, x[key][1]))
+        dmd.append('{:16}\t{}'.format(key, x[key]))
     return dmd
 
-_usage = '''{} ({}): Process and generate Digital Elevation Models and derivatives
+_waffles_usage = '''{} ({}): Process and generate Digital Elevation Models and derivatives
 
 usage: {} [ -hvAIER [ args ] ] module[:option1:option2] ...
 
 Modules:
   {}
-
- note: grid-modules include: `mbgrid`, `surface`, `num`, `mean`
 
 Options:
   -R, --region\t\tSpecifies the desired region;
@@ -1091,8 +535,8 @@ Options:
   --verbose\t\tIncrease the verbosity
 
  Examples:
- % {} -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 dem:surface
- % {} --datalist input.datalist --increment 0.000277777 --region input_tiles_ply.shp dem:mbgrid spatial-metadata
+ % {} -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 surface
+ % {} --datalist input.datalist --increment 0.000277777 --region input_tiles_ply.shp mbgrid spatial-metadata
  % {} -R-82.5/-82.25/26.75/27 -E0.0000925 conversion-grid:navd88:mhw:3 -P ncei -r
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
@@ -1106,10 +550,9 @@ CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
 
 def main():
     status = 0
-    iregion = None
-    idatalist = None
-    igrid = None
-    iinc = '0.000277777'
+    i_region = None
+    i_datalist = None
+    i_inc = 0.0002777
     these_regions = []
     stop_threads = False
     want_verbose = False
@@ -1117,7 +560,6 @@ def main():
     o_pre = None
     o_bn = None
     node_reg = 'pixel'
-
 
     argv = sys.argv
         
@@ -1130,28 +572,30 @@ def main():
         arg = argv[i]
 
         if arg == '--region' or arg == '-R':
-            iregion = str(argv[i + 1])
+            i_region = str(argv[i + 1])
             i = i + 1
         elif arg[:2] == '-R':
-            iregion = str(arg[2:])
+            i_region = str(arg[2:])
 
         elif arg == '--datalist' or arg == '-I':
-            idatalist = str(argv[i + 1])
+            i_datalist = str(argv[i + 1])
             i = i + 1
         elif arg[:2] == '-I':
-            idatalist = str(arg[2:])
+            i_datalist = str(arg[2:])
 
         elif arg == '--increment' or arg == '-E':
-            iinc = str(argv[i + 1])
+            try:
+                i_inc = float(argv[i + 1])
+            except:
+                sys.stderr.write('geomods: error, -E should be a float value\n')
+                sys.exit(1)
             i = i + 1
         elif arg[:2] == '-E':
-            iinc = str(arg[2:])
-
-        elif arg == '--grid' or arg == '-G':
-            igrid = str(argv[i + 1])
-            i = i + 1
-        elif arg[:2] == '-G':
-            igrid = str(arg[2:])
+            try:
+                i_inc = float(arg[2:])
+            except:
+                sys.stderr.write('geomods: error, -E should be a float value\n')
+                sys.exit(1)
 
         elif arg == '--output-name' or arg == '-O':
             o_bn = str(argv[i + 1])
@@ -1169,7 +613,7 @@ def main():
             node_reg = 'grid'
 
         elif arg == '--help' or arg == '-h':
-            print(_usage)
+            print(_waffles_usage)
             sys.exit(1)
 
         elif arg == '--version' or arg == '-v':
@@ -1180,7 +624,7 @@ def main():
             want_verbose = True
 
         elif arg[0] == '-':
-            print(_usage)
+            print(_waffles_usage)
             sys.exit(0)
 
         else: 
@@ -1189,9 +633,15 @@ def main():
 
         i = i + 1
 
-    if iregion is None:
-        print(_usage)
+    if i_region is None:
+        sys.stderr.write('geomods: error, a region must be specified\n')
+        print(_waffles_usage)
         sys.exit(1)
+
+    if i_datalist is None:
+        sys.stderr.write('geomods: error, a datalist must be specified\n')
+        print(_waffles_usage)
+        sys.exit(1)        
 
     for key in mod_opts.keys():
         mod_opts[key] = [None if x == '' else x for x in mod_opts[key]]
@@ -1200,7 +650,11 @@ def main():
     ## check platform and installed software
     ## ==============================================
 
-    cmd_vers = utils._cmd_check()
+    if 'mbgrid' in mod_opts.keys():
+        mb_vers = utils._cmd_check('mbgrid', 'mbgrid -version | grep Version')
+
+    gmt_vers = utils._cmd_check('gmt', 'gmt --version')
+    gdal_vers = utils._cmd_check('gdal-config', 'gdal-config --version')
 
     ## ==============================================
     ## process input region(s) and loop
@@ -1208,14 +662,15 @@ def main():
 
     pb = utils._progress('loading region(s)...')
     try: 
-        these_regions = [regions.region(iregion)]
+        these_regions = [regions.region(i_region)]
     except:
-        if os.path.exists(iregion):
-            _poly = ogr.Open(iregion)
-            _player = _poly.GetLayer(0)
-            for pf in _player:
-                _pgeom = pf.GetGeometryRef()
-                these_regions.append(regions.region('/'.join(map(str, _pgeom.GetEnvelope()))))
+        if os.path.exists(i_region):
+            _poly = ogr.Open(i_region)
+            if _poly is not None:
+                _player = _poly.GetLayer(0)
+                for pf in _player:
+                    _pgeom = pf.GetGeometryRef()
+                    these_regions.append(regions.region('/'.join(map(str, _pgeom.GetEnvelope()))))
 
     if len(these_regions) == 0:
         status = -1
@@ -1227,7 +682,8 @@ def main():
     pb.end(status)
             
     if status == -1:
-        print(_usage)
+        sys.stderr.write('geomods: error, failed to load region(s).\n')
+        print(_waffles_usage)
         sys.exit(1)
 
     for rn, this_region in enumerate(these_regions):
@@ -1239,9 +695,10 @@ def main():
         if stop_threads:
             break
         
-        if idatalist is not None:
-            this_datalist = datalists.datalist(idatalist, this_region)
-            if not this_datalist._valid: 
+        if i_datalist is not None:
+            this_datalist = datalists.datalist(i_datalist, this_region)
+            if not this_datalist._valid:
+                sys.stderr.write('geomods: error, invalid datalist\n')
                 status = -1
 
         else: this_datalist = None
@@ -1261,10 +718,11 @@ def main():
             pb = utils._progress('running geomods dem module \033[1m{}\033[m on region ({}/{}): \033[1m{}\033[m...\
             '.format(dem_mod, rn + 1, len(these_regions), this_region.region_string))
 
-            dl = _dem_mods[dem_mod][0](this_datalist, this_region, iinc, o_pre, o_bn, lambda: stop_threads, want_verbose)
+            dl = dem(this_datalist, this_region, i_inc, o_pre, o_bn, lambda: stop_threads, want_verbose)
             dl.node = node_reg
 
-            t = threading.Thread(target = dl.run, args = args)
+            #dl.run(dem_mod, args)
+            t = threading.Thread(target = dl.run, args = (dem_mod, args))
 
             try:
                 t.start()

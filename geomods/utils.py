@@ -21,14 +21,14 @@
 
 import os
 import sys
-
+import glob
 import time
 import subprocess
 import threading
 
 import ConfigParser
 
-_version = '0.1.0'
+_version = '0.1.5'
 
 _license = '''geomods, version {}
 Copyright (c) 2010 - 2020 CIRES Coastal DEM Team
@@ -65,11 +65,22 @@ def init_config():
 ##
 ## Command execution, et cetra
 ##
-## OS System commands and checks.
+## OS System commands and general OS functions and CLI tools.
 ## run a command with a progress bar with 'run_cmd'
 ## check if a command exists on the system with 'cmd_exists'
+## Et Cetra...
 ##
 ## =============================================================================
+
+def remove_glob(glob_str):
+    '''glob `glob_str` and os.remove results'''
+
+    globs = glob.glob(glob_str)
+    if len(globs) > 0:
+        for g in globs:
+            try:
+                os.remove(g)
+            except: pass
 
 cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ["PATH"].split(os.pathsep))
 
@@ -133,58 +144,99 @@ def run_cmd(cmd, verbose = False, prog = True):
 
     return out, p.returncode
 
-def _cmd_check():
-    status = 0
-    platform = None
-    gmt_vers = None
-    mbs_vers = None
-    gdal_vers = None
+def _cmd_check(cmd_str, cmd_vers_str):
 
-    ## ==============================================
-    ## check platform and installed software
-    ## ==============================================
-
-    pb = _progress('checking system status...')
-    platform = sys.platform
-    pb.opm = 'platform is {}'.format(platform)
-    pb.end(status)
-
-    pb.opm = 'checking for GMT.'
-    if cmd_exists('gmt'): 
-        gmt_vers, status = run_cmd('gmt --version', prog = False)
+    cmd_vers = None
+    pb = _progress('checking for {}...'.format(cmd_str))
+    if cmd_exists(cmd_str): 
+        cmd_vers, status = run_cmd('{}'.format(cmd_vers_str), prog = False)
     else: status = -1
+    pb.opm = 'found {} version {}'.format(cmd_str, cmd_vers.split()[-1].rstrip())
     pb.end(status)
 
-    pb.opm = 'checking for MBSystem.'
-    if cmd_exists('mbgrid'): 
-        mbs_vers, status = run_cmd('mbgrid -version', prog = False)
-    else: status = -1
-    pb.end(status)
+    return(cmd_vers)
 
-    pb.opm = 'checking for GDAL command-line.'
-    if cmd_exists('gdal-config'): 
-        gdal_vers, status = run_cmd('gdal-config --version', prog = False)
-    else: status = -1
-    pb.end(status)
+def _module_check(mod_name, check_func, vers_func):
 
-    pb.opm = 'checking for LASTools'
-    if cmd_exists('las2txt'): 
+    pb = _progress('checking for {}...'.format(mod_name))
+    if check_func():
         status = 0
+        vers = vers_func
     else: status = -1
     pb.end(status)
 
-    pb.opm = 'checking for VDatum'
-    if vdatum().vdatum_path is not None:
-        status = 0
-        vdatum_vers = vdatum()._version 
-    else: status = -1
-    pb.end(status)
+    return(vers)
     
-    pb.opm = 'checked system status.'
-    pb.end(status)
+    # pb = _progress('checking system status...')
+    # platform = sys.platform
+    # pb.opm = 'platform is {}'.format(platform)
+    # pb.end(status)
 
-    return([platform, gmt_vers, mbs_vers, gdal_vers, vdatum_vers])
+    # pb.opm = 'checking for VDatum'
+    # if vdatum().vdatum_path is not None:
+    #     status = 0
+    #     vdatum_vers = vdatum()._version 
+    # else: status = -1
+    # pb.end(status)
 
+class _progress:
+    '''geomods minimal progress indicator'''
+
+    def __init__(self, message=''):
+        self.tw = 7
+        self.count = 0
+        self.pc = self.count % self.tw
+
+        self.opm = message 
+        self.opl = len(self.opm)
+        self.pm = self.opm
+
+        self._clear_stderr()
+
+        sys.stderr.write('\r {}  {:40}\n'.format(" " * (self.tw-1), self.opm))
+        sys.stderr.flush()
+
+        self.spinner = ['*     ', '**    ', '***   ', ' ***  ', '  *** ', '   ***', '    **', '     *']
+        self.add_one = lambda x: x + 1
+        self.sub_one = lambda x: x - 1
+        self.spin_way = self.add_one
+
+    def _switch_way(self):
+        if self.spin_way == self.add_one:
+            self.spin_way = self.sub_one
+        else: self.spin_way = self.add_one
+
+    def _clear_stderr(self, slen = 79):
+        sys.stderr.write('\x1b[2K\r')
+        sys.stderr.flush()
+
+    def err_msg(self, msg):
+        self._clear_stderr()
+        sys.stderr.write('{}\n'.format(msg))
+
+    def update(self):
+        self.pc = (self.count % self.tw)
+        self.sc = (self.count % (self.tw+1))
+        self._clear_stderr()
+
+        sys.stderr.write('\r[\033[36m{:6}\033[m] {:40}\r'.format(self.spinner[self.sc], self.pm))
+        sys.stderr.flush()
+
+        if self.count == self.tw: self.spin_way = self.sub_one
+        if self.count == 0: self.spin_way = self.add_one
+
+        self.count = self.spin_way(self.count)
+
+    def end(self, status):
+        self._clear_stderr()
+
+        if status != 0:
+            sys.stderr.write('\r[\033[31m\033[1m{:^6}\033[m] {:40}\n'.format('fail', self.opm))
+        else:
+            sys.stderr.write('\r[\033[32m\033[1m{:^6}\033[m] {:40}\n'.format('ok', self.opm))
+
+        sys.stderr.flush()
+    
 ## =============================================================================
 ##
 ## VDatum class for working with NOAA's VDatum program
@@ -270,71 +322,5 @@ class vdatum:
 
         return status
 
-## =============================================================================
-##
-## Progress Bar
-##
-## with 'prog_message' print a simple progress bar and message.
-## use the 'prog_bar.pm' variable to update the message while running.
-##
-## =============================================================================
-
-class _progress:
-    '''geomods minimal progress indicator'''
-
-    def __init__(self, message=''):
-        self.tw = 7
-        self.count = 0
-        self.pc = self.count % self.tw
-
-        self.opm = message 
-        self.opl = len(self.opm)
-        self.pm = self.opm
-
-        self._clear_stderr()
-
-        sys.stderr.write('\r {}  {:40}\n'.format(" " * (self.tw-1), self.opm))
-        sys.stderr.flush()
-
-        self.spinner = ['*     ', '**    ', '***   ', ' ***  ', '  *** ', '   ***', '    **', '     *']
-        self.add_one = lambda x: x + 1
-        self.sub_one = lambda x: x - 1
-        self.spin_way = self.add_one
-
-    def _switch_way(self):
-        if self.spin_way == self.add_one:
-            self.spin_way = self.sub_one
-        else: self.spin_way = self.add_one
-
-    def _clear_stderr(self, slen = 79):
-        sys.stderr.write('\x1b[2K\r')
-        sys.stderr.flush()
-
-    def err_msg(self, msg):
-        self._clear_stderr()
-        sys.stderr.write('{}\n'.format(msg))
-
-    def update(self):
-        self.pc = (self.count % self.tw)
-        self.sc = (self.count % (self.tw+1))
-        self._clear_stderr()
-
-        sys.stderr.write('\r[\033[36m{:6}\033[m] {:40}\r'.format(self.spinner[self.sc], self.pm))
-        sys.stderr.flush()
-
-        if self.count == self.tw: self.spin_way = self.sub_one
-        if self.count == 0: self.spin_way = self.add_one
-
-        self.count = self.spin_way(self.count)
-
-    def end(self, status):
-        self._clear_stderr()
-
-        if status != 0:
-            sys.stderr.write('\r[\033[31m\033[1m{:^6}\033[m] {:40}\n'.format('fail', self.opm))
-        else:
-            sys.stderr.write('\r[\033[32m\033[1m{:^6}\033[m] {:40}\n'.format('ok', self.opm))
-
-        sys.stderr.flush()
 
 ### End

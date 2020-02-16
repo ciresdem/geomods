@@ -22,7 +22,6 @@
 import sys
 import os
 import math
-
 import numpy as np
 import ogr
 import gdal
@@ -127,6 +126,7 @@ def _gather_infos(src_ds):
     ds_config['geoT'] = src_ds.GetGeoTransform()
     ds_config['proj'] = src_ds.GetProjectionRef()
     ds_config['dt'] = src_ds.GetRasterBand(1).DataType
+    ds_config['dtn'] = gdal.GetDataTypeName(src_ds.GetRasterBand(1).DataType)
     ds_config['ndv'] = src_ds.GetRasterBand(1).GetNoDataValue()
     ds_config['fmt'] = src_ds.GetDriver().ShortName
 
@@ -134,6 +134,28 @@ def _gather_infos(src_ds):
         ds_config['ndv'] = -9999
     
     return(ds_config)
+
+def _set_infos(nx, ny, nb, geoT, proj, dt, ndv, fmt):
+    '''Set a datasource config dictionary'''
+    
+    ds_config = {}
+
+    ds_config['nx'] = nx
+    ds_config['ny'] = ny
+    ds_config['nb'] = nb
+    ds_config['geoT'] = geoT
+    ds_config['proj'] = proj
+    ds_config['dt'] = dt
+    ds_config['ndv'] = ndv
+    ds_config['fmt'] = fmt
+
+    return(ds_config)
+
+def _cpy_infos(src_config):
+    dst_config = {}
+    for dsc in src_config.keys():
+        dst_config[dsc] = src_config[dsc]
+    return(dst_config)
 
 def _con_dec(x, dec):
     '''Return a float string with n decimals
@@ -190,17 +212,46 @@ def _invert_gt(geoTransform):
 
     return(outGeoTransform)
 
-def _prj_file(dst_fn, epsg):
-    sr = osr.SpatialReference()
-    sr.ImportFromEPSG(epsg)
+def sr_wkt(epsg, esri = False):
+    '''convert an epsg code to wkt'''
     
-    sr.MorphToESRI()
-    sr_f = open(dst_fn, 'w')
-    sr_f.write(sr.ExportToWkt())
-    sr_f.close()
+    wkt = None
+    try:
+        int(epsg)
+        sr = osr.SpatialReference()
+        sr.ImportFromEPSG(epsg)
+        if esri: sr.MorphToESRI()
+        
+        wkt = sr.ExportToWkt()
+    except: sys.stderr.write('geomods: error, invalid epsg code\n')
 
     sr = None
+    return(wkt)
 
+def _prj_file(dst_fn, epsg):
+    '''generate a .prj file given an epsg code'''
+    
+    with open(dst_fn, 'w') as out:
+        out.write(sr_wkt(epsg, True))
+
+def _write_gdal(src_arr, dst_gdal, ds_config, dst_fmt = 'GTiff', verbose = False):
+    '''write src_arr Array to gdal file dst_gdal using src_config'''
+
+    if verbose: sys.stderr.write('geomods: writing gdal grid...')
+    
+    driver = gdal.GetDriverByName(ds_config['fmt'])
+    if os.path.exists(dst_gdal):
+        driver.Delete(dst_gdal)
+    
+    ds = driver.Create(dst_gdal, ds_config['nx'], ds_config['ny'], 1, ds_config['dt'])
+    ds.SetGeoTransform(ds_config['geoT'])
+    ds.SetProjection(ds_config['proj'])
+    ds.GetRasterBand(1).SetNoDataValue(ds_config['ndv'])
+    ds.GetRasterBand(1).WriteArray(src_arr)
+    ds = None
+
+    if verbose: sys.stderr.write('ok\n')
+    
 ## =============================================================================
 ##
 ## GDAL Functions for external use
@@ -211,96 +262,89 @@ def _prj_file(dst_fn, epsg):
 ##
 ## =============================================================================
 
-def chunks(src_fn, n_chunk = 10):
+def chunks(src_fn, n_chunk = 10, verbose = False):
     '''split `src_fn` GDAL file into chunks with `n_chunk` cells squared.'''
 
     band_nums = []
     o_chunks = []
-    status = 0
     
     if band_nums == []: band_nums = [1]
 
     src_ds = gdal.Open(src_fn)
-    if src_ds is None:
-        print('Error, unable to load file {}'.format(src_fn))
-        return(o_chunks)
-              
-    ds_config = _gather_infos(src_ds)
 
-    bands = []
-    for band_num in band_nums: 
-        band = src_ds.GetRasterBand(band_num)
-        if band is None:
-            status = -1
-            return(status)
-        bands.append(band)
+    if src_ds is not None:
+        ds_config = _gather_infos(src_ds)
 
-    gt = ds_config['geoT']
+        #bands = []
+        #for band_num in band_nums:
+        band = src_ds.GetRasterBand(1)
+        #if band is not None:
+        #bands.append(band)
+                
+        gt = ds_config['geoT']
 
-    i_chunk = 0
-    x_i_chunk = 0
-    x_chunk = n_chunk
+        i_chunk = 0
+        x_i_chunk = 0
+        x_chunk = n_chunk
 
-    ## ==============================================
-    ## parse through the grid and extract chunks
-    ## ==============================================
-
-    while True:
-        y_chunk = n_chunk
-
+        if verbose: sys.stderr.write('geomods: chunking grid...')
         while True:
-            if x_chunk > ds_config['nx']:
-                this_x_chunk = ds_config['nx']
-            else: this_x_chunk = x_chunk
+            if verbose: sys.stderr.write('.')
+            y_chunk = n_chunk
 
-            if y_chunk > ds_config['ny']:
-                this_y_chunk = ds_config['ny']
-            else: this_y_chunk = y_chunk
+            while True:
+                if x_chunk > ds_config['nx']:
+                    this_x_chunk = ds_config['nx']
+                else: this_x_chunk = x_chunk
 
-            this_x_origin = x_chunk - n_chunk
-            this_y_origin = y_chunk - n_chunk
-            this_x_size = this_x_chunk - this_x_origin
-            this_y_size = this_y_chunk - this_y_origin
+                if y_chunk > ds_config['ny']:
+                    this_y_chunk = ds_config['ny']
+                else: this_y_chunk = y_chunk
 
-            srcwin = (this_x_origin, this_y_origin, this_x_size, this_y_size)
-            this_geo_x_origin, this_geo_y_origin = _pixel2geo(this_x_origin, this_y_origin, gt)
-            dst_gt = [this_geo_x_origin, gt[1], 0.0, this_geo_y_origin, 0.0, gt[5]]
+                this_x_origin = x_chunk - n_chunk
+                this_y_origin = y_chunk - n_chunk
+                this_x_size = this_x_chunk - this_x_origin
+                this_y_size = this_y_chunk - this_y_origin
 
-            for band in bands:
-                band_data = band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])    
+                ## chunk size aligns with grid cellsize
+                if this_x_size == 0 or this_y_size == 0:
+                    break
+                
+                srcwin = (this_x_origin, this_y_origin, this_x_size, this_y_size)
+                this_geo_x_origin, this_geo_y_origin = _pixel2geo(this_x_origin, this_y_origin, gt)
+                dst_gt = [this_geo_x_origin, gt[1], 0.0, this_geo_y_origin, 0.0, gt[5]]
+                
+                #for band in bands:
+                band_data = band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
                 if not np.all(band_data == band_data[0,:]):
                     o_chunk = '{}_chnk{}x{}.tif'.format(os.path.basename(src_fn).split('.')[0], x_i_chunk, i_chunk)
                     dst_fn = os.path.join(os.path.dirname(src_fn), o_chunk)
-                                          
                     o_chunks.append(dst_fn)
 
-                    ods = gdal.GetDriverByName('GTiff').Create(dst_fn,
-                                                               this_x_size,
-                                                               this_y_size,
-                                                               1,
-                                                               ds_config['dt'])
-                    ods.SetGeoTransform(dst_gt)
-                    ods.SetProjection(ds_config['proj'])
-                    ods.GetRasterBand(1).SetNoDataValue(ds_config['ndv'])
-                    ods.GetRasterBand(1).WriteArray(band_data)
+                    dst_config = _cpy_infos(ds_config)
+                    dst_config['nx'] = this_x_size
+                    dst_config['ny'] = this_y_size
+                    dst_config['geoT'] = dst_gt
+                    
+                    _write_gdal(band_data, dst_fn, dst_config)
 
-                    ods = None
                 band_data = None
 
-            if y_chunk > ds_config['ny']:
+                if y_chunk > ds_config['ny']:
+                    break
+                else: 
+                    y_chunk += n_chunk
+                    i_chunk += 1
+
+            if x_chunk > ds_config['nx']:
                 break
-            else: 
-                y_chunk += n_chunk
-                i_chunk += 1
-
-        if x_chunk > ds_config['nx']:
-            break
-        else:
-            x_chunk += n_chunk
-            x_i_chunk += 1
-
-    src_ds = None
-    return(o_chunks)
+            else:
+                x_chunk += n_chunk
+                x_i_chunk += 1
+                
+        if verbose: sys.stderr.write('ok\n')
+        src_ds = None
+        return(o_chunks)
 
 def crop(src_fn):
     '''Crop `src_fn` GDAL file by it's NoData value.
@@ -340,139 +384,148 @@ def crop(src_fn):
     
     return(dst_arr, ds_config)
 
-def dump(src_gdal, dst_xyz, dump_nodata = False):
-    '''Dump `src_gdal` GDAL file to ASCII XYZ
-    Function taken from GDAL's `gdal2xyz.py` script.'''
+def dump(src_gdal, dst_xyz, dump_nodata = False, srcwin = None):
+    '''Dump `src_gdal` GDAL file to ASCII XYZ'''
 
     status = 0
     band_nums = []
-    srcwin = None
     delim = ' '
     skip = 1
 
     if band_nums == []: band_nums = [1]
 
+    src_ds = gdal.Open(src_gdal)
+    
+    if src_ds is not None:
+        bands = []
+        for band_num in band_nums: 
+            band = src_ds.GetRasterBand(band_num)
+            if band is not None:
+                bands.append(band)
+
+        ds_config = _gather_infos(src_ds)
+        gt = ds_config['geoT']
+
+        if srcwin is None:
+            srcwin = (0, 0, ds_config['nx'], ds_config['ny'])
+
+        # fixme
+        if dst_xyz is not None:
+            try:
+                dst_fh = open(dst_xyz, 'wt')
+            except: dst_fh = dst_xyz
+        else: dst_fh = sys.stdout
+
+        band_format = (("%g" + delim) * len(bands)).rstrip(delim) + '\n'
+
+        if abs(gt[0]) < 180 and abs(gt[3]) < 180 \
+           and abs(ds_config['nx'] * gt[1]) < 180 \
+           and abs(ds_config['ny'] * gt[5]) < 180:
+            format = '%.10g' + delim + '%.10g' + delim + '%s'
+        else: format = '%.3f' + delim + '%.3f' + delim + '%s'
+
+        for y in range(srcwin[1], srcwin[1] + srcwin[3], skip):
+            nodata = ['-9999', 'nan']
+            data = []
+            for band in bands:
+                if band.GetNoDataValue() is not None:
+                    nodata.append(band_format % band.GetNoDataValue())
+                band_data = band.ReadAsArray(srcwin[0], y, srcwin[2], 1)    
+                band_data = np.reshape(band_data, (srcwin[2], ))
+                data.append(band_data)
+
+            for x_i in range(0, srcwin[2], skip):
+                x = x_i + srcwin[0]
+
+                geo_x = gt[0] + (x + 0.5) * gt[1] + (y + 0.5) * gt[2]
+                geo_y = gt[3] + (x + 0.5) * gt[4] + (y + 0.5) * gt[5]
+
+                x_i_data = []
+                for i in range(len(bands)):
+                    x_i_data.append(data[i][x_i])
+
+                band_str = band_format % tuple(x_i_data)
+                
+                line = format % (float(geo_x), float(geo_y), band_str)
+
+                if dump_nodata:
+                    dst_fh.write(line)
+                else:
+                    if band_str not in nodata:
+                        dst_fh.write(line)
+
+        try:
+            dst_fh.close()
+        except: pass
+        srcds = None
+
+def dumpy(src_gdal, dump_nodata = False, srcwin = None):
+    '''Dump `src_gdal` GDAL file to ASCII XYZ
+    Function taken from GDAL's `gdal2xyz.py` script.'''
+
+    delim = ' '
+    skip = 1
+
     srcds = gdal.Open(src_gdal)
 
-    if srcds is None:
-        status = -1
-        return(status)
+    if srcds is not None:
+        band = srcds.GetRasterBand(1)
+        gt = srcds.GetGeoTransform()
+        if srcwin is None:
+            srcwin = (0,0,srcds.RasterXSize,srcds.RasterYSize)
 
-    bands = []
-    for band_num in band_nums: 
-        band = srcds.GetRasterBand(band_num)
-        if band is None:
-            status = -1
-            return(status)
-        bands.append(band)
+        band_format = (("%g" + delim) * len(bands)).rstrip(delim) + '\n'
+        if abs(gt[0]) < 180 and abs(gt[3]) < 180 \
+           and abs(srcds.RasterXSize * gt[1]) < 180 \
+           and abs(srcds.RasterYSize * gt[5]) < 180:
+            format = '%.10g' + delim + '%.10g' + delim + '%s'
+        else:
+            format = '%.3f' + delim + '%.3f' + delim + '%s'
 
-    gt = srcds.GetGeoTransform()
-  
-    if srcwin is None:
-        srcwin = (0,0,srcds.RasterXSize,srcds.RasterYSize)
+        for y in range(srcwin[1], srcwin[1] + srcwin[3], skip):
 
-    if dst_xyz is not None:
-        dst_fh = open(dst_xyz,'wt')
-    else:
-        dst_fh = sys.stdout
+            nodata = ['-9999', 'nan']
+            data = []
 
-    band_format = (("%g" + delim) * len(bands)).rstrip(delim) + '\n'
-
-    if abs(gt[0]) < 180 and abs(gt[3]) < 180 \
-       and abs(srcds.RasterXSize * gt[1]) < 180 \
-       and abs(srcds.RasterYSize * gt[5]) < 180:
-        format = '%.10g' + delim + '%.10g' + delim + '%s'
-    else:
-        format = '%.3f' + delim + '%.3f' + delim + '%s'
-
-    for y in range(srcwin[1], srcwin[1] + srcwin[3], skip):
-
-        nodata = ['-9999', 'nan']
-        data = []
-        for band in bands:
             if band.GetNoDataValue() is not None:
                 nodata.append(band_format % band.GetNoDataValue())
             band_data = band.ReadAsArray(srcwin[0], y, srcwin[2], 1)    
             band_data = np.reshape(band_data, (srcwin[2], ))
             data.append(band_data)
 
-        for x_i in range(0, srcwin[2], skip):
-            x = x_i + srcwin[0]
+            for x_i in range(0, srcwin[2], skip):
+                x = x_i + srcwin[0]
+                geo_x = gt[0] + (x + 0.5) * gt[1] + (y + 0.5) * gt[2]
+                geo_y = gt[3] + (x + 0.5) * gt[4] + (y + 0.5) * gt[5]
+                x_i_data = []
+                for i in range(len(bands)):
+                    x_i_data.append(data[i][x_i])
 
-            geo_x = gt[0] + (x + 0.5) * gt[1] + (y + 0.5) * gt[2]
-            geo_y = gt[3] + (x + 0.5) * gt[4] + (y + 0.5) * gt[5]
+                band_str = band_format % tuple(x_i_data)
+                line = format % (float(geo_x), float(geo_y), band_str)
+                if dump_nodata:
+                    yield(line)
+                else:
+                    if band_str not in nodata:
+                        yield(line)
 
-            x_i_data = []
-            for i in range(len(bands)):
-                x_i_data.append(data[i][x_i])
-            
-            band_str = band_format % tuple(x_i_data)
-
-            line = format % (float(geo_x), float(geo_y), band_str)
-
-            if dump_nodata:
-                dst_fh.write(line)
-            else:
-                if band_str not in nodata:
-                    dst_fh.write(line)
-
-    srcds = None
-
-def null(outfile, extent, cellsize, nodata = -9999, outformat = 'GTiff'):
+        srcds = None
+        
+def null(dst_fn, extent, cellsize, nodata = -9999, outformat = 'GTiff'):
     '''generate a `null` grid with gdal'''
-
-    ## ==============================================    
-    ## Set the rows and columns for the output grid
-    ## ==============================================
 
     ysize = extent[3] - extent[2]
     xsize = extent[1] - extent[0]
     xcount = int(xsize / cellsize) + 1
     ycount = int(ysize / cellsize) + 1
-
-    ## ==============================================
-    ## Create the output GDAL Raster
-    ## ==============================================
-
-    if outformat == "AAIGrid":
-        driver = gdal.GetDriverByName("MEM")
-    else: driver = gdal.GetDriverByName(outformat)
-
-    if os.path.exists(outfile):
-        driver.Delete(outfile)
-
-    dst_ds = driver.Create(outfile, xcount, ycount, 1, gdal.GDT_Float32)
-    if dst_ds is None: sys.exit("Error: failed to open output file...%s" %(outfile))
-
-    gt = (extent[0], cellsize, 0, extent[3], 0, (cellsize * -1.))
-    dst_ds.SetGeoTransform(gt)
-    dst_band = dst_ds.GetRasterBand(1)
-
-    dst_band.SetNoDataValue(nodata)
-
-    ## ==============================================
-    ## Create a Numpy Array filled with 0's
-    ## ==============================================
-
+    
     nullArray = np.zeros((ycount, xcount))
     nullArray[nullArray == 0] = nodata
 
-    ## ==============================================
-    ## Write Numpy Array to the GDAL Raster Band
-    ## ==============================================
-
-    dst_band.WriteArray(nullArray)
-
-    if outformat == "AAIGrid":
-        driver = gdal.GetDriverByName(outformat)
-        dst_ds_aai = driver.CreateCopy(outfile, dst_ds)
+    dst_gt = (extent[0], cellsize, 0, extent[3], 0, (cellsize * -1.))
+    ds_config = _set_infos(xcount, ycount, xcount * ycount, dst_gt, sr_wkt(4326), gdal.GDT_Float32, -9999, outformat)
+    _write_gdal(nullArray, dst_fn, ds_config)
     
-    ## ==============================================
-    ## Clear the GDAL Raster(s)x
-    ## ==============================================
-
-    dst_ds = dst_ds_aai = None
-
 def percentile(src_fn, perc = 95):
 
     ds = gdal.Open(src_fn)
@@ -497,170 +550,100 @@ def percentile(src_fn, perc = 95):
     
     return(percentile)
 
+def polygonize(src_gdal, dst_layer, verbose = False):
+    '''run gdal.Polygonize on src_gdal and add polygon to dst_layer'''
+    
+    src_ds = gdal.Open(src_gdal)
+    srcband = src_ds.GetRasterBand(1)
+
+    if verbose: sys.stderr.write('geomods: polygonizing grid...')
+    gdal.Polygonize(srcband, None, dst_layer, 0, [], None) #lambda x, y, z: sys.stderr.write('.'))
+    if verbose: sys.stderr.write('ok\n')
+    
+    src_ds = srcband = None
+
 def proximity(src_fn, dst_fn):
     '''Compute a proximity grid via GDAL'''
 
-    dst_ds = None
     prog_func = None
-    dst_nodata = -9999
 
     src_ds = gdal.Open(src_fn)
+    dst_ds = None
     
-    if src_ds is None:
-        status = -1
+    if src_ds is not None:
+        src_band = src_ds.GetRasterBand(1)
+        ds_config = _gather_infos(src_ds)
+        
+        if dst_ds is None:
+            drv = gdal.GetDriverByName('GTiff')
+            dst_ds = drv.Create(dst_fn, ds_config['nx'], ds_config['ny'], 1, ds_config['dt'], [])
 
-    src_band = src_ds.GetRasterBand(1)
+        dst_ds.SetGeoTransform(ds_config['geoT'])
+        dst_ds.SetProjection(ds_config['proj'])
 
-    if dst_ds is None:
-        drv = gdal.GetDriverByName('GTiff')
-        dst_ds = drv.Create(dst_fn,
-                            src_ds.RasterXSize,
-                            src_ds.RasterYSize,
-                            1,
-                            gdal.GetDataTypeByName('Float32'),
-                            [])
+        dst_band = dst_ds.GetRasterBand(1)
+        dst_band.SetNoDataValue(ds_config['ndv'])
 
-    dst_ds.SetGeoTransform(src_ds.GetGeoTransform())
-    dst_ds.SetProjection(src_ds.GetProjectionRef())
-    
-    dst_band = dst_ds.GetRasterBand(1)
-    dst_band.SetNoDataValue(dst_nodata)
+        gdal.ComputeProximity(src_band, dst_band, ['DISTUNITS=PIXEL'], callback = prog_func)
 
-    gdal.ComputeProximity(src_band, dst_band, ['DISTUNITS=PIXEL'], callback = prog_func)
-
-    dst_band = src_band = dst_ds = src_ds = None
+        dst_band = src_band = dst_ds = src_ds = None
 
 def query(src_xyz, src_grd, out_form):
     '''Query a gdal-compatible grid file with xyz data.'''
 
     xyzl = []
+    out_array = []
 
     ## ==============================================
     ## Process the src grid file
     ## ==============================================
 
     ds = gdal.Open(src_grd)
-    dsgeot = ds.GetGeoTransform()
-    dsband = ds.GetRasterBand(1)
-    dsnodata = dsband.GetNoDataValue()
+    if ds is not None:
+        ds_config = _gather_infos(ds)
 
-    dsdt = gdal.GetDataTypeName(dsband.DataType)
+        ds_band = ds.GetRasterBand(1)
+        ds_gt = ds_config['geoT']
+        ds_nd = ds_config['ndv']
 
-    ## ==============================================
-    ## Load the src grid into a numpy array
-    ## ==============================================
+        tgrid = ds_band.ReadAsArray()
 
-    tgrid = dsband.ReadAsArray()
-
-    cellsize = [float(dsgeot[1]), float(dsgeot[5])]
-    xextent = float(dsgeot[0])
-    yextent = float(dsgeot[3])
-     
-    ## ==============================================   
-    ## Process the src xyz data
-    ## ==============================================
-
-    for xyz in src_xyz:
-        x = xyz[0]
-        y = xyz[1]
-        try: 
-            z = xyz[2]
-        except: z = dsnodata
-
-        ## ==============================================
-        ## Continue if values are reasonable.
+        ## ==============================================   
+        ## Process the src xyz data
         ## ==============================================
 
-        if x > xextent and y < yextent:
-            xpos,ypos = _geo2pixel(x, y, dsgeot)
-
-            ## ==============================================
-            ## Locate the grid cell and get it's value
-            ## ==============================================
-
+        for xyz in src_xyz:
+            x = xyz[0]
+            y = xyz[1]
             try: 
-                g = tgrid[ypos,xpos]
-            except: g = dsnodata
+                z = xyz[2]
+            except: z = dsnodata
 
-            d = c = m = s = dsnodata
-            if g != dsnodata:
-                d = z - g
-                m = z + g
-                c = _con_dec(math.fabs(float(d / (g + 0.00000001) * 100)), 2)
-                s = _con_dec(math.fabs(d / (z + (g + 0.00000001))), 4)
-                    
-                d = _con_dec(d, 4)
+            if x > ds_gt[0] and y < float(ds_gt[3]):
+                xpos, ypos = _geo2pixel(x, y, ds_gt)
 
-                outs = []
-                for i in out_form:
-                    outs.append(vars()[i])
-                xyzl.append(np.array(outs, dtype = dsdt))
+                try: 
+                    g = tgrid[ypos, xpos]
+                except: g = ds_nd
 
-    dsband = ds = None
+                d = c = m = s = ds_nd
+                if g != ds_nd:
+                    d = z - g
+                    m = z + g
+                    c = _con_dec(math.fabs(float(d / (g + 0.00000001) * 100)), 2)
+                    s = _con_dec(math.fabs(d / (z + (g + 0.00000001))), 4)
+                    d = _con_dec(d, 4)
 
-    return(np.array(xyzl, dtype = dsdt))
+                    outs = []
+                    for i in out_form:
+                        outs.append(vars()[i])
+                    xyzl.append(np.array(outs, dtype = ds_config['dtn']))
+                    #xyzl.append(np.array(outs))
+        dsband = ds = None
+        out_array = np.array(xyzl, dtype = ds_config['dtn'])
+        #out_array = np.array(xyzl)
 
-def scan(src_gdal, fail_if_nodata = False):
-    '''Dump `src_gdal` GDAL file to ASCII XYZ
-    Function taken from GDAL's `gdal2xyz.py` script.'''
-
-    status = 0
-    band_nums = []
-    srcwin = None
-    skip = 1
-    
-    if band_nums == []: band_nums = [1]
-
-    srcds = gdal.Open(src_gdal)
-
-    if srcds is None:
-        status = -1
-        return(status)
-
-    bands = []
-    for band_num in band_nums: 
-        band = srcds.GetRasterBand(band_num)
-        if band is None:
-            status = -1
-            return(status)
-        bands.append(band)
-
-    gt = srcds.GetGeoTransform()
-  
-    if srcwin is None:
-        srcwin = (0,0,srcds.RasterXSize,srcds.RasterYSize)
-
-    for y in range(srcwin[1], srcwin[1] + srcwin[3], skip):
-
-        nodata = ['-9999', 'nan']
-        data = []
-        for band in bands:
-            if band.GetNoDataValue() is not None:
-                nodata.append(band_format % band.GetNoDataValue())
-            band_data = band.ReadAsArray(srcwin[0], y, srcwin[2], 1)    
-            band_data = np.reshape(band_data, (srcwin[2], ))
-            data.append(band_data)
-
-        for x_i in range(0, srcwin[2], skip):
-            x = x_i + srcwin[0]
-
-            # geo_x = gt[0] + (x + 0.5) * gt[1] + (y + 0.5) * gt[2]
-            # geo_y = gt[3] + (x + 0.5) * gt[4] + (y + 0.5) * gt[5]
-            
-            # x_i_data = []
-            # for i in range(len(bands)):
-            #     x_i_data.append(data[i][x_i])
-            
-    srcds = None
-
-def _write_gdal(src_arr, dst_gdal, src_config, dst_fmt = 'GTiff'):
-
-    UDataSet = gdal.GetDriverByName(dst_fmt).Create(dst_gdal, src_config['nx'], src_config['ny'], 1, src_config['dt'])
-    UDataSet.SetGeoTransform(src_config['geoT'])
-    UDataSet.SetProjection(src_config['proj'])
-    UDataSet.GetRasterBand(1).SetNoDataValue(src_config['ndv'])
-    UDataSet.GetRasterBand(1).WriteArray(src_arr)
-    UDataset = None
+    return(out_array)
     
 def split(src_gdal, split_value = 0):
     '''split raster into two peices based on z value'''
@@ -671,17 +654,20 @@ def split(src_gdal, split_value = 0):
     src_ds = gdal.Open(src_gdal)
     if src_ds is not None:
         src_config = _gather_infos(src_ds)
+        
+        dst_config = _cpy_infos(src_config)
+        dst_config['fmt'] = 'GTiff'
 
         ds_arr = src_ds.GetRasterBand(1).ReadAsArray(0, 0, src_config['nx'], src_config['ny']) 
 
         upper_array = ds_arr
         upper_array[upper_array <= split_value] = src_config['ndv'] 
-        _write_gdal(upper_array, dst_upper, src_config)
+        _write_gdal(upper_array, dst_upper, dst_config)
         upper_array = None
 
         lower_array = ds_arr
         lower_array[lower_array >= split_value] = src_config['ndv']
-        _write_gdal(lower_array, dst_lower, src_config)
+        _write_gdal(lower_array, dst_lower, dst_config)
         lower_array = src_ds = None
 
         return([dst_upper, dst_lower])
@@ -718,52 +704,23 @@ def xyz2gdal(src_xyz, dst_gdal, extent, cellsize,
 
     dst_nodata=-9999
 
-    ## ==============================================    
-    ## Set the rows and columns for the output grid
-    ## ==============================================
-
     ysize = extent[3] - extent[2]
     xsize = extent[1] - extent[0]
     xcount = int(xsize / cellsize) + 1
     ycount = int(ysize / cellsize) + 1
-
-    ## ==============================================
-    ## Create the output GDAL Raster
-    ## ==============================================
-
-    if dst_format == "AAIGrid":
-        driver = gdal.GetDriverByName("MEM")
-    else: driver = gdal.GetDriverByName(dst_format)
-
-    dst_ds = driver.Create(dst_gdal, xcount, ycount, 1, gdal.GDT_Float32)
-    if dst_ds is None: sys.exit("geomods: failed to open output file...%s" %(outfile))
-
     dst_gt = (extent[0], cellsize,0, extent[3], 0, (cellsize * -1.))
-    dst_ds.SetGeoTransform(dst_gt)
-
-    dst_band = dst_ds.GetRasterBand(1)
-    dst_band.SetNoDataValue(dst_nodata)
-
-    ## ==============================================
-    ## Process the XYZ data
-    ## ==============================================
-
-    if zvalue == 'z': sumArray = np.zeros( (ycount, xcount) )
-    ptArray = np.zeros( (ycount, xcount) )
+    
+    if zvalue == 'z': sumArray = np.zeros((ycount, xcount))
+    ptArray = np.zeros((ycount, xcount))
     
     pointnum = 0
 
-    if verbose:
-        print('geomods: processing xyz data...')
+    if verbose: sys.stderr.write('geomods: processing xyz data...')
 
     for this_xyz in xyz_parse(src_xyz):
         x = float(this_xyz[xloc])
         y = float(this_xyz[yloc])
         z = float(this_xyz[int(zloc)].strip())
-
-        ## ==============================================
-        ## Determine which cell to apply this count
-        ## ==============================================
 
         if x > extent[0] and x < extent[1]:
             if y > extent[2] and y < extent[3]:
@@ -781,64 +738,31 @@ def xyz2gdal(src_xyz, dst_gdal, extent, cellsize,
     elif zvalue == 'd': outarray = ptArray
     else: outarray = ptArray
 
-    if verbose:
-        sys.stderr.write('ok\n')
-
-    ## ==============================================
-    ## write the output grid
-    ## ==============================================
-
     outarray[np.isnan(outarray)] = dst_nodata
-
-    dst_band.WriteArray(outarray)
-
-    if dst_format == "AAIGrid":
-        driver = gdal.GetDriverByName(dst_format)
-        dst_ds_aai = driver.CreateCopy(dst_gdal, dst_ds)
     
-    dst_ds = dst_ds_aai = None
+    if verbose: sys.stderr.write('ok\n')
 
-def xyz_gmask(src_xyz, dst_gdal, extent, cellsize,
-              dst_format='GTiff', xloc=0, yloc=1, zloc=2, 
-              delim=' ', verbose=False):
-    '''Create a num grid mask of xyz data'''
+    ds_config = _set_infos(xcount, ycount, xcount * ycount, dst_gt, sr_wkt(4326), gdal.GDT_Int32, dst_nodata, 'GTiff')
+    _write_gdal(outarray, dst_gdal, ds_config)
     
-    ## ==============================================
-    ## Set the rows and columns for the output grid
-    ## ==============================================
+    outarray = None 
 
+## add option for grid/pixel node registration...currently pixel node only.
+def xyz_mask(src_xyz, dst_gdal, extent, cellsize,
+             dst_format='GTiff', xloc=0, yloc=1, zloc=2, 
+             delim=' ', verbose=False):
+    '''Create a num grid mask of xyz data. The output grid
+    will contain 1 where data exists and 0 where no data exists.'''
+    
     ysize = extent[3] - extent[2]
     xsize = extent[1] - extent[0]
     xcount = int(xsize / cellsize) + 1
     ycount = int(ysize / cellsize) + 1
-
-    ## ==============================================
-    ## Create the output GDAL Raster
-    ## ==============================================
-
-    dst_nodata=-9999
-
-    if dst_format == "AAIGrid":
-        driver = gdal.GetDriverByName("MEM")
-    else: driver = gdal.GetDriverByName(dst_format)
-
-    dst_ds = driver.Create(dst_gdal, xcount, ycount, 1, gdal.GDT_Int32)
-    if dst_ds is None: sys.exit("geomods: failed to open output file...%s" %(outfile))
-
-    dst_gt = (extent[0], cellsize,0, extent[3], 0, (cellsize * -1.))
-    dst_ds.SetGeoTransform(dst_gt)
-
-    dst_band = dst_ds.GetRasterBand(1)
-    dst_band.SetNoDataValue(dst_nodata)
-
-    ## ==============================================
-    ## Process the XYZ data
-    ## ==============================================
-
+    dst_gt = (extent[0], cellsize, 0, extent[3], 0, (cellsize * -1.))
+    
     ptArray = np.zeros((ycount, xcount))
 
-    if verbose:
-        print('geomods: processing xyz data...')
+    if verbose: sys.stderr.write('geomods: processing xyz data...')
 
     for this_xyz in xyz_parse(src_xyz):
         x = float(this_xyz[xloc])
@@ -849,21 +773,11 @@ def xyz_gmask(src_xyz, dst_gdal, extent, cellsize,
                 xpos, ypos = _geo2pixel(x, y, dst_gt)
                 ptArray[ypos, xpos] = 1
 
-    if verbose:
-        sys.stderr.write('ok\n')
-
-    ## ==============================================
-    ## Write out the grid    
-    ## ==============================================
-
-    #ptArray[np.isnan(ptArray)] = dst_nodata
-
-    dst_band.WriteArray(ptArray)
-
-    if dst_format == "AAIGrid":
-        driver = gdal.GetDriverByName(dst_format)
-        dst_ds_aai = driver.CreateCopy(dst_gdal, dst_ds)
+    if verbose: sys.stderr.write('ok\n')
+        
+    ds_config = _set_infos(xcount, ycount, xcount * ycount, dst_gt, sr_wkt(4326), gdal.GDT_Int32, -9999, 'GTiff')
+    _write_gdal(ptArray, dst_gdal, ds_config, verbose)
     
-    dst_ds = dst_ds_aai = dst_band = ptArray = None
+    ptArray = None
 
 ### End

@@ -23,6 +23,8 @@ from regions import *
 from datalists import *
 from gdalfun import *
 from procs import *
+from uncertainty import *
+from metadata import *
 from fetches import *
 from waffles import *
         

@@ -35,24 +35,9 @@ _version = '0.1.0'
 def regions_intersect_p_depr(region_a, region_b):
     '''Return True if region_a and region_b intersect.'''
     
-    region_c = [0, 0, 0, 0]
-    if region_a.west > region_b.west: 
-        region_c[0] = region_a.west
-    else: region_c[0] = region_b.west
+    reduced_region = regions_reduce(region_a, region_b)
     
-    if region_a.west < region_b.east: 
-        region_c[1] = region_a.east
-    else: region_c[1] = region_b.east
-    
-    if region_a.south > region_b.south: 
-        region_c[2] = region_a.south
-    else: region_c[2] = region_b.south
-    
-    if region_a.west < region_b.south: 
-        region_c[3] = region_a.north
-    else: region_c[3] = region_b.north
-    
-    return(region('/'.join(map(str, region_c)))._valid)
+    return(reduced_region._valid)
 
 def regions_intersect_p(region_a, region_b):
     geom_a = gdalfun.bounds2geom(region_a.region)
@@ -62,6 +47,51 @@ def regions_intersect_p(region_a, region_b):
         return(True)
     else: return(False)
 
+def regions_reduce(region_a, region_b):
+    '''return the minimum region when combining
+    region_a and region_b'''
+
+    region_c = [0, 0, 0, 0]
+    if region_a.west > region_b.west: 
+        region_c[0] = region_a.west
+    else: region_c[0] = region_b.west
+    
+    if region_a.east < region_b.east: 
+        region_c[1] = region_a.east
+    else: region_c[1] = region_b.east
+    
+    if region_a.south > region_b.south: 
+        region_c[2] = region_a.south
+    else: region_c[2] = region_b.south
+    
+    if region_a.north < region_b.south: 
+        region_c[3] = region_a.north
+    else: region_c[3] = region_b.north
+    
+    return(region('/'.join(map(str, region_c))))
+    
+def regions_merge(region_a, region_b):
+    '''merge two regions into a single region'''
+
+    region_c = [0, 0, 0, 0]
+    if region_a.west < region_b.west: 
+        region_c[0] = region_a.west
+    else: region_c[0] = region_b.west
+    
+    if region_a.east > region_b.east: 
+        region_c[1] = region_a.east
+    else: region_c[1] = region_b.east
+    
+    if region_a.south < region_b.south: 
+        region_c[2] = region_a.south
+    else: region_c[2] = region_b.south
+    
+    if region_a.north > region_b.north:
+        region_c[3] = region_a.north
+    else: region_c[3] = region_b.north
+    
+    return(region('/'.join(map(str, region_c))))    
+    
 class region:
     '''geographic bounding box regtions 'w/e/s/n' '''
 

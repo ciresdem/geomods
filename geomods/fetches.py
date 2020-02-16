@@ -386,6 +386,7 @@ class dc:
         
         if self._want_update:
             self._update()
+            return([])
         else:
             self.search_gmt()
             return(self._results)
@@ -466,7 +467,7 @@ class dc:
                                          dc['Metadata'], 
                                          dc['https'], 
                                          ld.split("_")[0]]
-
+                                print out_s
                                 self._surveys.append(out_s)
 
             ## ==============================================
@@ -1376,15 +1377,15 @@ class ngs:
 ## =============================================================================
 
 fetch_infos = { 
-    'dc':[lambda x, f, c: dc(x, f, callback = c), 'digital coast [:index]'],
-    'nos':[lambda x, f, c: nos(x, f, callback = c), 'noaa nos bathymetry'],
-    'charts':[lambda x, f, c: charts(x, f, callback = c), 'noaa nautical charts'],
-    'srtm':[lambda x, f, c: srtm_cgiar(x, f, callback = c), 'srtm from cgiar'],
-    'tnm':[lambda x, f, c: tnm(x, f, callback = c), 'the national map [:index:dataset:subdataset:format,format,...]'],
-    'mb':[lambda x, f, c: mb(x, f, callback = c), 'noaa multibeam'],
-    'gmrt':[lambda x, f, c: gmrt(x, f, callback = c), 'gmrt'],
-    'usace':[lambda x, f, c: usace(x, f, callback = c), 'usace bathymetry'],
-    'ngs':[lambda x, f, c: ngs(x, f, callback = c), 'ngs monuments']
+    'dc':[lambda x, f, c: dc(x, f, c), 'digital coast [:index]'],
+    'nos':[lambda x, f, c: nos(x, f, c), 'noaa nos bathymetry'],
+    'charts':[lambda x, f, c: charts(x, f, c), 'noaa nautical charts'],
+    'srtm':[lambda x, f, c: srtm_cgiar(x, f, c), 'srtm from cgiar'],
+    'tnm':[lambda x, f, c: tnm(x, f, c), 'the national map [:index:dataset:subdataset:format,format,...]'],
+    'mb':[lambda x, f, c: mb(x, f, c), 'noaa multibeam'],
+    'gmrt':[lambda x, f, c: gmrt(x, f, c), 'gmrt'],
+    'usace':[lambda x, f, c: usace(x, f, c), 'usace bathymetry'],
+    'ngs':[lambda x, f, c: ngs(x, f, c), 'ngs monuments']
 }
 
 def fetch_desc(x):
@@ -1488,7 +1489,7 @@ def main():
 
         i = i + 1
 
-    if extent is None and want_update is False:
+    if extent is None and want_update is False and len(f) == 0:
         print(_usage)
         sys.exit(1)
 
@@ -1499,7 +1500,12 @@ def main():
     ## check platform and installed software
     ## ==============================================
 
-    cmd_vers = utils._cmd_check()
+    if want_proc:    
+        gmt_vers = utils._cmd_check('gmt', 'gmt --version')
+        mbgrid_vers = utils._cmd_check('mbgrid', 'mbgrid -version | grep Version')
+        gdal_vers = utils._cmd_check('gdal-config', 'gdal-config --version')
+        lastools_vers = utils._cmd_check('las2txt', 'las2txt -version')
+        vdatum_verss = utils._module_check('vdatum', lambda: vdatum().vdatum_path, lambda: vdatum().vdatum)
 
     ## ==============================================
     ## process input region(s)
@@ -1551,7 +1557,8 @@ def main():
             r = fl.run(*args)
 
             if len(r) == 0:
-                status = -1
+                if not want_update:
+                    status = -1
             else:
                 if want_list:
                     for result in r:

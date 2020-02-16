@@ -86,6 +86,6 @@ if __name__ == '__main__':
 
     if not os.path.exists(src_fn):
         print('Error: {} is not a valid file'.format(src_fn))
-    else: geomods.gdalfun.chunks(src_fn, chunk_value)
+    else: geomods.gdalfun.chunks(src_fn, chunk_value, verbose = True)
 
 ### End
