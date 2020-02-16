@@ -497,10 +497,12 @@ class dem:
 _dem_lambda = lambda d, r, i, o, b, c, v: dem(d, r, i, o, b, c, v)
 
 _dem_mods = {
-    'conversion-grid': 'generate a VDatum conversion grid [:i_vdatum:o_vdatum:vd_region]',
-    'bathy': 'generate a `bathy-surface` masked grid [:coastpoly]',
-    'surface': 'generate a DEM via GMT surface',
     'mbgrid': 'generate a DEM via mbgrid [:dist]',
+    'surface': 'generate a DEM via GMT surface',
+    'bathy': 'generate a `bathy-surface` masked grid [:coastpoly]',
+    'num': 'generate a `num` grid (no interpolation)',
+    'mean': 'generate a `mean` grid (no interpolation)',
+    'conversion-grid': 'generate a VDatum conversion grid [:i_vdatum:o_vdatum:vd_region]',
     'spatial-metadata': 'generate DEM spatial metadata [:epsg]',
     'uncertainty': 'calculate DEM uncertainty [:dem_module]',
 }
@@ -587,14 +589,14 @@ def main():
             try:
                 i_inc = float(argv[i + 1])
             except:
-                sys.stderr.write('geomods: error, -E should be a float value\n')
+                utils._error_msg('-E should be a float value')
                 sys.exit(1)
             i = i + 1
         elif arg[:2] == '-E':
             try:
                 i_inc = float(arg[2:])
             except:
-                sys.stderr.write('geomods: error, -E should be a float value\n')
+                utils._error_msg('-E should be a float value')
                 sys.exit(1)
 
         elif arg == '--output-name' or arg == '-O':
@@ -629,17 +631,20 @@ def main():
 
         else: 
             opts = arg.split(':')
-            mod_opts[opts[0]] = list(opts[1:])
+            if opts[0] in _dem_mods.keys():
+                mod_opts[opts[0]] = list(opts[1:])
+                #else: utils._error_msg('invalid module name `{}`'.format(opts[0]))
+            else: utils._progress().err_msg('invalid module name `{}`'.format(opts[0]))
 
         i = i + 1
 
     if i_region is None:
-        sys.stderr.write('geomods: error, a region must be specified\n')
+        utils._error_msg('a region must be specified')
         print(_waffles_usage)
         sys.exit(1)
 
     if i_datalist is None:
-        sys.stderr.write('geomods: error, a datalist must be specified\n')
+        utils._error_msg('a datalist must be specified')
         print(_waffles_usage)
         sys.exit(1)        
 
@@ -682,7 +687,7 @@ def main():
     pb.end(status)
             
     if status == -1:
-        sys.stderr.write('geomods: error, failed to load region(s).\n')
+        utils._error_msg('failed to load region(s)')
         print(_waffles_usage)
         sys.exit(1)
 
@@ -698,7 +703,7 @@ def main():
         if i_datalist is not None:
             this_datalist = datalists.datalist(i_datalist, this_region)
             if not this_datalist._valid:
-                sys.stderr.write('geomods: error, invalid datalist\n')
+                utils._error_msg('invalid datalist')
                 status = -1
 
         else: this_datalist = None

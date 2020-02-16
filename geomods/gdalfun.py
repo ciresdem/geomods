@@ -90,6 +90,18 @@ def _ogr_get_fields(src_ogr):
     
     return(schema)
 
+def _ogr_get_layer_fields(src_lyr):
+    '''return all fields in src_lyr'''
+
+    schema = []
+    if src_lyr is not None:
+        ldefn = src_lyr.GetLayerDefn()
+        for n in range(ldefn.GetFieldCount()):
+            fdefn = ldefn.GetFieldDefn(n)
+            schema.append(fdefn.name)
+    
+    return(schema)
+
 def ogr_mask_union(src_layer, src_field, dst_defn = None):
     '''`union` a `src_layer`'s features based on `src_field` where
     `src_field` holds a value of 0 or 1. optionally, specify
@@ -211,6 +223,25 @@ def _invert_gt(geoTransform):
     outGeoTransform[3] = (-geoTransform[1] * geoTransform[3] + geoTransform[0] * geoTransform[4]) * invDet
 
     return(outGeoTransform)
+
+def _gt2extent(ds_config):
+    geoT = ds_config['geoT']
+    
+    x_origin = geoT[0]
+    y_origin = geoT[3]
+    x_inc = geoT[1]
+    y_inc = geoT[5]
+
+    return([x_origin, x_origin + x_inc * ds_config['nx'], y_origin + y_inc * ds_config['ny'], y_origin])
+
+def _extent(src_fn):
+    extent = None
+    ds = gdal.Open(src_fn)
+    if ds is not None:
+        ds_config = _gather_infos(ds)
+        extent = _gt2extent(ds_config)
+        
+    return(extent)
 
 def sr_wkt(epsg, esri = False):
     '''convert an epsg code to wkt'''
@@ -510,6 +541,13 @@ def dumpy(src_gdal, dump_nodata = False, srcwin = None):
                         yield(line)
 
         srcds = None
+    
+def infos(src_fn):
+    ds = gdal.Open(src_fn)
+    if ds is not None:
+        ds_config = _gather_infos(ds)
+        print ds_config
+        print _gt2extent(ds_config)
         
 def null(dst_fn, extent, cellsize, nodata = -9999, outformat = 'GTiff'):
     '''generate a `null` grid with gdal'''

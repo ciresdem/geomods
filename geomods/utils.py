@@ -179,28 +179,31 @@ def _module_check(mod_name, check_func, vers_func):
     # else: status = -1
     # pb.end(status)
 
+def _error_msg(msg):
+    sys.stderr.write('\x1b[2K\r')
+    sys.stderr.flush()
+    sys.stderr.write('geomods: error, {}\n'.format(msg))
+    
 class _progress:
     '''geomods minimal progress indicator'''
 
-    def __init__(self, message=''):
+    def __init__(self, message = None):
         self.tw = 7
         self.count = 0
         self.pc = self.count % self.tw
-
-        self.opm = message 
-        self.opl = len(self.opm)
-        self.pm = self.opm
-
-        self._clear_stderr()
-
-        sys.stderr.write('\r {}  {:40}\n'.format(" " * (self.tw-1), self.opm))
-        sys.stderr.flush()
+        self.opm = message
+        #self.pm = self.opm
 
         self.spinner = ['*     ', '**    ', '***   ', ' ***  ', '  *** ', '   ***', '    **', '     *']
         self.add_one = lambda x: x + 1
         self.sub_one = lambda x: x - 1
         self.spin_way = self.add_one
 
+        if self.opm is not None:
+            self._clear_stderr()
+            sys.stderr.write('\r {}  {:40}\n'.format(" " * (self.tw - 1), self.opm))
+            #sys.stderr.flush()
+        
     def _switch_way(self):
         if self.spin_way == self.add_one:
             self.spin_way = self.sub_one
@@ -212,15 +215,19 @@ class _progress:
 
     def err_msg(self, msg):
         self._clear_stderr()
-        sys.stderr.write('{}\n'.format(msg))
+        sys.stderr.write('geomods: error, {}\n'.format(msg))
+
+    def msg(self, msg):
+        self._clear_stderr()
+        sys.stderr.write('geomods: {}\n'.format(msg))
 
     def update(self):
         self.pc = (self.count % self.tw)
         self.sc = (self.count % (self.tw+1))
         self._clear_stderr()
 
-        sys.stderr.write('\r[\033[36m{:6}\033[m] {:40}\r'.format(self.spinner[self.sc], self.pm))
-        sys.stderr.flush()
+        sys.stderr.write('\r[\033[36m{:6}\033[m] {:40}\r'.format(self.spinner[self.sc], self.opm))
+        #sys.stderr.flush()
 
         if self.count == self.tw: self.spin_way = self.sub_one
         if self.count == 0: self.spin_way = self.add_one
@@ -229,13 +236,10 @@ class _progress:
 
     def end(self, status):
         self._clear_stderr()
-
         if status != 0:
             sys.stderr.write('\r[\033[31m\033[1m{:^6}\033[m] {:40}\n'.format('fail', self.opm))
-        else:
-            sys.stderr.write('\r[\033[32m\033[1m{:^6}\033[m] {:40}\n'.format('ok', self.opm))
-
-        sys.stderr.flush()
+        else: sys.stderr.write('\r[\033[32m\033[1m{:^6}\033[m] {:40}\n'.format('ok', self.opm))
+        #sys.stderr.flush()
     
 ## =============================================================================
 ##

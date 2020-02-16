@@ -21,6 +21,7 @@
 
 import os
 import ogr
+
 import datalists
 import gdalfun
 import utils
@@ -28,7 +29,7 @@ import utils
 import Queue as queue
 import threading
 import time
-
+    
 ## =============================================================================
 ##
 ## spatial-metadata module:
@@ -40,8 +41,10 @@ import time
 ## Specify an input datalist, region and cell-size.
 ## o_name is the output prefix: `{o_name}_sm.shp`
 ##
+## Uses geomods modules: datalists, gdalfun, utils
+##
 ## =============================================================================
-    
+
 class spatial_metadata:
     '''Generate spatial metadata from a datalist of xyz elevation data.
     The output is a shapefile with the unioned boundaries of each specific
@@ -102,34 +105,20 @@ class spatial_metadata:
             o_v_fields = [dl[3], dl[4], dl[5], dl[6], dl[7], dl[8], dl[9], dl[10].strip()]
         except: o_v_fields = [this_datalist._path_dl_name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
 
-        this_mask = this_datalist.mask()
+        this_mask = this_datalist.mask(inc = i_inc)
         if os.path.exists(this_mask) and not self.stop():
             pb = utils._progress('gathering geometries from \033[1m{}\033[m...'.format(this_datalist._path_basename))
-
             utils.remove_glob('{}_poly.*'.format(this_o_name))
 
             tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(this_o_name))
             tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(this_o_name), None, ogr.wkbMultiPolygon)
             tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
 
-            ## thread this...
-
             pb1 = utils._progress('polygonizing \033[1m{}\033[m...'.format(this_datalist._path_basename))
-            # t = threading.Thread(target = gdalfun.polygonize, args = (this_mask, tmp_layer))
-            # t.daemon = True
-            # t.start()
-            # while True:
-            #     time.sleep(2)
-            #     pb1.update()
-            #     if not t.is_alive():
-            #         break
-                
-            # t.join()
             gdalfun.polygonize(this_mask, tmp_layer, verbose = True)
             pb1.opm = 'polygonized \033[1m{}\033[m.'.format(this_datalist._path_basename)
             pb1.end(status)
-            
-            
+                        
             if len(tmp_layer) > 1:
                 out_feat = gdalfun.ogr_mask_union(tmp_layer, 'DN', defn)
                 for i, f in enumerate(self.v_fields):

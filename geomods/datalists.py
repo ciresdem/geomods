@@ -26,8 +26,6 @@ import regions
 import gdalfun
 import utils
 
-import threading
-        
 _version = '0.1.2'
 
 ## =============================================================================
@@ -114,15 +112,63 @@ def datafile_region(data_path, data_fmt = 168):
 
     return(o_region)
 
-class datalist:
-    '''MBSystem style datalists for elevation data.'''
+def datalist_bounds(dl, layer, region, inc):
+    '''gather geometries from datalist `dl` and append
+    results to ogr `layer`. Load the datalist, generate
+    a NUM-MSK grid, polygonize said NUM-MSK then union
+    the polygon and add it to the output layer.
+    `dl` is a datalist line [dl_path, dl_fmt, dl_weight, metadata..., ...]
+    `layer` is an OGR layer object.'''
 
-    def __init__(self, idatalist, i_region = None):
-        if not os.path.exists(idatalist): 
-            open(idatalist, 'a').close()
+    status = 0
+    defn = layer.GetLayerDefn()
+    this_datalist = datalists.datalist(dl[0], region)
+    this_datalist._load_data()
+
+    try:
+        o_v_fields = [dl[3], dl[4], dl[5], dl[6], dl[7], dl[8], dl[9], dl[10].strip()]
+    except: o_v_fields = [this_datalist._path_dl_name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
+
+    pb = utils._progress('gathering geometries from \033[1m{}\033[m...'.format(this_datalist._path_basename))
+    this_mask = this_datalist.mask(inc = inc)
+    if not os.path.exists(this_mask):
+        status = -1
+    else:
+        utils.remove_glob('{}_poly.*'.format(this_o_name))
+
+        tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(this_datalist._name))
+        tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(this_datalist._name), None, ogr.wkbMultiPolygon)
+        tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
+        
+        pb1 = utils._progress('polygonizing \033[1m{}\033[m...'.format(this_datalist._path_basename))
+        gdalfun.polygonize(this_mask, tmp_layer, verbose = True)
+        pb1.opm = 'polygonized \033[1m{}\033[m.'.format(this_datalist._path_basename)
+        pb1.end(status)
+
+        if len(tmp_layer) > 1:
+            out_feat = gdalfun.ogr_mask_union(tmp_layer, 'DN', defn)
+            for i, f in enumerate(gdalfun._ogr_get_layer_fields(layer)):
+                out_feat.SetField(f, o_v_fields[i])
+
+            layer.CreateFeature(out_feat)
+            
+        tmp_ds = tmp_layer = out_feat = None
+        utils.remove_glob('{}_poly.*'.format(this_datalist._name))
+        os.remove(this_mask)
+
+    pb.opm = 'gathered geometries from \033[1m{}\033[m.'.format(this_datalist._path_basename)
+    pb.end(status)
+
+class datalist:
+    '''MBSystem style datalists for elevation data.
+    Supports XYZ and GDAL data.'''
+
+    def __init__(self, i_datalist, i_region = None):
+        if not os.path.exists(i_datalist): 
+            open(i_datalist, 'a').close()
 
         self.region = i_region
-        self._path = idatalist
+        self._path = i_datalist
         self._path_dirname = os.path.dirname(self._path)
         self._path_basename = os.path.basename(self._path)
         self._path_dl_name = os.path.basename(self._path).split('.')[0]
@@ -240,13 +286,28 @@ class datalist:
 
                 if usable: proc(path_d, dformat, dweight)
 
+            elif dformat == 200:
+                usable = True
+                path_d = os.path.join(self._path_dirname, dpath)
+
+                if not os.path.exists(path_d): usable = False
+
+                dinf_region = gdalfun._extent(path_d)
+                
+                if self.region is not None and dinf_region is not None:
+                    if not regions.regions_intersect_p(self.region, regions.region('/'.join(map(str, dinf_region)))):
+                        usable = False
+
+                if usable: proc(path_d, dformat, dweight)
+
+                
     def _gen_inf(self):
         '''load a dalist and process datafiles'''
 
         status = 0
         pb = utils._progress('generating inf files for datalist \033[1m{}\033[m...'.format(self._path_basename))
 
-        self._proc_data(lambda x: generate_inf(x))
+        self._proc_data(lambda x, t, w: generate_inf(x, t))
 
         pb.opm = 'generated inf files for datalist \033[1m{}\033[m.'.format(self._path_basename)
         pb.end(status)
@@ -276,14 +337,6 @@ class datalist:
         except:
             sys.stderr.write('geomods: error, pipe broken.\n')
 
-    def _cat_port_xyz(self, dst_port): #depr
-        '''Catenate the xyz data from the datalist'''
-
-        for fn in self.datafiles:
-            with open(fn) as infile:
-                for line in infile:
-                    dst_port.write(line)
-
     def _caty(self):
         '''Catenate the xyz data from the datalist to a generator
         usage: for line in self._caty(): proc(line)'''
@@ -299,8 +352,9 @@ class datalist:
     def _caty_xyz(self): #depr
         '''Catenate the xyz data from the datalist to a generator
         usage: for line in self._caty(): proc(line)'''
-
-        for fn in self.datafiles:
+        
+        data_paths = [x[0] for x in self.datafiles]
+        for fn in data_paths:
             with open(fn) as infile:
                 for line in infile:
                     yield(line)
@@ -308,7 +362,7 @@ class datalist:
     def _join(self, osep='\n'):
         df = []
         data_paths = [x[0] for x in self.datafiles]
-        for fn in self.data_paths:
+        for fn in data_paths:
             with open(fn) as infile:
                 for line in infile:
                     df.append(line)
