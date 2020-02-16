@@ -54,8 +54,8 @@ class spatial_metadata:
 
         self.dl_q = queue.Queue()
         self.datalist = i_datalist
-        self.region = i_region
         self.inc = i_inc
+        self.region = i_region
         self.dist_region = self.region.buffer(6 * self.inc)
 
         self.status = 0
@@ -71,20 +71,13 @@ class spatial_metadata:
             self.o_name = self.datalist._name
         else: self.o_name = o_name
         
-    def run(self, epsg = 4269):
-        '''Run the spatial-metadata module.
-        specify the output project epsg.'''
-
-        self.spatial_metadata(epsg)
-        
     def _gather_from_queue(self):
         '''Gather geometries from a queue of [[datalist, layer], ...].'''
 
         while True:
             sm_args = self.dl_q.get()
             dl = sm_args[0]
-            layer = sm_args[1]
-            
+            layer = sm_args[1]            
             if not self.stop():
                 self._gather_from_datalist(dl, layer)
             
@@ -105,18 +98,18 @@ class spatial_metadata:
             o_v_fields = [dl[3], dl[4], dl[5], dl[6], dl[7], dl[8], dl[9], dl[10].strip()]
         except: o_v_fields = [this_datalist._path_dl_name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
 
-        this_mask = this_datalist.mask(inc = i_inc)
+        this_mask = this_datalist.mask(self.inc)
         if os.path.exists(this_mask) and not self.stop():
-            pb = utils._progress('gathering geometries from \033[1m{}\033[m...'.format(this_datalist._path_basename))
+            pb = utils._progress('gathering geometries from datalist \033[1m{}\033[m...'.format(this_o_name))
             utils.remove_glob('{}_poly.*'.format(this_o_name))
 
             tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(this_o_name))
             tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(this_o_name), None, ogr.wkbMultiPolygon)
             tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
 
-            pb1 = utils._progress('polygonizing \033[1m{}\033[m...'.format(this_datalist._path_basename))
-            gdalfun.polygonize(this_mask, tmp_layer, verbose = True)
-            pb1.opm = 'polygonized \033[1m{}\033[m.'.format(this_datalist._path_basename)
+            pb1 = utils._progress('polygonizing datalist \033[1m{}\033[m...'.format(this_o_name))
+            gdalfun.polygonize(this_mask, tmp_layer, verbose = False)
+            pb1.opm = 'polygonized datalist \033[1m{}\033[m.'.format(this_o_name)
             pb1.end(status)
                         
             if len(tmp_layer) > 1:
@@ -130,28 +123,24 @@ class spatial_metadata:
             utils.remove_glob('{}_poly.*'.format(this_o_name))
             os.remove(this_mask)
 
-            pb.opm = 'gathered geometries from \033[1m{}\033[m.'.format(this_datalist._path_basename)
+            pb.opm = 'gathered geometries from datalist \033[1m{}\033[m.'.format(this_o_name)
             pb.end(self.status)
 
-    def spatial_metadata(self, epsg = 4269):
-        '''Geneate spatial metadata from the datalist'''
+    def run(self, epsg = 4269):
+        '''Run the spatial-metadata module and Geneate spatial metadata from the datalist
+        specify the output project epsg.'''
 
         if self.inc < 0.0000925:
-            print 'warning, increments less than 1/3 arc-second may be slow.'
+            utils._progress().msg('warning, increments less than 1/3 arc-second may be slow.')
     
-        dst_vec = '{}_sm.shp'.format(self.o_name, self.region.fn)
-        dst_layername = os.path.basename(dst_vec).split('.')[0]
-
-        utils.remove_glob('{}_sm.*'.format(self.o_name))
+        dst_vec = '{}_sm.shp'.format(self.o_name)
+        dst_layername = '{}_sm'.format(self.o_name)
+        utils.remove_glob('{}.*'.format(dst_layername))
 
         ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource(dst_vec)
         if ds is not None:
-            try:
-                int(epsg)
-            except: epsg = 4326
-
-            gdalfun._prj_file('{}.prj'.format(os.path.basename(dst_vec).split('.')[0]), int(epsg))
-            layer = ds.CreateLayer('{}'.format(os.path.basename(dst_vec).split('.')[0]), None, ogr.wkbMultiPolygon)
+            gdalfun._prj_file('{}.prj'.format(dst_layername), epsg)
+            layer = ds.CreateLayer('{}'.format(dst_layername), None, ogr.wkbMultiPolygon)
 
             for i, f in enumerate(self.v_fields):
                 layer.CreateField(ogr.FieldDefn('{}'.format(f), self.t_fields[i]))
@@ -166,7 +155,6 @@ class spatial_metadata:
                 
             if len(self.datalist.datalists) > 0:
                 for dl in self.datalist.datalists:
-                    #self._gather_from_datalist(dl, layer)
                     self.dl_q.put([dl, layer])
             else:
                 self.dl_q.put([[self.datalist._path, -1, 1], layer])

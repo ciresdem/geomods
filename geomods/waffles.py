@@ -262,7 +262,7 @@ class dem:
         '''Run the DEM module `dem_mod` using args `dem_mod_args`.'''
 
         dems = self.dem
-        if dem_mod != 'mbgrid' and dem_mod != 'vdatum' and dem_mod != 'metadata_spatial':
+        if dem_mod != 'mbgrid' and dem_mod != 'conversion-grid' and dem_mod != 'spatial-metadata':
             self.datalist._load_data()
             if len(self.datalist.datafiles) == 0:
                 self.status = -1
