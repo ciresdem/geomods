@@ -110,7 +110,7 @@ class spatial_metadata:
             pb1 = utils._progress('polygonizing datalist \033[1m{}\033[m...'.format(this_o_name))
             gdalfun.polygonize(this_mask, tmp_layer, verbose = False)
             pb1.opm = 'polygonized datalist \033[1m{}\033[m.'.format(this_o_name)
-            pb1.end(status)
+            pb1.end(self.status)
                         
             if len(tmp_layer) > 1:
                 out_feat = gdalfun.ogr_mask_union(tmp_layer, 'DN', defn)
