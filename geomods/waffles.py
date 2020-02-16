@@ -479,7 +479,7 @@ class dem:
 
     def spatial_metadata(self, epsg = 4269):
         sm = metadata.spatial_metadata(self.datalist, self.region, self.inc, self.o_name, self.stop, self.verbose)
-        sm.spatial_metadata(epsg)
+        sm.run(epsg)
 
     def uncertainty(self, dem_mod = 'mbgrid', dem = None, num = None, num_msk = None, prox = None):
         unc = uncertainty.uncertainty(self.datalist, self.region, self.inc, self.o_name, self.stop, self.verbose)
