@@ -22,6 +22,7 @@
 import os
 import ogr
 
+import waffles
 import datalists
 import gdalfun
 import utils
@@ -98,7 +99,13 @@ class spatial_metadata:
             o_v_fields = [dl[3], dl[4], dl[5], dl[6], dl[7], dl[8], dl[9], dl[10].strip()]
         except: o_v_fields = [this_datalist._path_dl_name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
 
-        this_mask = this_datalist.mask(self.inc)
+        pb = utils._progress('generating num mask from datalist \033[1m{}\033[m...'.format(this_o_name))
+        #this_mask = this_datalist.mask(self.inc)
+        this_dem = waffles.dem(this_datalist, this_datalist.region, self.inc).run('num')
+        this_mask = this_dem['num-msk']
+        pb.opm = 'generated num mask from datalist \033[1m{}\033[m.'.format(this_o_name)
+        pb.end(self.status)
+        
         if os.path.exists(this_mask) and not self.stop():
             pb = utils._progress('gathering geometries from datalist \033[1m{}\033[m...'.format(this_o_name))
             utils.remove_glob('{}_poly.*'.format(this_o_name))
@@ -113,7 +120,7 @@ class spatial_metadata:
             pb1.end(self.status)
                         
             if len(tmp_layer) > 1:
-                out_feat = gdalfun.ogr_mask_union(tmp_layer, 'DN', defn)
+                out_feat = gdalfun.ogr_mask_union(tmp_layer, 'DN', defn, self.stop)
                 for i, f in enumerate(self.v_fields):
                     out_feat.SetField(f, o_v_fields[i])
 

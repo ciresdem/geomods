@@ -102,7 +102,7 @@ def _ogr_get_layer_fields(src_lyr):
     
     return(schema)
 
-def ogr_mask_union(src_layer, src_field, dst_defn = None):
+def ogr_mask_union(src_layer, src_field, dst_defn = None, callback = lambda: False):
     '''`union` a `src_layer`'s features based on `src_field` where
     `src_field` holds a value of 0 or 1. optionally, specify
     an output layer defn for the unioned feature.'''
@@ -112,13 +112,14 @@ def ogr_mask_union(src_layer, src_field, dst_defn = None):
 
     multi = ogr.Geometry(ogr.wkbMultiPolygon)
     for f in src_layer:
-        if f.GetField(src_field) == 0:
-            src_layer.DeleteFeature(f.GetFID())
-        elif f.GetField(src_field) == 1:
-            f.geometry().CloseRings()
-            wkt = f.geometry().ExportToWkt()
-            multi.AddGeometryDirectly(ogr.CreateGeometryFromWkt(wkt))
-            src_layer.DeleteFeature(f.GetFID())
+        if not callback():
+            if f.GetField(src_field) == 0:
+                src_layer.DeleteFeature(f.GetFID())
+            elif f.GetField(src_field) == 1:
+                f.geometry().CloseRings()
+                wkt = f.geometry().ExportToWkt()
+                multi.AddGeometryDirectly(ogr.CreateGeometryFromWkt(wkt))
+                src_layer.DeleteFeature(f.GetFID())
                         
     union = multi.UnionCascaded()
     out_feat = ogr.Feature(dst_defn)
