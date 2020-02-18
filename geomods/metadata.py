@@ -62,7 +62,8 @@ class spatial_metadata:
         self.status = 0
         self.stop = callback
         self.verbose = verbose
-
+        self.has_gmt = True
+        
         self.v_fields = ['Name', 'Agency', 'Date', 'Type',
                          'Resolution', 'HDatum', 'VDatum', 'URL']
         self.t_fields = [ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString,
@@ -71,6 +72,8 @@ class spatial_metadata:
         if o_name is None:
             self.o_name = self.datalist._name
         else: self.o_name = o_name
+
+        self.gmt_vers = utils.config_get_vers('GMT')
         
     def _gather_from_queue(self):
         '''Gather geometries from a queue of [[datalist, layer], ...].'''
@@ -95,43 +98,51 @@ class spatial_metadata:
         this_o_name = this_datalist._name
         this_datalist._load_data()
 
-        try:
-            o_v_fields = [dl[3], dl[4], dl[5], dl[6], dl[7], dl[8], dl[9], dl[10].strip()]
-        except: o_v_fields = [this_datalist._path_dl_name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
+        if len(this_datalist.datafiles) > 0:
 
-        pb = utils._progress('generating num mask from datalist \033[1m{}\033[m...'.format(this_o_name))
-        #this_mask = this_datalist.mask(self.inc)
-        this_dem = waffles.dem(this_datalist, this_datalist.region, self.inc).run('num')
-        this_mask = this_dem['num-msk']
-        pb.opm = 'generated num mask from datalist \033[1m{}\033[m.'.format(this_o_name)
-        pb.end(self.status)
-        
-        if os.path.exists(this_mask) and not self.stop():
-            pb = utils._progress('gathering geometries from datalist \033[1m{}\033[m...'.format(this_o_name))
-            utils.remove_glob('{}_poly.*'.format(this_o_name))
+            try:
+                o_v_fields = [dl[3], dl[4], dl[5], dl[6], dl[7], dl[8], dl[9], dl[10].strip()]
+            except: o_v_fields = [this_datalist._path_dl_name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
 
-            tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(this_o_name))
-            tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(this_o_name), None, ogr.wkbMultiPolygon)
-            tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
-
-            pb1 = utils._progress('polygonizing datalist \033[1m{}\033[m...'.format(this_o_name))
-            gdalfun.polygonize(this_mask, tmp_layer, verbose = False)
-            pb1.opm = 'polygonized datalist \033[1m{}\033[m.'.format(this_o_name)
-            pb1.end(self.status)
-                        
-            if len(tmp_layer) > 1:
-                out_feat = gdalfun.ogr_mask_union(tmp_layer, 'DN', defn, self.stop)
-                for i, f in enumerate(self.v_fields):
-                    out_feat.SetField(f, o_v_fields[i])
-
-                layer.CreateFeature(out_feat)
-
-            tmp_ds = tmp_layer = out_feat = None
-            utils.remove_glob('{}_poly.*'.format(this_o_name))
-            os.remove(this_mask)
-
-            pb.opm = 'gathered geometries from datalist \033[1m{}\033[m.'.format(this_o_name)
+            pb = utils._progress('generating num mask from datalist \033[1m{}\033[m...'.format(this_o_name))
+            if self.gmt_vers is None:
+                this_mask = this_datalist.mask(self.inc)
+            else:
+                this_dem = waffles.dem(this_datalist, this_datalist.region, self.inc).run('num')
+                this_mask = this_dem['num-msk']
+                try:
+                    os.remove(this_dem['num'])
+                    os.remove(this_dem['num-grd'])
+                except: pass
+            pb.opm = 'generated num mask from datalist \033[1m{}\033[m.'.format(this_o_name)
             pb.end(self.status)
+
+            if os.path.exists(this_mask) and not self.stop():
+                pb = utils._progress('gathering geometries from datalist \033[1m{}\033[m...'.format(this_o_name))
+                utils.remove_glob('{}_poly.*'.format(this_o_name))
+
+                tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(this_o_name))
+                tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(this_o_name), None, ogr.wkbMultiPolygon)
+                tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
+
+                pb1 = utils._progress('polygonizing datalist \033[1m{}\033[m...'.format(this_o_name))
+                gdalfun.polygonize(this_mask, tmp_layer, verbose = False)
+                pb1.opm = 'polygonized datalist \033[1m{}\033[m.'.format(this_o_name)
+                pb1.end(self.status)
+
+                if len(tmp_layer) > 1:
+                    out_feat = gdalfun.ogr_mask_union(tmp_layer, 'DN', defn, self.stop)
+                    for i, f in enumerate(self.v_fields):
+                        out_feat.SetField(f, o_v_fields[i])
+
+                    layer.CreateFeature(out_feat)
+
+                tmp_ds = tmp_layer = out_feat = None
+                utils.remove_glob('{}_poly.*'.format(this_o_name))
+                os.remove(this_mask)
+
+                pb.opm = 'gathered geometries from datalist \033[1m{}\033[m.'.format(this_o_name)
+                pb.end(self.status)
 
     def run(self, epsg = 4269):
         '''Run the spatial-metadata module and Geneate spatial metadata from the datalist

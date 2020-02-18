@@ -128,6 +128,20 @@ def ogr_mask_union(src_layer, src_field, dst_defn = None, callback = lambda: Fal
 
     return(out_feat)
 
+def _ogr_extents(src_ds):
+    '''return the extent(s) of the ogr dataset'''
+    these_extents = []
+    if os.path.exists(src_ds):
+        poly = ogr.Open(src_ds)
+        if poly is not None:
+            p_layer = poly.GetLayer(0)
+            for pf in p_layer:
+                pgeom = pf.GetGeometryRef()
+                these_extents.append(pgeom.GetEnvelope())
+                
+    return(these_extents)
+
+
 def _gather_infos(src_ds):
     '''Gather information from `src_ds` GDAL dataset.'''
 
@@ -786,6 +800,58 @@ def xyz2gdal(src_xyz, dst_gdal, extent, cellsize,
     
     outarray = None 
 
+def xyz2ogr(src_xyz, dst_ogr, xloc = 0, yloc = 1, zloc = 2, dst_fmt = 'ESRI Shapefile', overwrite = True, verbose = False):
+
+    driver = ogr.GetDriverByName(dst_fmt)
+    if os.path.exists(dst_ogr):
+        driver.DeleteDataSource(dst_ogr)
+    ds = driver.CreateDataSource(dst_ogr)
+
+    layer = ds.CreateLayer(dst_ogr, geom_type = ogr.wkbPoint25D)
+
+    oft_title = "Longitude"
+    oft_string = ogr.OFTReal
+    fdw = 12
+    fdp = 8
+    fd = ogr.FieldDefn(oft_title, oft_string)
+    fd.SetWidth(fdw)
+    fd.SetPrecision(fdp)
+    layer.CreateField(fd)
+
+    oft_title = "Latitude"
+    oft_string = ogr.OFTReal
+    fdw = 12
+    fdp = 8
+    fd = ogr.FieldDefn(oft_title, oft_string)
+    fd.SetWidth(fdw)
+    fd.SetPrecision(fdp)
+    layer.CreateField(fd)
+
+    oft_title = "Elevation"
+    oft_string = ogr.OFTReal
+    fdw = 12
+    fdp = 8
+    fd = ogr.FieldDefn(oft_title, oft_string)
+    fd.SetWidth(fdw)
+    fd.SetPrecision(fdp)
+    layer.CreateField(fd)
+    
+    f = ogr.Feature(feature_def = layer.GetLayerDefn())
+    
+    for this_xyz in xyz_parse(src_xyz):
+        x = float(this_xyz[xloc])
+        y = float(this_xyz[yloc])
+        z = float(this_xyz[zloc])
+
+        f.SetField(0, x)
+        f.SetField(1, y)
+        f.SetField(2, z)
+
+        wkt = 'POINT(%f %f %f)' % (x,y,z)
+        g = ogr.CreateGeometryFromWkt(wkt)
+        f.SetGeometryDirectly(g)
+        layer.CreateFeature(f)
+        
 ## add option for grid/pixel node registration...currently pixel node only.
 def xyz_mask(src_xyz, dst_gdal, extent, cellsize,
              dst_format='GTiff', xloc=0, yloc=1, zloc=2, 

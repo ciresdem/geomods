@@ -21,7 +21,9 @@
 
 import sys
 import os
-import ogr
+
+import threading
+import time
 
 import regions
 import datalists
@@ -29,9 +31,6 @@ import gdalfun
 import uncertainty
 import metadata
 import utils
-
-import threading
-import time
         
 _version = '0.2.6'
 
@@ -235,6 +234,7 @@ class dem:
             'conversion-grid': self.vdatum,
             'spatial-metadata': self.spatial_metadata,
             'uncertainty': self.uncertainty,
+            'invdst': self.inv_dist,
         }
 
         self.dem = { 
@@ -257,7 +257,7 @@ class dem:
             str_inc = inc2str_inc(self.inc)
             self.o_name = '{}{}_{}_{}'.format(o_name, str_inc, self.region.fn, this_year())
         else: self.o_name = o_b_name
-
+        
     def run(self, dem_mod = 'mbgrid', args = ()):
         '''Run the DEM module `dem_mod` using args `dem_mod_args`.'''
 
@@ -372,9 +372,13 @@ class dem:
     def inv_dist(self):
         '''Generate an inverse distance grid with GDAL'''
 
-        ## datalist ==> point shapefile (block on the way?)
-        ## gdal_grid point shpafile to out grid
-        pass
+        out_size_x = int((self.dist_region.east - self.dist_region.west) / self.inc)
+        out_size_y = int((self.dist_region.north - self.dist_region.south) / self.inc)
+        
+        gdalfun.xyz2ogr(self.datalist._caty(), '{}_pts.shp'.format(self.o_name))
+        gg_cmd = 'gdal_grid -spat {} {} {} {} -outsize {} {} -a invdist {}_pts.shp {}.tif\
+        '.format(self.dist_region.west, self.dist_region.south, self.dist_region.east, self.dist_region.north, out_size_x, out_size_y, self.o_name, self.o_name)
+        out, status = utils.run_cmd(gg_cmd, self.verbose, self.verbose)
 
     ## ==============================================
     ## Bathy-Surface module.
@@ -499,12 +503,13 @@ _dem_lambda = lambda d, r, i, o, b, c, v: dem(d, r, i, o, b, c, v)
 _dem_mods = {
     'mbgrid': 'generate a DEM via mbgrid [:dist]',
     'surface': 'generate a DEM via GMT surface',
+    'invdst': 'generate a DEM via GDAL gdal_grid <beta>',
     'bathy': 'generate a `bathy-surface` masked grid [:coastpoly]',
     'num': 'generate a `num` grid (no interpolation)',
     'mean': 'generate a `mean` grid (no interpolation)',
     'conversion-grid': 'generate a VDatum conversion grid [:i_vdatum:o_vdatum:vd_region]',
     'spatial-metadata': 'generate DEM spatial metadata [:epsg]',
-    'uncertainty': 'calculate DEM uncertainty [:dem_module]',
+    'uncertainty': 'calculate DEM uncertainty [:dem_module] <beta>',
 }
 
 def dem_mod_desc(x):
@@ -586,18 +591,10 @@ def main():
             i_datalist = str(arg[2:])
 
         elif arg == '--increment' or arg == '-E':
-            try:
-                i_inc = float(argv[i + 1])
-            except:
-                utils._error_msg('-E should be a float value')
-                sys.exit(1)
+            i_inc = argv[i + 1]
             i = i + 1
         elif arg[:2] == '-E':
-            try:
-                i_inc = float(arg[2:])
-            except:
-                utils._error_msg('-E should be a float value')
-                sys.exit(1)
+            i_inc = arg[2:]
 
         elif arg == '--output-name' or arg == '-O':
             o_bn = str(argv[i + 1])
@@ -633,7 +630,6 @@ def main():
             opts = arg.split(':')
             if opts[0] in _dem_mods.keys():
                 mod_opts[opts[0]] = list(opts[1:])
-                #else: utils._error_msg('invalid module name `{}`'.format(opts[0]))
             else: utils._progress().err_msg('invalid module name `{}`'.format(opts[0]))
 
         i = i + 1
@@ -648,19 +644,18 @@ def main():
         print(_waffles_usage)
         sys.exit(1)        
 
+    try:
+        i_inc = float(i_inc)
+    except:
+        utils._error_msg('the increment value should be a number')
+        print(_waffles_usage)
+        sys.exit(1)
+        
     for key in mod_opts.keys():
         mod_opts[key] = [None if x == '' else x for x in mod_opts[key]]
 
-    ## ==============================================
-    ## check platform and installed software
-    ## ==============================================
-
-    if 'mbgrid' in mod_opts.keys():
-        mb_vers = utils._cmd_check('mbgrid', 'mbgrid -version | grep Version')
-
-    gmt_vers = utils._cmd_check('gmt', 'gmt --version')
-    gdal_vers = utils._cmd_check('gdal-config', 'gdal-config --version')
-
+    utils.check_config()
+        
     ## ==============================================
     ## process input region(s) and loop
     ## ==============================================
@@ -668,14 +663,7 @@ def main():
     pb = utils._progress('loading region(s)...')
     try: 
         these_regions = [regions.region(i_region)]
-    except:
-        if os.path.exists(i_region):
-            _poly = ogr.Open(i_region)
-            if _poly is not None:
-                _player = _poly.GetLayer(0)
-                for pf in _player:
-                    _pgeom = pf.GetGeometryRef()
-                    these_regions.append(regions.region('/'.join(map(str, _pgeom.GetEnvelope()))))
+    except: these_regions = [regions.region('/'.join(map(str, x))) for x in gdalfun._ogr_extents(i_region)]
 
     if len(these_regions) == 0:
         status = -1
@@ -683,6 +671,7 @@ def main():
     for this_region in these_regions:
         if not this_region._valid: 
           status = -1
+
     pb.opm = 'loaded \033[1m{}\033[m region(s).'.format(len(these_regions))
     pb.end(status)
             
@@ -693,24 +682,20 @@ def main():
 
     for rn, this_region in enumerate(these_regions):
 
+        status = 0
+        
         ## ==============================================
         ## Load the input datalist
         ## ==============================================
 
-        if stop_threads:
-            break
+        if stop_threads: break
         
-        if i_datalist is not None:
-            this_datalist = datalists.datalist(i_datalist, this_region)
-            if not this_datalist._valid:
-                utils._error_msg('invalid datalist')
-                status = -1
+        this_datalist = datalists.datalist(i_datalist, this_region)
+        if not this_datalist._valid:
+            utils._error_msg('invalid datalist')
+            status = -1
 
-        else: this_datalist = None
-
-        if status != 0: 
-            status = 0
-            break
+        if status != 0: break
 
         for dem_mod in mod_opts.keys():
 
@@ -726,9 +711,7 @@ def main():
             dl = dem(this_datalist, this_region, i_inc, o_pre, o_bn, lambda: stop_threads, want_verbose)
             dl.node = node_reg
 
-            #dl.run(dem_mod, args)
             t = threading.Thread(target = dl.run, args = (dem_mod, args))
-
             try:
                 t.start()
                 while True:

@@ -101,6 +101,27 @@ def err2coeff(my_data):
 
     return(out)
 
+def gmtselect_split(o_xyz, sub_region, sub_bn, verbose = False):
+    '''split an xyz file into an inner and outer region.'''
+
+    status = 0
+    out_inner = None
+    out_outer = None
+
+    gmt_s_inner = 'gmt gmtselect -V {} {} > {}_inner.xyz'.format(o_xyz, sub_region.gmt, sub_bn)
+    out, status = utils.run_cmd(gmt_s_inner, verbose, False)
+
+    if status == 0:
+        out_inner = '{}_inner.xyz'.format(sub_bn)
+
+    gmt_s_outer = 'gmt gmtselect -V {} {} -Ir > {}_outer.xyz'.format(o_xyz, sub_region.gmt, sub_bn)
+    out, status = utils.run_cmd(gmt_s_outer, verbose, False)
+
+    if self.status == 0:
+        out_outer = '{}_outer.xyz'.format(sub_bn)
+
+    return([out_inner, out_outer])
+
 class uncertainty:
 
     def __init__(self, i_datalist, i_region, i_inc = 0.000277777, o_name = None, callback = lambda: False, verbose = False):
@@ -144,7 +165,7 @@ class uncertainty:
             self.dem['prox'] = prox
 
         self.datalist._load_data()
-        self.interpolation_uncertainty(dem_mod)
+        self.interpolation(dem_mod)
 
     def set_or_make_dem(self, dem_mod = 'mbgrid'):
         '''check if dem dict contains dems, otherwise generate them...'''
@@ -177,27 +198,7 @@ class uncertainty:
         tw.opm = 'checked for DEMs.'
         tw.end(self.status)        
 
-    def gmtselect_split(self, o_xyz, sub_region, sub_bn):
-        '''split an xyz file into an inner and outer region.'''
-
-        out_inner = None
-        out_outer = None
-
-        gmt_s_inner = 'gmt gmtselect -V {} {} > {}_inner.xyz'.format(o_xyz, sub_region.gmt, sub_bn)
-        out, self.status = utils.run_cmd(gmt_s_inner, self.verbose, False)
-        
-        if self.status == 0:
-            out_inner = '{}_inner.xyz'.format(sub_bn)
-
-        gmt_s_outer = 'gmt gmtselect -V {} {} -Ir > {}_outer.xyz'.format(o_xyz, sub_region.gmt, sub_bn)
-        out, self.status = utils.run_cmd(gmt_s_outer, self.verbose, False)
-
-        if self.status == 0:
-            out_outer = '{}_outer.xyz'.format(sub_bn)
-
-        return([out_inner, out_outer])
-
-    def interpolation_uncertainty(self, dem_mod = 'mbgrid'):
+    def interpolation(self, dem_mod = 'mbgrid'):
         '''calculate the interpolation uncertainty.'''
 
         loop_count = 1
@@ -220,11 +221,10 @@ class uncertainty:
 
         num_perc = (num_sum / g_max) * 100
         prox_perc_95 = gdalfun.percentile(self.dem['prox'], 75)
-        tw.err_msg('waffles: proximity 95th perc: {}'.format(prox_perc_95))
+        tw.msg('proximity 95th perc: {}'.format(prox_perc_95))
 
         sub_regions = this_region.chunk(self.inc, 500)
-        tw.err_msg('waffles: chunking into {} regions.'.format(len(sub_regions)))
-        #tw.err_msg('waffles: processing {} regions {} times.'.format(len(sub_regions), loop_count))
+        tw.msg('chunking into {} regions.'.format(len(sub_regions)))
 
         for sub_region in sub_regions:
             if self.stop(): break
@@ -240,7 +240,7 @@ class uncertainty:
                 tw.err_msg('waffles: error, no data in sub-region...')
                 self.status = -1
             else:
-                s_inner, s_outer = self.gmtselect_split(o_xyz, sub_region, 'sub_{}'.format(sub_count))
+                s_inner, s_outer = gmtselect_split(o_xyz, sub_region, 'sub_{}'.format(sub_count))
 
                 if os.stat(s_inner).st_size != 0:
                     sub_xyz = np.loadtxt(s_inner, ndmin=2, delimiter = ' ')

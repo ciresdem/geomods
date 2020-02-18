@@ -50,17 +50,93 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEAL
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version)
 
+CONFIG_FILE = os.path.expanduser('~/geomods.ini')
+
 def init_config():
     co = ConfigParser.ConfigParser()
-    cf = os.path.expanduser('~/geomods.ini')
+    cf = os.path.expanduser(CONFIG_FILE)
 
     co['PATHINFO'] = {
         'vdatum': None
+    }
+
+    co['VERSINFO'] = {
+        'vdatum': None,
+        'gdal': None,
+        'gmt': None,
+        'mbgrid': None,
+        'lastools': None,
     }
     
     with open(cf, 'w') as conf:
         co.write(conf)
 
+def config_set_gmt():
+    co = ConfigParser.ConfigParser()
+    co.read(CONFIG_FILE)
+    
+    try:
+        gmt_vers = co.get('VERSINFO', 'gmt')
+    except:
+        gmt_vers = _cmd_check('gmt', 'gmt --version')
+        co.set('VERSINFO', 'gmt', gmt_vers)
+
+    with open(CONFIG_FILE, 'w') as conf:
+        co.write(conf)
+
+def config_get_vers(cmd = None):
+    if cmd is not None:
+        co = ConfigParser.ConfigParser()
+        co.read(CONFIG_FILE)
+
+        try:
+            cmd_vers = co.get(cmd, 'vers')
+        except: cmd_vers = None
+    else: cmd_vers = None
+    
+    return(cmd_vers)    
+        
+def check_config():
+
+    co = ConfigParser.ConfigParser()
+    co.read(CONFIG_FILE)
+    
+    ## VDATUM
+    import vdatum
+    try:
+        vdatum_path = co.get('VDATUM', 'jar')
+    except:
+        vdatum_path = vdatum.vdatum()._find_vdatum()[0]
+        co.add_section('VDATUM')
+        co.set('VDATUM', 'jar', vdatum_path)
+
+    ## GMT
+    try:
+        gmt_vers = co.get('GMT', 'vers')
+    except:
+        gmt_vers = _cmd_check('gmt', 'gmt --version')
+        co.add_section('GMT')
+        co.set('GMT', 'vers', gmt_vers)
+
+    ## GDAL
+    try:
+        gdal_vers = co.get('GDAL', 'vers')
+    except:
+        gdal_vers = _cmd_check('gdal-config', 'gdal-config --version')
+        co.add_section('GDAL')
+        co.set('GDAL', 'vers', gdal_vers)
+
+    ## mbgrid
+    try:
+        mbgrid_vers = co.get('MBGRID', 'vers')
+    except:
+        mbgrid_vers = _cmd_check('mbgrid', 'mbgrid -version | grep Version')
+        co.add_section('MBGRID')
+        co.set('MBGRID', 'vers', mbgrid_vers)
+        
+    with open(CONFIG_FILE, 'w') as conf:
+        co.write(conf)
+        
 ## =============================================================================
 ##
 ## Command execution, et cetra
@@ -83,6 +159,39 @@ def remove_glob(glob_str):
             except: pass
 
 cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ["PATH"].split(os.pathsep))
+
+def run_cmd(cmd, data_fun = None, verbose = False, prog = True):
+    '''Run a command with or without a progress bar while passing data'''
+
+    if prog: pb = _progress('running cmd: \033[1m{}\033[m...'.format(cmd[:44]))
+
+    if datafun is not None:
+        p = subprocess.Popen(cmd, shell = True, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)    
+    
+        c = lambda x: map(p.stdin.write, x)
+        t = threading.Thread(target = data_fun, args = (p.stdin,))
+    else: p = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)        
+    t.start()
+
+    if prog:
+        while True:
+            time.sleep(3)
+            pb.update()
+            if not t.is_alive():
+                break
+
+    out, err = p.communicate()
+
+    if verbose:
+        _progress()._clear_stderr()
+        sys.stdout.write(out)
+        sys.stderr.write(err)
+    
+    if prog:
+        pb.opm = 'ran cmd: \033[1m{}\033[m.'.format(cmd[:44])
+        pb.end(p.returncode)
+
+    return out, p.returncode
 
 def run_cmd_with_input(cmd, data_fun, verbose = False, prog = True):
     '''Run a command with or without a progress bar while passing data'''
@@ -150,23 +259,13 @@ def _cmd_check(cmd_str, cmd_vers_str):
     pb = _progress('checking for {}...'.format(cmd_str))
     if cmd_exists(cmd_str): 
         cmd_vers, status = run_cmd('{}'.format(cmd_vers_str), prog = False)
+        cmd_vers = cmd_vers.split()[-1].rstrip()
     else: status = -1
-    pb.opm = 'found {} version {}'.format(cmd_str, cmd_vers.split()[-1].rstrip())
+    pb.opm = 'found {} version {}'.format(cmd_str, cmd_vers)
     pb.end(status)
 
     return(cmd_vers)
 
-def _module_check(mod_name, check_func, vers_func):
-
-    pb = _progress('checking for {}...'.format(mod_name))
-    if check_func():
-        status = 0
-        vers = vers_func
-    else: status = -1
-    pb.end(status)
-
-    return(vers)
-    
     # pb = _progress('checking system status...')
     # platform = sys.platform
     # pb.opm = 'platform is {}'.format(platform)
@@ -227,7 +326,6 @@ class _progress:
         self._clear_stderr()
 
         sys.stderr.write('\r[\033[36m{:6}\033[m] {:40}\r'.format(self.spinner[self.sc], self.opm))
-        #sys.stderr.flush()
 
         if self.count == self.tw: self.spin_way = self.sub_one
         if self.count == 0: self.spin_way = self.add_one
@@ -239,92 +337,5 @@ class _progress:
         if status != 0:
             sys.stderr.write('\r[\033[31m\033[1m{:^6}\033[m] {:40}\n'.format('fail', self.opm))
         else: sys.stderr.write('\r[\033[32m\033[1m{:^6}\033[m] {:40}\n'.format('ok', self.opm))
-        #sys.stderr.flush()
     
-## =============================================================================
-##
-## VDatum class for working with NOAA's VDatum program
-## Currently only compatible with VDatum > 4.0
-##
-## =============================================================================
-
-class vdatum:
-    '''vdatum object to communicate with NOAA's VDatum'''
-
-    def __init__(self, vdatum_path = None, verbose = False):
-        self.verbose = verbose
-        self.status = 0
-        if vdatum_path is None:
-
-            co = ConfigParser.ConfigParser()
-            try:
-                co.read(os.path.expanduser('~/geomods.ini'))
-                self.vdatum_path = co.get('VDATUM', 'jar')
-            except:
-
-                self.vdatum_path = self._find_vdatum()[0]
-                if self.status == 0:
-                    co.add_section('VDATUM')
-                    co.set('VDATUM', 'jar', self.vdatum_path)
-            
-                    with open(os.path.expanduser('~/geomods.ini'), 'w') as conf:
-                        co.write(conf)
-                else: self.vdatum_path = None
-        else: self.vdatum_path = vdatum_path
-
-        self._version = None
-        self._get_version()
-        
-        self.ivert = 'navd88:m:height'
-        self.overt = 'mhw:m:height'
-        self.ihorz = 'NAD83_2011'
-        self.ohorz = 'NAD83_2011'
-
-        self.region = '3'
-        self.ft = 'txt'
-        self.fd = 'space'
-
-        self.ds_dir = 'result'
-
-    def _get_version(self):
-        if self.vdatum_path is not None:
-            out, status = run_cmd('java -jar {} {}'.format(self.vdatum_path, '-'), prog = False)
-            for i in out.split('\n'):
-                if '- v' in i.strip():
-                    self._version = i.strip().split('v')[-1]
-                    break
-
-    def _find_vdatum(self):
-        '''Find the VDatum executable on the system and 
-        return a list of found vdatum.jar paths'''
-
-        results = []
-        if self.verbose:
-            pb = _progress('checking for vdatum.')
-        for root, dirs, files in os.walk('/'):
-            if 'vdatum.jar' in files:
-                results.append(os.path.join(root, 'vdatum.jar'))
-        if len(results) <= 0:
-            self.status = -1
-        if self.verbose:
-            pb.opm = '{}..{}'.format(pb.opm, results[0])
-            pb.end(self.status)
-
-        return results
-
-    def run_vdatum(self, src_fn):
-        '''Run vdatum on src_fn which is an XYZ file'''
-        
-        if self.verbose:
-            pb = 'transforming data with VDatum'
-        else: pb = None
-        
-        vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},0,1,2:{}:{} region:{}\
-        '.format(self.ihorz, self.ivert, self.ohorz, self.overt, self.fd, src_fn, self.ds_dir, self.region)
-        out, status = run_cmd('java -jar {} {}'.format(self.vdatum_path, vdc), self.verbose, self.verbose)
-        #out, status = run_cmd('java -Djava.awt.headless=true -jar {} {}'.format(self.vdatum_path, vdc), self.verbose, True)
-
-        return status
-
-
 ### End

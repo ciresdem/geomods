@@ -32,6 +32,7 @@ import regions
 import datalists
 import gdalfun
 import utils
+import vdatum
 
 _version = '0.1.0'
 
@@ -109,7 +110,7 @@ class procs:
         self.xyz_dir = os.path.join(self.proc_dir, 'xyz')
                                     
         ## Initialize VDatum
-        self.this_vd = utils.vdatum()
+        self.this_vd = vdatum.vdatum()
 
         ## make the output xyz directory
         if not os.path.exists(self.xyz_dir):
@@ -474,23 +475,12 @@ def main():
 
         #this_region = regions.region(i_region)
 
-    ## ==============================================
-    ## check platform and installed software
-    ## ==============================================
-
-    #cmd_vers = utils._cmd_check()
-
+    utils.check_config()
+    
     pb = utils._progress('loading region(s)...')
     try: 
         these_regions = [regions.region(i_region)]
-    except:
-        if os.path.exists(i_region):
-            _poly = ogr.Open(i_region)
-            _player = _poly.GetLayer(0)
-            for pf in _player:
-                _pgeom = pf.GetGeometryRef()
-                these_regions.append(regions.region('/'.join(map(str, _pgeom.GetEnvelope()))))
-            _poly = None
+    except: these_regions = [regions.region('/'.join(map(str, x))) for x in gdalfun._ogr_extents(i_region)]
 
     if len(these_regions) == 0:
         status = -1

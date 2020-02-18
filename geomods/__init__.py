@@ -19,6 +19,7 @@
 
 ## Modules
 from utils import *
+from vdatum import *
 from regions import *
 from datalists import *
 from gdalfun import *

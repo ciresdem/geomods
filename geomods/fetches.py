@@ -1500,12 +1500,15 @@ def main():
     ## check platform and installed software
     ## ==============================================
 
-    if want_proc:    
-        gmt_vers = utils._cmd_check('gmt', 'gmt --version')
-        mbgrid_vers = utils._cmd_check('mbgrid', 'mbgrid -version | grep Version')
-        gdal_vers = utils._cmd_check('gdal-config', 'gdal-config --version')
-        lastools_vers = utils._cmd_check('las2txt', 'las2txt -version')
-        vdatum_verss = utils._module_check('vdatum', lambda: vdatum().vdatum_path, lambda: vdatum().vdatum)
+    if want_proc:
+        utils.check_config()
+    
+    # if want_proc:    
+    #     gmt_vers = utils._cmd_check('gmt', 'gmt --version')
+    #     mbgrid_vers = utils._cmd_check('mbgrid', 'mbgrid -version | grep Version')
+    #     gdal_vers = utils._cmd_check('gdal-config', 'gdal-config --version')
+    #     lastools_vers = utils._cmd_check('las2txt', 'las2txt -version')
+    #     vdatum_verss = utils._module_check('vdatum', lambda: vdatum().vdatum_path, lambda: vdatum().vdatum)
 
     ## ==============================================
     ## process input region(s)
@@ -1515,13 +1518,7 @@ def main():
         tw = utils._progress('loading region(s)...')
         try: 
             these_regions = [regions.region(extent)]
-        except:
-            if os.path.exists(extent):
-                _poly = ogr.Open(extent)
-                _player = _poly.GetLayer(0)
-                for pf in _player:
-                    _pgeom = pf.GetGeometryRef()
-                    these_regions.append(regions.region("/".join(map(str, _pgeom.GetEnvelope()))))
+        except: these_regions = [regions.region('/'.join(map(str, x))) for x in gdalfun._ogr_extents(i_region)]
 
         if len(these_regions) == 0:
             status = -1
