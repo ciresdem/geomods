@@ -98,9 +98,8 @@ def grd2xyz(src_grd, dst_xyz, region = None, mask = None, verbose = False, want_
 
     status = 0
     if mask:
-        grdmask_cmd = ('gmt grdmath -V {} {} OR = tmp.grd'.format(src_grd, mask))
+        grdmask_cmd = ('gmt grdmath -N -V {} {} OR = tmp.grd'.format(src_grd, mask))
         out, status = utils.run_cmd(grdmask_cmd, verbose, verbose)
-
         if status == 0: 
             src_grd = 'tmp.grd'
 
@@ -180,7 +179,7 @@ def xyz2grd(datalist, region, inc, dst_name, a = 'n', node = 'pixel', verbose = 
     
     num_cmd0 = ('gmt xyz2grd -V {} -I{:.7f} -G{}.grd -A{} {}\
     '.format(region.gmt, inc, dst_name, a, reg_str))
-    out, status = utils.run_cmd_with_input(num_cmd0, datalist._cat_port, verbose, True)
+    out, status = utils.run_cmd_with_input(num_cmd0, datalist._cat_port, verbose, verbose)
 
     return(out, status)
 
@@ -194,9 +193,9 @@ def run_mbgrid(datalist, region, inc, dst_name, dist = '10/3', tension = 35, ext
     if len(dist.split('/')) == 1:
         dist = dist + '/2'
     
-    mbgrid_cmd = ('mbgrid -I{} {} -E{:.7f}/{:.7f}/degrees! -O{} -A2 -G100 -F1 -N -C{} -S0 -X0.1 -T{} {}> /dev/null 2> /dev/null \
+    mbgrid_cmd = ('mbgrid -I{} {} -E{:.7f}/{:.7f}/degrees! -O{} -A2 -G100 -F1 -N -C{} -S0 -X0.1 -T{} {} > mb_proc.txt 2> mb_err.txt \
     '.format(datalist._path, region.gmt, inc, inc, dst_name, dist, tension, e_switch))
-    out, status = utils.run_cmd(mbgrid_cmd, verbose, True)
+    out, status = utils.run_cmd(mbgrid_cmd, verbose, verbose)
 
     return(out, status)
 
@@ -262,8 +261,9 @@ class dem:
         '''Run the DEM module `dem_mod` using args `dem_mod_args`.'''
 
         dems = self.dem
-        if dem_mod != 'mbgrid' and dem_mod != 'conversion-grid' and dem_mod != 'spatial-metadata':
-            self.datalist._load_data()
+        if dem_mod != 'mbgrid' and dem_mod != 'conversion-grid' and dem_mod != 'spatial-metadata' and dem_mod != 'uncertainty':
+            if len(self.datalist.datafiles) == 0:
+                self.datalist._load_data()
             if len(self.datalist.datafiles) == 0:
                 self.status = -1
 
@@ -661,6 +661,7 @@ def main():
     ## ==============================================
 
     pb = utils._progress('loading region(s)...')
+    sys.stderr.write('loading regions...')
     try: 
         these_regions = [regions.region(i_region)]
     except: these_regions = [regions.region('/'.join(map(str, x))) for x in gdalfun._ogr_extents(i_region)]
@@ -672,8 +673,7 @@ def main():
         if not this_region._valid: 
           status = -1
 
-    pb.opm = 'loaded \033[1m{}\033[m region(s).'.format(len(these_regions))
-    pb.end(status)
+    pb.end(status, 'loaded \033[1m{}\033[m region(s).'.format(len(these_regions)))
             
     if status == -1:
         utils._error_msg('failed to load region(s)')
@@ -724,9 +724,8 @@ def main():
                 stop_threads = True
 
             t.join()
-            pb.opm = 'ran geomods dem module \033[1m{}\033[m on region ({}/{}): \033[1m{}\033[m...\
-            '.format(dem_mod, rn + 1, len(these_regions), this_region.region_string)
-            pb.end(dl.status)
+            pb.end(dl.status, 'ran geomods dem module \033[1m{}\033[m on region ({}/{}): \033[1m{}\033[m...\
+            '.format(dem_mod, rn + 1, len(these_regions), this_region.region_string))
             
 if __name__ == '__main__':
     main()

@@ -31,6 +31,11 @@ import gdalfun
 import utils
 from waffles import *
 
+from scipy import optimize
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
+
 ## =============================================================================
 ##
 ## uncertainty module:
@@ -40,8 +45,6 @@ from waffles import *
 def err2coeff(my_data):
     '''data is 2 col file with `err dist`'''
 
-    from scipy import optimize
-    import matplotlib.pyplot as plt
     #try: 
     #    my_data = np.loadtxt(data, delimiter=' ')
     #except: sys.exit(2)
@@ -117,7 +120,7 @@ def gmtselect_split(o_xyz, sub_region, sub_bn, verbose = False):
     gmt_s_outer = 'gmt gmtselect -V {} {} -Ir > {}_outer.xyz'.format(o_xyz, sub_region.gmt, sub_bn)
     out, status = utils.run_cmd(gmt_s_outer, verbose, False)
 
-    if self.status == 0:
+    if status == 0:
         out_outer = '{}_outer.xyz'.format(sub_bn)
 
     return([out_inner, out_outer])
@@ -173,30 +176,41 @@ class uncertainty:
         tw = utils._progress('checking for DEMs...')
 
         if self.dem['dem'] is None:
-            tw.err_msg('generating dem...')
+            utils._progress('generating dem...')
             dems = dem(self.datalist, self.region, str(self.inc)).run(dem_mod)
             for key in dems.keys():
-                self.dem[key] = dems[key]
-
+                if key in self.dem.keys():
+                    if self.dem[key] is not None:
+                        self.dem[key] = dems[key]
+            tw.end(self.status, 'generated dem.')
+        tw.msg('using DEM {}'.format(self.dem['dem']))
+            
         if self.dem['num'] is None:
-            tw.err_msg('generating NUM grid...')
+            utils._progress('generating NUM grid...')
             dems = dem(self.datalist, self.region, str(self.inc)).run('num')
             for key in dems.keys():
-                self.dem[key] = dems[key]
-
+                if key in self.dem.keys():
+                    if self.dem[key] is not None:
+                        self.dem[key] = dems[key]
+            tw.end(self.status, 'generated NUM grid.')
+        tw.msg('using NUM grid {}'.format(self.dem['num']))
+            
         if self.dem['num-msk'] is None:
-            tw.err_msg('generating NUM mask...')
+            utils._progress('generating NUM mask...')
             self.dem['num-grd-msk'] = '{}_msk.grd'.format(self.dem['num'].split('.')[0]) 
             num_msk(self.dem['num'], self.dem['num-grd-msk'])
             self.dem['num-msk'] = grd2tif(self.dem['num-grd-msk'])
-
+            tw.end(self.status, 'generated NUM mask.')
+        tw.msg('using NUM MASK {}'.format(self.dem['num-msk']))
+            
         if self.dem['prox'] is None:
-            tw.err_msg('generating proximity grid...')
+            utils._progress('generating proximity grid...')
             self.dem['prox']  = '{}_prox.tif'.format(self.dem['num'].split('.')[0]) 
             proximity(self.dem['num-msk'], self.dem['prox'])
-
-        tw.opm = 'checked for DEMs.'
-        tw.end(self.status)        
+            tw.end(self.status, 'generated proximity grid.')
+        tw.msg('using PROXIMITY grid {}'.format(self.dem['prox']))
+            
+        tw.end(self.status, 'checked for DEMs.')
 
     def interpolation(self, dem_mod = 'mbgrid'):
         '''calculate the interpolation uncertainty.'''
@@ -213,7 +227,8 @@ class uncertainty:
         ## Calculate the percentage of filled cells
         ## and proximity percentiles.
         ## ==============================================
-        tw = utils._progress('')
+        
+        tw = utils._progress()
 
         num_sum = gdalfun.sum(self.dem['num-msk'])
         gi = grdinfo(self.dem['num-msk'])
@@ -223,7 +238,7 @@ class uncertainty:
         prox_perc_95 = gdalfun.percentile(self.dem['prox'], 75)
         tw.msg('proximity 95th perc: {}'.format(prox_perc_95))
 
-        sub_regions = this_region.chunk(self.inc, 500)
+        sub_regions = this_region.chunk(self.inc, 1000)
         tw.msg('chunking into {} regions.'.format(len(sub_regions)))
 
         for sub_region in sub_regions:
@@ -234,10 +249,9 @@ class uncertainty:
             o_xyz = '{}.xyz'.format(self.o_name)
 
             tw = utils._progress('processing sub region \033[1m{}\033[m...'.format(sub_count))
-
-            self.status = grd2xyz(self.dem['dem'], o_xyz, region = sub_region.buffer(10*self.inc), mask = self.dem['num-msk'])
+            self.status = grd2xyz(self.dem['dem'], o_xyz, region = sub_region.buffer(10*self.inc), mask = self.dem['num'])
             if os.stat(o_xyz).st_size == 0:
-                tw.err_msg('waffles: error, no data in sub-region...')
+                tw.err_msg('no data in sub-region...')
                 self.status = -1
             else:
                 s_inner, s_outer = gmtselect_split(o_xyz, sub_region, 'sub_{}'.format(sub_count))
@@ -252,9 +266,9 @@ class uncertainty:
                     gi = grdinfo('tmp_sub.grd')
                     num_max = int(gi[9]) * int(gi[10])
 
-                    tw.err_msg('waffles: total cells in subgrid is {}'.format(num_max))
+                    tw.msg('total cells in subgrid is {}'.format(int(num_max)))
                     num_sub_sum = gdalfun.sum(grd2tif('tmp_sub.grd'))
-                    tw.err_msg('waffles: total filled cells in subgrid is {}'.format(num_sub_sum))
+                    tw.msg('total filled cells in subgrid is {}'.format(int(num_sub_sum)))
 
                     try:
                         os.remove('tmp_sub.grd')
@@ -262,14 +276,14 @@ class uncertainty:
                     except: pass
 
                     num_sub_perc = (num_sub_sum / num_max) * 100
-                    tw.err_msg('waffles: {}% of cells have data'.format(num_sub_perc))
+                    tw.msg('{}% of cells have data'.format(num_sub_perc))
                     s_size = 100 - num_sub_perc
 
                     if s_size >= 100:
                         n_loops = 0
                     else: n_loops = int(((s_size / num_perc) * 2) + 1)
 
-                    tw.err_msg('waffles: loops for this subregion is {}'.format(n_loops))
+                    tw.msg('loops for this subregion is {}'.format(n_loops))
 
                     ## ==============================================
                     ## Split Sample n_loops times
@@ -285,7 +299,7 @@ class uncertainty:
                         if sx_len_pct == 0:
                             break
 
-                        tw.err_msg('waffles: extracting {} random data points out of {}'.format(sx_len_pct, sx_len))
+                        tw.msg('extracting {} random data points out of {}'.format(sx_len_pct, sx_len))
                         sub_xyz_head = 'sub_{}_head.xyz'.format(sub_count)
 
                         np.savetxt(sub_xyz_head, sub_xyz[:sx_len_pct], '%f', ' ')
@@ -339,3 +353,9 @@ class uncertainty:
         ## ==============================================
         ## apply error coefficient to full proximity grid
         ## ==============================================
+
+        math_cmd = 'gmt grdmath {} ABS {ec2} POW {ec1} MUL {ec0} ADD = {}_dst_unc.tif=gd+n-9999:GTiff\
+        '.format(self.dem['prox'], ec[2], ec[1], ec[0], self.o_name)
+        utils.run_cmd(math_cmd, self.verbose, self.verbose)
+        
+### END

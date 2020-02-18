@@ -52,23 +52,19 @@ _version = '0.1.2'
 ## =============================================================================
 
 def xyz_region(src_xyz):
-    status = 0
     out, status = utils.run_cmd('gmt gmtinfo {} -I-'.format(src_xyz), False, True)
     o_region = regions.region(out[2:])
     return(o_region)
 
 def xyz_inf_gmt(src_xyz):
-    status = 0
     out, status = utils.run_cmd('gmt gmtinfo {} -C > {}.inf'.format(src_xyz, src_xyz), False, True)
     return(out, status)
 
 def xyz_inf_mb(src_xyz):
-    status = 0
     out, status = utils.run_cmd('mbdatalist -O -F168 -I{}'.format(src_xyz), False, True)
     return(out, status)
 
-def generate_inf(data_path, data_fmt = 168):
-    
+def generate_inf(data_path, data_fmt = 168):    
     this_region = datafile_region(data_path, data_fmt)
     if this_region is None:
         xyz_inf_mb(data_path)
@@ -179,6 +175,7 @@ class datalist:
         self.gdal_datafiles = []
         self._load()
         self._valid = self._valid_p()
+        self.p_bar = utils._progress()
 
     def _reset(self):
         '''reload the datalist'''
@@ -196,9 +193,8 @@ class datalist:
         else: return(False)
                      
     def _load(self):
-        '''read a datalist'''
+        '''read a datalist and gather all the datalists found therein.'''
 
-        status = 0
         with open(self._path, 'r') as fob:
             for dl in fob:
                 if dl[0] != '#' and dl[0] != '\n' and dl[0] != '':
@@ -207,25 +203,17 @@ class datalist:
                         dl_cols = [x.strip() for x in dl_cols]
                         self.datalist.append(dl_cols)
 
-        if len(self.datalist) == 0:
-            status = -1
-
         self._proc_datalists(lambda d, t, w: self.datalists.append([d, t, w]))
         
     def _load_data(self):
-        '''load a dalist and process datafiles'''
+        '''load a datalist and gather all datafiles found therein.'''
 
         status = 0
-        pb = utils._progress('gathering datalists from \033[1m{}\033[m...'.format(self._path_basename))
-        
+        pb = utils._progress('loading datalist \033[1m{}\033[m...'.format(self._name))
         self._proc_data(lambda x, t, w: self.datafiles.append([x,t,w]))
-
-        if len(self.datafiles) == 0:
-            status = -1
-
-        pb.opm = 'gathered datalists from \033[1m{}\033[m.'.format(self._path_basename)
-        pb.end(status)
-                
+        if len(self.datafiles) == 0: status = -1
+        pb.end(status, 'loaded datalist \033[1m{}\033[m.'.format(self._name))
+        
     def _proc_datalists(self, proc = lambda d, t, w: None):
         '''Recurse through the datalist and run proc on each data file.'''
 
@@ -304,13 +292,7 @@ class datalist:
     def _gen_inf(self):
         '''load a dalist and process datafiles'''
 
-        status = 0
-        pb = utils._progress('generating inf files for datalist \033[1m{}\033[m...'.format(self._path_basename))
-
         self._proc_data(lambda x, t, w: generate_inf(x, t))
-
-        pb.opm = 'generated inf files for datalist \033[1m{}\033[m.'.format(self._path_basename)
-        pb.end(status)
                 
     def _append_datafile(self, dfile, dformat = 168, weight = 1):
         '''append a data file to a datalist, given filename, format and weight'''
@@ -370,21 +352,15 @@ class datalist:
         return osep.join(df)
 
     def gather_region(self):
-        status = 0
-        pb = utils._progress('gathering region info from datalist \033[1m{}\033[m...'.format(self._path_basename))
 
         out_regions = []
         self._proc_data(lambda x, t, w: out_regions.append(datafile_region(x)))
-        pb.err_msg('merging gathered regions...')
         out_regions = [x for x in out_regions if x is not None]
         out_region = out_regions[0]
         for i in out_regions[1:]:
             out_region = regions.regions_merge(out_region, i)
                 
         self.region = out_region
-        
-        pb.opm = 'gathered region info from datalist \033[1m{}\033[m.'.format(self._path_basename)
-        pb.end(status)
         
     def mask(self, inc = .000277777):
         '''Generate a num-msk with GDAL from a datalist.'''

@@ -59,7 +59,6 @@ class spatial_metadata:
         self.region = i_region
         self.dist_region = self.region.buffer(6 * self.inc)
 
-        self.status = 0
         self.stop = callback
         self.verbose = verbose
         self.has_gmt = True
@@ -95,16 +94,15 @@ class spatial_metadata:
 
         defn = layer.GetLayerDefn()
         this_datalist = datalists.datalist(dl[0], self.dist_region)
-        this_o_name = this_datalist._name
+        this_o_name = this_datalist._name        
         this_datalist._load_data()
 
         if len(this_datalist.datafiles) > 0:
-
             try:
                 o_v_fields = [dl[3], dl[4], dl[5], dl[6], dl[7], dl[8], dl[9], dl[10].strip()]
             except: o_v_fields = [this_datalist._path_dl_name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
 
-            pb = utils._progress('generating num mask from datalist \033[1m{}\033[m...'.format(this_o_name))
+            pb = utils._progress('gathering geometries from datalist \033[1m{}\033[m...'.format(this_o_name))
             if self.gmt_vers is None:
                 this_mask = this_datalist.mask(self.inc)
             else:
@@ -113,22 +111,18 @@ class spatial_metadata:
                 try:
                     os.remove(this_dem['num'])
                     os.remove(this_dem['num-grd'])
+                    os.remove(this_dem['num-msk-grd'])
                 except: pass
-            pb.opm = 'generated num mask from datalist \033[1m{}\033[m.'.format(this_o_name)
-            pb.end(self.status)
 
             if os.path.exists(this_mask) and not self.stop():
-                pb = utils._progress('gathering geometries from datalist \033[1m{}\033[m...'.format(this_o_name))
+                ## should use more unique name...crashes when 2 datalists have same name at same time...
                 utils.remove_glob('{}_poly.*'.format(this_o_name))
 
                 tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(this_o_name))
                 tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(this_o_name), None, ogr.wkbMultiPolygon)
                 tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
 
-                pb1 = utils._progress('polygonizing datalist \033[1m{}\033[m...'.format(this_o_name))
                 gdalfun.polygonize(this_mask, tmp_layer, verbose = False)
-                pb1.opm = 'polygonized datalist \033[1m{}\033[m.'.format(this_o_name)
-                pb1.end(self.status)
 
                 if len(tmp_layer) > 1:
                     out_feat = gdalfun.ogr_mask_union(tmp_layer, 'DN', defn, self.stop)
@@ -141,15 +135,14 @@ class spatial_metadata:
                 utils.remove_glob('{}_poly.*'.format(this_o_name))
                 os.remove(this_mask)
 
-                pb.opm = 'gathered geometries from datalist \033[1m{}\033[m.'.format(this_o_name)
-                pb.end(self.status)
+            pb.end(0, 'gathered geometries from datalist \033[1m{}\033[m.'.format(this_o_name))
 
     def run(self, epsg = 4269):
         '''Run the spatial-metadata module and Geneate spatial metadata from the datalist
         specify the output project epsg.'''
 
         if self.inc < 0.0000925:
-            utils._progress().msg('warning, increments less than 1/3 arc-second may be slow.')
+            utils._msg('warning, increments less than 1/3 arc-second may be slow.')
     
         dst_vec = '{}_sm.shp'.format(self.o_name)
         dst_layername = '{}_sm'.format(self.o_name)
@@ -165,7 +158,9 @@ class spatial_metadata:
             
             for feature in layer:
                 layer.SetFeature(feature)
-    
+
+            #for dl in self.datalist.datalists:
+            #    self._gather_from_datalist(dl, layer)
             for _ in range(3):
                 t = threading.Thread(target = self._gather_from_queue, args = ())
                 t.daemon = True
@@ -178,7 +173,7 @@ class spatial_metadata:
                 self.dl_q.put([[self.datalist._path, -1, 1], layer])
 
             self.dl_q.join()
-
+            
         ds = layer = None
         if not os.path.exists(dst_vec):
             dst_vec = None

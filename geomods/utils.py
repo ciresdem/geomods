@@ -160,7 +160,7 @@ def remove_glob(glob_str):
 
 cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ["PATH"].split(os.pathsep))
 
-def run_cmd(cmd, data_fun = None, verbose = False, prog = True):
+def run_cmd2(cmd, data_fun = None, verbose = False, prog = True):
     '''Run a command with or without a progress bar while passing data'''
 
     if prog: pb = _progress('running cmd: \033[1m{}\033[m...'.format(cmd[:44]))
@@ -212,6 +212,7 @@ def run_cmd_with_input(cmd, data_fun, verbose = False, prog = True):
             if not t.is_alive():
                 break
 
+    t.join()
     out, err = p.communicate()
 
     if verbose:
@@ -282,7 +283,12 @@ def _error_msg(msg):
     sys.stderr.write('\x1b[2K\r')
     sys.stderr.flush()
     sys.stderr.write('geomods: error, {}\n'.format(msg))
-    
+
+def _msg(msg):
+    sys.stderr.write('\x1b[2K\r')
+    sys.stderr.flush()
+    sys.stderr.write('geomods: {}\n'.format(msg))
+
 class _progress:
     '''geomods minimal progress indicator'''
 
@@ -332,10 +338,12 @@ class _progress:
 
         self.count = self.spin_way(self.count)
 
-    def end(self, status):
+    def end(self, status, end_msg = None):
         self._clear_stderr()
+        if end_msg is None:
+            end_msg = self.opm
         if status != 0:
-            sys.stderr.write('\r[\033[31m\033[1m{:^6}\033[m] {:40}\n'.format('fail', self.opm))
-        else: sys.stderr.write('\r[\033[32m\033[1m{:^6}\033[m] {:40}\n'.format('ok', self.opm))
+            sys.stderr.write('\r[\033[31m\033[1m{:^6}\033[m] {:40}\n'.format('fail', end_msg))
+        else: sys.stderr.write('\r[\033[32m\033[1m{:^6}\033[m] {:40}\n'.format('ok', end_msg))
     
 ### End
