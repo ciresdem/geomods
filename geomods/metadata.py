@@ -93,20 +93,20 @@ class spatial_metadata:
         the polygon and add it to the output layer.'''
 
         defn = layer.GetLayerDefn()
-        this_datalist = datalists.datalist(dl[0], self.dist_region)
+        this_datalist = datalists.datalist(dl[0], self.dist_region, verbose = self.verbose)
         this_o_name = this_datalist._name        
         this_datalist._load_data()
 
         if len(this_datalist.datafiles) > 0:
             try:
                 o_v_fields = [dl[3], dl[4], dl[5], dl[6], dl[7], dl[8], dl[9], dl[10].strip()]
-            except: o_v_fields = [this_datalist._path_dl_name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
+            except: o_v_fields = [this_datalist._name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
 
             pb = utils._progress('gathering geometries from datalist \033[1m{}\033[m...'.format(this_o_name))
             if self.gmt_vers is None:
                 this_mask = this_datalist.mask(self.inc)
             else:
-                this_dem = waffles.dem(this_datalist, this_datalist.region, self.inc).run('num')
+                this_dem = waffles.dem(this_datalist, this_datalist.region, self.inc, verbose = self.verbose).run('num')
                 this_mask = this_dem['num-msk']
                 try:
                     os.remove(this_dem['num'])
@@ -122,10 +122,10 @@ class spatial_metadata:
                 tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(this_o_name), None, ogr.wkbMultiPolygon)
                 tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
 
-                gdalfun.polygonize(this_mask, tmp_layer, verbose = False)
+                gdalfun.polygonize(this_mask, tmp_layer, verbose = self.verbose)
 
                 if len(tmp_layer) > 1:
-                    out_feat = gdalfun.ogr_mask_union(tmp_layer, 'DN', defn, self.stop)
+                    out_feat = gdalfun.ogr_mask_union(tmp_layer, 'DN', defn, self.stop, verbose = self.verbose)
                     for i, f in enumerate(self.v_fields):
                         out_feat.SetField(f, o_v_fields[i])
 
@@ -159,20 +159,20 @@ class spatial_metadata:
             for feature in layer:
                 layer.SetFeature(feature)
 
-            #for dl in self.datalist.datalists:
-            #    self._gather_from_datalist(dl, layer)
-            for _ in range(3):
-                t = threading.Thread(target = self._gather_from_queue, args = ())
-                t.daemon = True
-                t.start()
+            for dl in self.datalist.datafiles:
+                self._gather_from_datalist(dl, layer)
+            #for _ in range(3):
+            #    t = threading.Thread(target = self._gather_from_queue, args = ())
+            #    t.daemon = True
+            #    t.start()
                 
-            if len(self.datalist.datalists) > 0:
-                for dl in self.datalist.datalists:
-                    self.dl_q.put([dl, layer])
-            else:
-                self.dl_q.put([[self.datalist._path, -1, 1], layer])
+            #if len(self.datalist.datafiles) > 0:
+            #    for dl in self.datalist.datafiles:
+            #        self.dl_q.put([dl, layer])
+            #else:
+            #    self.dl_q.put([[self.datalist._path, -1, 1], layer])
 
-            self.dl_q.join()
+            #self.dl_q.join()
             
         ds = layer = None
         if not os.path.exists(dst_vec):

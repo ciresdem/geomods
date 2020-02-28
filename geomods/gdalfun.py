@@ -102,11 +102,13 @@ def _ogr_get_layer_fields(src_lyr):
     
     return(schema)
 
-def ogr_mask_union(src_layer, src_field, dst_defn = None, callback = lambda: False):
+def ogr_mask_union(src_layer, src_field, dst_defn = None, callback = lambda: False, verbose = False):
     '''`union` a `src_layer`'s features based on `src_field` where
     `src_field` holds a value of 0 or 1. optionally, specify
     an output layer defn for the unioned feature.'''
 
+    if verbose: sys.stderr.write('uniioning polyons...')
+    
     if dst_defn is None:
         dst_defn = src_layer.GetLayerDefn()
 
@@ -126,6 +128,8 @@ def ogr_mask_union(src_layer, src_field, dst_defn = None, callback = lambda: Fal
     out_feat.SetGeometry(union)
     union = multi = None
 
+    if verbose: sys.stderr.write('.ok\n')
+    
     return(out_feat)
 
 def _ogr_extents(src_ds):
@@ -609,8 +613,11 @@ def polygonize(src_gdal, dst_layer, verbose = False):
     src_ds = gdal.Open(src_gdal)
     srcband = src_ds.GetRasterBand(1)
 
-    if verbose: sys.stderr.write('geomods: polygonizing grid...')
-    gdal.Polygonize(srcband, None, dst_layer, 0, [], None) #lambda x, y, z: sys.stderr.write('.'))
+    if verbose:
+        sys.stderr.write('geomods: polygonizing grid...')
+        cb = lambda x, y, z: sys.stderr.write('.')
+    else: cb = None
+    gdal.Polygonize(srcband, None, dst_layer, 0, [], cb)
     if verbose: sys.stderr.write('ok\n')
     
     src_ds = srcband = None

@@ -180,18 +180,19 @@ class uncertainty:
             dems = dem(self.datalist, self.region, str(self.inc)).run(dem_mod)
             for key in dems.keys():
                 if key in self.dem.keys():
-                    if self.dem[key] is not None:
-                        self.dem[key] = dems[key]
+                    #if self.dem[key] is not None:
+                    self.dem[key] = dems[key]
             tw.end(self.status, 'generated dem.')
         tw.msg('using DEM {}'.format(self.dem['dem']))
-            
+
+        ## USE GDAL to MAKE NUM grid, etc.
         if self.dem['num'] is None:
             utils._progress('generating NUM grid...')
             dems = dem(self.datalist, self.region, str(self.inc)).run('num')
             for key in dems.keys():
                 if key in self.dem.keys():
-                    if self.dem[key] is not None:
-                        self.dem[key] = dems[key]
+                    #if self.dem[key] is not None:
+                    self.dem[key] = dems[key]
             tw.end(self.status, 'generated NUM grid.')
         tw.msg('using NUM grid {}'.format(self.dem['num']))
             
@@ -235,20 +236,24 @@ class uncertainty:
         g_max = int(gi[9]) * int(gi[10])
 
         num_perc = (num_sum / g_max) * 100
-        prox_perc_95 = gdalfun.percentile(self.dem['prox'], 75)
+        prox_perc_95 = gdalfun.percentile(self.dem['prox'], 95)
         tw.msg('proximity 95th perc: {}'.format(prox_perc_95))
 
         sub_regions = this_region.chunk(self.inc, 1000)
         tw.msg('chunking into {} regions.'.format(len(sub_regions)))
 
         for sub_region in sub_regions:
+            sub_len = 0
+            sub_count += 1
+            
+            #while True:
             if self.stop(): break
 
             self.status = 0
-            sub_count += 1
             o_xyz = '{}.xyz'.format(self.o_name)
 
             tw = utils._progress('processing sub region \033[1m{}\033[m...'.format(sub_count))
+            ## USE GDALFUN DUMP INSTEAD
             self.status = grd2xyz(self.dem['dem'], o_xyz, region = sub_region.buffer(10*self.inc), mask = self.dem['num'])
             if os.stat(o_xyz).st_size == 0:
                 tw.err_msg('no data in sub-region...')
@@ -281,8 +286,12 @@ class uncertainty:
 
                     if s_size >= 100:
                         n_loops = 0
-                    else: n_loops = int(((s_size / num_perc) * 2) + 1)
+                    else: n_loops = int(((s_size / num_perc) * 5) + 1)
 
+                    #print num_perc
+                    #n_loops = int(num_sub_sum * (num_sub_perc / 100))
+                    #n_loops = int(100 - num_sub_perc)
+                    
                     tw.msg('loops for this subregion is {}'.format(n_loops))
 
                     ## ==============================================
@@ -294,7 +303,8 @@ class uncertainty:
 
                         np.random.shuffle(sub_xyz)
                         sx_len = len(sub_xyz)
-                        sx_len_pct = int(sx_len * (num_sub_perc / 100))
+                        #sx_len_pct = int(sx_len * (num_sub_perc / 100))
+                        sx_len_pct = int(sx_len * ((s_size % 20) / 100))
 
                         if sx_len_pct == 0:
                             break
@@ -323,9 +333,10 @@ class uncertainty:
 
                             sub_prox = '{}_prox.tif'.format(sub_dems['num'].split(',')[0])
                             self.status = proximity(sub_dems['num-msk'], sub_prox)
-                            
+
                             sub_xyd = gdalfun.query(sub_xyz[sx_len_pct:], sub_dems['dem'], 'xyd')
                             sub_dp = gdalfun.query(sub_xyd, sub_prox, 'zg')
+                            sub_len += len(sub_dp)
 
                             if len(sub_dp) != 0:
                                 if dp is None:
@@ -335,9 +346,13 @@ class uncertainty:
                         os.remove(sub_datalist._path)
 
                 utils.remove_glob('sub_{}*'.format(sub_count))
+                tw.msg('collected {} err/dist points so-far from sub-region {}'.format(len(dp), sub_count))
 
             tw.opm = 'processed sub region \033[1m{}\033[m.'.format(sub_count)
             tw.end(self.status)
+                
+            #if len(dp) > num_max:
+            #    break
 
         ## ==============================================
         ## calculate the error coefficients and plot results
@@ -354,8 +369,9 @@ class uncertainty:
         ## apply error coefficient to full proximity grid
         ## ==============================================
 
-        math_cmd = 'gmt grdmath {} ABS {ec2} POW {ec1} MUL {ec0} ADD = {}_dst_unc.tif=gd+n-9999:GTiff\
-        '.format(self.dem['prox'], ec[2], ec[1], ec[0], self.o_name)
+        ## USE numpy instead
+        math_cmd = 'gmt grdmath {} ABS {} POW {} MUL {} ADD = {}_dst_unc.tif=gd+n-9999:GTiff\
+        '.format(self.dem['prox'], ec[2], ec[1], 0, self.o_name)
         utils.run_cmd(math_cmd, self.verbose, self.verbose)
         
 ### END

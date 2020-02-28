@@ -171,7 +171,8 @@ def num_msk(num_grd, dst_msk, verbose = False):
     return(status)
 
 def xyz2grd(datalist, region, inc, dst_name, a = 'n', node = 'pixel', verbose = False):
-
+    '''Run the GMT command `xyz2grd` given a datalist, region and increment.'''
+    
     status = 0
     if node == 'pixel':
         reg_str = '-r'
@@ -184,7 +185,8 @@ def xyz2grd(datalist, region, inc, dst_name, a = 'n', node = 'pixel', verbose = 
     return(out, status)
 
 def run_mbgrid(datalist, region, inc, dst_name, dist = '10/3', tension = 35, extras = False, verbose = False):
-
+    '''Run the MBSystem command `mbgrid` given a datalist, region and increment.'''
+    
     status = 0
     if extras:
         e_switch = '-M'
@@ -482,6 +484,9 @@ class dem:
         return(self.dem)
 
     def spatial_metadata(self, epsg = 4269):
+        self.datalist.i_fmt = -1
+        self.datalist._load_data()
+
         sm = metadata.spatial_metadata(self.datalist, self.region, self.inc, self.o_name, self.stop, self.verbose)
         sm.run(epsg)
 
@@ -660,8 +665,7 @@ def main():
     ## process input region(s) and loop
     ## ==============================================
 
-    pb = utils._progress('loading region(s)...')
-    sys.stderr.write('loading regions...')
+    if want_verbose: pb = utils._progress('loading region(s)...')
     try: 
         these_regions = [regions.region(i_region)]
     except: these_regions = [regions.region('/'.join(map(str, x))) for x in gdalfun._ogr_extents(i_region)]
@@ -673,7 +677,7 @@ def main():
         if not this_region._valid: 
           status = -1
 
-    pb.end(status, 'loaded \033[1m{}\033[m region(s).'.format(len(these_regions)))
+    if want_verbose: pb.end(status, 'loaded \033[1m{}\033[m region(s).'.format(len(these_regions)))
             
     if status == -1:
         utils._error_msg('failed to load region(s)')
@@ -690,8 +694,8 @@ def main():
 
         if stop_threads: break
         
-        this_datalist = datalists.datalist(i_datalist, this_region)
-        if not this_datalist._valid:
+        this_datalist = datalists.datalist(i_datalist, this_region, verbose = want_verbose)
+        if not this_datalist._valid_p():
             utils._error_msg('invalid datalist')
             status = -1
 
