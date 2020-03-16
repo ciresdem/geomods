@@ -70,7 +70,7 @@ class vdatum:
 
     def _get_version(self):
         if self.vdatum_path is not None:
-            out, status = utils.run_cmd('java -jar {} {}'.format(self.vdatum_path, '-'), prog = False)
+            out, status = utils.run_cmd('java -jar {} {}'.format(self.vdatum_path, '-'))
             for i in out.split('\n'):
                 if '- v' in i.strip():
                     self._version = i.strip().split('v')[-1]
@@ -99,7 +99,7 @@ class vdatum:
         
         vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},0,1,2:{}:{} region:{}\
         '.format(self.ihorz, self.ivert, self.ohorz, self.overt, self.fd, src_fn, self.ds_dir, self.region)
-        out, status = utils.run_cmd('java -jar {} {}'.format(self.vdatum_path, vdc), self.verbose, self.verbose)
+        out, status = utils.run_cmd('java -jar {} {}'.format(self.vdatum_path, vdc), self.verbose, True)
         #out, status = run_cmd('java -Djava.awt.headless=true -jar {} {}'.format(self.vdatum_path, vdc), self.verbose, True)
 
         return(status)

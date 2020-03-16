@@ -145,7 +145,7 @@ class region:
         '''buffer region'''
 
         if percentage: bv = self.pct(bv)
-        region_b = [self.region[0]-bv, self.region[1] + bv, self.region[2] - bv, self.region[3] + bv]
+        region_b = [self.region[0] - bv, self.region[1] + bv, self.region[2] - bv, self.region[3] + bv]
 
         return(region("/".join(map(str, region_b))))
 
@@ -175,6 +175,11 @@ class region:
                 geo_y_o = self.south + this_y_origin * inc
                 geo_y_t = geo_y_o + this_y_size * inc
 
+                if geo_y_t > self.north: geo_y_t = self.north
+                if geo_y_o < self.south: geo_y_o = self.south
+                if geo_x_t > self.east: geo_x_t = self.east
+                if geo_x_o > self.east: geo_x_o = self.west
+                
                 this_region = region('{}/{}/{}/{}'.format(geo_x_o, geo_x_t, geo_y_o, geo_y_t))
                 o_chunks.append(this_region)
 
@@ -198,6 +203,7 @@ class region:
 
         return((ewp + nsp) / 2)
 
+    ## FIXME
     def split(self, sv):
         '''split region by split-value `sv`'''
         

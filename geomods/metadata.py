@@ -62,6 +62,7 @@ class spatial_metadata:
         self.stop = callback
         self.verbose = verbose
         self.has_gmt = True
+        self.want_queue = True
         
         self.v_fields = ['Name', 'Agency', 'Date', 'Type',
                          'Resolution', 'HDatum', 'VDatum', 'URL']
@@ -73,6 +74,8 @@ class spatial_metadata:
         else: self.o_name = o_name
 
         self.gmt_vers = utils.config_get_vers('GMT')
+
+        self.datalist._load_datalists()
         
     def _gather_from_queue(self):
         '''Gather geometries from a queue of [[datalist, layer], ...].'''
@@ -103,16 +106,13 @@ class spatial_metadata:
             except: o_v_fields = [this_datalist._name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
 
             pb = utils._progress('gathering geometries from datalist \033[1m{}\033[m...'.format(this_o_name))
+            
             if self.gmt_vers is None:
                 this_mask = this_datalist.mask(self.inc)
             else:
-                this_dem = waffles.dem(this_datalist, this_datalist.region, self.inc, verbose = self.verbose).run('num')
-                this_mask = this_dem['num-msk']
-                try:
-                    os.remove(this_dem['num'])
-                    os.remove(this_dem['num-grd'])
-                    os.remove(this_dem['num-msk-grd'])
-                except: pass
+                this_dem = waffles.dem(this_datalist, this_datalist.region, self.inc, verbose = self.verbose)
+                this_dem.o_fmt = 'GTiff'
+                this_mask = this_dem.run('mask')
 
             if os.path.exists(this_mask) and not self.stop():
                 ## should use more unique name...crashes when 2 datalists have same name at same time...
@@ -159,21 +159,23 @@ class spatial_metadata:
             for feature in layer:
                 layer.SetFeature(feature)
 
-            for dl in self.datalist.datafiles:
-                self._gather_from_datalist(dl, layer)
-            #for _ in range(3):
-            #    t = threading.Thread(target = self._gather_from_queue, args = ())
-            #    t.daemon = True
-            #    t.start()
+            if self.want_queue:
+                for _ in range(3):
+                       t = threading.Thread(target = self._gather_from_queue, args = ())
+                       t.daemon = True
+                       t.start()
+                    
+                if len(self.datalist.datalists) > 0:
+                    for dl in self.datalist.datalists:
+                        self.dl_q.put([dl, layer])
+                else:
+                    self.dl_q.put([[self.datalist._path, -1, 1], layer])
+                    
+                self.dl_q.join()
+            else:
+                for dl in self.datalist.datalists:
+                    self._gather_from_datalist(dl, layer)
                 
-            #if len(self.datalist.datafiles) > 0:
-            #    for dl in self.datalist.datafiles:
-            #        self.dl_q.put([dl, layer])
-            #else:
-            #    self.dl_q.put([[self.datalist._path, -1, 1], layer])
-
-            #self.dl_q.join()
-            
         ds = layer = None
         if not os.path.exists(dst_vec):
             dst_vec = None

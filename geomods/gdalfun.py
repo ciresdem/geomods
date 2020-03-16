@@ -28,8 +28,10 @@ import gdal
 import osr
 from gdalconst import *
 
+import utils
+
 GDAL_OPTS = ["COMPRESS=LZW", "INTERLEAVE=PIXEL", "TILED=YES",\
-        "SPARSE_OK=TRUE", "BIGTIFF=YES" ]
+             "SPARSE_OK=TRUE", "BIGTIFF=YES" ]
 
 _known_delims = [',', ' ', '\t', '/', ':']
 
@@ -107,7 +109,8 @@ def ogr_mask_union(src_layer, src_field, dst_defn = None, callback = lambda: Fal
     `src_field` holds a value of 0 or 1. optionally, specify
     an output layer defn for the unioned feature.'''
 
-    if verbose: sys.stderr.write('uniioning polyons...')
+    #if verbose: sys.stderr.write('uniioning polygons...')
+    if verbose: pb = utils._progress('unioning polygons...')
     
     if dst_defn is None:
         dst_defn = src_layer.GetLayerDefn()
@@ -128,7 +131,8 @@ def ogr_mask_union(src_layer, src_field, dst_defn = None, callback = lambda: Fal
     out_feat.SetGeometry(union)
     union = multi = None
 
-    if verbose: sys.stderr.write('.ok\n')
+    #if verbose: sys.stderr.write('.ok\n')
+    if verbose: pb.end(0, 'unioned polygons.')
     
     return(out_feat)
 
@@ -145,6 +149,18 @@ def _ogr_extents(src_ds):
                 
     return(these_extents)
 
+def _fext(src_drv_name):
+    '''return the common file extention given a GDAL driver name'''
+    
+    fexts = None
+    drv = gdal.GetDriverByName(src_drv_name)
+    if drv.GetMetadataItem(gdal.DCAP_RASTER):
+        fexts = drv.GetMetadataItem(gdal.DMD_EXTENSIONS)
+
+    if fexts is not None:
+        fext = fexts.split()[0]
+        
+    return(fext)
 
 def _gather_infos(src_ds):
     '''Gather information from `src_ds` GDAL dataset.'''
@@ -180,6 +196,21 @@ def _set_infos(nx, ny, nb, geoT, proj, dt, ndv, fmt):
     ds_config['ndv'] = ndv
     ds_config['fmt'] = fmt
 
+    return(ds_config)
+
+def _infos(src_fn, full = False):
+    ds = gdal.Open(src_fn)
+    if ds is not None:
+        ds_config = _gather_infos(ds)
+
+        if full:
+            t = ds.ReadAsArray()
+            max_z = np.max(t)
+            min_z = np.min(t)
+            ds_config['zmin'] = min_z
+            ds_config['zmax'] = max_z
+            
+    ds = None
     return(ds_config)
 
 def _cpy_infos(src_config):
@@ -243,24 +274,71 @@ def _invert_gt(geoTransform):
 
     return(outGeoTransform)
 
-def _gt2extent(ds_config):
+def _gt2extent(ds_config, warp_to_wgs = False):
     geoT = ds_config['geoT']
     
     x_origin = geoT[0]
     y_origin = geoT[3]
+
+    if warp_to_wgs:
+        src_srs = osr.SpatialReference()
+        src_srs.ImportFromWkt(ds_config['proj'])
+        
+        dst_srs = osr.SpatialReference()
+        dst_srs.ImportFromEPSG(4326)
+        
+        dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
+
+        point = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(x_origin, y_origin))
+        point.Transform(dst_trans)
+        pnt = point.GetPoint()
+        x_origin = pnt[0]
+        y_origin = pnt[1]
+        
     x_inc = geoT[1]
     y_inc = geoT[5]
 
     return([x_origin, x_origin + x_inc * ds_config['nx'], y_origin + y_inc * ds_config['ny'], y_origin])
 
-def _extent(src_fn):
+def _extent(src_fn, warp_to_wgs = False):
     extent = None
     ds = gdal.Open(src_fn)
     if ds is not None:
         ds_config = _gather_infos(ds)
-        extent = _gt2extent(ds_config)
+        extent = _gt2extent(ds_config, warp_to_wgs)
         
     return(extent)
+
+def _srcwin(src_fn, extent):
+    ds = gdal.Open(src_fn)
+    if ds is not None:
+        ds_config = _gather_infos(ds)
+
+    gt = ds_config['geoT']
+    x_origin = gt[0]
+    y_origin = gt[3]
+    x_inc = gt[1]
+    y_inc = gt[5]
+
+    this_x_origin = int((extent[0] - x_origin) / x_inc)
+    this_y_origin = int((extent[3] - y_origin) / y_inc)
+
+    this_x_end = int((extent[1] - x_origin) / x_inc)
+    this_y_end = int((extent[2] - y_origin) / y_inc)
+
+    this_x_size = int(this_x_end - this_x_origin) + 1
+    this_y_size = int(this_y_end - this_y_origin) + 1
+
+    if this_x_origin < 0: this_x_origin = 0
+    if this_y_origin < 0: this_y_origin = 0
+    if this_x_size < 0: this_x_size = 0
+    if this_y_size < 0: this_y_size = 0
+    if this_x_size > ds_config['nx'] - this_x_origin: this_x_size = ds_config['nx'] - this_x_origin
+    if this_y_size > ds_config['ny'] - this_y_origin: this_y_size = ds_config['ny'] - this_y_origin
+    
+    srcwin = (this_x_origin, this_y_origin, this_x_size, this_y_size)
+
+    return(srcwin)
 
 def sr_wkt(epsg, esri = False):
     '''convert an epsg code to wkt'''
@@ -402,7 +480,7 @@ def crop(src_fn):
     
     src_ds = gdal.Open(src_fn)
 
-    if srcds is None:
+    if src_ds is None:
         return(None)
 
     ds_config = _gather_infos(src_ds)
@@ -434,14 +512,39 @@ def crop(src_fn):
     
     return(dst_arr, ds_config)
 
-def dump(src_gdal, dst_xyz, dump_nodata = False, srcwin = None):
+def cut(src_fn, srcwin, dst_fn):
+
+    src_ds = gdal.Open(src_fn)
+
+    if src_ds is None:
+        return(None)
+
+    ds_config = _gather_infos(src_ds)
+    gt = ds_config['geoT']
+    #print srcwin
+    ds_arr = src_ds.GetRasterBand(1).ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
+    #ds_arr = np.reshape(ds_arr, (srcwin[2], ))
+    #print ds_arr
+    src_ds = None
+
+    dst_gt = (gt[0] + (srcwin[0] * gt[1]), gt[1], 0., gt[3] + (srcwin[1] * gt[5]), 0., gt[5])
+
+    ds_config = _set_infos(srcwin[2], srcwin[3], srcwin[2] * srcwin[3], dst_gt, sr_wkt(4326), ds_config['dt'], ds_config['ndv'], ds_config['fmt'])
+    _write_gdal(ds_arr, dst_fn, ds_config)
+
+def dump(src_gdal, dst_xyz = sys.stdout, dump_nodata = False, srcwin = None, mask = None, warp_to_wgs = False):
     '''Dump `src_gdal` GDAL file to ASCII XYZ'''
 
     status = 0
     band_nums = []
     delim = ' '
     skip = 1
-
+    
+    msk_band = None
+    if mask is not None:
+        src_mask = gdal.Open(mask)
+        msk_band = src_mask.GetRasterBand(1)
+    
     if band_nums == []: band_nums = [1]
 
     src_ds = gdal.Open(src_gdal)
@@ -456,15 +559,25 @@ def dump(src_gdal, dst_xyz, dump_nodata = False, srcwin = None):
         ds_config = _gather_infos(src_ds)
         gt = ds_config['geoT']
 
+        if warp_to_wgs:
+            src_srs = osr.SpatialReference()
+            src_srs.ImportFromWkt(ds_config['proj'])
+            
+            dst_srs = osr.SpatialReference()
+            dst_srs.ImportFromEPSG(4326)
+            
+            dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
+        
         if srcwin is None:
             srcwin = (0, 0, ds_config['nx'], ds_config['ny'])
 
+        dst_fh = dst_xyz
         # fixme
-        if dst_xyz is not None:
-            try:
-                dst_fh = open(dst_xyz, 'wt')
-            except: dst_fh = dst_xyz
-        else: dst_fh = sys.stdout
+        #if dst_xyz is not None:
+        #    try:
+        #        dst_fh = open(dst_xyz, 'wt')
+        #    except: dst_fh = dst_xyz
+        #else: dst_fh = sys.stdout
 
         band_format = (("%g" + delim) * len(bands)).rstrip(delim) + '\n'
 
@@ -479,8 +592,13 @@ def dump(src_gdal, dst_xyz, dump_nodata = False, srcwin = None):
             data = []
             for band in bands:
                 if band.GetNoDataValue() is not None:
-                    nodata.append(band_format % band.GetNoDataValue())
-                band_data = band.ReadAsArray(srcwin[0], y, srcwin[2], 1)    
+                    nodata.append((band_format % band.GetNoDataValue()).rstrip())
+                band_data = band.ReadAsArray(srcwin[0], y, srcwin[2], 1)
+
+                if msk_band is not None:
+                    msk_data = msk_band.ReadAsArray(srcwin[0], y, srcwin[2], 1)
+                    band_data[msk_data==0]=-9999
+
                 band_data = np.reshape(band_data, (srcwin[2], ))
                 data.append(band_data)
 
@@ -494,20 +612,26 @@ def dump(src_gdal, dst_xyz, dump_nodata = False, srcwin = None):
                 for i in range(len(bands)):
                     x_i_data.append(data[i][x_i])
 
-                band_str = band_format % tuple(x_i_data)
+                z = x_i_data[0]
+                band_str = band_format % z
                 
-                line = format % (float(geo_x), float(geo_y), band_str)
+                if warp_to_wgs:
+                    point = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(geo_x, geo_y))
+                    point.Transform(dst_trans)
+                    pnt = point.GetPoint()
+                    line = '{} {} {}'.format(pnt[0], pnt[1], band_str)
+                else: line = format % (float(geo_x), float(geo_y), band_str)
 
                 if dump_nodata:
                     dst_fh.write(line)
                 else:
-                    if band_str not in nodata:
+                    if band_str.rstrip() not in nodata:
                         dst_fh.write(line)
 
-        try:
-            dst_fh.close()
-        except: pass
-        srcds = None
+        #try:
+        #    dst_fh.close()
+        #except: pass
+        srcds = src_mask = None
 
 def dumpy(src_gdal, dump_nodata = False, srcwin = None):
     '''Dump `src_gdal` GDAL file to ASCII XYZ
@@ -561,7 +685,7 @@ def dumpy(src_gdal, dump_nodata = False, srcwin = None):
 
         srcds = None
     
-def infos(src_fn):
+def infos(src_fn, full = False):
     ds = gdal.Open(src_fn)
     if ds is not None:
         ds_config = _gather_infos(ds)
@@ -588,13 +712,13 @@ def percentile(src_fn, perc = 95):
     ds = gdal.Open(src_fn)
     myarray = np.array(ds.GetRasterBand(1).ReadAsArray())
     x_dim=myarray.shape[0]
-    myarray[myarray==0]=np.nan
+    #myarray[myarray==0]=np.nan
 
     myarray_flat=myarray.flatten()
     
     #p = np.nanpercentile(myarray_flat, perc)
     #p = np.percentile(myarray_flat, perc)
-    myarray_flat = myarray_flat[~np.isnan(myarray_flat)]
+    #myarray_flat = myarray_flat[~np.isnan(myarray_flat)]
     p = np.percentile(myarray_flat, perc)
 
     if p==p:
@@ -614,11 +738,13 @@ def polygonize(src_gdal, dst_layer, verbose = False):
     srcband = src_ds.GetRasterBand(1)
 
     if verbose:
-        sys.stderr.write('geomods: polygonizing grid...')
-        cb = lambda x, y, z: sys.stderr.write('.')
+        #sys.stderr.write('geomods: polygonizing grid...')
+        pb = utils._progress('polygonizing grid...')
+        cb = lambda x, y, z: pb.update()
     else: cb = None
     gdal.Polygonize(srcband, None, dst_layer, 0, [], cb)
-    if verbose: sys.stderr.write('ok\n')
+    #if verbose: sys.stderr.write('ok\n')
+    if verbose: pb.end(0, 'polygonized grid.')
     
     src_ds = srcband = None
 
@@ -636,7 +762,8 @@ def proximity(src_fn, dst_fn):
         
         if dst_ds is None:
             drv = gdal.GetDriverByName('GTiff')
-            dst_ds = drv.Create(dst_fn, ds_config['nx'], ds_config['ny'], 1, ds_config['dt'], [])
+            #dst_ds = drv.Create(dst_fn, ds_config['nx'], ds_config['ny'], 1, ds_config['dt'], [])
+            dst_ds = drv.Create(dst_fn, ds_config['nx'], ds_config['ny'], 1, gdal.GDT_Float32, [])
 
         dst_ds.SetGeoTransform(ds_config['geoT'])
         dst_ds.SetProjection(ds_config['proj'])
@@ -697,10 +824,12 @@ def query(src_xyz, src_grd, out_form):
                     outs = []
                     for i in out_form:
                         outs.append(vars()[i])
-                    xyzl.append(np.array(outs, dtype = ds_config['dtn']))
+                    #xyzl.append(np.array(outs, dtype = ds_config['dtn']))
+                    xyzl.append(np.array(outs, dtype = 'Float32'))
                     #xyzl.append(np.array(outs))
         dsband = ds = None
-        out_array = np.array(xyzl, dtype = ds_config['dtn'])
+        #out_array = np.array(xyzl, dtype = ds_config['dtn'])
+        out_array = np.array(xyzl, dtype = 'Float32')
         #out_array = np.array(xyzl)
 
     return(out_array)
@@ -741,26 +870,45 @@ def sum(src_gdal):
     elev = elev_array = None
     return(sums)
 
-def transform(src_gdal):
-    ##Getting spatial reference of input raster
-    srs = osr.SpatialReference()
-    srs.ImportFromWkt(projection)
+def transformation(src_epsg, dst_epsg):
 
+    src_srs = osr.SpatialReference()
+    src_srs.ImportFromEPSG(src_epsg)
+
+    dst_srs = osr.SpatialReference()
+    dst_srs.ImportFromEPSG(dst_epsg)
+
+    dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
+    return(dst_trans)
+                    
+def transform(src_gdal):
+
+    src_ds = gdal.Open(src_gdal)
+
+    src_config = _gather_infos(src_ds)
+    
+    ##Getting spatial reference of input raster
+    src_srs = osr.SpatialReference()
+    src_srs.ImportFromWkt(src_config['proj'])
+
+    print src_srs.ExportToWkt()
+    
     # WGS84 projection reference
-    OSR_WGS84_REF = osr.SpatialReference()
-    OSR_WGS84_REF.ImportFromEPSG(4326)
+    #OSR_WGS84_REF = osr.SpatialReference()
+    #OSR_WGS84_REF.ImportFromEPSG(4326)
     
     # OSR transformation
-    wgs84_to_image_trasformation = osr.CoordinateTransformation(OSR_WGS84_REF, srs)
+    #wgs84_transformation = osr.CoordinateTransformation(src_srs, OSR_WGS84_REF)
+
+    #return(wgs84_transformation)
     
-    #Create geometry. Finally:
-        
-    wkt_geom.Transform(wgs84_to_image_trasformation)
+    #wkt_geom.Transform(wgs84_to_image_trasformation)
         
 def xyz2gdal(src_xyz, dst_gdal, extent, cellsize,
              dst_format='GTiff', zvalue='d', xloc=0, yloc=1, zloc=2, 
              delim=' ', verbose=False, overwrite=False):
-    '''Create a GDAL supported grid from xyz data'''
+    '''Create a GDAL supported grid from xyz data
+    `zvalue` of `d` generates a num grid'''
 
     dst_nodata=-9999
 

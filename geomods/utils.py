@@ -50,6 +50,15 @@ ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEAL
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version)
 
+## =============================================================================
+##
+## Config File
+##
+## The config file holds system info, including available software and versions...
+##
+## =============================================================================
+
+
 CONFIG_FILE = os.path.expanduser('~/geomods.ini')
 
 def init_config():
@@ -139,7 +148,7 @@ def check_config():
         
 ## =============================================================================
 ##
-## Command execution, et cetra
+## Command execution, OS functions, et cetra
 ##
 ## OS System commands and general OS functions and CLI tools.
 ## run a command with a progress bar with 'run_cmd'
@@ -160,97 +169,34 @@ def remove_glob(glob_str):
 
 cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ["PATH"].split(os.pathsep))
 
-def run_cmd2(cmd, data_fun = None, verbose = False, prog = True):
+def run_cmd(cmd, verbose = False, prog = True, data_fun = None):
     '''Run a command with or without a progress bar while passing data'''
 
-    if prog: pb = _progress('running cmd: \033[1m{}\033[m...'.format(cmd[:44]))
-
-    if datafun is not None:
-        p = subprocess.Popen(cmd, shell = True, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)    
+    if prog: pb = _progress('running cmd: \033[1m{}\033[m...'.format(cmd[:84]))
+    if data_fun is not None:
+        pipe_stdin = subprocess.PIPE
+    else: pipe_stdin = None
     
-        c = lambda x: map(p.stdin.write, x)
-        t = threading.Thread(target = data_fun, args = (p.stdin,))
-    else: p = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)        
-    t.start()
+    p = subprocess.Popen(cmd, shell = True, stdin = pipe_stdin, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)    
 
-    if prog:
-        while True:
-            time.sleep(3)
-            pb.update()
-            if not t.is_alive():
-                break
-
-    out, err = p.communicate()
-
-    if verbose:
-        _progress()._clear_stderr()
-        sys.stdout.write(out)
-        sys.stderr.write(err)
+    if data_fun is not None:
+        if prog: pb_stdin = _progress('piping data to cmd subprocess...')
+        data_fun(p.stdin)
+        p.stdin.close()
+        if prog: pb_stdin.end(0, 'piped data to cmd subprocess.')
     
-    if prog:
-        pb.opm = 'ran cmd: \033[1m{}\033[m.'.format(cmd[:44])
-        pb.end(p.returncode)
+    while p.poll() is None:
+        if verbose:
+            rl = p.stderr.readline()
+            sys.stderr.write('\x1b[2K\r')
+            sys.stderr.write(rl)
+    if verbose: sys.stderr.write(p.stderr.read())
 
-    return out, p.returncode
+    out = p.stdout.read()
+    p.stderr.close()
+    p.stdout.close()
 
-def run_cmd_with_input(cmd, data_fun, verbose = False, prog = True):
-    '''Run a command with or without a progress bar while passing data'''
-
-    if prog:
-        pb = _progress('running cmd: \033[1m{}\033[m...'.format(cmd[:44]))
-
-    p = subprocess.Popen(cmd, shell = True, stdin = subprocess.PIPE, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)    
-    
-    c = lambda x: map(p.stdin.write, x)
-    t = threading.Thread(target = data_fun, args = (p.stdin,))
-    t.start()
-
-    if prog:
-        while True:
-            time.sleep(3)
-            pb.update()
-            if not t.is_alive():
-                break
-
-    t.join()
-    out, err = p.communicate()
-
-    if verbose:
-        _progress()._clear_stderr()
-        sys.stdout.write(out)
-        sys.stderr.write(err)
-    
-    if prog:
-        pb.opm = 'ran cmd: \033[1m{}\033[m.'.format(cmd[:44])
-        pb.end(p.returncode)
-
-    return out, p.returncode
-
-def run_cmd(cmd, verbose = False, prog = True):
-    '''Run a command with or without a progress bar.'''
-
-    if prog:
-        pb = _progress('running cmd: \033[1m{}\033[m...'.format(cmd[:64]))
-    
-    p = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)
-
-    if prog:
-        while True:
-            time.sleep(3)
-            pb.update()
-            if p.poll() is not None:
-                break
-
-    out, err = p.communicate()
-
-    if verbose:
-        _progress()._clear_stderr()
-        sys.stdout.write(out)
-        sys.stderr.write(err)
-
-    if prog:
-        pb.opm = 'ran cmd: \033[1m{}\033[m.'.format(cmd[:64])
-        pb.end(p.returncode)
+    if prog: pb.end(p.returncode, 'ran cmd: \033[1m{}\033[m.'.format(cmd[:84]))
 
     return out, p.returncode
 
@@ -267,18 +213,12 @@ def _cmd_check(cmd_str, cmd_vers_str):
 
     return(cmd_vers)
 
-    # pb = _progress('checking system status...')
-    # platform = sys.platform
-    # pb.opm = 'platform is {}'.format(platform)
-    # pb.end(status)
-
-    # pb.opm = 'checking for VDatum'
-    # if vdatum().vdatum_path is not None:
-    #     status = 0
-    #     vdatum_vers = vdatum()._version 
-    # else: status = -1
-    # pb.end(status)
-
+## =============================================================================
+##
+## Progress indicator, messaging, etc.
+##
+## =============================================================================
+    
 def _error_msg(msg):
     sys.stderr.write('\x1b[2K\r')
     sys.stderr.flush()
