@@ -210,7 +210,7 @@ def _infos(src_fn, full = False):
             ds_config['zmin'] = min_z
             ds_config['zmax'] = max_z
             
-    ds = None
+    t = ds = None
     return(ds_config)
 
 def _cpy_infos(src_config):
@@ -525,12 +525,13 @@ def cut(src_fn, srcwin, dst_fn):
     ds_arr = src_ds.GetRasterBand(1).ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
     #ds_arr = np.reshape(ds_arr, (srcwin[2], ))
     #print ds_arr
-    src_ds = None
 
     dst_gt = (gt[0] + (srcwin[0] * gt[1]), gt[1], 0., gt[3] + (srcwin[1] * gt[5]), 0., gt[5])
 
     ds_config = _set_infos(srcwin[2], srcwin[3], srcwin[2] * srcwin[3], dst_gt, sr_wkt(4326), ds_config['dt'], ds_config['ndv'], ds_config['fmt'])
     _write_gdal(ds_arr, dst_fn, ds_config)
+    
+    src_ds = ds_arr = None
 
 def dump(src_gdal, dst_xyz = sys.stdout, dump_nodata = False, srcwin = None, mask = None, warp_to_wgs = False):
     '''Dump `src_gdal` GDAL file to ASCII XYZ'''
@@ -605,8 +606,12 @@ def dump(src_gdal, dst_xyz = sys.stdout, dump_nodata = False, srcwin = None, mas
             for x_i in range(0, srcwin[2], skip):
                 x = x_i + srcwin[0]
 
-                geo_x = gt[0] + (x + 0.5) * gt[1] + (y + 0.5) * gt[2]
-                geo_y = gt[3] + (x + 0.5) * gt[4] + (y + 0.5) * gt[5]
+                geo_x, geo_y = _pixel2geo(x, y, gt)
+                #geo_x = gt[0] + (x + 0.5) * gt[1] + (y + 0.5) * gt[2]
+                #geo_y = gt[3] + (x + 0.5) * gt[4] + (y + 0.5) * gt[5]
+
+                #geo_x = gt[0] + x * (0.5 * gt[1]) + y * (0.5 * gt[2])
+                #geo_y = gt[3] + x * (0.5 * gt[4]) + y * (0.5 * gt[5])
 
                 x_i_data = []
                 for i in range(len(bands)):
@@ -762,8 +767,8 @@ def proximity(src_fn, dst_fn):
         
         if dst_ds is None:
             drv = gdal.GetDriverByName('GTiff')
-            #dst_ds = drv.Create(dst_fn, ds_config['nx'], ds_config['ny'], 1, ds_config['dt'], [])
-            dst_ds = drv.Create(dst_fn, ds_config['nx'], ds_config['ny'], 1, gdal.GDT_Float32, [])
+            dst_ds = drv.Create(dst_fn, ds_config['nx'], ds_config['ny'], 1, ds_config['dt'], [])
+            #dst_ds = drv.Create(dst_fn, ds_config['nx'], ds_config['ny'], 1, gdal.GDT_Float32, [])
 
         dst_ds.SetGeoTransform(ds_config['geoT'])
         dst_ds.SetProjection(ds_config['proj'])

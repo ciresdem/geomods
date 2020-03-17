@@ -195,7 +195,7 @@ def run_mbgrid(datalist, region, inc, dst_name, dist = '10/3', tension = 35, ext
     if len(dist.split('/')) == 1:
         dist = dist + '/2'
     
-    mbgrid_cmd = ('mbgrid -I{} {} -E{:.7f}/{:.7f}/degrees! -O{} -A2 -G100 -F1 -N -C{} -S0 -X0.1 -T{} {} > mb_proc.txt \
+    mbgrid_cmd = ('mbgrid -I{} {} -E{:.10f}/{:.10f}/degrees! -O{} -A2 -G100 -F1 -N -C{} -S0 -X0.1 -T{} {} > mb_proc.txt \
     '.format(datalist._path, region.gmt, inc, inc, dst_name, dist, tension, e_switch))
     out, status = utils.run_cmd(mbgrid_cmd, verbose, verbose)
 
@@ -222,7 +222,8 @@ class dem:
         self.dist_region = self.region.buffer(6 * self.inc)
         
         self.node = 'pixel'
-        self.o_fmt = 'GMT'
+        #self.o_fmt = 'GMT'
+        self.o_fmt = 'GTiff'
         
         self.status = 0
         self.stop = callback
@@ -554,7 +555,7 @@ def main():
     mod_opts = {}
     o_pre = None
     o_bn = None
-    o_fmt = 'GMT'
+    o_fmt = 'GTiff'
     node_reg = 'pixel'
 
     argv = sys.argv
@@ -640,12 +641,13 @@ def main():
         sys.exit(1)        
 
     try:
-        i_inc = float(i_inc)
+        #i_inc = float(i_inc)
+        i_inc = regions._inc(i_inc)
     except:
         utils._error_msg('the increment value should be a number')
         print(_waffles_usage)
         sys.exit(1)
-        
+
     for key in mod_opts.keys():
         mod_opts[key] = [None if x == '' else x for x in mod_opts[key]]
 
@@ -700,7 +702,7 @@ def main():
             args = tuple(mod_opts[dem_mod])
                         
             pb = utils._progress('running geomods dem module \033[1m{}\033[m on region ({}/{}): \033[1m{}\033[m...\
-            '.format(dem_mod, rn + 1, len(these_regions), this_region.region_string))
+            '.format(dem_mod.upper(), rn + 1, len(these_regions), this_region.region_string))
 
             dl = dem(this_datalist, this_region, i_inc, o_pre, o_bn, lambda: stop_threads, want_verbose)
             dl.node = node_reg
@@ -720,7 +722,7 @@ def main():
 
             t.join()
             pb.end(dl.status, 'ran geomods dem module \033[1m{}\033[m on region ({}/{}): \033[1m{}\033[m...\
-            '.format(dem_mod, rn + 1, len(these_regions), this_region.region_string))
+            '.format(dem_mod.upper(), rn + 1, len(these_regions), this_region.region_string))
             
 if __name__ == '__main__':
     main()

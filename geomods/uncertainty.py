@@ -109,6 +109,25 @@ def err2coeff(my_data, coeff_guess = [0, 0.1, 0.2], dst_name = None):
 
     return(out)
 
+def hav_dst(pnt0, pnt1):
+
+    import math
+    
+    x0=float(pnt0[0])
+    y0=float(pnt0[1])
+    x1=float(pnt1[0])
+    y1=float(pnt1[1])
+    
+    rad = 637100 # m
+    
+    dx = math.radians(x1 - x0)
+    dy = math.radians(y1 - y0)
+    
+    a = math.sin(dx / 2) * math.sin(dx / 2) + math.cos(math.radians(x0)) * math.cos(math.radians(x1)) * math.sin(dy / 2) * math.sin(dy / 2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    d = rad * c
+    return(d)
+
 def gmtselect_split(o_xyz, sub_region, sub_bn, verbose = False):
     '''split an xyz file into an inner and outer region.'''
 
@@ -184,28 +203,34 @@ class uncertainty:
                 self.tw.msg('region: {}: {}'.format(x, self.region_info[x]))
         
         utils._progress('running \033[1mINTERPOLATION\033[m uncertainty module using \033[1m{}\033[m'.format(dem_mod))
-        for c in [8]:
-            utils._progress('processing chunk level {}'.format(c))
+
+        sims = 4
+        chnk_lvl = 4
+                    
+        ## ==============================================
+        ## chunk region into sub regions
+        ## ==============================================
+        
+        utils._progress('chunking region into sub-regions...')
+        chnk_inc = int(chnk_lvl * self.region_info[self.o_name][4])
+        self.sub_regions = self.region.chunk(self.inc, chnk_inc)
+        if self.verbose: print([x.region for x in self.sub_regions])
+        self.tw.end(self.status, 'chunked region into {} sub-regions.'.format(len(self.sub_regions)))
+
+        utils._progress('analyzing {} sub-regions...'.format(len(self.sub_regions)))
+            
+        self.sub_zones = self.tile_analysis()
+        if self.verbose:
+            for x in self.sub_zones.keys():
+                self.tw.msg('Sub-region {}: {}'.format(x, self.sub_zones[x]))
+                
+        utils._progress('analyzed {} sub-regions.'.format(len(self.sub_regions)))
+        
+        for sim in range(0, sims):
+            utils._progress('performing simultion {} out of {}...'.format(sim + 1, sims))
+            #utils._progress('processing chunk level {}'.format(c))
             self.status = 0
             
-            ## ==============================================
-            ## chunk region into sub regions
-            ## ==============================================
-
-            utils._progress('chunking region into sub-regions')
-            xinc = (self.region.region[1] - self.region.region[0]) / self.inc
-            chnk_inc = int(xinc/c)
-            self.sub_regions = self.region.chunk(self.inc, chnk_inc)
-            if self.verbose: self.tw.msg('chunking region into {} sub regions'.format(len(self.sub_regions)))
-            if self.verbose: print([x.region for x in self.sub_regions])
-
-            self.sub_zones = self.tile_analysis()
-            if self.verbose:
-                for x in self.sub_zones.keys():
-                    self.tw.msg('Sub-region {}: {}'.format(x, self.sub_zones[x]))
-
-            self.tw.end(self.status, 'chunked region into {} sub-regions'.format(len(self.sub_zones)))
-                    
             i_dp = self.interpolation(dem_mod)
             
             if dp is None:
@@ -217,9 +242,10 @@ class uncertainty:
                 
             if len(dp) == 0: self.status = -1
             if self.verbose: self.tw.msg('gathered {} error points'.format(len(dp)))
-            self.tw.end(self.status, 'processed chunk level {}'.format(c))
+            self.tw.end(self.status, 'performed simulation {} out of {}.'.format(sim + 1, sims))
 
         self.tw.end(self.status, 'ran \033[1mINTERPOLATION\033[m uncertainty module using \033[1m{}\033[m'.format(dem_mod))
+        
         if self.status == 0:
 
             if self.verbose: self.tw.msg('gathered {} error points'.format(len(dp)))
@@ -272,7 +298,7 @@ class uncertainty:
             
         self.tw.end(self.status, 'checked for DEMs.')
 
-    def split_sample(self, sub_regions, ss_samp, dem_mod = 'mbgrid', n_loops = 50, s_dp = None):
+    def split_sample(self, sub_regions, ss_samp, dem_mod = 'mbgrid', s_dp = None):
         
         if self.stop() or self.status !=0:
             return(s_dp)
@@ -308,48 +334,55 @@ class uncertainty:
                     sub_xyz = np.loadtxt(s_inner, ndmin=2, delimiter = ' ')
                 else: sub_xyz = []
                 ss_len = len(sub_xyz)
-                
+
+                ## Skip if ss_len is smaller than 5 or so
                 #if os.stat(s_outer).st_size != 0:
                 #    sub_o_xyz = np.loadtxt(s_outer, ndmin=2, delimiter = ' ')
                 #print(len(sub_o_xyz))
                 
                 if ss_samp is not None:
-                    sx_cnt = int(ss_len * (ss_samp / 100)) + 1
+                    #sx_cnt = int(ss_len * (ss_samp / 100)) + 1
+                    sx_cnt = int(sub_region[1] * (ss_samp / 100)) + 1
                 else: sx_cnt = 1
                 sub_xyz_head = 'sub_{}_head.xyz'.format(n)
-                if self.verbose: self.tw.msg('withholding {} out of {} points for error sampling'.format(ss_len - sx_cnt, ss_len))
+                if self.verbose:
+                    self.tw.msg('withholding {} out of {} points for error sampling'.format(ss_len - sx_cnt, ss_len))
 
-                for i in range(0, n_loops):
+                np.random.shuffle(sub_xyz)
+                np.savetxt(sub_xyz_head, sub_xyz[:sx_cnt], '%f', ' ')
 
-                    np.random.shuffle(sub_xyz)
-                    np.savetxt(sub_xyz_head, sub_xyz[:sx_cnt], '%f', ' ')
-                    
-                    sub_datalist =  datalists.datalist('sub_{}.datalist'.format(n), this_region)
-                    sub_datalist._append_datafile([s_outer, 168, 1])
-                    sub_datalist._append_datafile([sub_xyz_head, 168, 1])
-                    sub_datalist._load_data()
+                sub_datalist =  datalists.datalist('sub_{}.datalist'.format(n), this_region)
+                sub_datalist._append_datafile([s_outer, 168, 1])
+                sub_datalist._append_datafile([sub_xyz_head, 168, 1])
+                sub_datalist._load_data()
 
-                    sub_surf = dem(sub_datalist, this_region, str(self.inc), verbose = self.verbose)
-                    sub_surf.o_fmt = 'GTiff'
-                    sub_dem = sub_surf.run(dem_mod)
+                sub_surf = dem(sub_datalist, this_region, str(self.inc), verbose = self.verbose)
+                #sub_surf.o_fmt = 'GTiff'
+                sub_dem = sub_surf.run(dem_mod)
 
-                    sub_msk = sub_datalist.mask(region = this_region.region, inc = self.inc)
-                    sub_prox = '{}_prox.tif'.format(sub_msk.split('.')[0])
-                    self.status = proximity(sub_msk, sub_prox)
+                sub_msk = sub_datalist.mask(region = this_region.buffer(10*self.inc).region, inc = self.inc)
+                sub_prox = '{}_prox.tif'.format(sub_msk.split('.')[0])
+                self.status = proximity(sub_msk, sub_prox)
 
-                    sub_xyd = gdalfun.query(sub_xyz[sx_cnt:], sub_dem, 'xyd')
-                    sub_dp = gdalfun.query(sub_xyd, sub_prox, 'zg')
-                    
-                    os.remove(sub_xyz_head)
-                    os.remove(sub_xyz_head + '.inf')
-                    os.remove(sub_datalist._path)
+                sub_xyd = gdalfun.query(sub_xyz[sx_cnt:], sub_dem, 'xyd')
+                sub_dp = gdalfun.query(sub_xyd, sub_prox, 'zg')
 
-                    if s_dp is None:
-                        s_dp = sub_dp
-                    else:
-                        try:
-                            s_dp = np.concatenate((s_dp, sub_dp), axis = 0)
-                        except: s_dp = None
+                sys.exit()
+                os.remove(sub_xyz_head)
+                os.remove(sub_xyz_head + '.inf')
+                os.remove(sub_datalist._path)
+
+                if s_dp is None:
+                    s_dp = sub_dp
+                else:
+                    try:
+                        s_dp = np.concatenate((s_dp, sub_dp), axis = 0)
+                    except:
+                        self.tw.err_msg(ss_len)
+                        self.tw.err_msg(sx_cnt)
+                        self.tw.err_msg(s_dp)
+                        self.tw.err_msg(sub_dp)
+                        s_dp = None
 
             os.remove(o_xyz)
             utils.remove_glob('sub_{}*'.format(n))
@@ -373,18 +406,19 @@ class uncertainty:
             s_sum = gdalfun.sum('tmp_msk.tif')
             s_perc = (s_sum / s_g_max) * 100
 
+            os.remove('tmp_msk.tif')
+            
             s_dc = gdalfun._infos('tmp_dem.tif', True)
             s_min = s_dc['zmin']
             s_max = s_dc['zmax']
 
+            os.remove('tmp_dem.tif')
+            
             if s_max < 0:
                 zone = 'Bathy'
             elif s_min > 0:
                 zone = 'Topo'
             else: zone = 'BathyTopo'
-            
-            os.remove('tmp_msk.tif')
-            os.remove('tmp_dem.tif')
 
             sub_zones[sub_count] = [sub_region.region, s_g_max, s_sum, s_perc, s_min, s_max, zone]
             
@@ -422,15 +456,13 @@ class uncertainty:
         dp = None
 
         s_dens = np.array([self.sub_zones[x][3] for x in self.sub_zones.keys()])
-        d_perc = 0
-        while True:
-            d_perc += 5
-            s_5perc = np.percentile(s_dens, d_perc)
-            if s_5perc > 0.01:
-                break
-        if self.verbose: self.tw.msg('Sampling density for split-sample is: {}'.format(s_5perc))
+        s_5perc = np.percentile(s_dens, 5)
+        self.tw.msg('Sampling density for split-sample is: {}'.format(s_5perc))
 
-        ## Zone analysis
+        ## ==============================================
+        ## BATHY
+        ## ==============================================
+        
         bathy_tiles = [self.sub_zones[x] for x in self.sub_zones.keys() if self.sub_zones[x][6] == 'Bathy']
         if len(bathy_tiles) > 0:
             bathy_dens = np.array([x[3] for x in bathy_tiles])
@@ -445,8 +477,34 @@ class uncertainty:
                 
         bathy_trainers = np.array(bathy_trainers)
                 
-        if self.verbose: self.tw.msg('possible BATHY training zones: {}'.format(len(bathy_trainers)))
-                
+        #if self.verbose:
+        self.tw.msg('possible BATHY training zones: {}'.format(len(bathy_trainers)))
+
+        np.random.shuffle(bathy_trainers)
+        #bathy_trainers_h = bathy_trainers[:int(len(bathy_trainers)*.25) + 1]
+        bathy_trainers_h = bathy_trainers[:25]
+
+        bathy_t_dens = np.array([x[3] for x in bathy_trainers_h])
+        if len(bathy_t_dens) > 0:
+            bathy_t_50perc = np.percentile(bathy_t_dens, 50)
+        else: bathy_t_50perc = 0
+
+        # if bathy_t_50perc > 0.0:
+        #     n_loops = int(((100 - bathy_t_50perc) / self.region_info[self.o_name][3]) + 1)
+        # else: n_loops = 0
+
+        utils._progress('calculating split-sample for {} semi-random \033[1mBATHY\033[m zone training tiles'.format(len(bathy_trainers_h)))
+        bathy_dp = self.split_sample(bathy_trainers_h, s_5perc, dem_mod, dp)
+        if bathy_dp is not None:
+            status = 0
+        else: status = -1
+
+        self.tw.end(status, 'calculated split-sample for {} semi-random \033[1mBATHY\033[m zone training tiles'.format(len(bathy_trainers_h)))
+
+        ## ==============================================
+        ## BATHY TOPO
+        ## ==============================================
+        
         bathy_topo_tiles = [self.sub_zones[x] for x in self.sub_zones.keys() if self.sub_zones[x][6] == 'BathyTopo']
         if len(bathy_topo_tiles) > 0:
             bathy_topo_dens = np.array([x[3] for x in bathy_topo_tiles])
@@ -461,7 +519,33 @@ class uncertainty:
                 
         bathy_topo_trainers = np.array(bathy_topo_trainers)
                 
-        if self.verbose: self.tw.msg('possible BATHY-TOPO training zones: {}'.format(len(bathy_topo_trainers)))
+        #if self.verbose:
+        self.tw.msg('possible BATHY-TOPO training zones: {}'.format(len(bathy_topo_trainers)))
+
+        np.random.shuffle(bathy_topo_trainers)
+        #bathy_topo_trainers_h = bathy_topo_trainers[:int(len(bathy_topo_trainers)*.25) + 1]
+        bathy_topo_trainers_h = bathy_topo_trainers[:25]
+
+        bathy_topo_t_dens = np.array([x[3] for x in bathy_topo_trainers_h])
+        if len(bathy_topo_t_dens) > 0:
+            bathy_topo_t_50perc = np.percentile(bathy_topo_t_dens, 50)
+        else: bathy_topo_t_50perc = 0
+
+        # if bathy_topo_t_50perc > 0.0:
+        #     n_loops = int(((100 - bathy_topo_t_50perc) / self.region_info[self.o_name][3]) + 1)
+        # else: n_loops = 0
+
+        utils._progress('calculating split-sample for {} semi-random \033[1mBATHY-TOPO\033[m zone training tiles'.format(len(bathy_topo_trainers_h)))
+        bathy_topo_dp = self.split_sample(bathy_topo_trainers_h, s_5perc, dem_mod, bathy_dp)
+        if bathy_topo_dp is not None:
+            status = 0
+        else: status = -1
+
+        self.tw.end(status, 'calculated split-sample for {} random \033[1mBATHY-TOPO\033[m zone training tiles'.format(len(bathy_topo_trainers_h)))
+
+        ## ==============================================
+        ## TOPO
+        ## ==============================================
         
         topo_tiles = [self.sub_zones[x] for x in self.sub_zones.keys() if self.sub_zones[x][6] == 'Topo']
         if len(topo_tiles) > 0:
@@ -477,248 +561,30 @@ class uncertainty:
 
         topo_trainers = np.array(topo_trainers)
         
-        if self.verbose: self.tw.msg('possible TOPO training zones: {}'.format(len(topo_trainers)))
+        #if self.verbose:
+        self.tw.msg('possible TOPO training zones: {}'.format(len(topo_trainers)))
 
-        n_trainers = len(bathy_trainers) + len(bathy_topo_trainers) + len(topo_trainers)
-        if n_trainers < 4:
-            sims = 1
-        else: sims = n_trainers / 4
-        sims = 2
-        for i in range(0, sims):
-            utils._progress('performing simultion {} out of {}'.format(i+1, sims))
+        np.random.shuffle(topo_trainers)
+        #topo_trainers_h = topo_trainers[:int(len(topo_trainers)*.25) + 1]
+        topo_trainers_h = topo_trainers[:25]
 
-            np.random.shuffle(bathy_trainers)
-            bathy_trainers_h = bathy_trainers[:int(len(bathy_trainers)*.25) + 1]
+        topo_t_dens = np.array([x[3] for x in topo_trainers_h])
+        if len(topo_t_dens) > 0:
+            topo_t_50perc = np.percentile(topo_t_dens, 50)
+        else: topo_t_50perc = 0
 
-            bathy_t_dens = np.array([x[3] for x in bathy_trainers_h])
-            if len(bathy_t_dens) > 0:
-                bathy_t_50perc = np.percentile(bathy_t_dens, 50)
-            else: bathy_t_50perc = 0
-            
-            if bathy_t_50perc > 0.0:
-                n_loops = int(((100 - bathy_t_50perc) / self.region_info[self.o_name][3]) + 1)
-            else: n_loops = 0
-            
-            utils._progress('calculating split-sample for {} random \033[1mBATHY\033[m zone training tiles in {} loops'.format(len(bathy_trainers_h), n_loops))
-            bathy_dp = self.split_sample(bathy_trainers, s_5perc, dem_mod, n_loops, dp)
-            if bathy_dp is not None:
-                status = 0
-            else: status = -1
-                
-            self.tw.end(status, 'calculated split-sample for {} random \033[1mBATHY\033[m zone training tiles in {} loops'.format(len(bathy_trainers_h), n_loops))
+        # if topo_t_50perc > 0.0:
+        #     n_loops = int(((100 - topo_t_50perc) / self.region_info[self.o_name][3]) + 1)
+        # else: n_loops = 0
 
-            np.random.shuffle(bathy_topo_trainers)
+        utils._progress('calculating split-sample for {} semi-random \033[1mTOPO\033[m zone training tiles'.format(len(topo_trainers_h)))
+        dp = self.split_sample(topo_trainers_h, s_5perc, dem_mod, bathy_topo_dp)
+        if dp is not None:
+            status = 0
+        else: status = -1
 
-            bathy_topo_trainers_h = bathy_topo_trainers[:int(len(bathy_topo_trainers)*.25) + 1]
+        self.tw.end(status, 'calculated split-sample for {} semi-random \033[1mTOPO\033[m zone training tiles'.format(len(topo_trainers_h)))
 
-            bathy_topo_t_dens = np.array([x[3] for x in bathy_topo_trainers_h])
-            if len(bathy_topo_t_dens) > 0:
-                bathy_topo_t_50perc = np.percentile(bathy_topo_t_dens, 50)
-            else: bathy_topo_t_50perc = 0
+        return(dp)            
 
-            if bathy_topo_t_50perc > 0.0:
-                n_loops = int(((100 - bathy_topo_t_50perc) / self.region_info[self.o_name][3]) + 1)
-            else: n_loops = 0
-
-            utils._progress('calculating split-sample for {} random \033[1mBATHY-TOPO\033[m zone training tiles in {} loops'.format(len(bathy_topo_trainers_h), n_loops))
-            bathy_topo_dp = self.split_sample(bathy_topo_trainers, s_5perc, dem_mod, n_loops, bathy_dp)
-            if bathy_topo_dp is not None:
-                status = 0
-            else: status = -1
-                
-            self.tw.end(status, 'calculated split-sample for {} random \033[1mBATHY-TOPO\033[m zone training tiles in {} loops'.format(len(bathy_topo_trainers_h), n_loops))
-
-            np.random.shuffle(topo_trainers)
-
-            topo_trainers_h = topo_trainers[:int(len(topo_trainers)*.25) + 1]
-                        
-            topo_t_dens = np.array([x[3] for x in topo_trainers_h])
-            if len(topo_t_dens) > 0:
-                topo_t_50perc = np.percentile(topo_t_dens, 50)
-            else: topo_t_50perc = 0
-
-            if topo_t_50perc > 0.0:
-                n_loops = int(((100 - topo_t_50perc) / self.region_info[self.o_name][3]) + 1)
-            else: n_loops = 0
-
-            utils._progress('calculating split-sample for {} random \033[1mTOPO\033[m zone training tiles in {} loops'.format(len(topo_trainers_h), n_loops))
-            dp = self.split_sample(topo_trainers, s_5perc, dem_mod, n_loops, bathy_topo_dp)
-            if dp is not None:
-                status = 0
-            else: status = -1
-
-            self.tw.end(status, 'calculated split-sample for {} random \033[1mTOPO\033[m zone training tiles in {} loops'.format(len(topo_trainers_h), n_loops))
-            self.tw.end(status, 'performed simulation {} out of {}'.format(i+1, sims))
-
-        return(dp)
-            
-        # try:
-        #     dp = dp[dp[:,1]<region_info[self.o_name][4],:]
-        #     dp = dp[dp[:,1]>0,:]
-        #     ec = err2coeff(dp)
-        #     print('error coefficient: {}'.format(ec))
-        # except:
-        #     tw.err_msg('cannot allocate memory')
-
-        # np.savetxt('test.err', dp, '%f', ' ')
-
-        
-        # for sub_region in sub_regions:
-        #     if self.stop(): break
-        #     self.status = 0
-        #     s_sub_dp = []
-        #     ec_diff_l = 0
-        #     sub_count += 1
-        #     tw = utils._progress('processing sub region \033[1m{}\033[m...'.format(sub_count))
-        #     o_xyz = '{}_{}.xyz'.format(self.o_name, sub_count)
-
-        #     ## ==============================================
-        #     ## extract xyz data from DEM for sub region
-        #     ## ==============================================
-
-        #     with open(o_xyz, 'w') as o_fh:
-        #         gdalfun.dump(self.dem['dem'], o_fh, False, gdalfun._srcwin(self.dem['dem'], sub_region.buffer(10*self.inc).region), self.dem['msk'])
-
-        #     if os.stat(o_xyz).st_size == 0:
-        #         tw.err_msg('no data in sub-region...')
-        #         self.status = -1
-        #     else:
-        #         ## ==============================================
-        #         ## split sub region XYZ data into outer and
-        #         ## inner (outer is a data buffer)
-        #         ## ==============================================
-
-        #         s_inner, s_outer = gmtselect_split(o_xyz, sub_region, 'sub_{}'.format(sub_count))
-
-        #         if os.stat(s_inner).st_size != 0:
-        #             sub_xyz = np.loadtxt(s_inner, ndmin=2, delimiter = ' ')
-
-        #             ## ==============================================
-        #             ## calculate sub region stats and loops
-        #             ## ==============================================
-
-        #             sx_len = len(sub_xyz)
-        #             msk_gc = gdalfun._srcwin(self.dem['msk'], sub_region.region)
-        #             num_max = float(msk_gc[2] * msk_gc[3])
-        #             sub_perc = float(sx_len / num_max) * 100.0
-
-        #             tw.msg('total points in sub region is {}'.format(int(sx_len)))
-        #             tw.msg('total cells in sub region is {}'.format(int(num_max)))
-        #             tw.msg('{}% of cells have data'.format(sub_perc))
-        #         else: self.status = -1
-
-        #     if self.status == 0:
-        #         s_size = 100.0 - sub_perc
-
-        #         n_loops = int((s_size/num_perc) * 10) + 1
-        #         #n_loops = int((s_size / num_perc) + 1)
-        #         tw.msg('MAX loops for this subregion is {}'.format(n_loops))
-
-        #         sx_len = len(sub_xyz)
-        #         #sx_len_pct = int(sx_len * (sub_perc / 100))
-        #         #sx_len_pct = int(sx_len * (1 / 100))
-        #         #sx_len_pct = int(sx_len * ((sub_perc % 10) / 100))
-        #         if sub_perc < num_perc:
-        #             sub_perc = num_perc
-        #         else: sub_perc = .7
-        #         #sx_pct = sub_perc / 100
-        #         #sx_len_pct = int(sx_len * (sub_perc % int(num_perc) / 100))
-        #         sx_len_pct = int(sx_len * (sub_perc / 100))
-        #         #print s_size/100
-        #         #print (sub_perc % int(num_perc) * 100)
-        #         tw.msg('extracting {} ({}%) RANDOM data points out of {}'.format(sx_len_pct, sub_perc, sx_len))
-        #         if sx_len_pct != 0:
-        #             sub_xyz_head = 'sub_{}_head.xyz'.format(sub_count)
-        #         else: self.status = -1
-
-        #         #self.status = -1
-        #     if self.status != 0:
-        #         n_loops = 0
-
-        #     ## ==============================================
-        #     ## Split Sample n_loops times
-        #     ## ==============================================
-
-        #     #n_loops = 0
-        #     for i in range(0, n_loops):
-        #         #i = 0
-        #         #while True:
-        #         if self.stop() or self.status !=0: break
-        #         tw.update()
-        #         i += 1
-        #         ec_sofar = [0, 0.1, 0.2]
-
-        #         np.random.shuffle(sub_xyz)
-        #         np.savetxt(sub_xyz_head, sub_xyz[sx_len_pct:], '%f', ' ')
-
-        #         sub_datalist =  datalists.datalist('sub_{}.datalist'.format(sub_count), sub_region)
-        #         sub_datalist._append_datafile([s_outer, 168, 1])
-        #         sub_datalist._append_datafile([sub_xyz_head, 168, 1])
-        #         sub_datalist._load_data()
-
-        #         sub_surf = dem(sub_datalist, sub_region, str(self.inc), verbose = self.verbose)
-        #         sub_surf.o_fmt = 'GTiff'
-        #         sub_dem = sub_surf.run(dem_mod)
-
-        #         sub_msk = sub_datalist.mask(region = sub_region.region, inc = self.inc)
-        #         sub_prox = '{}_prox.tif'.format(sub_msk.split('.')[0])
-        #         self.status = proximity(sub_msk, sub_prox)
-
-        #         sub_xyd = gdalfun.query(sub_xyz[:sx_len_pct], sub_dem, 'xyd')
-        #         #print sub_xyd
-        #         sub_dp = gdalfun.query(sub_xyd, sub_prox, 'zg')
-        #         #print sub_dp
-        #         sub_dp2 = gdalfun.query(sub_xyd, sub_prox, 'xyzg')
-        #         np.savetxt('test_{}.xyzg'.format(sub_count), sub_dp2, '%f', ' ')
-
-        #         #print len(sub_xyd)
-        #         if len(sub_dp) != 0:
-        #             #if len(s_sub_dp) == 0:
-        #             #    s_sub_dp = sub_dp
-        #             #else: s_sub_dp = np.concatenate((s_sub_dp, sub_dp), axis = 0)
-        #             if dp is None:
-        #                 dp = sub_dp
-        #             else: dp = np.concatenate((dp, sub_dp), axis = 0)
-
-        #         os.remove(sub_xyz_head)
-        #         os.remove(sub_xyz_head + '.inf')
-        #         os.remove(sub_datalist._path)
-
-        #         #if len(s_sub_dp) > 100:
-
-        #         #    s_sub_dp = s_sub_dp[s_sub_dp[:,1]<prox_perc_95,:]
-        #         #    err_g = [0, .1, .2]
-        #         #    ec_sofar = err2coeff(s_sub_dp, err_g, 'f_sub_{}'.format(sub_count))
-        #         #    tw.msg('error points: {}'.format(len(s_sub_dp)))
-        #         #    tw.msg('error coefficient: {}'.format(ec_sofar))
-
-
-        #     #utils.remove_glob('sub_{}*'.format(sub_count))
-        #     tw.end(self.status,'processed sub region \033[1m{}\033[m.'.format(sub_count))
-
-        # ## ==============================================
-        # ## calculate the error coefficients and plot results
-        # ## ==============================================
-
-        # if not self.stop():
-        #     dp = dp[dp[:,1]<prox_perc_95,:]
-        #     dp = dp[dp[:,1]>0,:]
-        #     ec = err2coeff(dp)
-        #     print('error coefficient: {}'.format(ec))
-
-        #     np.savetxt('test.err', dp, '%f', ' ')
-        # #if ec[2] > ec[1]:
-        # #    np.savetxt('test.err', dp, '%f', ' ')
-        # #    break
-                
-
-        # ## ==============================================
-        # ## apply error coefficient to full proximity grid
-        # ## ==============================================
-
-        # ## USE numpy instead
-        # math_cmd = 'gmt grdmath {} ABS {} POW {} MUL {} ADD = {}_dst_unc.tif=gd+n-9999:GTiff\
-        # '.format(self.dem['prox'], ec[2], ec[1], 0, self.o_name)
-        # utils.run_cmd(math_cmd, self.verbose, self.verbose)
-        
 ### END

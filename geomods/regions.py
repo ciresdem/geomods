@@ -21,7 +21,7 @@
 
 import gdalfun
 
-_version = '0.1.0'
+_version = '0.1.1'
 
 ## =============================================================================
 ##
@@ -31,6 +31,19 @@ _version = '0.1.0'
 ## region object made from the region_string 'east/west/south/north'
 ##
 ## =============================================================================
+
+def _inc(inc_str):
+    units = inc_str[-1]
+
+    if units == 'c': ## arc-seconds (old)
+        inc = float(inc_str[:-1]) / 3600
+    elif units == 's': ## arc-seconds
+        inc = float(inc_str[:-1]) / 3600
+    elif units == 'm': ## arc-minutes
+        inc = float(inc_str[:-1]) / 360
+    else: inc = float(inc_str)    
+    
+    return(inc)
 
 def regions_intersect_p_depr(region_a, region_b):
     '''Return True if region_a and region_b intersect.'''
