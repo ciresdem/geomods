@@ -291,6 +291,7 @@ class datalist:
         self._name = os.path.basename(self._path).split('.')[0]
         if self.region is not None:
             self._name_r = self._name + self.region.fn
+        else: self._name_r = self._name
         self.datalist = []
         self.datalists = []
         self.datafiles = []
@@ -333,7 +334,12 @@ class datalist:
         with open(self._path, 'r') as fob:
             for dl in fob:
                 if self._valid_entry_p(dl):
-                    dl_cols = [x.strip() for x in dl.split(' ')]
+                    dl_cols = [x.strip() for x in dl.split(' ')][:3]
+                    dl_gmds_cols = [y.strip() for y in [x for x in dl.split(' ')][3:]]
+                    dl_gmds_cols = [x.strip() for x in ' '.join(dl_gmds_cols).split(',')]
+                    if len(dl_cols) == 3:
+                        dl_cols.append(dl_gmds_cols)
+                    #dl_cols = [x.strip() for x in dl.split(' ')]
                     self.datalist.append([os.path.join(self._path_dirname, x[1]) if x[0] == 0 else float(x[1]) if x[0] < 3 else x[1] for x in enumerate(dl_cols)])
 
     def _dump_data(self, dst_port = sys.stdout):
@@ -374,12 +380,14 @@ class datalist:
         
     def _archive(self):
 
-        #self._proc_data(lambda entry: archive_entry(entry, a_name = self._name_r, region = self.region, verbose = self.verbose))
+        self._proc_data(lambda entry: archive_entry(entry, a_name = self._name_r, region = self.region, verbose = self.verbose))
 
         self.datalists = [[self._path, -1, 1, self._name]]
         self.i_fmt = -1
         self._proc_data(lambda entry: self.datalists.append(entry))
-        d = datalist(os.path.join('archive', self._name_r, self._name_r + '.datalist'))
+        #os.makedirs(os.path.join('archive', self._name_r))
+        d = datalist(os.path.join('archive', self._name_r, self._name_r + '.datalist'), verbose = self.verbose)
+        self._load_datalists()
         for i in self.datalists:
             dl_n = i[-1]
             dl_p = os.path.join('data', dl_n, dl_n + '.datalist')
@@ -410,6 +418,11 @@ class datalist:
                 d = datalist(dpath, self.region, self.i_fmt, self.verbose)
                 if self.i_fmt == -1:
                     data_e.append(d._name)
+                    data_mb = data_e[:3]
+                    data_gm = data_e[3:]
+                    #print data_mb
+                    #print data_gm
+                    #data_ee = 
                     proc([x[1] if x[0] == 0 else int(x[1]) if x[0] < 3 else x[1] for x in enumerate(data_e)])
                 d._proc_data(proc, dweight)
 
@@ -525,6 +538,7 @@ Options:
   -P, --epsg\t\tSpecify the EPSG of the DATALIST.
   -F, --format\t\tOnly process FORMAT data type.
 
+  -a, --archive\t\tARCHIVE the data from the DATALIST.
   -d, --dump\t\tDUMP the xyz data from the DATALIST.
   -g, --glob\t\tGLOB FORMAT data into the DATALIST.
   -i, --info-file\tGenerate INF files for the data in the DATALIST
@@ -563,6 +577,7 @@ def main():
     want_glob = False
     want_dump = False
     want_list = False
+    want_archive = False
     dl_fmt = None
     #dl_fmts = []
     
@@ -625,6 +640,9 @@ def main():
 
         elif arg == '--list' or arg == '-l':
             want_list = True
+
+        elif arg == '--archive' or arg == '-a':
+            want_archive = True
 
         elif arg == '--info-file' or arg == '-i':
             want_inf = True
@@ -746,13 +764,17 @@ def main():
                 this_datalist._dump_data()
 
             if want_list:
+                this_datalist._load_datalists()
+                for i in this_datalist.datalists:
+                    print i
+                    
+            if want_archive:
                 this_datalist._archive()
                 #this_datalist._load_data()
                 #print this_datalist.datalists
                 #print this_datalist.datafiles
                 #this_datalist._cat_port(sys.stdout)
 
-            #print this_datalist.datalists
             #if this_datalist.region is None:
             #    this_datalist.gather_region()
             #print this_datalist.datalist

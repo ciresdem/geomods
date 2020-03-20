@@ -102,9 +102,12 @@ class spatial_metadata:
 
         if len(this_datalist.datafiles) > 0:
             try:
-                o_v_fields = [dl[3], dl[4], dl[5], dl[6], dl[7], dl[8], dl[9], dl[10].strip()]
+                #o_v_fields = [dl[3], dl[4], dl[5], dl[6], dl[7], dl[8], dl[9], dl[10].strip()]
+                o_v_fields = dl[3]
+                if len(o_v_fields) != 8:
+                    o_v_fields = [this_datalist._name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
             except: o_v_fields = [this_datalist._name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
-
+            print o_v_fields
             pb = utils._progress('gathering geometries from datalist \033[1m{}\033[m...'.format(this_o_name))
             
             if self.gmt_vers is None:
