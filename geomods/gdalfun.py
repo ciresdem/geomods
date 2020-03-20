@@ -606,9 +606,9 @@ def dump(src_gdal, dst_xyz = sys.stdout, dump_nodata = False, srcwin = None, mas
             for x_i in range(0, srcwin[2], skip):
                 x = x_i + srcwin[0]
 
-                geo_x, geo_y = _pixel2geo(x, y, gt)
-                #geo_x = gt[0] + (x + 0.5) * gt[1] + (y + 0.5) * gt[2]
-                #geo_y = gt[3] + (x + 0.5) * gt[4] + (y + 0.5) * gt[5]
+                #geo_x, geo_y = _pixel2geo(x, y, gt)
+                geo_x = gt[0] + (x + 0.5) * gt[1] + (y + 0.5) * gt[2]
+                geo_y = gt[3] + (x + 0.5) * gt[4] + (y + 0.5) * gt[5]
 
                 #geo_x = gt[0] + x * (0.5 * gt[1]) + y * (0.5 * gt[2])
                 #geo_y = gt[3] + x * (0.5 * gt[4]) + y * (0.5 * gt[5])

@@ -65,6 +65,7 @@ def grd2gdal(src_grd, dst_fmt = 'GTiff', verbose = False):
 
         if status != 0:
             dst_gdal = None
+    else: dst_gdal = None
 
     return(dst_gdal)
 
@@ -222,8 +223,7 @@ class dem:
         self.dist_region = self.region.buffer(6 * self.inc)
         
         self.node = 'pixel'
-        #self.o_fmt = 'GMT'
-        self.o_fmt = 'GTiff'
+        self.o_fmt = 'GMT'
         
         self.status = 0
         self.stop = callback

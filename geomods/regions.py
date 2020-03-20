@@ -162,6 +162,12 @@ class region:
 
         return(region("/".join(map(str, region_b))))
 
+    def center(self):
+        xc = self.west + (self.east - self.west / 2)
+        yc = self.south + (self.north - self.south / 2)
+        
+        return([xc, yc])
+    
     def chunk(self, inc, n_chunk = 10):
         '''chunk the region into n_chunk by n_chunk cell regions, given inc.'''
         import math
