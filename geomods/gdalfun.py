@@ -154,11 +154,20 @@ def _fext(src_drv_name):
     
     fexts = None
     drv = gdal.GetDriverByName(src_drv_name)
-    if drv.GetMetadataItem(gdal.DCAP_RASTER):
-        fexts = drv.GetMetadataItem(gdal.DMD_EXTENSIONS)
+    try:
+        if drv.GetMetadataItem(gdal.DCAP_RASTER):
+            fexts = drv.GetMetadataItem(gdal.DMD_EXTENSIONS)
 
-    if fexts is not None:
-        fext = fexts.split()[0]
+        if fexts is not None:
+            fext = fexts.split()[0]
+    except:
+        if src_drv_name == 'GTiff':
+            fext = 'tif'
+        elif src_drv_name == 'HFA':
+            fext = 'img'
+        elif src_drv_name == 'GMT':
+            fext = 'grd'
+        else: fext = 'gdal'
         
     return(fext)
 
