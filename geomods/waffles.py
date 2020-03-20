@@ -181,7 +181,7 @@ def xyz2grd(datalist, region, inc, dst_name, a = 'n', node = 'pixel', verbose = 
     
     num_cmd0 = ('gmt xyz2grd -V {} -I{:.7f} -G{} -A{} {}\
     '.format(region.gmt, inc, dst_name, a, reg_str))
-    out, status = utils.run_cmd(num_cmd0, verbose, True, datalist._dump_data)
+    out, status = utils.run_cmd(num_cmd0, verbose, verbose, datalist._dump_data)
 
     return(out, status)
 
@@ -333,7 +333,7 @@ class dem:
             msk = '{}_msk.grd'.format(self.o_name)
             num_msk_cmd = ('gmt grdmath -V {} 0 MUL 1 ADD 0 AND = {}\
             '.format(self.dem, msk))
-            out, status = utils.run_cmd(num_msk_cmd, self.verbose, True)
+            out, status = utils.run_cmd(num_msk_cmd, self.verbose, self.verbose)
 
             if self.status == 0:
                 utils.remove_glob(self.dem)
@@ -474,7 +474,7 @@ class dem:
         #self.datalist.i_fmt = -1
         #self.datalist._load_data()
         sm = metadata.spatial_metadata(self.datalist, self.region, self.inc, self.o_name, self.stop, self.verbose)
-        sm.want_queue = False
+        sm.want_queue = True
         sm.run(epsg)
 
     def uncertainty(self, dem_mod = 'mbgrid', dem = None, msk = None, prox = None):

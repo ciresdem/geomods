@@ -133,7 +133,7 @@ class spatial_metadata:
 
                 tmp_ds = tmp_layer = out_feat = None
                 utils.remove_glob('{}_poly.*'.format(this_o_name))
-                os.remove(this_mask)
+                utils.remove_glob('{}*'.format(this_mask[:-3]))
 
             pb.end(0, 'gathered geometries from datalist \033[1m{}\033[m.'.format(this_o_name))
 
