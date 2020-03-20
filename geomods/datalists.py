@@ -334,7 +334,7 @@ class datalist:
             for dl in fob:
                 if self._valid_entry_p(dl):
                     dl_cols = [x.strip() for x in dl.split(' ')]
-                    self.datalist.append([os.path.join(self._path_dirname, x[1]) if x[0] == 0 else int(x[1]) if x[0] < 3 else x[1] for x in enumerate(dl_cols)])
+                    self.datalist.append([os.path.join(self._path_dirname, x[1]) if x[0] == 0 else float(x[1]) if x[0] < 3 else x[1] for x in enumerate(dl_cols)])
 
     def _dump_data(self, dst_port = sys.stdout):
         '''dump the data from the datalist to stdout.'''
