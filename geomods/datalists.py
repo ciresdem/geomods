@@ -346,7 +346,7 @@ class datalist:
 
         if self.verbose:
             status = 0
-            pb = utils._progress('loading datalists from `\033[1m{}\033[m`...'.format(self._name))
+            pb = utils._progress('scanning datalist `\033[1m{}\033[m` for datalists...'.format(self._name))
 
         fmt = self.i_fmt
         self.i_fmt = -1
@@ -355,14 +355,14 @@ class datalist:
         
         if self.verbose:
             if len(self.datalists) == 0: status = -1
-            pb.end(status, 'loaded datalists from `\033[1m{}\033[m`.'.format(self._name))
+            pb.end(status, 'scanned datalist `\033[1m{}\033[m` and found {} datalists.'.format(self._name, len(self.datalists)))
         
     def _load_data(self):
         '''load a datalist and gather all datafiles found therein.'''
 
         if self.verbose:
             status = 0
-            pb = utils._progress('loading datalist `\033[1m{}\033[m`...'.format(self._name))
+            pb = utils._progress('loading data files from datalist `\033[1m{}\033[m`...'.format(self._name))
 
         if self.i_fmt == -1:
             self._proc_data(lambda entry: self.datalists.append(entry))
@@ -370,7 +370,7 @@ class datalist:
 
         if self.verbose:
             if len(self.datafiles) == 0: status = -1
-            pb.end(status, 'loaded datalist `\033[1m{}\033[m`.'.format(self._name))
+            pb.end(status, 'loaded datalist `\033[1m{}\033[m` and found {} data files.'.format(self._name, len(self.datafiles)))
         
     def _archive(self):
 
