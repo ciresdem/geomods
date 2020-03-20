@@ -180,12 +180,12 @@ def datafile_region(data_path, data_fmt = 168):
 def datalist_set_weight(data_e, weight = None):
     if weight is not None:
         try:
-            dweight = int(weight)
+            dweight = float(weight)
         except: dweight = 1
     else:
         if len(data_e) > 2:
             try:
-                dweight = int(data_e[2])
+                dweight = float(data_e[2])
             except: dweight = 1
         else: dweight = 1
     return dweight
@@ -397,7 +397,7 @@ class datalist:
             dweight = datalist_set_weight(data_e, weight)
             if len(data_e) > 2:
                 try:
-                    int(data_e[2])
+                    float(data_e[2])
                 except: data_e.append(dweight)
             else: data_e.append(dweight)
             
