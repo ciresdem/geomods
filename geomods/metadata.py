@@ -96,7 +96,8 @@ class spatial_metadata:
         the polygon and add it to the output layer.'''
 
         defn = layer.GetLayerDefn()
-        this_datalist = datalists.datalist(dl[0], self.dist_region, verbose = self.verbose)
+        #this_datalist = datalists.datalist(dl[0], self.dist_region, verbose = self.verbose)
+        this_datalist = datalists.datalist(dl[0], self.region, verbose = self.verbose)
         this_o_name = this_datalist._name        
         this_datalist._load_data()
 

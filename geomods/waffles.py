@@ -179,7 +179,7 @@ def xyz2grd(datalist, region, inc, dst_name, a = 'n', node = 'pixel', verbose = 
         reg_str = '-r'
     else: reg_str = ''
     
-    num_cmd0 = ('gmt xyz2grd -V {} -I{:.7f} -G{} -A{} {}\
+    num_cmd0 = ('gmt xyz2grd -V {} -I{:.10f} -G{} -A{} {}\
     '.format(region.gmt, inc, dst_name, a, reg_str))
     out, status = utils.run_cmd(num_cmd0, verbose, verbose, datalist._dump_data)
 
