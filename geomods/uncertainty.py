@@ -154,15 +154,18 @@ def gmtselect_split(o_xyz, sub_region, sub_bn, verbose = False):
 
 class uncertainty:
 
-    def __init__(self, i_datalist, i_region, i_inc = 0.000277777, o_name = None, callback = lambda: False, verbose = False):
+    def __init__(self, i_datalist, i_region, i_inc = 0.0000925925, o_name = None, o_node = 'pixel', o_extend = 6, callback = lambda: False, verbose = False):
 
         self.datalist = i_datalist
         self.region = i_region
         self.inc = float(i_inc)
-        self.proc_region = self.region.buffer(10 * self.inc)
-        self.dist_region = self.region.buffer(6 * self.inc)
-        self.node = 'pixel'
+        self.node = o_node
 
+        self.extend = int(o_extend)
+
+        self.proc_region = self.region.buffer((self.extend * 2) * self.inc)
+        self.dist_region = self.region.buffer(self.extend * self.inc)
+        
         self.status = 0
         self.stop = callback
         self.verbose = verbose

@@ -51,13 +51,14 @@ class spatial_metadata:
     The output is a shapefile with the unioned boundaries of each specific
     datalist as a layer feature.'''
     
-    def __init__(self, i_datalist, i_region, i_inc = 0.000277777, o_name = None, callback = lambda: False, verbose = False):
+    def __init__(self, i_datalist, i_region, i_inc = 0.0000925925, o_name = None, o_extend = 6, callback = lambda: False, verbose = False):
 
         self.dl_q = queue.Queue()
         self.datalist = i_datalist
         self.inc = i_inc
         self.region = i_region
-        self.dist_region = self.region.buffer(6 * self.inc)
+        self.extend = int(o_extend)
+        self.dist_region = self.region.buffer(self.extend * self.inc)
 
         self.stop = callback
         self.verbose = verbose
@@ -113,8 +114,8 @@ class spatial_metadata:
             if self.gmt_vers is None:
                 this_mask = this_datalist.mask(self.inc)
             else:
-                this_dem = waffles.dem(this_datalist, this_datalist.region, self.inc, verbose = self.verbose)
-                this_dem.o_fmt = 'GTiff'
+                this_dem = waffles.dem(this_datalist, this_datalist.region, i_inc = self.inc, o_fmt = 'GTiff', o_extend = self.extend, verbose = self.verbose)
+                #this_dem.o_fmt = 'GTiff'
                 this_mask = this_dem.run('mask')
 
             if os.path.exists(this_mask) and not self.stop():

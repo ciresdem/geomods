@@ -215,15 +215,18 @@ class dem:
     '''Generate a Digital Elevation Model using one of the dem modules.
     DEM Modules include, `mbgrid`, `surface`, `num`, `mean`, `bathy`'''
 
-    def __init__(self, i_datalist, i_region, i_inc = 0.000277777, o_name = None, o_b_name = None, callback = lambda: False, verbose = False):
+    def __init__(self, i_datalist, i_region, i_inc = 0.0000925925, o_name = None, o_b_name = None, \
+                 o_node = 'pixel', o_fmt = 'GMT', o_extend = 6, callback = lambda: False, verbose = False):
         self.datalist = i_datalist
         self.region = i_region
         self.inc = float(i_inc)
-        self.proc_region = self.region.buffer(10 * self.inc)
-        self.dist_region = self.region.buffer(6 * self.inc)
         
-        self.node = 'pixel'
-        self.o_fmt = 'GMT'
+        self.node = o_node
+        self.o_fmt = o_fmt
+        self.extend = int(o_extend)
+
+        self.proc_region = self.region.buffer((self.extend * 2) * self.inc)
+        self.dist_region = self.region.buffer(self.extend * self.inc)
         
         self.status = 0
         self.stop = callback
@@ -473,12 +476,12 @@ class dem:
     def spatial_metadata(self, epsg = 4269):
         #self.datalist.i_fmt = -1
         #self.datalist._load_data()
-        sm = metadata.spatial_metadata(self.datalist, self.region, self.inc, self.o_name, self.stop, self.verbose)
+        sm = metadata.spatial_metadata(self.datalist, self.region, i_inc = self.inc, o_name = self.o_name, o_extend = self.extend, callback = self.stop, verbose = self.verbose)
         sm.want_queue = True
         sm.run(epsg)
 
     def uncertainty(self, dem_mod = 'mbgrid', dem = None, msk = None, prox = None):
-        unc = uncertainty.uncertainty(self.datalist, self.region, self.inc, self.o_name, self.stop, self.verbose)
+        unc = uncertainty.uncertainty(self.datalist, self.region, i_inc = self.inc, o_name = self.o_name, o_node = self.node, o_extend = self.extend, callback = self.stop, verbose = self.verbose)
         unc.run(dem_mod, dem, msk)
     
 ## =============================================================================
@@ -523,16 +526,17 @@ Options:
   -F, --format\t\tThe desired output FORMAT.
   -P, --prefix\t\tThe output naming PREFIX.
   -O, --output-name\tThe output BASENAME; will over-ride any set PREFIX.
+  -X, --extend\t\tThe number of cells with which to extend the extent (6)
 
   -r\t\t\tuse grid-node registration, default is pixel-node
 
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
-  --verbose\t\tIncrease the verbosity
+--verbose\t\tIncrease the verbosity
 
  Examples:
  % {} -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 surface
- % {} --datalist input.datalist --increment 0.000277777 --region input_tiles_ply.shp mbgrid spatial-metadata
+ % {} --datalist input.datalist --increment 0.0000925925 -X 2 --region input_tiles_ply.shp mbgrid spatial-metadata
  % {} -R-82.5/-82.25/26.75/27 -E0.0000925 conversion-grid:navd88:mhw:3 -P ncei -r
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
@@ -548,7 +552,7 @@ def main():
     status = 0
     i_region = None
     i_datalist = None
-    i_inc = 0.0002777
+    i_inc = 0.0000925925
     these_regions = []
     stop_threads = False
     want_verbose = False
@@ -557,6 +561,7 @@ def main():
     o_bn = None
     o_fmt = 'GTiff'
     node_reg = 'pixel'
+    o_extend = 6
 
     argv = sys.argv
         
@@ -603,6 +608,12 @@ def main():
             i = i + 1
         elif arg[:2] == '-P':
             o_pre = str(arg[2:])
+
+        elif arg == '--extend' or arg == '-X':
+            o_extend = int(argv[i + 1])
+            i = i + 1
+        elif arg[:2] == '-X':
+            o_extend = int(arg[2:])
 
         elif arg == '-r':
             node_reg = 'grid'
@@ -703,10 +714,9 @@ def main():
                         
             pb = utils._progress('running geomods dem module \033[1m{}\033[m on region ({}/{}): \033[1m{}\033[m...\
             '.format(dem_mod.upper(), rn + 1, len(these_regions), this_region.region_string))
-
-            dl = dem(this_datalist, this_region, i_inc, o_pre, o_bn, lambda: stop_threads, want_verbose)
-            dl.node = node_reg
-            dl.o_fmt = o_fmt
+            dl = dem(this_datalist, this_region, i_inc = i_inc, o_name = o_pre, o_b_name = o_bn, o_node = node_reg, o_fmt = o_fmt, o_extend = o_extend, callback = lambda: stop_threads, verbose = want_verbose)
+            #dl.node = node_reg
+            #dl.o_fmt = o_fmt
 
             t = threading.Thread(target = dl.run, args = (dem_mod, args))
             try:
