@@ -210,7 +210,7 @@ class uncertainty:
 
         utils._progress('checking for Data MASK...')
         if self.dem['msk'] is None:
-            self.dem['msk'] = self.datalist.mask(region = self.proc_region.region, inc = self.inc, o_name = self.o_name)
+            self.dem['msk'] = self.datalist.mask(region = self.dist_region.region, inc = self.inc, o_name = self.o_name)
             #msk_dem = dem(self.datalist, self.region, str(self.inc))
             #msk_dem.o_fmt = 'GTiff'
             #self.dem['msk'] = msk_dem.run('mask')

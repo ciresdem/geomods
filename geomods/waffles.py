@@ -522,8 +522,8 @@ Options:
 \t\t\tor an OGR-compatible vector file with regional polygons. 
 \t\t\tIf a vector file is supplied it will search each region found therein.
   -I, --datalsit\tThe input DATALIST.
-  -E, --increment\tThe desired CELL-SIZE in native units.
-  -F, --format\t\tThe desired output FORMAT.
+  -E, --increment\tThe desired CELL-SIZE in native units or GMT style increments.
+  -F, --format\t\tThe desired output grid FORMAT.
   -P, --prefix\t\tThe output naming PREFIX.
   -O, --output-name\tThe output BASENAME; will over-ride any set PREFIX.
   -X, --extend\t\tThe number of cells with which to extend the extent (6)
@@ -536,7 +536,7 @@ Options:
 
  Examples:
  % {} -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 surface
- % {} --datalist input.datalist --increment 0.0000925925 -X 2 --region input_tiles_ply.shp mbgrid spatial-metadata
+ % {} -I input.datalist -E .3333333s -X 2 -R input_tiles_ply.shp spatial-metadata
  % {} -R-82.5/-82.25/26.75/27 -E0.0000925 conversion-grid:navd88:mhw:3 -P ncei -r
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\

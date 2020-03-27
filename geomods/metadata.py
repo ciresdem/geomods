@@ -63,7 +63,7 @@ class spatial_metadata:
         self.stop = callback
         self.verbose = verbose
         self.has_gmt = True
-        self.want_queue = True
+        self.want_queue = False
         
         self.v_fields = ['Name', 'Agency', 'Date', 'Type',
                          'Resolution', 'HDatum', 'VDatum', 'URL']
@@ -110,7 +110,7 @@ class spatial_metadata:
                     o_v_fields = [this_datalist._name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
             except: o_v_fields = [this_datalist._name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
             pb = utils._progress('gathering geometries from datalist \033[1m{}\033[m...'.format(this_o_name))
-            
+
             if self.gmt_vers is None:
                 this_mask = this_datalist.mask(self.inc)
             else:

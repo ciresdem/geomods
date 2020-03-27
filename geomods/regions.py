@@ -144,10 +144,10 @@ class region:
 
         if self.north < 0: ns = 's'
         else: ns = 'n'
-        if self.east < 0: ew = 'w'
-        else: ew = 'e'
+        if self.west > 0: ew = 'e'
+        else: ew = 'w'
         self.fn = ('{}{:02d}x{:02d}_{}{:03d}x{:02d}'.format(ns, abs(int(self.north)), abs(int(self.north * 100) % 100), 
-                                                            ew, abs(int(self.east)), abs(int(self.east * 100) % 100)))
+                                                            ew, abs(int(self.west)), abs(int(self.west * 100) % 100)))
 
     def gdal2region(self):
         '''extract the region from a GDAL file.'''
