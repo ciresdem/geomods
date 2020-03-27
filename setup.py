@@ -57,6 +57,7 @@ setup(
         'scripts/xyz2shp.py',
         'scripts/xyz_histogram.py',
         'scripts/x360.py',
+        'scripts/spatial-meta.sh',
     ],
     #python_requires = '>=2.7, <3',
     #project_urls = {
