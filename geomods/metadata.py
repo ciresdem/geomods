@@ -161,7 +161,8 @@ class spatial_metadata:
         dst_vec = '{}_sm.shp'.format(self.o_name)
         dst_layername = '{}_sm'.format(self.o_name)
         utils.remove_glob('{}.*'.format(dst_layername))
-
+        gdalfun._prj_file('{}.prj'.format(dst_layername), epsg)
+        
         if self.use_bounds:
             ##utils.run_cmd('bounds -ggg > {}.gmt'.format(dst_layername, self.verbose, self.verbose))
             with open('{}.gmt'.format(dst_layername), 'w') as gmtf:
@@ -171,7 +172,7 @@ class spatial_metadata:
         else:
             ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource(dst_vec)
             if ds is not None:
-                gdalfun._prj_file('{}.prj'.format(dst_layername), epsg)
+                #gdalfun._prj_file('{}.prj'.format(dst_layername), epsg)
                 layer = ds.CreateLayer('{}'.format(dst_layername), None, ogr.wkbMultiPolygon)
 
                 for i, f in enumerate(self.v_fields):
