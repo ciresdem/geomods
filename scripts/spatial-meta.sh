@@ -76,7 +76,7 @@ for region in $(gmt gmtinfo $itiles -I- -As); do
 
 	    # Generate the boundary of the data found in this datalist and add it to the output gmt vector
 	    printf "  datalist: %s < %s >\n" $dlbn $datalist
-	    cat $data | bounds -k ${iinc}/$(regions $proc_region -ee) -n $dlbn -gg >> ${out_name}.gmt;
+	    cat $data | bounds -k ${iinc}/$(regions $proc_region -ee) -n $dlbn -gg --verbose >> ${out_name}.gmt;
 
 	    # Add extra attribute data (from $datalist.csv).
 	    if [ -f ${datalist}.csv ]; then

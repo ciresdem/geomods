@@ -122,17 +122,23 @@ def check_config():
     ## GMT
     try:
         gmt_vers = co.get('GMT', 'vers')
+        int(gmt_vers)
     except:
         gmt_vers = _cmd_check('gmt', 'gmt --version')
-        co.add_section('GMT')
+        try:
+            co.add_section('GMT')
+        except: pass
         co.set('GMT', 'vers', gmt_vers)
 
     ## GDAL
     try:
         gdal_vers = co.get('GDAL', 'vers')
+        int(gdal_vers)
     except:
         gdal_vers = _cmd_check('gdal-config', 'gdal-config --version')
-        co.add_section('GDAL')
+        try:
+            co.add_section('GDAL')
+        except: pass
         co.set('GDAL', 'vers', gdal_vers)
 
     ## mbgrid
@@ -142,6 +148,28 @@ def check_config():
         mbgrid_vers = _cmd_check('mbgrid', 'mbgrid -version | grep Version')
         co.add_section('MBGRID')
         co.set('MBGRID', 'vers', mbgrid_vers)
+
+    ## bounds
+    try:
+        bounds_vers = co.get('BOUNDS', 'vers')
+        int(bounds_vers)
+    except:
+        bounds_vers = _cmd_check('bounds', 'bounds --version')
+        try:
+            co.add_section('BOUNDS')
+        except: pass
+        co.set('BOUNDS', 'vers', bounds_vers)
+
+    ## test
+    try:
+        test_vers = co.get('TET', 'vers')
+        int(test_vers)
+    except:
+        bounds_vers = _cmd_check('bounds', 'bounds --version')
+        try:
+            co.add_section('TET')
+        except: pass
+        co.set('TET', 'vers', bounds_vers)
         
     with open(CONFIG_FILE, 'w') as conf:
         co.write(conf)
