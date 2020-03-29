@@ -369,7 +369,7 @@ def _prj_file(dst_fn, epsg):
     '''generate a .prj file given an epsg code'''
     
     with open(dst_fn, 'w') as out:
-        out.write(sr_wkt(epsg, True))
+        out.write(sr_wkt(int(epsg), True))
 
 def _write_gdal(src_arr, dst_gdal, ds_config, dst_fmt = 'GTiff', verbose = False):
     '''write src_arr Array to gdal file dst_gdal using src_config'''
