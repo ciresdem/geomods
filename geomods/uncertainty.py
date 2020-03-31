@@ -204,9 +204,9 @@ class uncertainty:
 
         utils._progress('checking for DEM...')
         if self.dem['dem'] is None:
-            this_dem = self.dem['dem'] = dem(self.datalist, self.region, str(self.inc))
+            this_dem = dem(self.datalist, self.region, str(self.inc))
             this_dem.o_fmt = 'GTiff'
-            this_dem.run(dem_mod)
+            self.dem['dem'] = this_dem.run(dem_mod)
             self.tw.end(self.status, 'generated DEM {} using {}.'.format(self.dem['dem'], dem_mod))
         else: self.tw.end(self.status, 'found DEM {}'.format(self.dem['dem']))
 
