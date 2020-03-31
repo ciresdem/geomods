@@ -538,9 +538,11 @@ def cut(src_fn, srcwin, dst_fn):
     dst_gt = (gt[0] + (srcwin[0] * gt[1]), gt[1], 0., gt[3] + (srcwin[1] * gt[5]), 0., gt[5])
 
     ds_config = _set_infos(srcwin[2], srcwin[3], srcwin[2] * srcwin[3], dst_gt, sr_wkt(4326), ds_config['dt'], ds_config['ndv'], ds_config['fmt'])
+    src_ds = None
+    
     _write_gdal(ds_arr, dst_fn, ds_config)
     
-    src_ds = ds_arr = None
+    ds_arr = None
 
 def dump(src_gdal, dst_xyz = sys.stdout, dump_nodata = False, srcwin = None, mask = None, warp_to_wgs = False):
     '''Dump `src_gdal` GDAL file to ASCII XYZ'''
