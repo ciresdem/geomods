@@ -160,19 +160,19 @@ def check_config():
         except: pass
         co.set('BOUNDS', 'vers', bounds_vers)
 
-    ## test
-    try:
-        test_vers = co.get('TET', 'vers')
-        int(test_vers)
-    except:
-        bounds_vers = _cmd_check('bounds', 'bounds --version')
-        try:
-            co.add_section('TET')
-        except: pass
-        co.set('TET', 'vers', bounds_vers)
+    # ## test
+    # try:
+    #     test_vers = co.get('TET', 'vers')
+    #     int(test_vers)
+    # except:
+    #     bounds_vers = _cmd_check('bounds', 'bounds --version')
+    #     try:
+    #         co.add_section('TET')
+    #     except: pass
+    #     co.set('TET', 'vers', bounds_vers)
         
-    with open(CONFIG_FILE, 'w') as conf:
-        co.write(conf)
+    # with open(CONFIG_FILE, 'w') as conf:
+    #     co.write(conf)
         
 ## =============================================================================
 ##
