@@ -204,7 +204,9 @@ class uncertainty:
 
         utils._progress('checking for DEM...')
         if self.dem['dem'] is None:
-            self.dem['dem'] = dem(self.datalist, self.region, str(self.inc)).run(dem_mod)
+            this_dem = self.dem['dem'] = dem(self.datalist, self.region, str(self.inc))
+            this_dem.o_fmt = 'GTiff'
+            this_dem.run(dem_mod)
             self.tw.end(self.status, 'generated DEM {} using {}.'.format(self.dem['dem'], dem_mod))
         else: self.tw.end(self.status, 'found DEM {}'.format(self.dem['dem']))
 
@@ -328,7 +330,7 @@ class uncertainty:
                 np.random.shuffle(train)
                 train.sort(reverse=True, key=d_t)
                 
-            print ' '.join([regions.region('/'.join(map(str, x[0]))).gmt for x in train_d[:25]])
+            if self.verbose: print ' '.join([regions.region('/'.join(map(str, x[0]))).gmt for x in train_d[:25]])
             train_sorted.append(train_d)
             
         return(train_sorted)
@@ -441,7 +443,7 @@ class uncertainty:
         utils._progress('chunking region into sub-regions using chunk level {}...'.format(chnk_lvl))
         chnk_inc = int(chnk_lvl * self.region_info[self.o_name][4])
         self.sub_regions = self.region.chunk(self.inc, chnk_inc)
-        if self.verbose: print([x.region for x in self.sub_regions])
+        #if self.verbose: print([x.region for x in self.sub_regions])
         self.tw.end(self.status, 'chunked region into {} sub-regions.'.format(len(self.sub_regions)))
 
         utils._progress('analyzing {} sub-regions...'.format(len(self.sub_regions)))

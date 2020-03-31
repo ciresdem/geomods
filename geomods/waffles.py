@@ -481,6 +481,7 @@ class dem:
         sm.run(epsg)
 
     def uncertainty(self, dem_mod = 'mbgrid', dem = None, msk = None, prox = None):
+        self.o_fmt = 'GTiff'
         unc = uncertainty.uncertainty(self.datalist, self.region, i_inc = self.inc, o_name = self.o_name, o_node = self.node, o_extend = self.extend, callback = self.stop, verbose = self.verbose)
         unc.run(dem_mod, dem, msk)
     
