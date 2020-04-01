@@ -405,7 +405,7 @@ class uncertainty:
                     try:
                         s_dp = np.concatenate((s_dp, sub_dp), axis = 0)
                     except:
-                        if self.verbose: self.tw.err('found no error points...')
+                        if self.verbose: self.tw.err_msg('found no error points...')
                         pass
 
             os.remove(o_xyz)
