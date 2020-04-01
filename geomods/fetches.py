@@ -1500,8 +1500,8 @@ def main():
     ## check platform and installed software
     ## ==============================================
 
-    if want_proc:
-        utils.check_config()
+    #if want_proc:
+    #    utils.check_config()
     
     # if want_proc:    
     #     gmt_vers = utils._cmd_check('gmt', 'gmt --version')

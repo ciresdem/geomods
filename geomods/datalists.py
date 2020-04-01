@@ -674,7 +674,7 @@ def main():
         print (_usage)
         sys.exit(1)
         
-    utils.check_config()
+    #utils.check_config()
 
     ## ==============================================
     ## process input region(s) and loop

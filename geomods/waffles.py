@@ -664,7 +664,8 @@ def main():
     for key in mod_opts.keys():
         mod_opts[key] = [None if x == '' else x for x in mod_opts[key]]
 
-    utils.check_config()
+    ## this crashes a lot; re-think!
+    ##utils.check_config()
         
     ## ==============================================
     ## process input region(s) and loop
