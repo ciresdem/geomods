@@ -32,10 +32,13 @@ import utils
 from waffles import *
 
 from scipy import optimize
-import matplotlib
-matplotlib.use('Agg')
-import matplotlib.pyplot as plt
-from matplotlib.offsetbox import AnchoredText
+try:
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from matplotlib.offsetbox import AnchoredText
+except:
+    print('you need to install matplotlib to run uncertainty plots...')
 
 ## =============================================================================
 ##

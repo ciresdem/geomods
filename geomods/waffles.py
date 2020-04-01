@@ -277,7 +277,8 @@ class dem:
         if self.status == 0:
             if self.node == 'pixel':
                 out, self.status = utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem), self.verbose, self.verbose)
-                os.rename('tmp.grd', self.dem)
+                if self.status == 0:
+                    os.rename('tmp.grd', self.dem)
 
             utils.remove_glob('*.cmd')
 
