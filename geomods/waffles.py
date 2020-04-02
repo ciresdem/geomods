@@ -32,7 +32,7 @@ import uncertainty
 import metadata
 import utils
         
-_version = '0.2.7'
+_version = '0.2.8'
 
 def inc2str_inc(inc):
     '''convert a WGS84 geographic increment to a str_inc (e.g. 0.0000925 ==> `13`)'''
@@ -251,16 +251,15 @@ class dem:
         #    if len(self.datalist.datafiles) == 0:
         #        self.status = -1
 
+        #self.dem = '{}_{}.{}'.format(self.o_name, dem_mod, gdalfun._fext(self.o_fmt))
+
         if self.status == 0:
             _dem_mods[dem_mod][0](self)(*args)
 
-        if self.status == 0:
-            if self.o_fmt != 'GMT':
-                self.dem = grd2gdal(self.dem)
-
         if self.status != 0:
             self.dem = None
-                
+
+        print self.dem
         return(self.dem)
 
     ## ==============================================
@@ -276,11 +275,16 @@ class dem:
         
         if self.status == 0:
             if self.node == 'pixel':
-                out, self.status = utils.run_cmd('gmt grdsample -T {} -Gtmp.grd'.format(self.dem), self.verbose, self.verbose)
+                out, self.status = utils.run_cmd('gmt grdsample -T {}.grd -Gtmp.grd'.format(self.o_name), self.verbose, self.verbose)
                 if self.status == 0:
-                    os.rename('tmp.grd', self.dem)
+                    os.rename('tmp.grd', '{}.grd'.format(self.o_name))
 
             utils.remove_glob('*.cmd')
+
+        self.dem = '{}.grd'.format(self.o_name)
+        if self.status == 0:
+            if self.o_fmt != 'GMT':
+                self.dem = grd2gdal(self.dem, self.o_fmt)
 
     ## ==============================================
     ## Run GMT surface on the datalist
@@ -302,30 +306,80 @@ class dem:
         out, self.status = utils.run_cmd(dem_surf_cmd, self.verbose, True, self.datalist._dump_data)
 
         if self.status == 0:
-            dem_cut_cmd = ('gmt grdcut -V {}_p.grd -G{} {}\
-            '.format(self.o_name, self.dem, self.dist_region.gmt))
+            dem_cut_cmd = ('gmt grdcut -V {}_p.grd -G{}.grd {}\
+            '.format(self.o_name, self.o_name, self.dist_region.gmt))
             out, self.status = utils.run_cmd(dem_cut_cmd, self.verbose, True)
 
             utils.remove_glob('{}_p.grd'.format(self.o_name))
 
+        self.dem = '{}.grd'.format(self.o_name)
+        if self.status == 0:
+            if self.o_fmt != 'GMT':
+                self.dem = grd2gdal(self.dem, self.o_fmt)
+            
+    ## ==============================================
+    ## Run GMT triangulate on the datalist
+    ## generate dem at 10x cells to account for
+    ## edge effects
+    ## output may have nodata values around the edges.
+    ## ==============================================
+
+    def triangulate(self):
+        '''Generate a DEM with GMT surface'''
+
+        reg_str = ''
+        if self.node == 'pixel':
+            reg_str = '-r'
+
+        self.o_fmt = 'GTiff'
+
+        dem_tri_cmd = ('gmt blockmedian {} -I{:.10f} -V {} | gmt triangulate {} -I{:.10f} -V -G{}_t.grd {}\
+        '.format(self.proc_region.gmt, self.inc, reg_str, self.proc_region.gmt, self.inc, self.o_name, reg_str))
+        out, self.status = utils.run_cmd(dem_tri_cmd, self.verbose, True, self.datalist._dump_data)
+
+        if self.status == 0:
+            dem_cut_cmd = ('gmt grdcut -V {}_t.grd -G{}.grd {}\
+            '.format(self.o_name, self.o_name, self.dist_region.gmt))
+            out, self.status = utils.run_cmd(dem_cut_cmd, self.verbose, True)
+
+            utils.remove_glob('{}_t.grd'.format(self.o_name))
+
+        self.dem = '{}.grd'.format(self.o_name)
+        if self.status == 0:
+            if self.o_fmt != 'GMT':
+                self.dem = grd2gdal(self.dem, self.o_fmt)
+            
     ## ==============================================
     ## run GMT xyz2grd on the datalist to generate
     ## an uninterpolated grid
     ## see the -A switch in GMT xyz2grd for mode options
     ## 
     ## `[d|f|l|m|n|r|S|s|u|z]
-    ## By  default  we  will calculate mean values if multiple entries fall on the same node. Use -A to change this behavior, except it is ignored if -Z is given. Append f or s to simply keep the first or last data point that
-    ## was assigned to each node. Append l or u or d to find the lowest (minimum) or upper (maximum) value or the difference between the maximum and miminum value at each node, respectively. Append m or r or S to compute mean
-    ## or  RMS  value  or standard deviation at each node, respectively. Append n to simply count the number of data points that were assigned to each node (this only requires two input columns x and y as z is not consulted).
+    ## By  default  we  will calculate mean values if multiple entries
+    ## fall on the same node. Use -A to change this behavior, except it
+    ## is ignored if -Z is given.
+    ## Append f or s to simply keep the first or last data point that
+    ## was assigned to each node. Append l or u or d to find the lowest
+    ## (minimum) or upper (maximum) value or the difference between the
+    ## maximum and miminum value at each node, respectively. Append m
+    ## or r or S to compute mean or  RMS  value  or standard deviation at
+    ## each node, respectively. Append n to simply count the number of
+    ## data points that were assigned to each node (this only requires
+    ## two input columns x and y as z is not consulted).
     ## Append z to sum multiple values that belong to the same node.`
     ## ==============================================
 
     def num(self, mode = 'n'):
         '''Generate a num and num-msk grid with GMT'''
 
-        self.dem = '{}_{}.grd'.format(self.o_name, mode)
-        out, self.status = xyz2grd(self.datalist, self.dist_region, self.inc, self.dem, mode, self.node, verbose = self.verbose)
-        
+        #self.dem = '{}_n{}.grd'.format(self.o_name, mode)
+        out, self.status = xyz2grd(self.datalist, self.dist_region, self.inc, '{}.grd'.format(self.o_name), mode, self.node, verbose = self.verbose)
+
+        self.dem = '{}.grd'.format(self.o_name)
+        if self.status == 0:
+            if self.o_fmt != 'GMT':
+                self.dem = grd2gdal(self.dem, self.o_fmt)
+            
     def mask(self):
         '''Generate a num and num-msk grid'''
 
@@ -334,14 +388,18 @@ class dem:
         self.num('n')
 
         if self.status == 0:
-            msk = '{}_msk.grd'.format(self.o_name)
-            num_msk_cmd = ('gmt grdmath -V {} 0 MUL 1 ADD 0 AND = {}\
-            '.format(self.dem, msk))
+            self.o_name = '{}_msk'.format(self.o_name)
+            num_msk_cmd = ('gmt grdmath -V {} 0 MUL 1 ADD 0 AND = {}.grd\
+            '.format(self.dem, self.o_name))
             out, status = utils.run_cmd(num_msk_cmd, self.verbose, self.verbose)
 
             if self.status == 0:
                 utils.remove_glob(self.dem)
-                self.dem = msk
+
+        self.dem = '{}.grd'.format(self.o_name)
+        if self.status == 0:
+            if self.o_fmt != 'GMT':
+                self.dem = grd2gdal(self.dem, self.o_fmt)
 
     ## ==============================================
     ## run GDAL gdal_grid on the datalist to generate
@@ -376,10 +434,17 @@ class dem:
         
         gg_cmd = 'gdal_grid -zfield "field_3" -txe {} {} -tye {} {} -outsize {} {} -a invdist -l {} {}.vrt {}.tif --config GDAL_NUM_THREADS ALL_CPUS\
         '.format(self.dist_region.west, self.dist_region.east, self.dist_region.north, self.dist_region.south, out_size_x, out_size_y, self.o_name, self.o_name, self.o_name)
-        print gg_cmd
+        #print gg_cmd
         out, status = utils.run_cmd(gg_cmd, self.verbose, True)
-        self.dem = '{}.tif'.format(self.o_name)
+        #self.dem = '{}.tif'.format(self.o_name)
+        os.remove('{}.vrt'.format(self.o_name))
+        os.remove('{}.csv'.format(self.o_name))
 
+        self.dem = '{}.tif'.format(self.o_name)
+        if self.status == 0:
+            if self.o_fmt != 'GTiff':
+                self.dem = grd2gdal(self.dem, self.o_fmt)
+        
     ## ==============================================
     ## Bathy-Surface module.
     ##
@@ -420,6 +485,10 @@ class dem:
             if self.status == 0:
                 bathy_xyz = 'xyz/{}_bs.xyz'.format(self.o_name)                
                 self.status = grd2xyz(self.dem, bathy_xyz, want_datalist = True)
+
+        if self.status == 0:
+            if self.o_fmt != 'GMT':
+                self.dem = grd2gdal(self.dem)
 
     ## ==============================================
     ## conversion-grid module:
@@ -473,7 +542,11 @@ class dem:
             os.removedirs('result')
         except: pass
 
-        return(self.dem)
+        if self.status == 0:
+            if self.o_fmt != 'GMT':
+                self.dem = grd2gdal(self.dem)        
+        
+        #return(self.dem)
 
     def spatial_metadata(self, epsg = 4269):
         #self.datalist.i_fmt = -1
@@ -499,6 +572,7 @@ class dem:
 _dem_mods = {
     'mbgrid': [lambda x: x.mbgrid, 'Weighted SPLINE DEM via mbgrid', ':dist'],
     'surface': [lambda x: x.surface, 'SPLINE DEM via GMT surface', None],
+    'triangulate': [lambda x: x.triangulate, 'TRIANGULATION DEM via GMT triangulate', None],
     'invdst': [lambda x: x.invdst, 'Inverse Distance DEM via gdal_grid', None],
     'num': [lambda x: x.num, 'Uninterpolated DEM via GMT xyz2grd', ':mode'],
     'mask': [lambda x: x.mask, 'DEM Data MASK', None],

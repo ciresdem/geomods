@@ -93,7 +93,7 @@ def err2coeff(my_data, coeff_guess = [0, 0.1, 0.2], dst_name = None):
 
     if dst_name is None:
         out_png = 'unc_best_fit.png'
-    else: out_png = dst_name + 'bf.png'
+    else: out_png = '{}_bf.png'.format(dst_name)
     plt.savefig(out_png)   # save the figure to file
     plt.close()
 
@@ -106,7 +106,7 @@ def err2coeff(my_data, coeff_guess = [0, 0.1, 0.2], dst_name = None):
 
     if dst_name is None:
         out_png = 'unc_scatter.png'
-    else: out_png = dst_name + 'scatter.png'
+    else: out_png = '{}_scatter.png'.format(dst_name)
     plt.savefig(out_png)
     plt.close()
 
@@ -488,7 +488,7 @@ class uncertainty:
         if self.status == 0:
 
             if self.verbose: self.tw.msg('gathered {} error points'.format(len(dp)))
-            np.savetxt('test.err', dp, '%f', ' ')
+            np.savetxt('{}.err'.format(self.o_name), dp, '%f', ' ')
             ec = self.err_plot(dp[:50000000], self.region_info[self.o_name][4])
             
             ## ==============================================
