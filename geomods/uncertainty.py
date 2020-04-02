@@ -235,7 +235,7 @@ class uncertainty:
         #dp = dp[dp[:,1]<self.region_info[self.o_name][4],:]
         dp = dp[dp[:,1] < d_max,:]
         dp = dp[dp[:,1] > 0,:]
-        ec = err2coeff(dp)
+        ec = err2coeff(dp, dst_name = self.o_name)
         self.tw.msg('error coefficient: {}'.format(ec))
 
         return(ec)
@@ -497,9 +497,10 @@ class uncertainty:
 
             utils._progress('applying coefficient to proximity grid')
             ## USE numpy instead
+            
             math_cmd = 'gmt grdmath {} ABS {} POW {} MUL {} ADD = {}_dst_unc.tif=gd+n-9999:GTiff\
             '.format(self.dem['prox'], ec[2], ec[1], 0, self.o_name)
             utils.run_cmd(math_cmd, self.verbose, self.verbose)
             self.tw.end(0, 'applyed coefficient to proximity grid')
         
-### END
+            ### END

@@ -378,6 +378,7 @@ class dem:
         '.format(self.dist_region.west, self.dist_region.east, self.dist_region.north, self.dist_region.south, out_size_x, out_size_y, self.o_name, self.o_name, self.o_name)
         print gg_cmd
         out, status = utils.run_cmd(gg_cmd, self.verbose, True)
+        self.dem = '{}.tif'.format(self.o_name)
 
     ## ==============================================
     ## Bathy-Surface module.
