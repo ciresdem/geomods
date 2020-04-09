@@ -237,7 +237,7 @@ class dem:
     DEM Modules include, `mbgrid`, `surface`, `num`, `mean`, `bathy`'''
 
     def __init__(self, i_datalist, i_region, i_inc = 0.0000925925, o_name = None, o_b_name = None, \
-                 o_node = 'pixel', o_fmt = 'GMT', o_extend = 6, callback = lambda: False, verbose = False):
+                 o_node = 'pixel', o_fmt = 'GTiff', o_extend = 6, callback = lambda: False, verbose = False):
         self.datalist = i_datalist
         self.region = i_region
         self.inc = float(i_inc)
@@ -287,7 +287,12 @@ class dem:
 
         if self.status != 0:
             self.dem = None
-
+        else:
+            if self.o_fmt != 'GMT':
+                gmt_dem = self.dem
+                self.dem = grd2gdal(self.dem, self.o_fmt)
+                utils.remove_glob(gmt_dem)
+            
         return(self.dem)
 
     ## ==============================================
@@ -324,9 +329,6 @@ class dem:
                 utils.remove_glob('*.cmd')
 
             self.dem = '{}.grd'.format(self.o_name)
-            if self.status == 0:
-                if self.o_fmt != 'GMT':
-                    self.dem = grd2gdal(self.dem, self.o_fmt)
 
             if use_datalists:
                 import shutil
@@ -345,8 +347,6 @@ class dem:
         if self.node == 'pixel':
             reg_str = '-r'
 
-        self.o_fmt = 'GTiff'
-
         dem_surf_cmd = ('gmt blockmean {} -I{:.10f} -V {} | gmt surface -V {} -I{:.10f} -G{}_p.grd -T{} -Z{} -Lu{} -Ll{} {}\
         '.format(self.proc_region.gmt, self.inc, reg_str, self.proc_region.gmt, self.inc, self.o_name, tension, relaxation, lower_limit, upper_limit, reg_str))
         out, self.status = utils.run_cmd(dem_surf_cmd, self.verbose, self.verbose, self.datalist._dump_data)
@@ -359,9 +359,6 @@ class dem:
             utils.remove_glob('{}_p.grd'.format(self.o_name))
 
         self.dem = '{}.grd'.format(self.o_name)
-        if self.status == 0:
-            if self.o_fmt != 'GMT':
-                self.dem = grd2gdal(self.dem, self.o_fmt)
             
     ## ==============================================
     ## Run GMT triangulate on the datalist
@@ -377,8 +374,6 @@ class dem:
         if self.node == 'pixel':
             reg_str = '-r'
 
-        self.o_fmt = 'GTiff'
-
         dem_tri_cmd = ('gmt blockmean {} -I{:.10f} -V {} | gmt triangulate {} -I{:.10f} -V -G{}_t.grd {}\
         '.format(self.proc_region.gmt, self.inc, reg_str, self.proc_region.gmt, self.inc, self.o_name, reg_str))
         out, self.status = utils.run_cmd(dem_tri_cmd, self.verbose, self.verbose, self.datalist._dump_data)
@@ -391,9 +386,6 @@ class dem:
             utils.remove_glob('{}_t.grd'.format(self.o_name))
 
         self.dem = '{}.grd'.format(self.o_name)
-        if self.status == 0:
-            if self.o_fmt != 'GMT':
-                self.dem = grd2gdal(self.dem, self.o_fmt)
 
     ## ==============================================
     ## Run GMT nearneighbor on the datalist
@@ -408,8 +400,6 @@ class dem:
         reg_str = ''
         if self.node == 'pixel':
             reg_str = '-r'
-
-        self.o_fmt = 'GTiff'
 
         #dem_nn_cmd = ('gmt blockmean {} -I{:.10f} -V {} | gmt nearneighbor {} -I{:.10f} -S{} -V -G{}_nn.grd {}\
         #'.format(self.proc_region.gmt, self.inc, reg_str, self.proc_region.gmt, self.inc, radius, self.o_name, reg_str))
@@ -427,9 +417,6 @@ class dem:
             utils.remove_glob('{}_nn.grd'.format(self.o_name))
 
         self.dem = '{}.grd'.format(self.o_name)
-        if self.status == 0:
-            if self.o_fmt != 'GMT':
-                self.dem = grd2gdal(self.dem, self.o_fmt)
             
     ## ==============================================
     ## run GMT xyz2grd on the datalist to generate
@@ -458,9 +445,6 @@ class dem:
         out, self.status = xyz2grd(self.datalist, self.dist_region, self.inc, '{}.grd'.format(self.o_name), mode, self.node, verbose = self.verbose)
 
         self.dem = '{}.grd'.format(self.o_name)
-        if self.status == 0:
-            if self.o_fmt != 'GMT':
-                self.dem = grd2gdal(self.dem, self.o_fmt)
             
     def mask(self, use_gmt = True):
         '''Generate a num and num-msk grid'''
@@ -526,22 +510,18 @@ class dem:
         o_vrt.close()
         
         gg_cmd = 'gdal_grid -zfield "field_3" -txe {} {} -tye {} {} -outsize {} {} \
-        -a invdist:power={}:smoothing={}:radius1={}:radius2={}:angle={}:max_points={}:min_points={}:nodata={} -l {} {}.vrt {}.tif --config GDAL_NUM_THREADS ALL_CPUS\
+        -a invdist:power={}:smoothing={}:radius1={}:radius2={}:angle={}:max_points={}:min_points={}:nodata={} -l {} {}.vrt {}.grd -of GMT --config GDAL_NUM_THREADS ALL_CPUS\
         '.format(self.dist_region.west, self.dist_region.east, self.dist_region.north, self.dist_region.south, out_size_x, out_size_y,
                  power, smoothing, radius1, radius2, angle, max_points, min_points, nodata, self.o_name, self.o_name, self.o_name)
         #print gg_cmd
         out, status = utils.run_cmd(gg_cmd, self.verbose, self.verbose)
         #self.dem = '{}.tif'.format(self.o_name)
-        os.remove('{}.vrt'.format(self.o_name))
-        os.remove('{}.csv'.format(self.o_name))
 
-        self.dem = '{}.tif'.format(self.o_name)
-        if self.status == 0:
-            if self.o_fmt != 'GTiff':
-                self.dem = grd2gdal(self.dem, self.o_fmt)
-        try:
-            os.remove('gmt.conf')
-        except: pass
+        utils.remove_glob('{}.vrt'.format(self.o_name))
+        utils.remove_glob('{}.csv'.format(self.o_name))
+
+        self.dem = '{}.grd'.format(self.o_name)
+        utils.remove_glob('gmt.conf')
         
     ## ==============================================
     ## Bathy-Surface module.
@@ -584,8 +564,6 @@ class dem:
             utils.remove_glob('{}_p*.grd'.format(self.o_name))
 
         if self.status == 0:
-            if self.o_fmt != 'GMT':
-                self.dem = grd2gdal(self.dem)
 
             xyz_dir = os.path.join(os.getcwd(), 'xyz')
             if not os.path.exists(xyz_dir):
@@ -624,7 +602,7 @@ class dem:
             this_vd.overt = overt
 
             dem_name = '{}to{}'.format(this_vd.ivert, this_vd.overt)
-            self.dem = '{}_{}.grd'.format(self.o_name, dem_name)
+            self.dem = '{}_{}.grd'.format(self.o_name.split('.')[0], dem_name)
 
             this_vd.run_vdatum('empty.xyz')
 
@@ -642,10 +620,9 @@ class dem:
                 else: lu_switch = '-Lu0'
 
                 gc = 'gmt blockmean result/empty.xyz -V -I{} {} {}\
-                | gmt surface -I{} {} -G{}_{}to{}.grd -V -T0 {} {} {}\
+                | gmt surface -I{} {} -G{} -V -T0 {} {} {}\
                 '.format(self.inc, self.dist_region.gmt, reg_str, 
-                         self.inc, self.dist_region.gmt, self.o_name, this_vd.ivert, this_vd.overt, 
-                         ll_switch, lu_switch, reg_str)
+                         self.inc, self.dist_region.gmt, self.dem, ll_switch, lu_switch, reg_str)
                 utils.run_cmd(gc, self.verbose, True)
             else: self.status = -1
 
@@ -654,10 +631,6 @@ class dem:
                 utils.remove_glob('result/*')
                 os.removedirs('result')
             except: pass
-
-            if self.status == 0:
-                if self.o_fmt != 'GMT':
-                    self.dem = grd2gdal(self.dem)
         else: self.dem = None
         #return(self.dem)
 
@@ -669,7 +642,6 @@ class dem:
         sm.run(epsg)
 
     def uncertainty(self, dem_mod = 'mbgrid', dem = None, msk = None, prox = None):
-        self.o_fmt = 'GTiff'
         unc = uncertainty.uncertainty(self.datalist, self.region, i_inc = self.inc, o_name = self.o_name, o_node = self.node, o_extend = self.extend, callback = self.stop, verbose = self.verbose)
         unc.run(dem_mod, dem, msk)
     
@@ -711,7 +683,7 @@ Options:
 \t\t\tThis can either be a GMT-style region ( -R xmin/xmax/ymin/ymax )
 \t\t\tor an OGR-compatible vector file with regional polygons. 
 \t\t\tIf a vector file is supplied it will search each region found therein.
-  -I, --datalsit\tThe input DATALIST.
+  -I, --datalist\tThe input DATALIST.
   -E, --increment\tGridding CELL-SIZE in native units or GMT-style increments.
   -F, --format\t\tOutput grid FORMAT. [GTiff]
   -P, --prefix\t\tOutput naming PREFIX.
@@ -934,8 +906,8 @@ def main():
                 o_name = this_datalist._path_basename.split('.')[0]
             else:   
                 str_inc = inc2str_inc(i_inc)
-                o_name = '{}{}_{}_{}'.format(o_pre, str_inc, this_region.fn, this_year())
-        else: o_name = o_bn
+                o_name = '{}{}_{}_{}'.format(o_pre.split('.')[0], str_inc, this_region.fn, this_year())
+        else: o_name = o_bn.split('.')[0]
 
         if this_datalist is not None:
             if want_sm:
