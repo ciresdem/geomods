@@ -43,7 +43,7 @@ class vdatum:
             self.vdatum_path = self._find_vdatum()[0]
             if self.status != 0:
                 self.vdatum_path = None
-        else: self.vdatum_path = None
+        else: self.vdatum_path = vdatum_path
 
         #     co = ConfigParser.ConfigParser()
         #     try:
