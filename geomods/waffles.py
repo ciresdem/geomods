@@ -78,9 +78,31 @@ def grdinfo(src_grd, verbose = False):
     else:
         grdinfo_cmd = ('gmt grdinfo {} -C'.format(src_grd))
         out, status = utils.run_cmd(grdinfo_cmd, verbose, False)
+        try:
+            os.remove('gmt.conf')
+        except: pass
+        
         if status !=0:
             return([])
         else: return(out.split())
+
+def gmtinfo(src_xyz, verbose = False):
+    '''Return an info list of `src_xyz`'''
+
+    status = 0
+    out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose, True)
+    if not os.path.exists(src_xyz):
+        return([])
+    else:
+        gmtinfo_cmd = ('gmt grdinfo {} -C'.format(src_xyz))
+        out, status = utils.run_cmd(gmtinfo_cmd, verbose, False)
+        try:
+            os.remove('gmt.conf')
+        except: pass
+        
+        if status !=0:
+            return([])
+        else: return(out.split())        
 
 def grdcut(src_grd, src_region, dst_grd, verbose = False):
     '''Cut `src_grd` to `src_region` '''
@@ -597,7 +619,7 @@ class dem:
             with open('empty.xyz', 'w') as mt_xyz:
                 gdalfun.dump('empty.tif', dst_xyz = mt_xyz, dump_nodata = True)
 
-            this_vd = vdatum.vdatum(verbose = self.verbose)
+            this_vd = vdatum.vdatum(vdatum_path = self.gc['VDATUM'], verbose = self.verbose)
             this_vd.ivert = ivert
             this_vd.overt = overt
 
@@ -607,8 +629,9 @@ class dem:
             this_vd.run_vdatum('empty.xyz')
 
             if os.path.exists('result/empty.xyz') and os.stat('result/empty.xyz').st_size != 0:
-                out, status = utils.run_cmd('gmt gmtinfo result/empty.xyz -C')
-                empty_infos = out.split()
+                #out, status = utils.run_cmd('gmt gmtinfo result/empty.xyz -C')
+                #empty_infos = out.split()
+                empty_infos = gmtinfo('result/empty.xyz', self.verbose)
 
                 if empty_infos[4] > 0:
                     ll_switch = '-Lld'
