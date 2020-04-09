@@ -510,7 +510,7 @@ class dem:
         o_vrt.close()
         
         gg_cmd = 'gdal_grid -zfield "field_3" -txe {} {} -tye {} {} -outsize {} {} \
-        -a invdist:power={}:smoothing={}:radius1={}:radius2={}:angle={}:max_points={}:min_points={}:nodata={} -l {} {}.vrt {}.grd -of GMT --config GDAL_NUM_THREADS ALL_CPUS\
+        -a invdist:power={}:smoothing={}:radius1={}:radius2={}:angle={}:max_points={}:min_points={}:nodata={} -l {} {}.vrt {}.grd -of netCDF --config GDAL_NUM_THREADS ALL_CPUS\
         '.format(self.dist_region.west, self.dist_region.east, self.dist_region.north, self.dist_region.south, out_size_x, out_size_y,
                  power, smoothing, radius1, radius2, angle, max_points, min_points, nodata, self.o_name, self.o_name, self.o_name)
         #print gg_cmd

@@ -1033,8 +1033,12 @@ class tnm:
         self._req = None
         
         self.region = extent
-        if extent is not None: 
+        region_data = { 'bbox':self.region.bbox }
+        
+        if extent is not None:
+            print self._tnm_dataset_url
             self._req = fetch_req(self._tnm_dataset_url)
+            print self._req
             if self._req is not None:
                 try:
                     self._datasets = self._req.json()
@@ -1043,7 +1047,7 @@ class tnm:
                     self._status = -1
             else: self._status = -1
         else: self._status = -1
-
+        print self._datasets
         pb.opm = 'loaded The National Map fetch module.'
         pb.end(self._status)
 
@@ -1119,7 +1123,6 @@ class tnm:
 
         tw.opm = 'filtered \033[1m{}\033[m data files from TNM dataset results.'.format(len(self._results))
         tw.end(self._status)
-
 
     def print_datasets(self):
         for i,j in enumerate(self._datasets):
