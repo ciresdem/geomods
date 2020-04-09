@@ -901,13 +901,17 @@ def main():
             utils._error_msg('no region or datalist; aborting...')
             status = -1
             break
-            
+
+        if this_datalist is None:
+            if o_pre is None and o_bn is None:
+                o_pre = 'waffles'
+        
         if o_bn is None:
-            if o_pre is None: 
+            if o_pre is None:
                 o_name = this_datalist._path_basename.split('.')[0]
-                
-            str_inc = inc2str_inc(i_inc)
-            o_name = '{}{}_{}_{}'.format(o_pre, str_inc, this_region.fn, this_year())
+            else:   
+                str_inc = inc2str_inc(i_inc)
+                o_name = '{}{}_{}_{}'.format(o_pre, str_inc, this_region.fn, this_year())
         else: o_name = o_bn
 
         if this_datalist is not None:
