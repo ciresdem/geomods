@@ -49,6 +49,7 @@ except ImportError:
 import regions
 import utils
 import procs
+import gdalfun
 
 _version = '0.3.1'
 
@@ -1377,11 +1378,11 @@ class ngs:
 ## =============================================================================
 
 fetch_infos = { 
-    'dc':[lambda x, f, c: dc(x, f, c), 'digital coast [:index]'],
+    'dc':[lambda x, f, c: dc(x, f, c), 'digital coast [:index=False]'],
     'nos':[lambda x, f, c: nos(x, f, c), 'noaa nos bathymetry'],
     'charts':[lambda x, f, c: charts(x, f, c), 'noaa nautical charts'],
     'srtm':[lambda x, f, c: srtm_cgiar(x, f, c), 'srtm from cgiar'],
-    'tnm':[lambda x, f, c: tnm(x, f, c), 'the national map [:index:dataset:subdataset:format,format,...]'],
+    'tnm':[lambda x, f, c: tnm(x, f, c), 'the national map [:index=False:dataset=1:subdataset=1:format=format0,format1,...]'],
     'mb':[lambda x, f, c: mb(x, f, c), 'noaa multibeam'],
     'gmrt':[lambda x, f, c: gmrt(x, f, c), 'gmrt'],
     'usace':[lambda x, f, c: usace(x, f, c), 'usace bathymetry'],
@@ -1396,7 +1397,7 @@ def fetch_desc(x):
 
 _usage = '''{} ({}): Fetch geographic elevation data.
 
-usage: {} [ -fhlpRuv [ args ] ] module(s) ...
+usage: {} [ -fhlpRuv [ args ] ] module[:parameter=value]* ...
 
 Modules:
   {}
@@ -1518,7 +1519,7 @@ def main():
         tw = utils._progress('loading region(s)...')
         try: 
             these_regions = [regions.region(extent)]
-        except: these_regions = [regions.region('/'.join(map(str, x))) for x in gdalfun._ogr_extents(i_region)]
+        except: these_regions = [regions.region('/'.join(map(str, x))) for x in gdalfun._ogr_extents(extent)]
 
         if len(these_regions) == 0:
             status = -1
@@ -1551,7 +1552,13 @@ def main():
             '.format(fetch_mod, this_region.region_string, rn+1, len(these_regions)))
             fl = fetch_infos[fetch_mod][0](this_region.buffer(5, percentage = True), f, lambda: stop_threads)
             fl._want_update = want_update
-            r = fl.run(*args)
+
+            args_d = {}
+            for arg in args:
+                p_arg = arg.split('=')
+                args_d[p_arg[0]] = p_arg[1]
+        
+            r = fl.run(*args_d)
 
             if len(r) == 0:
                 if not want_update:

@@ -28,11 +28,10 @@ import time
 import regions
 import datalists
 import gdalfun
-import uncertainty
 import metadata
 import utils
         
-_version = '0.2.8'
+_version = '0.3.0'
 
 def inc2str_inc(inc):
     '''convert a WGS84 geographic increment to a str_inc (e.g. 0.0000925 ==> `13`)'''
@@ -117,12 +116,12 @@ def grd2xyz(src_grd, dst_xyz, region = None, mask = None, verbose = False, want_
                 os.remove('tmp.grd')
 
         if want_datalist:
-            xyz_dir = os.path.join(os.getcwd(), 'xyz')
-            if not os.path.exists(xyz_dir):
-                os.makedirs(xyz_dir)
+            #xyz_dir = os.path.join(os.getcwd(), 'xyz')
+            #if not os.path.exists(xyz_dir):
+            #    os.makedirs(xyz_dir)
 
-            s_datalist = datalists.datalist(os.path.join(xyz_dir, '{}.datalist'.format(dst_xyz.split('.')[0])))
-            s_datalist._append_datafile('{}'.format(os.path.basename(dst_xyz)), 168, 1)
+            s_datalist = datalists.datalist('{}.datalist'.format(dst_xyz.split('.')[0]))
+            s_datalist._append_datafile(['{}'.format(os.path.basename(dst_xyz)), 168, 1])
             s_datalist._reset()
         
             out, status = utils.run_cmd('mbdatalist -O -I{}'.format(s_datalist._path), False, True)
@@ -241,6 +240,9 @@ class dem:
         else: self.o_name = o_b_name
 
         self.dem = '{}.grd'.format(self.o_name)
+        self.pb = utils._progress()
+
+        self.gc = utils.check_config(False, self.verbose)
         
     def run(self, dem_mod = 'mbgrid', args = ()):
         '''Run the DEM module `dem_mod` using args `dem_mod_args`.'''
@@ -253,13 +255,17 @@ class dem:
 
         #self.dem = '{}_{}.{}'.format(self.o_name, dem_mod, gdalfun._fext(self.o_fmt))
 
+        args_d = {}
+        for arg in args:
+            p_arg = arg.split('=')
+            args_d[p_arg[0]] = p_arg[1]
+        
         if self.status == 0:
-            _dem_mods[dem_mod][0](self)(*args)
+            _dem_mods[dem_mod][0](self)(**args_d)
 
         if self.status != 0:
             self.dem = None
 
-        print self.dem
         return(self.dem)
 
     ## ==============================================
@@ -268,23 +274,41 @@ class dem:
     ## is not cleared...should add output file to send to...
     ## ==============================================
 
-    def mbgrid(self, dist = '10/3'):
+    def mbgrid(self, dist = '10/3', tension = 35, use_datalists = False):
         '''Generate a DEM with MBSystem's mbgrid program.'''
 
-        out, self.status = run_mbgrid(self.datalist, self.dist_region, self.inc, self.o_name, dist = dist, verbose = self.verbose)
-        
-        if self.status == 0:
-            if self.node == 'pixel':
-                out, self.status = utils.run_cmd('gmt grdsample -T {}.grd -Gtmp.grd'.format(self.o_name), self.verbose, self.verbose)
-                if self.status == 0:
-                    os.rename('tmp.grd', '{}.grd'.format(self.o_name))
+        if self.gc['MBGRID'] is None:
+            utils._error_msg('MBSystem must be installed to use the MBGRID module')
+            self.status = -1
 
-            utils.remove_glob('*.cmd')
-
-        self.dem = '{}.grd'.format(self.o_name)
+        if self.gc['GMT'] is None:
+            utils._error_msg('GMT must be installed to use the MBGRID module')
+            self.status = -1
+            
         if self.status == 0:
-            if self.o_fmt != 'GMT':
-                self.dem = grd2gdal(self.dem, self.o_fmt)
+
+            if use_datalists:
+                self.datalist._archive(dirname = '.mb_tmp_datalist')
+                self.datalist = self.datalist.archive_datalist
+            
+            out, self.status = run_mbgrid(self.datalist, self.dist_region, self.inc, self.o_name, dist = dist, tension = tension, verbose = self.verbose)
+
+            if self.status == 0:
+                if self.node == 'pixel':
+                    out, self.status = utils.run_cmd('gmt grdsample -T {}.grd -Gtmp.grd'.format(self.o_name), self.verbose, self.verbose)
+                    if self.status == 0:
+                        os.rename('tmp.grd', '{}.grd'.format(self.o_name))
+
+                utils.remove_glob('*.cmd')
+
+            self.dem = '{}.grd'.format(self.o_name)
+            if self.status == 0:
+                if self.o_fmt != 'GMT':
+                    self.dem = grd2gdal(self.dem, self.o_fmt)
+
+            if use_datalists:
+                import shutil
+                shutil.rmtree('.mb_tmp_datalist')
 
     ## ==============================================
     ## Run GMT surface on the datalist
@@ -292,7 +316,7 @@ class dem:
     ## edge effects
     ## ==============================================
 
-    def surface(self):
+    def surface(self, tension = .35, relaxation = 1.2, lower_limit = 'd', upper_limit = 'd'):
         '''Generate a DEM with GMT surface'''
 
         reg_str = ''
@@ -301,14 +325,14 @@ class dem:
 
         self.o_fmt = 'GTiff'
 
-        dem_surf_cmd = ('gmt blockmean {} -I{:.10f} -V {} | gmt surface -V {} -I{:.10f} -G{}_p.grd -T.35 -Z1.2 -Lud -Lld {}\
-        '.format(self.proc_region.gmt, self.inc, reg_str, self.proc_region.gmt, self.inc, self.o_name, reg_str))
-        out, self.status = utils.run_cmd(dem_surf_cmd, self.verbose, True, self.datalist._dump_data)
+        dem_surf_cmd = ('gmt blockmean {} -I{:.10f} -V {} | gmt surface -V {} -I{:.10f} -G{}_p.grd -T{} -Z{} -Lu{} -Ll{} {}\
+        '.format(self.proc_region.gmt, self.inc, reg_str, self.proc_region.gmt, self.inc, self.o_name, tension, relaxation, lower_limit, upper_limit, reg_str))
+        out, self.status = utils.run_cmd(dem_surf_cmd, self.verbose, self.verbose, self.datalist._dump_data)
 
         if self.status == 0:
             dem_cut_cmd = ('gmt grdcut -V {}_p.grd -G{}.grd {}\
             '.format(self.o_name, self.o_name, self.dist_region.gmt))
-            out, self.status = utils.run_cmd(dem_cut_cmd, self.verbose, True)
+            out, self.status = utils.run_cmd(dem_cut_cmd, self.verbose, self.verbose)
 
             utils.remove_glob('{}_p.grd'.format(self.o_name))
 
@@ -333,16 +357,52 @@ class dem:
 
         self.o_fmt = 'GTiff'
 
-        dem_tri_cmd = ('gmt blockmedian {} -I{:.10f} -V {} | gmt triangulate {} -I{:.10f} -V -G{}_t.grd {}\
+        dem_tri_cmd = ('gmt blockmean {} -I{:.10f} -V {} | gmt triangulate {} -I{:.10f} -V -G{}_t.grd {}\
         '.format(self.proc_region.gmt, self.inc, reg_str, self.proc_region.gmt, self.inc, self.o_name, reg_str))
-        out, self.status = utils.run_cmd(dem_tri_cmd, self.verbose, True, self.datalist._dump_data)
+        out, self.status = utils.run_cmd(dem_tri_cmd, self.verbose, self.verbose, self.datalist._dump_data)
 
         if self.status == 0:
             dem_cut_cmd = ('gmt grdcut -V {}_t.grd -G{}.grd {}\
             '.format(self.o_name, self.o_name, self.dist_region.gmt))
-            out, self.status = utils.run_cmd(dem_cut_cmd, self.verbose, True)
+            out, self.status = utils.run_cmd(dem_cut_cmd, self.verbose, self.verbose)
 
             utils.remove_glob('{}_t.grd'.format(self.o_name))
+
+        self.dem = '{}.grd'.format(self.o_name)
+        if self.status == 0:
+            if self.o_fmt != 'GMT':
+                self.dem = grd2gdal(self.dem, self.o_fmt)
+
+    ## ==============================================
+    ## Run GMT nearneighbor on the datalist
+    ## generate dem at 10x cells to account for
+    ## edge effects
+    ## output may have nodata values around the edges.
+    ## ==============================================
+
+    def nearneighbor(self, radius='6s'):
+        '''Generate a DEM with GMT surface'''
+
+        reg_str = ''
+        if self.node == 'pixel':
+            reg_str = '-r'
+
+        self.o_fmt = 'GTiff'
+
+        #dem_nn_cmd = ('gmt blockmean {} -I{:.10f} -V {} | gmt nearneighbor {} -I{:.10f} -S{} -V -G{}_nn.grd {}\
+        #'.format(self.proc_region.gmt, self.inc, reg_str, self.proc_region.gmt, self.inc, radius, self.o_name, reg_str))
+        #out, self.status = utils.run_cmd(dem_nn_cmd, self.verbose, self.verbose, self.datalist._dump_data)
+
+        dem_nn_cmd = ('gmt nearneighbor {} -I{:.10f} -S{} -V -G{}_nn.grd {}\
+        '.format(self.proc_region.gmt, self.inc, radius, self.o_name, reg_str))
+        out, self.status = utils.run_cmd(dem_nn_cmd, self.verbose, self.verbose, self.datalist._dump_data)
+
+        if self.status == 0:
+            dem_cut_cmd = ('gmt grdcut -V {}_nn.grd -G{}.grd {}\
+            '.format(self.o_name, self.o_name, self.dist_region.gmt))
+            out, self.status = utils.run_cmd(dem_cut_cmd, self.verbose, self.verbose)
+
+            utils.remove_glob('{}_nn.grd'.format(self.o_name))
 
         self.dem = '{}.grd'.format(self.o_name)
         if self.status == 0:
@@ -380,46 +440,57 @@ class dem:
             if self.o_fmt != 'GMT':
                 self.dem = grd2gdal(self.dem, self.o_fmt)
             
-    def mask(self):
+    def mask(self, use_gmt = True):
         '''Generate a num and num-msk grid'''
 
-        #self.dem = self.datalist.mask(self.inc)
+        if self.verbose:
+            pb = utils._progress('generating datalist MASK grid...')
         
-        self.num('n')
-
-        if self.status == 0:
-            self.o_name = '{}_msk'.format(self.o_name)
-            num_msk_cmd = ('gmt grdmath -V {} 0 MUL 1 ADD 0 AND = {}.grd\
-            '.format(self.dem, self.o_name))
-            out, status = utils.run_cmd(num_msk_cmd, self.verbose, self.verbose)
+        if self.gc['GMT'] is None:
+            self.datalist._load_data()
+            self.dem = self.datalist.mask(region = self.dist_region.region, inc = self.inc, o_name = self.o_name)
+        else:
+            self.num('n')
 
             if self.status == 0:
-                utils.remove_glob(self.dem)
+                self.o_name = '{}_msk'.format(self.o_name)
+                num_msk_cmd = ('gmt grdmath -V {} 0 MUL 1 ADD 0 AND = {}.grd\
+                '.format(self.dem, self.o_name))
+                out, status = utils.run_cmd(num_msk_cmd, self.verbose, self.verbose)
 
-        self.dem = '{}.grd'.format(self.o_name)
-        if self.status == 0:
-            if self.o_fmt != 'GMT':
-                self.dem = grd2gdal(self.dem, self.o_fmt)
+                if self.status == 0:
+                    utils.remove_glob(self.dem)
+
+            self.dem = '{}.grd'.format(self.o_name)
+            if self.status == 0:
+                if self.o_fmt != 'GMT':
+                    self.dem = grd2gdal(self.dem, self.o_fmt)
+        if self.verbose:
+            pb.end(self.status, 'generated datalist MASK grid.')
+
+        return(self.dem)
 
     ## ==============================================
     ## run GDAL gdal_grid on the datalist to generate
     ## an Inverse Distance DEM
     ## ==============================================
 
-    def invdst(self):
+    def invdst(self, power = 2.0, smoothing = 0.0, radius1 = 0.0, radius2 = 0.0, angle = 0.0, max_points = 0, min_points = 0, nodata = 0.0):
         '''Generate an inverse distance grid with GDAL'''
 
         reg_str = ''
         if self.node == 'pixel':
             reg_str = '-r'
-        
+
+        ## todo: move to function to use with all gdal_grid algs...
+            
         out_size_x = int((self.dist_region.east - self.dist_region.west) / self.inc)
         out_size_y = int((self.dist_region.north - self.dist_region.south) / self.inc)
         
-        out, self.status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = COMMA', self.verbose, True)
+        out, self.status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = COMMA', self.verbose, self.verbose)
         bm_cmd = ('gmt blockmean {} -I{:.7f} -V {} > {}.csv\
         '.format(self.proc_region.gmt, self.inc, reg_str, self.o_name))
-        out, self.status = utils.run_cmd(bm_cmd, self.verbose, True, self.datalist._dump_data)
+        out, self.status = utils.run_cmd(bm_cmd, self.verbose, self.verbose, self.datalist._dump_data)
         
         o_vrt = open('{}.vrt'.format(self.o_name), 'w')
         t = '''<OGRVRTDataSource>
@@ -432,10 +503,12 @@ class dem:
         o_vrt.write(t)
         o_vrt.close()
         
-        gg_cmd = 'gdal_grid -zfield "field_3" -txe {} {} -tye {} {} -outsize {} {} -a invdist -l {} {}.vrt {}.tif --config GDAL_NUM_THREADS ALL_CPUS\
-        '.format(self.dist_region.west, self.dist_region.east, self.dist_region.north, self.dist_region.south, out_size_x, out_size_y, self.o_name, self.o_name, self.o_name)
+        gg_cmd = 'gdal_grid -zfield "field_3" -txe {} {} -tye {} {} -outsize {} {} \
+        -a invdist:power={}:smoothing={}:radius1={}:radius2={}:angle={}:max_points={}:min_points={}:nodata={} -l {} {}.vrt {}.tif --config GDAL_NUM_THREADS ALL_CPUS\
+        '.format(self.dist_region.west, self.dist_region.east, self.dist_region.north, self.dist_region.south, out_size_x, out_size_y,
+                 power, smoothing, radius1, radius2, angle, max_points, min_points, nodata, self.o_name, self.o_name, self.o_name)
         #print gg_cmd
-        out, status = utils.run_cmd(gg_cmd, self.verbose, True)
+        out, status = utils.run_cmd(gg_cmd, self.verbose, self.verbose)
         #self.dem = '{}.tif'.format(self.o_name)
         os.remove('{}.vrt'.format(self.o_name))
         os.remove('{}.csv'.format(self.o_name))
@@ -444,6 +517,9 @@ class dem:
         if self.status == 0:
             if self.o_fmt != 'GTiff':
                 self.dem = grd2gdal(self.dem, self.o_fmt)
+        try:
+            os.remove('gmt.conf')
+        except: pass
         
     ## ==============================================
     ## Bathy-Surface module.
@@ -455,7 +531,7 @@ class dem:
     ## of the bathy surface points.
     ## ==============================================
 
-    def bathy(self, mask = None):
+    def bathy(self, mask = 'gsshg'):
         '''Generate a masked surface with GMT surface and a breakline mask polygon.
         Use a coastline polygon mask to generatre a `bathy-surface` DEM.'''
 
@@ -465,30 +541,36 @@ class dem:
 
         self.dem = '{}_bs.grd'.format(self.o_name)
 
-        if mask is None:
+        b_inc = self.inc * 3.0
+        print b_inc
+        if mask == 'gsshg':
             dem_landmask_cmd = ('gmt grdlandmask -Gtmp_lm.grd -I{:.7f} {} -Df+ -V -N1/0 {}\
-            '.format(self.inc, self.proc_region.gmt, reg_str))
+            '.format(b_inc, self.proc_region.gmt, reg_str))
             out, self.status = utils.run_cmd(dem_landmask_cmd, self.verbose, self.verbose)
+            mask = 'tmp_lm.grd'
 
         dem_surf_cmd = ('gmt blockmean {} -I{:.7f} -V {} | gmt surface -V {} -I{:.7f} -G{}_p.grd -T.35 -Z1.2 -Lu0 {}\
-        '.format(self.proc_region.gmt, self.inc, reg_str, self.proc_region.gmt, self.inc, self.o_name, reg_str))
+        '.format(self.proc_region.gmt, b_inc, reg_str, self.proc_region.gmt, b_inc, self.o_name, reg_str))
         out, self.status = utils.run_cmd(dem_surf_cmd, self.verbose, True, self.datalist._dump_data)
-
+        
         if self.status == 0:
-            dem_landmask_cmd1 = ('gmt grdmath -V {}_p.grd tmp_lm.grd MUL 0 NAN = {}_p_bathy.grd\
-            '.format(self.o_name, self.o_name))
-            out, self.status = utils.run_cmd(dem_landmask_cmd1, self.verbose, True)
+            dem_landmask_cmd1 = ('gmt grdmath -V {}_p.grd {} MUL 0 NAN = {}_p_bathy.grd\
+            '.format(self.o_name, mask, self.o_name))
+            out, self.status = utils.run_cmd(dem_landmask_cmd1, self.verbose, self.verbose)
 
             grdcut('{}_p_bathy.grd'.format(self.o_name), self.dist_region, self.dem)
             utils.remove_glob('{}_p*.grd'.format(self.o_name))
 
-            if self.status == 0:
-                bathy_xyz = 'xyz/{}_bs.xyz'.format(self.o_name)                
-                self.status = grd2xyz(self.dem, bathy_xyz, want_datalist = True)
-
         if self.status == 0:
             if self.o_fmt != 'GMT':
                 self.dem = grd2gdal(self.dem)
+
+            xyz_dir = os.path.join(os.getcwd(), 'xyz')
+            if not os.path.exists(xyz_dir):
+                os.makedirs(xyz_dir)
+                
+            bathy_xyz = 'xyz/{}_bs.xyz'.format(self.o_name)                
+            self.status = grd2xyz(self.dem, bathy_xyz, want_datalist = True)
 
     ## ==============================================
     ## conversion-grid module:
@@ -500,52 +582,60 @@ class dem:
     def vdatum(self, ivert = 'navd88', overt = 'mllw', region = '3'):
         '''generate a vertical datum transformation grid with vdatum'''
 
-        reg_str = ''
-        if self.node == 'pixel':
-            reg_str = '-r'
-        
-        gdalfun.null('empty.tif', self.dist_region.region, 0.00083333, nodata = 0)
-        gdalfun.dump('empty.tif', 'empty.xyz', dump_nodata = True)
+        import vdatum
 
-        this_vd = utils.vdatum(verbose = self.verbose)
-        this_vd.ivert = ivert
-        this_vd.overt = overt
-
-        this_vd.run_vdatum('empty.xyz')
-
-        if os.path.exists('result/empty.xyz') and os.stat('result/empty.xyz').st_size != 0:
-            out, status = utils.run_cmd('gmt gmtinfo result/empty.xyz -C')
-            empty_infos = out.split()
-
-            if empty_infos[4] > 0:
-                ll_switch = '-Lld'
-            else: ll_switch = '-Ll0'
-
-            if empty_infos[5] > 0:
-                lu_switch = '-Lud'
-            else: lu_switch = '-Lu0'
-
-            gc = 'gmt blockmean result/empty.xyz -V -I{} {} {}\
-            | gmt surface -I{} {} -G{}_{}to{}.tif=gd:GTiff -V -T0 {} {} {}\
-            '.format(self.inc, self.dist_region.gmt, reg_str, 
-                     self.inc, self.dist_region.gmt, self.o_name, this_vd.ivert, this_vd.overt, 
-                     ll_switch, lu_switch, reg_str)
-            utils.run_cmd(gc, self.verbose, True)
-
-            dem_name = '{}to{}'.format(this_vd.ivert, this_vd.overt)
-            self.dem[dem_name] = '{}_{}.tif'.format(self.o_name, dem_name)
-        else: self.status = -1
-
-        try:
-            utils.remove_glob('empty.*')
-            utils.remove_glob('result/*')
-            os.removedirs('result')
-        except: pass
+        if self.gc['VDATUM'] is None:
+            utils._error_msg('NOAAs VDATUM must be installed to use the VDATUM module.')
+            self.status = -1
 
         if self.status == 0:
-            if self.o_fmt != 'GMT':
-                self.dem = grd2gdal(self.dem)        
-        
+            reg_str = ''
+            if self.node == 'pixel':
+                reg_str = '-r'
+
+            gdalfun.null('empty.tif', self.dist_region.region, 0.00083333, nodata = 0)
+            with open('empty.xyz', 'w') as mt_xyz:
+                gdalfun.dump('empty.tif', dst_xyz = mt_xyz, dump_nodata = True)
+
+            this_vd = vdatum.vdatum(verbose = self.verbose)
+            this_vd.ivert = ivert
+            this_vd.overt = overt
+
+            dem_name = '{}to{}'.format(this_vd.ivert, this_vd.overt)
+            self.dem = '{}_{}.grd'.format(self.o_name, dem_name)
+
+            this_vd.run_vdatum('empty.xyz')
+
+            if os.path.exists('result/empty.xyz') and os.stat('result/empty.xyz').st_size != 0:
+                out, status = utils.run_cmd('gmt gmtinfo result/empty.xyz -C')
+                empty_infos = out.split()
+
+                if empty_infos[4] > 0:
+                    ll_switch = '-Lld'
+                else: ll_switch = '-Ll0'
+
+                if empty_infos[5] > 0:
+                    lu_switch = '-Lud'
+                else: lu_switch = '-Lu0'
+
+                gc = 'gmt blockmean result/empty.xyz -V -I{} {} {}\
+                | gmt surface -I{} {} -G{}_{}to{}.grd -V -T0 {} {} {}\
+                '.format(self.inc, self.dist_region.gmt, reg_str, 
+                         self.inc, self.dist_region.gmt, self.o_name, this_vd.ivert, this_vd.overt, 
+                         ll_switch, lu_switch, reg_str)
+                utils.run_cmd(gc, self.verbose, True)
+            else: self.status = -1
+
+            try:
+                utils.remove_glob('empty.*')
+                utils.remove_glob('result/*')
+                os.removedirs('result')
+            except: pass
+
+            if self.status == 0:
+                if self.o_fmt != 'GMT':
+                    self.dem = grd2gdal(self.dem)
+        else: self.dem = None
         #return(self.dem)
 
     def spatial_metadata(self, epsg = 4269):
@@ -570,17 +660,17 @@ class dem:
 ## =============================================================================
 
 _dem_mods = {
-    'mbgrid': [lambda x: x.mbgrid, 'Weighted SPLINE DEM via mbgrid', ':dist'],
-    'surface': [lambda x: x.surface, 'SPLINE DEM via GMT surface', None],
+    'mbgrid': [lambda x: x.mbgrid, 'Weighted SPLINE DEM via mbgrid', ':tension=35:dist=3/10:use_datalists=False'],
+    'surface': [lambda x: x.surface, 'SPLINE DEM via GMT surface', ':tension=.35:relaxation=1.2:lower_limit=d:upper_limit=d'],
     'triangulate': [lambda x: x.triangulate, 'TRIANGULATION DEM via GMT triangulate', None],
-    'invdst': [lambda x: x.invdst, 'Inverse Distance DEM via gdal_grid', None],
-    'num': [lambda x: x.num, 'Uninterpolated DEM via GMT xyz2grd', ':mode'],
-    'mask': [lambda x: x.mask, 'DEM Data MASK', None],
-    'bathy': [lambda x: x.bathy, 'BATHY-DEM', ':coast-poly'],
-    'conversion-grid': [lambda x: x.vdatum, 'VDatum CONVERSION grid', ':i_vdatum:o_vdatum:vd_region'],
-    'spatial-metadata': [lambda x: x.spatial_metadata, 'DEM SPATIAL METADATA', ':epsg'],
-    'uncertainty': [lambda x: x.uncertainty, 'DEM UNCERTAINTY grid <beta>', ':gridding-module'],
+    'nearneighbor': [lambda x: x.nearneighbor, 'NEARNEIGHBOR DEM via GMT', 'radius=6s'],
+    'num': [lambda x: x.num, 'Uninterpolated DEM via GMT xyz2grd', ':mode=n'],
+    'bathy': [lambda x: x.bathy, 'BATHY-only DEM via GMT surface', ':mask=gsshg'],
+    'invdst': [lambda x: x.invdst, 'Inverse Distance DEM via gdal_grid', ':power=2.0:smoothing=0.0'],
+    'vdatum': [lambda x: x.vdatum, 'VDATUM transformation grid', ':ivert=navd88:overt=mhw:region=3'],
 }
+#'spatial-metadata': [lambda x: x.spatial_metadata, 'DEM SPATIAL METADATA', ':epsg'],
+#'uncertainty': [lambda x: x.uncertainty, 'DEM UNCERTAINTY grid <beta>', ':gridding-module'],
 
 def dem_mod_desc(x):
     out = 'Modules:\n'
@@ -590,7 +680,7 @@ def dem_mod_desc(x):
 
 _waffles_usage = '''{} ({}): Process and generate Digital Elevation Models and derivatives
 
-usage: {} [ -hrvAIEFOPR [ args ] ] module[:option1:option2] ...
+usage: {} [ -ahmrsuvIEFOPRX [ args ] ] module[:parameter=value]* ...
 
 {}
 Options:
@@ -599,22 +689,26 @@ Options:
 \t\t\tor an OGR-compatible vector file with regional polygons. 
 \t\t\tIf a vector file is supplied it will search each region found therein.
   -I, --datalsit\tThe input DATALIST.
-  -E, --increment\tThe desired CELL-SIZE in native units or GMT style increments.
-  -F, --format\t\tThe desired output grid FORMAT.
-  -P, --prefix\t\tThe output naming PREFIX.
-  -O, --output-name\tThe output BASENAME; will over-ride any set PREFIX.
-  -X, --extend\t\tThe number of cells with which to extend the extent (6)
+  -E, --increment\tGridding CELL-SIZE in native units or GMT-style increments.
+  -F, --format\t\tOutput grid FORMAT. [GTiff]
+  -P, --prefix\t\tOutput naming PREFIX.
+  -O, --output-name\tOutput BASENAME; will over-ride any set PREFIX.
+  -X, --extend\t\tNumber of cells with which to EXTEND the REGION. [6]
 
-  -r\t\t\tuse grid-node registration, default is pixel-node
+  -a, --archive\t\tArchive the data from the DATALIST in the REGION.
+  -m, --mask\t\tGenerate associated datalist MASK grid for the REGION.
+  -r, --grid-node\tuse grid-node registration, default is pixel-node
+  -s, --spat-metadata\tGenerate associated SPATIAL-METADATA for the REGION.
+  -u, --uncertainty\tGenerate an associated DEM UNCERTAINTY grid. <beta>
 
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
---verbose\t\tIncrease the verbosity
+  --verbose\t\tIncrease the verbosity
 
  Examples:
- % {} -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 surface
- % {} -I input.datalist -E .3333333s -X 2 -R input_tiles_ply.shp spatial-metadata
- % {} -R-82.5/-82.25/26.75/27 -E0.0000925 conversion-grid:navd88:mhw:3 -P ncei -r
+ % {} -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 -V surface:tension=.7
+ % {} -I input.datalist -E .3333333s -X 2 -R input_tiles_ply.shp -V -r -s -u mbgrid
+ % {} -R-82.5/-82.25/26.75/27 -E0.0000925 vdatum:i_vdatum=navd88:o_vdatum=mhw:vd_region=3 -P ncei -r
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
 '''.format( os.path.basename(sys.argv[0]), 
@@ -633,6 +727,10 @@ def main():
     these_regions = []
     stop_threads = False
     want_verbose = False
+    want_sm = False
+    want_unc = False
+    want_mask = False
+    want_archive = False
     mod_opts = {}
     o_pre = None
     o_bn = None
@@ -685,15 +783,27 @@ def main():
             i = i + 1
         elif arg[:2] == '-P':
             o_pre = str(arg[2:])
-
+        
         elif arg == '--extend' or arg == '-X':
             o_extend = int(argv[i + 1])
             i = i + 1
         elif arg[:2] == '-X':
             o_extend = int(arg[2:])
-
-        elif arg == '-r':
+            
+        elif arg == '--grid-node' or arg == '-r':
             node_reg = 'grid'
+
+        elif arg == '--archive' or arg == '-a':
+            want_archive = True
+
+        elif arg == '--mask' or arg == '-m':
+            want_mask = True
+            
+        elif arg == '--spat-metadata' or arg == '-s':
+            want_sm = True
+
+        elif arg == '--uncertainty' or arg == '-u':
+            want_unc = True
 
         elif arg == '--help' or arg == '-h':
             print(_waffles_usage)
@@ -718,15 +828,10 @@ def main():
 
         i = i + 1
 
-    if i_region is None:
-        utils._error_msg('a region must be specified')
+    if i_region is None and i_datalist is None:
+        utils._error_msg('a region and/or a datalist must be specified')
         print(_waffles_usage)
         sys.exit(1)
-
-    if i_datalist is None:
-        utils._error_msg('a datalist must be specified')
-        print(_waffles_usage)
-        sys.exit(1)        
 
     try:
         #i_inc = float(i_inc)
@@ -740,24 +845,27 @@ def main():
         mod_opts[key] = [None if x == '' else x for x in mod_opts[key]]
 
     ## this crashes a lot; re-think!
-    ##utils.check_config()
-        
+    gc = utils.check_config(False, want_verbose)
+    
     ## ==============================================
     ## process input region(s) and loop
     ## ==============================================
 
     if want_verbose: pb = utils._progress('loading region(s)...')
-    try: 
-        these_regions = [regions.region(i_region)]
-    except: these_regions = [regions.region('/'.join(map(str, x))) for x in gdalfun._ogr_extents(i_region)]
+    if i_region is None:
+        these_regions = [None]
+    else:
+        try: 
+            these_regions = [regions.region(i_region)]
+        except: these_regions = [regions.region('/'.join(map(str, x))) for x in gdalfun._ogr_extents(i_region)]
 
     if len(these_regions) == 0:
-        status = -1
+        these_regions = [None]
 
     for this_region in these_regions:
-        if not this_region._valid: 
-          status = -1
-
+        if this_region is not None:
+            if not this_region._valid:
+                status = -1
     if want_verbose: pb.end(status, 'loaded \033[1m{}\033[m region(s).'.format(len(these_regions)))
             
     if status == -1:
@@ -774,29 +882,78 @@ def main():
         ## ==============================================
 
         if stop_threads: break
-        
-        this_datalist = datalists.datalist(i_datalist, this_region, verbose = want_verbose)
-        if not this_datalist._valid_p():
-            utils._error_msg('invalid datalist')
-            status = -1
+
+        if i_datalist is not None:
+            this_datalist = datalists.datalist(i_datalist, this_region, verbose = want_verbose)
+            if not this_datalist._valid_p():
+                utils._error_msg('invalid datalist')
+                status = -1
+        else: this_datalist = None
 
         if status != 0: break
 
+        if this_region is None and this_datalist is not None:
+            utils._msg('no region supplied, gathering from datalist...')
+            this_datalist.gather_region()
+            this_region = this_datalist.region
+
+        if this_region is None and this_datalist is None:
+            utils._error_msg('no region or datalist; aborting...')
+            status = -1
+            break
+            
+        if o_bn is None:
+            if o_pre is None: 
+                o_name = this_datalist._path_basename.split('.')[0]
+                
+            str_inc = inc2str_inc(i_inc)
+            o_name = '{}{}_{}_{}'.format(o_pre, str_inc, this_region.fn, this_year())
+        else: o_name = o_bn
+
+        if this_datalist is not None:
+            if want_sm:
+                if i_inc < 0.0000925925:
+                    tmp_inc = i_inc * 3
+                    o_extend = 2
+                else: tmp_inc = i_inc
+
+                sm = metadata.spatial_metadata(this_datalist, this_region, i_inc = tmp_inc, o_name = o_name,\
+                                               o_extend = o_extend, callback = lambda: stop_threads, verbose = want_verbose)
+                sm.want_queue = True
+                s = threading.Thread(target = sm.run, args = ())
+                s.start()
+
+            if want_mask:
+                ml = dem(this_datalist, this_region, i_inc = i_inc, o_name = o_pre, o_b_name = o_bn, o_node = node_reg,\
+                         o_fmt = o_fmt, o_extend = o_extend, callback = lambda: stop_threads, verbose = want_verbose)
+                m = threading.Thread(target = ml.mask, args = ())
+                m.start()
+
+            if want_archive:
+                a = threading.Thread(target = this_datalist._archive, args = ())
+                arc_datalist = a.start()
+                
         for dem_mod in mod_opts.keys():
 
             ## ==============================================
             ## Run the DEM module
             ## ==============================================
 
+            ## most modules need a datalist and a region and an increment to be valid, except vdatum doesn't need a datalist...
+            if this_datalist is None:
+                if dem_mod.lower() != 'vdatum':
+                    utils._error_msg('a valid datalist is needed to run module: {}...'.format(dem_mod))
+                    break
+                else: pass
+            
             args = tuple(mod_opts[dem_mod])
-                        
+
             pb = utils._progress('running geomods dem module \033[1m{}\033[m on region ({}/{}): \033[1m{}\033[m...\
             '.format(dem_mod.upper(), rn + 1, len(these_regions), this_region.region_string))
-            dl = dem(this_datalist, this_region, i_inc = i_inc, o_name = o_pre, o_b_name = o_bn, o_node = node_reg, o_fmt = o_fmt, o_extend = o_extend, callback = lambda: stop_threads, verbose = want_verbose)
-            #dl.node = node_reg
-            #dl.o_fmt = o_fmt
-
+            dl = dem(this_datalist, this_region, i_inc = i_inc, o_name = o_pre, o_b_name = o_bn, o_node = node_reg,\
+                     o_fmt = o_fmt, o_extend = o_extend, callback = lambda: stop_threads, verbose = want_verbose)
             t = threading.Thread(target = dl.run, args = (dem_mod, args))
+            
             try:
                 t.start()
                 while True:
@@ -811,7 +968,30 @@ def main():
             t.join()
             pb.end(dl.status, 'ran geomods dem module \033[1m{}\033[m on region ({}/{}): \033[1m{}\033[m...\
             '.format(dem_mod.upper(), rn + 1, len(these_regions), this_region.region_string))
-            
+
+            if want_unc and this_datalist is not None and dem_mod.lower() != 'vdatum':
+                import uncertainty
+                
+                pb = utils._progress('running geomods \033[1mUNCERTAINTY\033[m module on region ({}/{}): \033[1m{}\033[m...\
+                '.format(rn + 1, len(these_regions), this_region.region_string))
+                dp = None
+                cnt = 0
+
+                while True:
+                    cnt += 1
+                    unc = uncertainty.uncertainty(this_datalist, this_region, i_inc = i_inc, o_name = o_name, o_node = node_reg, o_extend = o_extend, callback = lambda: stop_threads, verbose = want_verbose)
+                    ## todo: account for possible dem args for uncertainty...
+                    dp = unc.run(dem_mod, args, dl.dem)
+                    if len(dp) > 0 or cnt == 10:
+                        break
+                pb.end(0, 'ran geomods \033[1mUNCERTAINTY\033[m module on region ({}/{}): \033[1m{}\033[m...\
+                '.format(rn + 1, len(these_regions), this_region.region_string))
+
+        if this_datalist is not None:
+            if want_sm: s.join()
+            if want_mask: m.join()
+            if want_archive: a.join()
+
 if __name__ == '__main__':
     main()
 

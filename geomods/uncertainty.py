@@ -201,13 +201,14 @@ class uncertainty:
         self.datalist._load_data()
 
         i_dp = self.interpolation(dem_mod)
+        return(i_dp)
         
     def set_or_make_dem(self, dem_mod = 'mbgrid'):
         '''check if dem dict contains dems, otherwise generate them...'''
 
         utils._progress('checking for DEM...')
         if self.dem['dem'] is None:
-            this_dem = dem(self.datalist, self.region, str(self.inc))
+            this_dem = dem(self.datalist, self.region, str(self.inc), o_b_name = self.o_name)
             this_dem.o_fmt = 'GTiff'
             self.dem['dem'] = this_dem.run(dem_mod)
             self.tw.end(self.status, 'generated DEM {} using {}.'.format(self.dem['dem'], dem_mod))
@@ -381,7 +382,7 @@ class uncertainty:
                 np.random.shuffle(sub_xyz)
                 np.savetxt(sub_xyz_head, sub_xyz[:sx_cnt], '%f', ' ')
 
-                sub_datalist =  datalists.datalist('sub_{}.datalist'.format(n), this_region)
+                sub_datalist = datalists.datalist('sub_{}.datalist'.format(n), this_region)
                 sub_datalist._append_datafile([s_outer, 168, 1])
                 sub_datalist._append_datafile([sub_xyz_head, 168, 1])
                 sub_datalist._load_data()
@@ -390,12 +391,14 @@ class uncertainty:
                 sub_surf.o_fmt = 'GTiff'
                 sub_dem = sub_surf.run(dem_mod)
 
-                sub_msk = sub_datalist.mask(region = this_region.buffer(10*self.inc).region, inc = self.inc)
-                sub_prox = '{}_prox.tif'.format(sub_msk.split('.')[0])
-                self.status = proximity(sub_msk, sub_prox)
-
-                sub_xyd = gdalfun.query(sub_xyz[sx_cnt:], sub_dem, 'xyd')
-                sub_dp = gdalfun.query(sub_xyd, sub_prox, 'zg')
+                if sub_dem is not None:
+                    sub_msk = sub_datalist.mask(region = this_region.buffer(10*self.inc).region, inc = self.inc)
+                    sub_prox = '{}_prox.tif'.format(sub_msk.split('.')[0])
+                    self.status = proximity(sub_msk, sub_prox)
+                    
+                    sub_xyd = gdalfun.query(sub_xyz[sx_cnt:], sub_dem, 'xyd')
+                    sub_dp = gdalfun.query(sub_xyd, sub_prox, 'zg')
+                else: sub_dp = None
 
                 os.remove(sub_xyz_head)
                 os.remove(sub_xyz_head + '.inf')
@@ -458,7 +461,7 @@ class uncertainty:
         s_dens = np.array([self.sub_zones[x][3] for x in self.sub_zones.keys()])
         s_5perc = np.percentile(s_dens, 5)
         s_dens = None
-        self.tw.msg('Sampling density for region is: {}'.format(s_5perc))
+        self.tw.msg('Sampling density for region is: {:.12f}'.format(s_5perc))
                 
         self.trainers = self.zone_analysis()
         trains = self.zone_sort()
@@ -467,7 +470,7 @@ class uncertainty:
         utils._progress('analyzed {} sub-regions.'.format(len(self.sub_regions)))
         
         for sim in range(0, sims):
-            utils._progress('performing simulation {} out of {}...'.format(sim + 1, sims))
+            utils._progress('performing UNCERTAINTY simulation {} out of {}...'.format(sim + 1, sims))
             self.status = 0
             
             for s_l in range(0, sim_loops):
@@ -480,8 +483,11 @@ class uncertainty:
                     #self.tw.end(self.status, 'calculated split-sample for {} semi-random \033[1m{}\033[m zone training tiles.'.format(len(train_h), self.zones[z].upper()))
                 #self.tw.end(self.status, 'performed split-sample {} out of {}.'.format(s_l +1, sim_loops))
 
-            self.tw.msg('{} error points accumulated'.format(len(dp)))
-            self.tw.end(self.status, 'performed simulation {} out of {}.'.format(sim + 1, sims))
+            #self.tw.msg('{} error points accumulated'.format(len(dp)))
+            if len(dp) == 0:
+                self.status = -1
+                break
+            self.tw.end(self.status, 'performed UNCERTAINTY simulation {} out of {}; {} error points accumulated.'.format(sim + 1, sims, len(dp)))
 
         self.tw.end(self.status, 'ran \033[1mINTERPOLATION\033[m uncertainty module using \033[1m{}\033[m.'.format(dem_mod))
         
@@ -502,5 +508,7 @@ class uncertainty:
             '.format(self.dem['prox'], ec[2], ec[1], 0, self.o_name)
             utils.run_cmd(math_cmd, self.verbose, self.verbose)
             self.tw.end(0, 'applyed coefficient to proximity grid')
+            
+        return(dp)
         
             ### END

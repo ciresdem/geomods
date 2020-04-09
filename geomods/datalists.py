@@ -251,12 +251,12 @@ def dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
         else: srcwin = None
         gdalfun.dump(entry[0], dst_xyz = dst_port, dump_nodata = False, srcwin = srcwin, mask = None, warp_to_wgs = False)
     
-def archive_entry(entry, a_name, region = None, verbose = None):
+def archive_entry(entry, a_name, dirname = 'archive', region = None, verbose = None):
 
     i_dir = os.path.dirname(entry[0])
     i_xyz = os.path.basename(entry[0]).split('.')[0]
     
-    a_dir = os.path.join('archive', a_name, 'data', entry[-1])
+    a_dir = os.path.join(dirname, a_name, 'data', entry[-1])
     a_xyz_dir = os.path.join(a_dir, 'xyz')
     a_xyz = os.path.join(a_xyz_dir, i_xyz + '.xyz')
     
@@ -296,6 +296,7 @@ class datalist:
         self.datalists = []
         self.datafiles = []
         self.verbose = verbose
+        self.archive_datalist = None
         
         self._parse()
 
@@ -358,9 +359,12 @@ class datalist:
         self.i_fmt = -1
         self._proc_data(lambda entry: self.datalists.append(entry))
         self.i_fmt = fmt
+
+        if len(self.datalists) == 0:
+            self.datalists.append([self._path, -1, 1])
+            #status = -1
         
         if self.verbose:
-            if len(self.datalists) == 0: status = -1
             pb.end(status, 'scanned datalist `\033[1m{}\033[m` and found {} datalists.'.format(self._name, len(self.datalists)))
         
     def _load_data(self):
@@ -378,21 +382,23 @@ class datalist:
             if len(self.datafiles) == 0: status = -1
             pb.end(status, 'loaded datalist `\033[1m{}\033[m` and found {} data files.'.format(self._name, len(self.datafiles)))
         
-    def _archive(self):
+    def _archive(self, dirname = 'archive'):
 
-        self._proc_data(lambda entry: archive_entry(entry, a_name = self._name_r, region = self.region, verbose = self.verbose))
+        self._proc_data(lambda entry: archive_entry(entry, a_name = self._name_r, dirname = dirname, region = self.region, verbose = self.verbose))
 
         self.datalists = [[self._path, -1, 1, self._name]]
         self.i_fmt = -1
         self._proc_data(lambda entry: self.datalists.append(entry))
         #os.makedirs(os.path.join('archive', self._name_r))
-        d = datalist(os.path.join('archive', self._name_r, self._name_r + '.datalist'), verbose = self.verbose)
+        d = datalist(os.path.join(dirname, self._name_r, self._name_r + '.datalist'), verbose = self.verbose)
         self._load_datalists()
         for i in self.datalists:
             dl_n = i[-1]
             dl_p = os.path.join('data', dl_n, dl_n + '.datalist')
-            if os.path.exists(os.path.join('archive', self._name_r, dl_p)):
+            if os.path.exists(os.path.join(dirname, self._name_r, dl_p)):
                 d._append_datafile([dl_p, -1, i[2]])
+                
+        self.archive_datalist = d
         
     def _proc_data(self, proc = lambda entry: sys.stdout.write(entry), weight = None):
         '''Recurse through the datalist and run proc on each data file.'''
@@ -516,7 +522,12 @@ class datalist:
 
         if o_name is None:
             o_name = self._name
+
         o_mask = '{}_msk.{}'.format(o_name, gdalfun._fext(o_fmt))
+
+        if len(self.datafiles) == 0:
+            self._load_data()
+        
         gdalfun.xyz_mask(self._caty(), o_mask, region, inc, dst_format = o_fmt, verbose = self.verbose)
         
         return(o_mask)    
@@ -717,7 +728,7 @@ def main():
                 for f in _known_fmts[key]:
                     globs = glob.glob('*.{}'.format(f))
                     [this_datalist._append_datafile([x, key, 1]) for x in globs]
-        
+
         if this_datalist._valid_p():
 
             ## ==============================================
@@ -751,7 +762,7 @@ def main():
                     
                 #print this_datalist.datafiles
                     
-                sm = metadata.spatial_metadata(this_datalist, this_datalist.region, i_inc, o_bn, lambda: False, verbose = want_verbose)
+                sm = metadata.spatial_metadata(this_datalist, this_datalist.region, i_inc = i_inc, o_name = o_bn, callback = lambda: False, verbose = want_verbose)
                 sm.want_queue = False
                 sm.run()
 

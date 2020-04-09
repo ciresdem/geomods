@@ -1029,7 +1029,7 @@ def xyz_mask(src_xyz, dst_gdal, extent, cellsize,
              delim=' ', verbose=False):
     '''Create a num grid mask of xyz data. The output grid
     will contain 1 where data exists and 0 where no data exists.'''
-    
+
     ysize = extent[3] - extent[2]
     xsize = extent[1] - extent[0]
     xcount = int(xsize / cellsize) + 1

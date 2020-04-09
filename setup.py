@@ -42,6 +42,7 @@ setup(
             'fetches = geomods.fetches:main',
             'datalists = geomods.datalists:main',
             'procs = geomods.procs:main',
+            'geomods-config = geomods.utils:geomods_config',
         ],
     },
     scripts = [
@@ -58,6 +59,7 @@ setup(
         'scripts/xyz_histogram.py',
         'scripts/x360.py',
         'scripts/spatial-meta.sh',
+	'scripts/gdal_findreplace.py',
     ],
     #python_requires = '>=2.7, <3',
     #project_urls = {

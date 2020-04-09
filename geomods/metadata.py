@@ -62,13 +62,14 @@ class spatial_metadata:
 
         self.stop = callback
         self.verbose = verbose
-        self.has_gmt = True
         self.want_queue = True
-        self.use_bounds = True
 
+        self.gc = utils.check_config(False, self.verbose)
+        
         self.v_fields = ['Name', 'Agency', 'Date', 'Type',
                          'Resolution', 'HDatum', 'VDatum', 'URL']
-        if self.use_bounds:
+        
+        if self.gc['BOUNDS'] is not None:
             self.t_fields = ['string', 'string', 'string', 'string',
                              'string', 'string', 'string', 'string']
         else:
@@ -78,8 +79,6 @@ class spatial_metadata:
         if o_name is None:
             self.o_name = self.datalist._name
         else: self.o_name = o_name
-
-        self.gmt_vers = utils.config_get_vers('GMT')
 
         self.datalist._load_datalists()
         
@@ -115,18 +114,18 @@ class spatial_metadata:
             except: o_v_fields = [this_datalist._name, 'Unknown', '0', 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
             pb = utils._progress('gathering geometries from datalist \033[1m{}\033[m...'.format(this_o_name))
 
-            if self.use_bounds:
+            if self.gc['BOUNDS'] is not None:
                 o_v_fields = ['\\"{}\\"'.format(x) if ' ' in x else x for x in o_v_fields]
                 utils.run_cmd('bounds -k {}/{} -n "{}" -gg --verbose >> {}.gmt\
                 '.format(self.inc, self.dist_region.region_string, '|'.join(o_v_fields), layer), self.verbose, self.verbose, this_datalist._dump_data)
             else:
                 defn = layer.GetLayerDefn()
-                if self.gmt_vers is None:
-                    this_mask = this_datalist.mask(self.inc)
-                else:
-                    this_dem = waffles.dem(this_datalist, this_datalist.region, i_inc = self.inc, o_fmt = 'GTiff', o_extend = self.extend, verbose = self.verbose)
-                    #this_dem.o_fmt = 'GTiff'
-                    this_mask = this_dem.run('mask')
+                if self.gc['GMT'] is None:
+                    use_gmt = False
+                else: use_gmt = True
+                
+                this_dem = waffles.dem(this_datalist, this_datalist.region, i_inc = self.inc, o_fmt = 'GTiff', o_extend = self.extend, verbose = self.verbose)
+                this_mask = this_dem.mask(use_gmt)
 
                 if os.path.exists(this_mask) and not self.stop():
                     ## should use more unique name...crashes when 2 datalists have same name at same time...
@@ -155,16 +154,13 @@ class spatial_metadata:
         '''Run the spatial-metadata module and Geneate spatial metadata from the datalist
         specify the output project epsg.'''
 
-        if self.inc < 0.0000925:
-            utils._msg('warning, increments less than 1/3 arc-second may be slow.')
-    
+        pb = utils._progress('generating SPATIAL-METADATA for {}...'.format(self.datalist._name))
         dst_vec = '{}_sm.shp'.format(self.o_name)
         dst_layername = '{}_sm'.format(self.o_name)
         utils.remove_glob('{}.*'.format(dst_layername))
         gdalfun._prj_file('{}.prj'.format(dst_layername), epsg)
         
-        if self.use_bounds:
-            ##utils.run_cmd('bounds -ggg > {}.gmt'.format(dst_layername, self.verbose, self.verbose))
+        if self.gc['BOUNDS'] is not None:
             with open('{}.gmt'.format(dst_layername), 'w') as gmtf:
                 gmtf.write('# @VGMT1.0 @GMULTIPOLYGON\n# @N{}\n# @T{}\n# FEATURE_DATA\n'.format('|'.join(self.v_fields), '|'.join(self.t_fields)))
             for dl in self.datalist.datalists:
@@ -199,9 +195,12 @@ class spatial_metadata:
                         self._gather_from_datalist(dl, layer)
                 
         ds = layer = None
-        utils.run_cmd('ogr2ogr {} {}.gmt'.format(dst_vec, dst_layername))
+        if self.gc['BOUNDS'] is not None:
+            utils.run_cmd('ogr2ogr {} {}.gmt'.format(dst_vec, dst_layername))
+            
         if not os.path.exists(dst_vec):
             dst_vec = None
 
+        pb.end(0, 'generated SPATIAL-METADATA for {}.'.format(self.datalist._name))
         return(dst_vec)
 ### End

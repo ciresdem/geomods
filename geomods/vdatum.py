@@ -38,21 +38,27 @@ class vdatum:
     def __init__(self, vdatum_path = None, verbose = False):
         self.verbose = verbose
         self.status = 0
+        
         if vdatum_path is None:
-            co = ConfigParser.ConfigParser()
-            try:
-                co.read(utils.CONFIG_FILE)
-                self.vdatum_path = co.get('VDATUM', 'jar')
-            except:
-                self.vdatum_path = self._find_vdatum()[0]
-                if self.status == 0:
-                    co.add_section('VDATUM')
-                    co.set('VDATUM', 'jar', self.vdatum_path)
+            self.vdatum_path = self._find_vdatum()[0]
+            if self.status != 0:
+                self.vdatum_path = None
+        else: self.vdatum_path = None
+
+        #     co = ConfigParser.ConfigParser()
+        #     try:
+        #         co.read(utils.CONFIG_FILE)
+        #         self.vdatum_path = co.get('VDATUM', 'jar')
+        #     except:
+        #         self.vdatum_path = self._find_vdatum()[0]
+        #         if self.status == 0:
+        #             co.add_section('VDATUM')
+        #             co.set('VDATUM', 'jar', self.vdatum_path)
             
-                    with open(utils.CONFIG_FILE, 'w') as conf:
-                        co.write(conf)
-                else: self.vdatum_path = None
-        else: self.vdatum_path = vdatum_path
+        #             with open(utils.CONFIG_FILE, 'w') as conf:
+        #                 co.write(conf)
+        #         else: self.vdatum_path = None
+        # else: self.vdatum_path = vdatum_path
 
         self._version = None
         self._get_version()
@@ -70,7 +76,7 @@ class vdatum:
 
     def _get_version(self):
         if self.vdatum_path is not None:
-            out, status = utils.run_cmd('java -jar {} {}'.format(self.vdatum_path, '-'))
+            out, status = utils.run_cmd('java -jar {} {}'.format(self.vdatum_path, '-'), False, False)
             for i in out.split('\n'):
                 if '- v' in i.strip():
                     self._version = i.strip().split('v')[-1]
@@ -86,11 +92,11 @@ class vdatum:
         for root, dirs, files in os.walk('/'):
             if 'vdatum.jar' in files:
                 results.append(os.path.join(root, 'vdatum.jar'))
+                break
         if len(results) <= 0:
             self.status = -1
         if self.verbose:
-            pb.opm = '{}..{}'.format(pb.opm, results[0])
-            pb.end(self.status)
+            pb.end(self.status, 'found vdatum {}'.format(results[0]))
 
         return(results)
 

@@ -105,8 +105,15 @@ def config_get_vers(cmd = None):
     
     return(cmd_vers)    
         
-def check_config():
+def check_config(recheck = False, verbose = False):
 
+    geomods_co = {}
+    vdatum_path = None
+    gmt_vers = None
+    mbgrid_vers = None
+    gdal_vers = None
+    bounds_vers = None
+    
     co = ConfigParser.ConfigParser()
     co.read(CONFIG_FILE)
     
@@ -114,65 +121,74 @@ def check_config():
     import vdatum
     try:
         vdatum_path = co.get('VDATUM', 'jar')
-    except:
-        vdatum_path = vdatum.vdatum()._find_vdatum()[0]
-        co.add_section('VDATUM')
-        co.set('VDATUM', 'jar', vdatum_path)
+        vdatum_path = None if vdatum_path == 'None' else vdatum_path
+    except: co.add_section('VDATUM')
 
+    if vdatum_path is None or recheck:
+        vd = vdatum.vdatum(verbose=verbose)
+        vdatum_path = vd.vdatum_path
+        vdatum_path = None if vdatum_path == 'None' else vdatum_path
+        co.set('VDATUM', 'jar', vdatum_path)
+        
+    geomods_co['VDATUM'] = vdatum_path
+        
     ## GMT
     try:
         gmt_vers = co.get('GMT', 'vers')
-        int(gmt_vers)
-    except:
-        gmt_vers = _cmd_check('gmt', 'gmt --version')
-        try:
-            co.add_section('GMT')
-        except: pass
-        co.set('GMT', 'vers', gmt_vers)
+        gmt_vers = None if gmt_vers == 'None' else gmt_vers
+    except: co.add_section('GMT')
 
+    if gmt_vers is None or recheck:
+        gmt_vers = _cmd_check('gmt', 'gmt --version')
+        gmt_vers = None if gmt_vers == 'None' else gmt_vers
+        co.set('GMT', 'vers', gmt_vers)
+        
+    geomods_co['GMT'] = gmt_vers
+        
     ## GDAL
     try:
         gdal_vers = co.get('GDAL', 'vers')
-        int(gdal_vers)
-    except:
-        gdal_vers = _cmd_check('gdal-config', 'gdal-config --version')
-        try:
-            co.add_section('GDAL')
-        except: pass
-        co.set('GDAL', 'vers', gdal_vers)
+        gdal = None if gdal_vers == 'None' else gdal_vers
+    except: co.add_section('GDAL')
 
+    if gdal_vers is None or recheck:
+        gdal_vers = _cmd_check('gdal-config', 'gdal-config --version')
+        gdal = None if gdal_vers == 'None' else gdal_vers
+        co.set('GDAL', 'vers', gdal_vers)
+        
+    geomods_co['GDAL'] = gdal_vers
+    
     ## mbgrid
     try:
         mbgrid_vers = co.get('MBGRID', 'vers')
-    except:
-        mbgrid_vers = _cmd_check('mbgrid', 'mbgrid -version | grep Version')
-        co.add_section('MBGRID')
-        co.set('MBGRID', 'vers', mbgrid_vers)
+        mbgrid_vers = None if mbgrid_vers == 'None' else mbgrid_vers
+    except: co.add_section('MBGRID')
 
+    if mbgrid_vers is None or recheck:
+        mbgrid_vers = _cmd_check('mbgrid', 'mbgrid -version | grep Version')
+        mbgrid_vers = None if mbgrid_vers == 'None' else mbgrid_vers
+        co.set('MBGRID', 'vers', mbgrid_vers)
+        
+    geomods_co['MBGRID'] = mbgrid_vers
+    
     ## bounds
     try:
         bounds_vers = co.get('BOUNDS', 'vers')
-        int(bounds_vers)
-    except:
-        bounds_vers = _cmd_check('bounds', 'bounds --version')
-        try:
-            co.add_section('BOUNDS')
-        except: pass
-        co.set('BOUNDS', 'vers', bounds_vers)
+        bounds_vers = None if bounds_vers == 'None' else bounds_vers
+    except: co.add_section('BOUNDS')
 
-    # ## test
-    # try:
-    #     test_vers = co.get('TET', 'vers')
-    #     int(test_vers)
-    # except:
-    #     bounds_vers = _cmd_check('bounds', 'bounds --version')
-    #     try:
-    #         co.add_section('TET')
-    #     except: pass
-    #     co.set('TET', 'vers', bounds_vers)
+    if bounds_vers is None or recheck:
+        bounds_vers = _cmd_check('bounds', 'bounds --version')
+        bounds_vers = None if bounds_vers == 'None' else bounds_vers
+        co.set('BOUNDS', 'vers', bounds_vers)
         
-    # with open(CONFIG_FILE, 'w') as conf:
-    #     co.write(conf)
+    geomods_co['BOUNDS'] = bounds_vers
+    
+    with open(CONFIG_FILE, 'w') as conf:
+        co.write(conf)
+
+    return(geomods_co)
+
         
 ## =============================================================================
 ##
@@ -235,9 +251,10 @@ def _cmd_check(cmd_str, cmd_vers_str):
     if cmd_exists(cmd_str): 
         cmd_vers, status = run_cmd('{}'.format(cmd_vers_str), prog = False)
         cmd_vers = cmd_vers.split()[-1].rstrip()
-    else: status = -1
-    pb.opm = 'found {} version {}'.format(cmd_str, cmd_vers)
-    pb.end(status)
+    else:
+        cmd_vers = None
+        status = -1
+    pb.end(status, 'found {} version {}'.format(cmd_str, cmd_vers))
 
     return(cmd_vers)
 
@@ -313,5 +330,58 @@ class _progress:
         if status != 0:
             sys.stderr.write('\r[\033[31m\033[1m{:^6}\033[m] {:40}\n'.format('fail', end_msg))
         else: sys.stderr.write('\r[\033[32m\033[1m{:^6}\033[m] {:40}\n'.format('ok', end_msg))
+
+## geomods-config console script
+
+gc_version = '0.0.1'
+gc_usage = '''{} ({}): geomods configuration
+
+usage: {} [ -hv [ args ] ] ...
+
+Options:
+  --help\t\tPrint the usage text
+  --version\t\tPrint the version information
+
+ Examples:
+
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
+'''.format( os.path.basename(sys.argv[0]), 
+            gc_version, 
+            os.path.basename(sys.argv[0]))
+
+
+def geomods_config():
+
+    want_verbose = False
     
+    argv = sys.argv
+        
+    ## ==============================================
+    ## parse command line arguments.
+    ## ==============================================
+
+    i = 1
+    while i < len(argv):
+        arg = argv[i]
+
+        if arg == '--help' or arg == '-h':
+            print(gc_usage)
+            sys.exit(1)
+
+        elif arg == '--version' or arg == '-v':
+            print('{}, version {}\n{}'.format(os.path.basename(sys.argv[0]), gc_version, _license))
+            sys.exit(1)
+
+        elif arg == '--verbose' or arg == '-V':
+            want_verbose = True
+            
+        elif arg[0] == '-':
+            print(_usage)
+            sys.exit(0)
+
+        i = i + 1
+
+    gc = check_config(True, want_verbose)
+    print gc
+        
 ### End
