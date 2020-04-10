@@ -180,6 +180,33 @@ def datafile_region(data_path, data_fmt = 168):
     
     return(o_region)
 
+def datalist2csv(datalist, region, inc, node_reg, o_name, verbose):
+
+    status = 0
+
+    reg_str = ''
+    if node_reg == 'pixel':
+        reg_str = '-r'
+
+    ## todo: make xyz_block function of some kind to replace blockmean here.
+    out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = COMMA', verbose, verbose)
+    bm_cmd = ('gmt blockmean {} -I{:.7f} -V {} > {}.csv\
+    '.format(region.gmt, inc, reg_str, o_name))
+    out, status = utils.run_cmd(bm_cmd, verbose, verbose, datalist._dump_data)
+    
+    o_vrt = open('{}.vrt'.format(o_name), 'w')
+    t = '''<OGRVRTDataSource>
+  <OGRVRTLayer name="{}">
+    <SrcDataSource>{}.csv</SrcDataSource>
+    <GeometryType>wkbPoint</GeometryType>
+    <GeometryField encoding="PointFromColumns" x="field_1" y="field_2" z="field_3"/>
+  </OGRVRTLayer>
+</OGRVRTDataSource>'''.format(o_name, o_name)
+    o_vrt.write(t)
+    o_vrt.close()
+    
+    return(status)
+
 def datalist_set_weight(data_e, weight = None):
     if weight is not None:
         try:

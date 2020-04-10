@@ -490,38 +490,48 @@ class dem:
     def invdst(self, power = 2.0, smoothing = 0.0, radius1 = 0.0, radius2 = 0.0, angle = 0.0, max_points = 0, min_points = 0, nodata = 0.0):
         '''Generate an inverse distance grid with GDAL'''
 
-        reg_str = ''
-        if self.node == 'pixel':
-            reg_str = '-r'
-
-        ## todo: move to function to use with all gdal_grid algs...
-            
+        if self.node != 'pixel':
+            self.dist_region = self.dist_region.buffer(self.inc * .5)
+        
         out_size_x = int((self.dist_region.east - self.dist_region.west) / self.inc)
         out_size_y = int((self.dist_region.north - self.dist_region.south) / self.inc)
-        
-        out, self.status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = COMMA', self.verbose, self.verbose)
-        bm_cmd = ('gmt blockmean {} -I{:.7f} -V {} > {}.csv\
-        '.format(self.proc_region.gmt, self.inc, reg_str, self.o_name))
-        out, self.status = utils.run_cmd(bm_cmd, self.verbose, self.verbose, self.datalist._dump_data)
-        
-        o_vrt = open('{}.vrt'.format(self.o_name), 'w')
-        t = '''<OGRVRTDataSource>
-  <OGRVRTLayer name="{}">
-    <SrcDataSource>{}.csv</SrcDataSource>
-    <GeometryType>wkbPoint</GeometryType>
-    <GeometryField encoding="PointFromColumns" x="field_1" y="field_2" z="field_3"/>
-  </OGRVRTLayer>
-</OGRVRTDataSource>'''.format(self.o_name, self.o_name)
-        o_vrt.write(t)
-        o_vrt.close()
-        
+
+        self.status = datalists.datalist2csv(self.datalist, self.proc_region, self.inc, self.node, self.o_name, self.verbose)
+
         gg_cmd = 'gdal_grid -zfield "field_3" -txe {} {} -tye {} {} -outsize {} {} \
         -a invdist:power={}:smoothing={}:radius1={}:radius2={}:angle={}:max_points={}:min_points={}:nodata={} -l {} {}.vrt {}.grd -of netCDF --config GDAL_NUM_THREADS ALL_CPUS\
         '.format(self.dist_region.west, self.dist_region.east, self.dist_region.north, self.dist_region.south, out_size_x, out_size_y,
                  power, smoothing, radius1, radius2, angle, max_points, min_points, nodata, self.o_name, self.o_name, self.o_name)
-        #print gg_cmd
+
         out, status = utils.run_cmd(gg_cmd, self.verbose, self.verbose)
-        #self.dem = '{}.tif'.format(self.o_name)
+
+        utils.remove_glob('{}.vrt'.format(self.o_name))
+        utils.remove_glob('{}.csv'.format(self.o_name))
+
+        self.dem = '{}.grd'.format(self.o_name)
+        utils.remove_glob('gmt.conf')
+
+    ## ==============================================
+    ## run GDAL gdal_grid on the datalist to generate
+    ## an Moving Average DEM
+    ## ==============================================
+    
+    def m_average(self, radius1 = 0.01, radius2 = 0.01, angle = 0.0, min_points = 0, nodata = 0.0):
+        '''Generate a moving average grid with GDAL'''
+
+        if self.node != 'pixel':
+            self.dist_region = self.dist_region.buffer(self.inc * .5)
+            
+        out_size_x = int((self.dist_region.east - self.dist_region.west) / self.inc)
+        out_size_y = int((self.dist_region.north - self.dist_region.south) / self.inc)
+        
+        self.status = datalists.datalist2csv(self.datalist, self.proc_region, self.inc, self.node, self.o_name, self.verbose)
+        
+        gg_cmd = 'gdal_grid -zfield "field_3" -txe {} {} -tye {} {} -outsize {} {}\
+        -a average:radius1={}:radius2={}:angle={}:min_points={}:nodata={} -l {} {}.vrt {}.grd -of netCDF --config GDAL_NUM_THREADS ALL_CPUS\
+        '.format(self.dist_region.west, self.dist_region.east, self.dist_region.north, self.dist_region.south, out_size_x, out_size_y,
+                 radius1, radius2, angle, min_points, nodata, self.o_name, self.o_name, self.o_name)
+        out, status = utils.run_cmd(gg_cmd, self.verbose, self.verbose)
 
         utils.remove_glob('{}.vrt'.format(self.o_name))
         utils.remove_glob('{}.csv'.format(self.o_name))
@@ -667,7 +677,8 @@ _dem_mods = {
     'nearneighbor': [lambda x: x.nearneighbor, 'NEARNEIGHBOR DEM via GMT', 'radius=6s'],
     'num': [lambda x: x.num, 'Uninterpolated DEM via GMT xyz2grd', ':mode=n'],
     'bathy': [lambda x: x.bathy, 'BATHY-only DEM via GMT surface', ':mask=gsshg'],
-    'invdst': [lambda x: x.invdst, 'Inverse Distance DEM via gdal_grid', ':power=2.0:smoothing=0.0'],
+    'invdst': [lambda x: x.invdst, 'Inverse Distance DEM via gdal_grid', ':power=2.0:smoothing=0.0:radus1=0.0:radius2:0.0'],
+    'average': [lambda x: x.m_average, 'Moving Average DEM via gdal_grid', ':radius1=0.01:radius2=0.01'],
     'vdatum': [lambda x: x.vdatum, 'VDATUM transformation grid', ':ivert=navd88:overt=mhw:region=3'],
 }
 #'spatial-metadata': [lambda x: x.spatial_metadata, 'DEM SPATIAL METADATA', ':epsg'],
