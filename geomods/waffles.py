@@ -237,7 +237,7 @@ class dem:
     DEM Modules include, `mbgrid`, `surface`, `num`, `mean`, `bathy`'''
 
     def __init__(self, i_datalist, i_region, i_inc = 0.0000925925, o_name = None, o_b_name = None, \
-                 o_node = 'pixel', o_fmt = 'GTiff', o_extend = 6, callback = lambda: False, verbose = False):
+                 o_node = 'pixel', o_fmt = 'GTiff', o_extend = 6, clip_ply = None, callback = lambda: False, verbose = False):
         self.datalist = i_datalist
         self.region = i_region
         self.inc = float(i_inc)
@@ -267,6 +267,8 @@ class dem:
         self.pb = utils._progress()
 
         self.gc = utils.check_config(False, self.verbose)
+
+        self.clip_ply = clip_ply
         
     def run(self, dem_mod = 'mbgrid', args = ()):
         '''Run the DEM module `dem_mod` using args `dem_mod_args`.'''
@@ -294,7 +296,18 @@ class dem:
                 gmt_dem = self.dem
                 self.dem = grd2gdal(self.dem, self.o_fmt)
                 utils.remove_glob(gmt_dem)
-            
+
+        if self.clip_ply is not None:
+            clip_args = {}
+            cp = self.clip_ply.split(':')
+            clip_args['src_ply'] = cp[0]
+            cargs = cp[1:]
+            for arg in cargs:
+                p_arg = arg.split('=')
+                clip_args[p_arg[0]] = p_arg[1]
+
+            self.clip_dem(**clip_args)
+                            
         return(self.dem)
 
     ## ==============================================
@@ -303,6 +316,17 @@ class dem:
     ## is not cleared...should add output file to send to...
     ## ==============================================
 
+    def clip_dem(self, src_ply = None, invert = False):
+
+        if os.path.exists(src_ply):
+            if invert:
+                gr_inv = '-i'
+            else: gr_inv = ''
+
+            gi = gdalfun._infos(self.dem)
+            gr_cmd = 'gdal_rasterize -burn {} {} -l {} {} {}'.format(gi['ndv'], gr_inv, src_ply.split('.')[0], src_ply, self.dem)
+            utils.run_cmd(gr_cmd, self.verbose, self.verbose)
+        
     def mbgrid(self, dist = '10/3', tension = 35, use_datalists = False):
         '''Generate a DEM with MBSystem's mbgrid program.'''
 
@@ -474,13 +498,13 @@ class dem:
         if self.verbose:
             pb.end(self.status, 'generated datalist MASK grid.')
 
-        if self.status == 0:
-            if self.o_fmt != 'GMT':
-                gmt_dem = self.dem
-                self.dem = grd2gdal(self.dem, self.o_fmt)
-                utils.remove_glob(gmt_dem)
+        # if self.status == 0:
+        #     if self.o_fmt != 'GMT':
+        #         gmt_dem = self.dem
+        #         self.dem = grd2gdal(self.dem, self.o_fmt)
+        #         utils.remove_glob(gmt_dem)
             
-        return(self.dem)
+        #return(self.dem)
 
     ## ==============================================
     ## run GDAL gdal_grid on the datalist to generate
@@ -704,6 +728,7 @@ _dem_mods = {
     'triangulate': [lambda x: x.triangulate, 'TRIANGULATION DEM via GMT triangulate', None],
     'nearneighbor': [lambda x: x.nearneighbor, 'NEARNEIGHBOR DEM via GMT', 'radius=6s'],
     'num': [lambda x: x.num, 'Uninterpolated DEM via GMT xyz2grd', ':mode=n'],
+    'mask': [lambda x: x.mask, 'Data MASK grid', 'None'],
     'bathy': [lambda x: x.bathy, 'BATHY-only DEM via GMT surface', ':mask=gsshg'],
     'invdst': [lambda x: x.invdst, 'Inverse Distance DEM via gdal_grid', ':power=2.0:smoothing=0.0:radus1=0.1:radius2:0.1'],
     'average': [lambda x: x.m_average, 'Moving Average DEM via gdal_grid', ':radius1=0.01:radius2=0.01'],
@@ -735,9 +760,9 @@ Options:
   -P, --prefix\t\tOutput naming PREFIX.
   -O, --output-name\tOutput BASENAME; will over-ride any set PREFIX.
   -X, --extend\t\tNumber of cells with which to EXTEND the REGION. [6]
+  -C, --clip\t\tCLIP the output to the clip polygon. [clip_ply.shp:invert=False]
 
   -a, --archive\t\tArchive the data from the DATALIST in the REGION.
-  -m, --mask\t\tGenerate associated datalist MASK grid for the REGION.
   -r, --grid-node\tuse grid-node registration, default is pixel-node
   -s, --spat-metadata\tGenerate associated SPATIAL-METADATA for the REGION.
   -u, --uncertainty\tGenerate an associated DEM UNCERTAINTY grid. <beta>
@@ -770,7 +795,6 @@ def main():
     want_verbose = False
     want_sm = False
     want_unc = False
-    want_mask = False
     want_archive = False
     mod_opts = {}
     o_pre = None
@@ -778,6 +802,7 @@ def main():
     o_fmt = 'GTiff'
     node_reg = 'pixel'
     o_extend = 6
+    clip_ply = None
 
     argv = sys.argv
         
@@ -830,6 +855,12 @@ def main():
             i = i + 1
         elif arg[:2] == '-X':
             o_extend = int(arg[2:])
+
+        elif arg == '--clip' or arg == '-C':
+            clip_ply = str(argv[i + 1])
+            i = i + 1
+        elif arg[:2] == '-C':
+            clip_ply = str(arg[2:])
             
         elif arg == '--grid-node' or arg == '-r':
             node_reg = 'grid'
@@ -837,9 +868,6 @@ def main():
         elif arg == '--archive' or arg == '-a':
             want_archive = True
 
-        elif arg == '--mask' or arg == '-m':
-            want_mask = True
-            
         elif arg == '--spat-metadata' or arg == '-s':
             want_sm = True
 
@@ -972,12 +1000,6 @@ def main():
                 s = threading.Thread(target = sm.run, args = ())
                 s.start()
 
-            if want_mask:
-                ml = dem(this_datalist, this_region, i_inc = i_inc, o_name = o_pre, o_b_name = o_bn, o_node = node_reg,\
-                         o_fmt = o_fmt, o_extend = o_extend, callback = lambda: stop_threads, verbose = want_verbose)
-                m = threading.Thread(target = ml.mask, args = ())
-                m.start()
-
             if want_archive:
                 a = threading.Thread(target = this_datalist._archive, args = ())
                 arc_datalist = a.start()
@@ -1000,7 +1022,7 @@ def main():
             pb = utils._progress('running geomods dem module \033[1m{}\033[m on region ({}/{}): \033[1m{}\033[m...\
             '.format(dem_mod.upper(), rn + 1, len(these_regions), this_region.region_string))
             dl = dem(this_datalist, this_region, i_inc = i_inc, o_name = o_pre, o_b_name = o_bn, o_node = node_reg,\
-                     o_fmt = o_fmt, o_extend = o_extend, callback = lambda: stop_threads, verbose = want_verbose)
+                     o_fmt = o_fmt, o_extend = o_extend, clip_ply = clip_ply, callback = lambda: stop_threads, verbose = want_verbose)
             t = threading.Thread(target = dl.run, args = (dem_mod, args))
             
             try:
@@ -1038,7 +1060,6 @@ def main():
 
         if this_datalist is not None:
             if want_sm: s.join()
-            if want_mask: m.join()
             if want_archive: a.join()
 
 if __name__ == '__main__':

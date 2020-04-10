@@ -30,6 +30,7 @@ from gdalconst import *
 
 import utils
 
+gdal.PushErrorHandler('CPLQuietErrorHandler')
 GDAL_OPTS = ["COMPRESS=LZW", "INTERLEAVE=PIXEL", "TILED=YES",\
              "SPARSE_OK=TRUE", "BIGTIFF=YES" ]
 
@@ -707,6 +708,7 @@ def infos(src_fn, full = False):
         ds_config = _gather_infos(ds)
         print ds_config
         print _gt2extent(ds_config)
+    ds = None
         
 def null(dst_fn, extent, cellsize, nodata = -9999, outformat = 'GTiff'):
     '''generate a `null` grid with gdal'''
