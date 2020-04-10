@@ -248,6 +248,8 @@ class dem:
 
         self.proc_region = self.region.buffer((self.extend * 2) * self.inc)
         self.dist_region = self.region.buffer(self.extend * self.inc)
+
+        #self.datalist.region = self.proc_region
         
         self.status = 0
         self.stop = callback
@@ -454,7 +456,7 @@ class dem:
         
         if self.gc['GMT'] is None:
             self.datalist._load_data()
-            self.dem = self.datalist.mask(region = self.dist_region.region, inc = self.inc, o_name = self.o_name)
+            self.dem = self.datalist.mask(region = self.dist_region.region, inc = self.inc, o_name = self.o_name, o_fmt = 'netCDF')
         else:
             self.num('n')
 
@@ -468,9 +470,7 @@ class dem:
                     utils.remove_glob(self.dem)
 
             self.dem = '{}.grd'.format(self.o_name)
-            if self.status == 0:
-                if self.o_fmt != 'GMT':
-                    self.dem = grd2gdal(self.dem, self.o_fmt)
+
         if self.verbose:
             pb.end(self.status, 'generated datalist MASK grid.')
 
@@ -879,7 +879,8 @@ def main():
         if stop_threads: break
 
         if i_datalist is not None:
-            this_datalist = datalists.datalist(i_datalist, this_region, verbose = want_verbose)
+            this_datalist = datalists.datalist(i_datalist, this_region.buffer((o_extend * 2) * i_inc), verbose = want_verbose)
+            #this_datalist = datalists.datalist(i_datalist, this_region, verbose = want_verbose)
             if not this_datalist._valid_p():
                 utils._error_msg('invalid datalist')
                 status = -1

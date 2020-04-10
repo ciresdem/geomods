@@ -251,6 +251,7 @@ def dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
     elif entry[1] == 200: #gdal
         if region is not None:
             srcwin = gdalfun._srcwin(entry[0], region.region)
+            #print srcwin
         else: srcwin = None
         gdalfun.dump(entry[0], dst_xyz = dst_port, dump_nodata = False, srcwin = srcwin, mask = None, warp_to_wgs = False)
     
@@ -448,7 +449,8 @@ class datalist:
                     if not os.path.exists(dpath): usable = False
                     if usable:
                         dinf_region = datafile_region(dpath, data_fmt = dformat)
-
+                        if dinf_region is None: usable = False
+                        
                         if self.region is not None and dinf_region is not None:
                             if not regions.regions_intersect_p(self.region, dinf_region):
                                 usable = False
