@@ -56,8 +56,9 @@ def grd2gdal(src_grd, dst_fmt = 'GTiff', verbose = False):
     
     status = 0
     if os.path.exists(src_grd):
-        dst_gdal = '{}.{}'.format(os.path.basename(src_grd).split('.')[0], gdalfun._fext(dst_fmt))
-
+        #dst_gdal = os.path.join(src_grd[:-4], gdalfun._fext(dst_fmt))
+        dst_gdal = '{}.{}'.format(src_grd[:-4], gdalfun._fext(dst_fmt))
+        print dst_gdal
         grd2gdal_cmd = ('gmt grdconvert {} {}=gd+n-9999:{} -V\
         '.format(src_grd, dst_gdal, dst_fmt))
         out, status = utils.run_cmd(grd2gdal_cmd, verbose, verbose)
@@ -258,10 +259,11 @@ class dem:
         if o_b_name is None:
             if o_name is None: 
                 o_name = self.datalist._path_basename.split('.')[0]
+            else: o_name = os.path.basename(o_name).split('.')[0]
 
             str_inc = inc2str_inc(self.inc)
             self.o_name = '{}{}_{}_{}'.format(o_name, str_inc, self.region.fn, this_year())
-        else: self.o_name = o_b_name
+        else: self.o_name = os.path.join(os.path.dirname(o_b_name), os.path.basename(o_b_name).split('.')[0])
 
         self.dem = '{}.grd'.format(self.o_name)
         self.pb = utils._progress()
@@ -481,13 +483,14 @@ class dem:
             pb = utils._progress('generating datalist MASK grid...')
         
         if self.gc['GMT'] is None:
+            if self.node != 'pixel':
+                self.dist_region = self.dist_region.buffer(self.inc * .5)
             self.datalist._load_data()
             self.dem = self.datalist.mask(region = self.dist_region.region, inc = self.inc, o_name = self.o_name, o_fmt = 'netCDF')
         else:
             self.num('n')
 
             if self.status == 0:
-                #self.o_name = '{}_msk'.format(self.o_name)
                 num_msk_cmd = ('gmt grdmath -V {} 0 MUL 1 ADD 0 AND = tmp.grd\
                 '.format(self.dem, self.o_name))
                 out, status = utils.run_cmd(num_msk_cmd, self.verbose, self.verbose)
@@ -500,14 +503,6 @@ class dem:
 
         if self.verbose:
             pb.end(self.status, 'generated datalist MASK grid.')
-
-        # if self.status == 0:
-        #     if self.o_fmt != 'GMT':
-        #         gmt_dem = self.dem
-        #         self.dem = grd2gdal(self.dem, self.o_fmt)
-        #         utils.remove_glob(gmt_dem)
-            
-        #return(self.dem)
 
     ## ==============================================
     ## run GDAL gdal_grid on the datalist to generate
@@ -672,8 +667,9 @@ class dem:
             this_vd.ivert = ivert
             this_vd.overt = overt
 
-            dem_name = '{}to{}'.format(this_vd.ivert, this_vd.overt)
-            self.dem = '{}_{}.grd'.format(self.o_name.split('.')[0], dem_name)
+            #dem_name = '{}to{}'.format(this_vd.ivert, this_vd.overt)
+            #self.dem = '{}_{}.grd'.format(self.o_name.split('.')[0], dem_name)
+            self.dem = '{}.grd'.format(self.o_name)
 
             this_vd.run_vdatum('empty.xyz')
 
