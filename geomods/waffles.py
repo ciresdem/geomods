@@ -487,7 +487,7 @@ class dem:
     ## an Inverse Distance DEM
     ## ==============================================
 
-    def invdst(self, power = 2.0, smoothing = 0.0, radius1 = 0.0, radius2 = 0.0, angle = 0.0, max_points = 0, min_points = 0, nodata = 0.0):
+    def invdst(self, power = 2.0, smoothing = 0.0, radius1 = 0.1, radius2 = 0.1, angle = 0.0, max_points = 0, min_points = 0, nodata = 0.0):
         '''Generate an inverse distance grid with GDAL'''
 
         if self.node != 'pixel':
@@ -531,6 +531,34 @@ class dem:
         -a average:radius1={}:radius2={}:angle={}:min_points={}:nodata={} -l {} {}.vrt {}.grd -of netCDF --config GDAL_NUM_THREADS ALL_CPUS\
         '.format(self.dist_region.west, self.dist_region.east, self.dist_region.north, self.dist_region.south, out_size_x, out_size_y,
                  radius1, radius2, angle, min_points, nodata, self.o_name, self.o_name, self.o_name)
+        out, status = utils.run_cmd(gg_cmd, self.verbose, self.verbose)
+
+        utils.remove_glob('{}.vrt'.format(self.o_name))
+        utils.remove_glob('{}.csv'.format(self.o_name))
+
+        self.dem = '{}.grd'.format(self.o_name)
+        utils.remove_glob('gmt.conf')
+
+    ## ==============================================
+    ## run GDAL gdal_grid on the datalist to generate
+    ## a linear triangulation DEM
+    ## ==============================================
+    
+    def linear(self, radius = -1, nodata = 0.0):
+        '''Generate a llinear triangulation grid with GDAL'''
+
+        if self.node != 'pixel':
+            self.dist_region = self.dist_region.buffer(self.inc * .5)
+            
+        out_size_x = int((self.dist_region.east - self.dist_region.west) / self.inc)
+        out_size_y = int((self.dist_region.north - self.dist_region.south) / self.inc)
+        
+        self.status = datalists.datalist2csv(self.datalist, self.proc_region, self.inc, self.node, self.o_name, self.verbose)
+        
+        gg_cmd = 'gdal_grid -zfield "field_3" -txe {} {} -tye {} {} -outsize {} {}\
+        -a linear:radius={}:nodata={} -l {} {}.vrt {}.grd -of netCDF --config GDAL_NUM_THREADS ALL_CPUS\
+        '.format(self.dist_region.west, self.dist_region.east, self.dist_region.north, self.dist_region.south, out_size_x, out_size_y,
+                 radius, nodata, self.o_name, self.o_name, self.o_name)
         out, status = utils.run_cmd(gg_cmd, self.verbose, self.verbose)
 
         utils.remove_glob('{}.vrt'.format(self.o_name))
@@ -677,8 +705,9 @@ _dem_mods = {
     'nearneighbor': [lambda x: x.nearneighbor, 'NEARNEIGHBOR DEM via GMT', 'radius=6s'],
     'num': [lambda x: x.num, 'Uninterpolated DEM via GMT xyz2grd', ':mode=n'],
     'bathy': [lambda x: x.bathy, 'BATHY-only DEM via GMT surface', ':mask=gsshg'],
-    'invdst': [lambda x: x.invdst, 'Inverse Distance DEM via gdal_grid', ':power=2.0:smoothing=0.0:radus1=0.0:radius2:0.0'],
+    'invdst': [lambda x: x.invdst, 'Inverse Distance DEM via gdal_grid', ':power=2.0:smoothing=0.0:radus1=0.1:radius2:0.1'],
     'average': [lambda x: x.m_average, 'Moving Average DEM via gdal_grid', ':radius1=0.01:radius2=0.01'],
+    'linear': [lambda x: x.linear, 'Linear triangulation DEM via gdal_grid', ':radius=-1'],
     'vdatum': [lambda x: x.vdatum, 'VDATUM transformation grid', ':ivert=navd88:overt=mhw:region=3'],
 }
 #'spatial-metadata': [lambda x: x.spatial_metadata, 'DEM SPATIAL METADATA', ':epsg'],
