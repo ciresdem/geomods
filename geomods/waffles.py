@@ -285,7 +285,9 @@ class dem:
         for arg in args:
             p_arg = arg.split('=')
             args_d[p_arg[0]] = p_arg[1]
-        
+
+        self.o_name = '{}_{}'.format(self.o_name, dem_mod)
+            
         if self.status == 0:
             _dem_mods[dem_mod][0](self)(**args_d)
 
@@ -485,13 +487,14 @@ class dem:
             self.num('n')
 
             if self.status == 0:
-                self.o_name = '{}_msk'.format(self.o_name)
-                num_msk_cmd = ('gmt grdmath -V {} 0 MUL 1 ADD 0 AND = {}.grd\
+                #self.o_name = '{}_msk'.format(self.o_name)
+                num_msk_cmd = ('gmt grdmath -V {} 0 MUL 1 ADD 0 AND = tmp.grd\
                 '.format(self.dem, self.o_name))
                 out, status = utils.run_cmd(num_msk_cmd, self.verbose, self.verbose)
 
                 if self.status == 0:
                     utils.remove_glob(self.dem)
+                    os.rename('tmp.grd', '{}.grd'.format(self.o_name))
 
             self.dem = '{}.grd'.format(self.o_name)
 
@@ -729,7 +732,6 @@ _dem_mods = {
     'nearneighbor': [lambda x: x.nearneighbor, 'NEARNEIGHBOR DEM via GMT', 'radius=6s'],
     'num': [lambda x: x.num, 'Uninterpolated DEM via GMT xyz2grd', ':mode=n'],
     'mask': [lambda x: x.mask, 'Data MASK grid', 'None'],
-    'bathy': [lambda x: x.bathy, 'BATHY-only DEM via GMT surface', ':mask=gsshg'],
     'invdst': [lambda x: x.invdst, 'Inverse Distance DEM via gdal_grid', ':power=2.0:smoothing=0.0:radus1=0.1:radius2:0.1'],
     'average': [lambda x: x.m_average, 'Moving Average DEM via gdal_grid', ':radius1=0.01:radius2=0.01'],
     'linear': [lambda x: x.linear, 'Linear triangulation DEM via gdal_grid', ':radius=-1'],
@@ -746,7 +748,7 @@ def dem_mod_desc(x):
 
 _waffles_usage = '''{} ({}): Process and generate Digital Elevation Models and derivatives
 
-usage: {} [ -ahmrsuvIEFOPRX [ args ] ] module[:parameter=value]* ...
+usage: {} [ -ahrsuvCIEFOPRX [ args ] ] module[:parameter=value]* ...
 
 {}
 Options:
