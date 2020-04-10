@@ -474,6 +474,12 @@ class dem:
         if self.verbose:
             pb.end(self.status, 'generated datalist MASK grid.')
 
+        if self.status == 0:
+            if self.o_fmt != 'GMT':
+                gmt_dem = self.dem
+                self.dem = grd2gdal(self.dem, self.o_fmt)
+                utils.remove_glob(gmt_dem)
+            
         return(self.dem)
 
     ## ==============================================
@@ -917,6 +923,9 @@ def main():
                     o_extend = 2
                 else: tmp_inc = i_inc
 
+                if node_reg != 'pixel':
+                    this_region = this_region.buffer(tmp_inc * .5)
+                
                 sm = metadata.spatial_metadata(this_datalist, this_region, i_inc = tmp_inc, o_name = o_name,\
                                                o_extend = o_extend, callback = lambda: stop_threads, verbose = want_verbose)
                 sm.want_queue = True
