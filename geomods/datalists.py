@@ -175,6 +175,9 @@ def datafile_region(data_path, data_fmt = 168):
         o_region = regions.region('/'.join(minmax))
     except: o_region = None
 
+    #print minmax
+    if 0. in map(float, minmax): o_region = None
+    
     return(o_region)
 
 def datalist_set_weight(data_e, weight = None):

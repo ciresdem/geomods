@@ -853,7 +853,7 @@ def main():
         try: 
             these_regions = [regions.region(i_region)]
         except: these_regions = [regions.region('/'.join(map(str, x))) for x in gdalfun._ogr_extents(i_region)]
-
+    
     if len(these_regions) == 0:
         these_regions = [None]
 
