@@ -237,7 +237,7 @@ class dem:
     '''Generate a Digital Elevation Model using one of the dem modules.
     DEM Modules include, `mbgrid`, `surface`, `num`, `mean`, `bathy`'''
 
-    def __init__(self, i_datalist, i_region, i_inc = 0.0000925925, o_name = None, o_b_name = None, \
+    def __init__(self, i_datalist, i_region, i_inc = 0.0000925925, o_name = None,\
                  o_node = 'pixel', o_fmt = 'GTiff', o_extend = 6, clip_ply = None, callback = lambda: False, verbose = False):
         self.datalist = i_datalist
         self.region = i_region
@@ -256,14 +256,16 @@ class dem:
         self.stop = callback
         self.verbose = verbose
 
-        if o_b_name is None:
-            if o_name is None: 
-                o_name = self.datalist._path_basename.split('.')[0]
-            else: o_name = os.path.basename(o_name).split('.')[0]
+        self.o_name = o_name
 
-            str_inc = inc2str_inc(self.inc)
-            self.o_name = '{}{}_{}_{}'.format(o_name, str_inc, self.region.fn, this_year())
-        else: self.o_name = os.path.join(os.path.dirname(o_b_name), os.path.basename(o_b_name).split('.')[0])
+        # if o_b_name is None:
+        #     if o_name is None: 
+        #         o_name = self.datalist._path_basename.split('.')[0]
+        #     else: o_name = os.path.basename(o_name).split('.')[0]
+
+        #     str_inc = inc2str_inc(self.inc)
+        #     self.o_name = '{}{}_{}_{}'.format(o_name, str_inc, self.region.fn, this_year())
+        # else: self.o_name = os.path.join(os.path.dirname(o_b_name), os.path.basename(o_b_name).split('.')[0])
 
         self.dem = '{}.grd'.format(self.o_name)
         self.pb = utils._progress()
@@ -293,14 +295,6 @@ class dem:
         if self.status == 0:
             _dem_mods[dem_mod][0](self)(**args_d)
 
-        if self.status != 0:
-            self.dem = None
-        else:
-            if self.o_fmt != 'GMT':
-                gmt_dem = self.dem
-                self.dem = grd2gdal(self.dem, self.o_fmt)
-                utils.remove_glob(gmt_dem)
-
         if self.clip_ply is not None:
             clip_args = {}
             cp = self.clip_ply.split(':')
@@ -311,7 +305,15 @@ class dem:
                 clip_args[p_arg[0]] = p_arg[1]
 
             self.clip_dem(**clip_args)
-                            
+
+        if self.status != 0:
+            self.dem = None
+        else:
+            if self.o_fmt != 'GMT':
+                gmt_dem = self.dem
+                self.dem = grd2gdal(self.dem, self.o_fmt)
+                utils.remove_glob(gmt_dem)
+            
         return(self.dem)
 
     ## ==============================================
@@ -322,14 +324,46 @@ class dem:
 
     def clip_dem(self, src_ply = None, invert = False):
 
-        if os.path.exists(src_ply):
-            if invert:
-                gr_inv = '-i'
-            else: gr_inv = ''
+        if src_ply is not None:
+            if os.path.exists(src_ply):
+                if invert:
+                    gr_inv = '-i'
+                else: gr_inv = ''
 
-            gi = gdalfun._infos(self.dem)
-            gr_cmd = 'gdal_rasterize -burn {} {} -l {} {} {}'.format(gi['ndv'], gr_inv, src_ply.split('.')[0], src_ply, self.dem)
-            utils.run_cmd(gr_cmd, self.verbose, self.verbose)
+                gmt_dem = self.dem
+                self.dem = grd2gdal(self.dem)
+                utils.remove_glob(gmt_dem)
+                
+                gi = gdalfun._infos(self.dem)
+                print src_ply.split('.')
+                gr_cmd = 'gdal_rasterize -burn {} {} -l {} {} {}'.format(gi['ndv'], gr_inv, os.path.basename(src_ply).split('.')[0], src_ply, self.dem)
+                print gr_cmd
+                utils.run_cmd(gr_cmd, self.verbose, self.verbose)
+
+                gmt_dem = self.dem
+                self.dem = grd2gdal(self.dem, 'netCDF')
+                utils.remove_glob(gmt_dem)
+                
+            else: ## use gsshg via GMT
+                if invert:
+                    ns = '-N0/1/0/1/0'
+                else: ns = '-N1/0/1/0/1'
+
+                reg_str = ''
+                if self.node == 'pixel':
+                    reg_str = '-r'
+                
+                dem_landmask_cmd = ('gmt grdlandmask -Gtmp_lm.grd -I{:.7f} {} -Df+ -V {} {}\
+                '.format(self.inc, self.dist_region.gmt, ns, reg_str))
+                out, self.status = utils.run_cmd(dem_landmask_cmd, self.verbose, self.verbose)
+
+                if self.status == 0:
+                    dem_landmask_cmd1 = ('gmt grdmath -V {} tmp_lm.grd MUL 0 NAN = {}_clp.grd\
+                    '.format(self.dem, self.o_name))
+                    out, self.status = utils.run_cmd(dem_landmask_cmd1, self.verbose, self.verbose)
+
+                    os.rename('{}_clp.grd'.format(self.o_name), self.dem)
+                    utils.remove_glob('tmp_lm.grd')
         
     def mbgrid(self, dist = '10/3', tension = 35, use_datalists = False):
         '''Generate a DEM with MBSystem's mbgrid program.'''
@@ -377,7 +411,7 @@ class dem:
         if self.node == 'pixel':
             reg_str = '-r'
 
-        dem_surf_cmd = ('gmt blockmean {} -I{:.10f} -V {} | gmt surface -V {} -I{:.10f} -G{}_p.grd -T{} -Z{} -Lu{} -Ll{} {}\
+        dem_surf_cmd = ('gmt blockmean {} -I{:.10f} -V {} | gmt surface -V {} -I{:.10f} -G{}_p.grd -T{} -Z{} -Ll{} -Lu{} {}\
         '.format(self.proc_region.gmt, self.inc, reg_str, self.proc_region.gmt, self.inc, self.o_name, tension, relaxation, lower_limit, upper_limit, reg_str))
         out, self.status = utils.run_cmd(dem_surf_cmd, self.verbose, self.verbose, self.datalist._dump_data)
 
@@ -744,7 +778,7 @@ def dem_mod_desc(x):
 
 _waffles_usage = '''{} ({}): Process and generate Digital Elevation Models and derivatives
 
-usage: {} [ -ahrsuvCIEFOPRX [ args ] ] module[:parameter=value]* ...
+usage: {} [ -ahprsuvCEFIORX [ args ] ] module[:parameter=value]* ...
 
 {}
 Options:
@@ -755,12 +789,12 @@ Options:
   -I, --datalist\tThe input DATALIST.
   -E, --increment\tGridding CELL-SIZE in native units or GMT-style increments.
   -F, --format\t\tOutput grid FORMAT. [GTiff]
-  -P, --prefix\t\tOutput naming PREFIX.
-  -O, --output-name\tOutput BASENAME; will over-ride any set PREFIX.
+  -O, --output-name\tOutput naming BASENAME.
   -X, --extend\t\tNumber of cells with which to EXTEND the REGION. [6]
   -C, --clip\t\tCLIP the output to the clip polygon. [clip_ply.shp:invert=False]
 
   -a, --archive\t\tArchive the data from the DATALIST in the REGION.
+  -p, --prefix\t\tSet BASENAME to PREFIX (append inc/region/year/module info to output BASENAME).
   -r, --grid-node\tuse grid-node registration, default is pixel-node
   -s, --spat-metadata\tGenerate associated SPATIAL-METADATA for the REGION.
   -u, --uncertainty\tGenerate an associated DEM UNCERTAINTY grid. <beta>
@@ -772,7 +806,7 @@ Options:
  Examples:
  % {} -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 -V surface:tension=.7
  % {} -I input.datalist -E .3333333s -X 2 -R input_tiles_ply.shp -V -r -s -u mbgrid
- % {} -R-82.5/-82.25/26.75/27 -E0.0000925 vdatum:i_vdatum=navd88:o_vdatum=mhw:vd_region=3 -P ncei -r
+ % {} -R-82.5/-82.25/26.75/27 -E0.0000925 vdatum:i_vdatum=navd88:o_vdatum=mhw:vd_region=3 -O ncei -p -r
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
 '''.format( os.path.basename(sys.argv[0]), 
@@ -794,8 +828,8 @@ def main():
     want_sm = False
     want_unc = False
     want_archive = False
+    want_prefix = False
     mod_opts = {}
-    o_pre = None
     o_bn = None
     o_fmt = 'GTiff'
     node_reg = 'pixel'
@@ -841,12 +875,6 @@ def main():
             i = i + 1
         elif arg[:2] == '-O':
             o_bn = str(arg[2:])
-
-        elif arg == '--prefix' or arg == '-P':
-            o_pre = str(argv[i + 1])
-            i = i + 1
-        elif arg[:2] == '-P':
-            o_pre = str(arg[2:])
         
         elif arg == '--extend' or arg == '-X':
             o_extend = int(argv[i + 1])
@@ -859,6 +887,9 @@ def main():
             i = i + 1
         elif arg[:2] == '-C':
             clip_ply = str(arg[2:])
+
+        elif arg == '--prefix' or arg == '-p':
+            want_prefix = True
             
         elif arg == '--grid-node' or arg == '-r':
             node_reg = 'grid'
@@ -969,19 +1000,18 @@ def main():
             utils._error_msg('no region or datalist; aborting...')
             status = -1
             break
-
-        if this_datalist is None:
-            if o_pre is None and o_bn is None:
-                o_pre = 'waffles'
         
         if o_bn is None:
-            if o_pre is None:
-                o_name = this_datalist._path_basename.split('.')[0]
-            else:   
-                str_inc = inc2str_inc(i_inc)
-                o_name = '{}{}_{}_{}'.format(o_pre.split('.')[0], str_inc, this_region.fn, this_year())
-        else: o_name = o_bn.split('.')[0]
-
+            if this_datalist is None:
+                o_name = 'waffles'
+            else: o_name = this_datalist._path_basename.split('.')[0]
+        #else: o_name = o_bn.split('.')[0]
+        else: o_name = os.path.join(os.path.dirname(o_bn), os.path.basename(o_bn).split('.')[0])
+        
+        if want_prefix:
+            str_inc = inc2str_inc(i_inc)
+            o_name = '{}{}_{}_{}'.format(o_name, str_inc, this_region.fn, this_year())
+        
         if this_datalist is not None:
             if want_sm:
                 if i_inc < 0.0000925925:
@@ -1007,7 +1037,7 @@ def main():
             ## ==============================================
             ## Run the DEM module
             ## ==============================================
-
+            
             ## most modules need a datalist and a region and an increment to be valid, except vdatum doesn't need a datalist...
             if this_datalist is None:
                 if dem_mod.lower() != 'vdatum':
@@ -1017,9 +1047,16 @@ def main():
             
             args = tuple(mod_opts[dem_mod])
 
+            utils._msg('Module: {}'.format(dem_mod))
+            utils._msg('Module Options: {}'.format(args))
+            utils._msg('Datalist: {}'.format(this_datalist._path_basename))
+            utils._msg('Region: {}'.format(this_datalist.region.gmt))
+            utils._msg('Increment: {}'.format(i_inc))
+            utils._msg('Output: {}'.format(o_name))
+            
             pb = utils._progress('running geomods dem module \033[1m{}\033[m on region ({}/{}): \033[1m{}\033[m...\
             '.format(dem_mod.upper(), rn + 1, len(these_regions), this_region.region_string))
-            dl = dem(this_datalist, this_region, i_inc = i_inc, o_name = o_pre, o_b_name = o_bn, o_node = node_reg,\
+            dl = dem(this_datalist, this_region, i_inc = i_inc, o_name = o_name, o_node = node_reg,\
                      o_fmt = o_fmt, o_extend = o_extend, clip_ply = clip_ply, callback = lambda: stop_threads, verbose = want_verbose)
             t = threading.Thread(target = dl.run, args = (dem_mod, args))
             

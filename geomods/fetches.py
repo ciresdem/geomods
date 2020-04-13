@@ -119,7 +119,7 @@ def fetch_ftp_file(src_url, dst_fn, params = None, callback = None, datatype = N
     status = 0
     f = None
     halt = callback
-    pb = utils._progress('fetching remote ftp file: \033[1m{}\033[m...'.format(os.path.basename(src_url)))
+    pb = utils._progress('fetching remote ftp file: {}...'.format(os.path.basename(src_url)))
 
     if not os.path.exists(os.path.dirname(dst_fn)):
         try:
@@ -1034,20 +1034,29 @@ class tnm:
         
         self.region = extent
         region_data = { 'bbox':self.region.bbox }
+        coast_code = { 'q':'Coastline' }
+        dataset_code = { 'code':'nbd,bathydem' }
+
+        self._elevation_datasets = ['Topobathymetric Lidar DEM', 'Topobathymetric Lidar Point Cloud', 'National Elevation Dataset (NED) 1 arc-second', 'National Elevation Dataset (NED) 1/3 arc-second', 'National Elevation Dataset (NED) 1/9 arc-second', 'Digital Elevation Model (DEM) 1 meter']
         
         if extent is not None:
-            print self._tnm_dataset_url
-            self._req = fetch_req(self._tnm_dataset_url)
-            print self._req
+            #print self._tnm_dataset_url
+            
+            self._req = fetch_req(self._tnm_dataset_url, dataset_code)
+            self._reqc = fetch_req(self._tnm_dataset_url, coast_code)
+            #print self._req
             if self._req is not None:
                 try:
                     self._datasets = self._req.json()
+                    self._datasets.append(self._reqc.json()[0])
                 except:
                     print 'error, try again'
                     self._status = -1
             else: self._status = -1
         else: self._status = -1
-        print self._datasets
+
+        #self.print_datasets()
+        
         pb.opm = 'loaded The National Map fetch module.'
         pb.end(self._status)
 
@@ -1069,8 +1078,8 @@ class tnm:
 
             if formats is not None:
                 self._tnm_df = formats.split(',')
-            else: self._tnm_df = ['IMG']
-
+            else: self._tnm_df = []
+            
             self.filter_datasets()
         return(self._results)
 
@@ -1079,6 +1088,7 @@ class tnm:
 
         tw = utils._progress('filtering TNM dataset results...')
         req = None
+        extent = None
         sbDTags = []
         for ds in self._tnm_ds:
             dtags = self._datasets[ds[0]]['tags']
@@ -1095,19 +1105,43 @@ class tnm:
                     all_formats = True
                 else: all_formats = False
 
-                for dtag in dtags.keys():
-                    sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
-                    if all_formats:
-                        formats = self._datasets[ds[0]]['tags'][dtag]['formats']
-                        for ff in formats:
-                            self._tnm_df.append(ff)
-                    sbDTags.append(sbDTag)
+                #for dtag in dtags.keys():
+                sbDTag = self._datasets[ds[0]]['sbDatasetTag']
+                if all_formats:
+                    formats = self._datasets[ds[0]]['formats']
+                    for ff in formats:
+                        self._tnm_df.append(ff)
 
+                if ds[0] == 1:
+                    sbDTag = self._elevation_datasets
+                    if len(self._tnm_df) == 0:
+                        self._tnm_df.append('IMG')
+
+                if ds[0] == 2:
+                    sbDTag = ['National Hydrography Dataset (NHD) Best Resolution']
+                    extent = 'HU-4 Subregion'
+                    
+                sbDTags.append(sbDTag)
+                
+                # for dtag in dtags.keys():
+                #     sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
+                #     if all_formats:
+                #         formats = self._datasets[ds[0]]['tags'][dtag]['formats']
+                #         for ff in formats:
+                #             self._tnm_df.append(ff)
+                #     sbDTags.append(sbDTag)
+
+        #print sbDTags
         self.data = { 'datasets':sbDTags,
-                      'bbox':self.region.bbox,
-                      'prodFormats': ','.join(self._tnm_df)}
-        
+                      'bbox':self.region.bbox }
+
+        #print self._tnm_df
+        if len(self._tnm_df) > 0:
+            self.data['prodFormats'] = ','.join(self._tnm_df)
+
+        #print self.data
         req = fetch_req(self._tnm_product_url, params = self.data)
+        #print req.url
         if req is not None:
             try:
                 self._dataset_results = req.json()
@@ -1115,11 +1149,18 @@ class tnm:
                 print "tnm server error, try again"
 
         else: self._status = -1
-
+        #print self._dataset_results
+        print self._filters
         if len(self._dataset_results) > 0:
-            for i in self._dataset_results['items']:
-                f_url = i['downloadURL']
-                self._results.append([f_url, f_url.split('/')[-1], 'tnm'])
+            for item in self._dataset_results['items']:
+                if len(self._filters) > 0:
+                    for j in self._filters:
+                        if eval(j):
+                            f_url = item['downloadURL']
+                            self._results.append([f_url, f_url.split('/')[-1], 'tnm'])
+                else:
+                    f_url = item['downloadURL']
+                    self._results.append([f_url, f_url.split('/')[-1], 'tnm'])
 
         tw.opm = 'filtered \033[1m{}\033[m data files from TNM dataset results.'.format(len(self._results))
         tw.end(self._status)
@@ -1381,15 +1422,15 @@ class ngs:
 ## =============================================================================
 
 fetch_infos = { 
-    'dc':[lambda x, f, c: dc(x, f, c), 'digital coast [:index=False]'],
-    'nos':[lambda x, f, c: nos(x, f, c), 'noaa nos bathymetry'],
-    'charts':[lambda x, f, c: charts(x, f, c), 'noaa nautical charts'],
-    'srtm':[lambda x, f, c: srtm_cgiar(x, f, c), 'srtm from cgiar'],
+    'dc':[lambda x, f, c: dc(x, f, c), 'digital coast [:index=False:filters=None]'],
+    'nos':[lambda x, f, c: nos(x, f, c), 'noaa nos bathymetry [:filters=None]'],
+    'charts':[lambda x, f, c: charts(x, f, c), 'noaa nautical charts [:filters=None]'],
+    'srtm':[lambda x, f, c: srtm_cgiar(x, f, c), 'srtm from cgiar [None]'],
     'tnm':[lambda x, f, c: tnm(x, f, c), 'the national map [:index=False:dataset=1:subdataset=1:format=format0,format1,...]'],
-    'mb':[lambda x, f, c: mb(x, f, c), 'noaa multibeam'],
-    'gmrt':[lambda x, f, c: gmrt(x, f, c), 'gmrt'],
-    'usace':[lambda x, f, c: usace(x, f, c), 'usace bathymetry'],
-    'ngs':[lambda x, f, c: ngs(x, f, c), 'ngs monuments']
+    'mb':[lambda x, f, c: mb(x, f, c), 'noaa multibeam [None]'],
+    'gmrt':[lambda x, f, c: gmrt(x, f, c), 'gmrt [None]'],
+    'usace':[lambda x, f, c: usace(x, f, c), 'usace bathymetry [None]'],
+    'ngs':[lambda x, f, c: ngs(x, f, c), 'ngs monuments [None]']
 }
 
 def fetch_desc(x):
@@ -1561,7 +1602,7 @@ def main():
                 p_arg = arg.split('=')
                 args_d[p_arg[0]] = p_arg[1]
         
-            r = fl.run(*args_d)
+            r = fl.run(**args_d)
 
             if len(r) == 0:
                 if not want_update:
