@@ -365,7 +365,17 @@ class procs:
                 if split is not None:
                     os.remove(split_chunk[0])
                     os.remove(split_chunk[1])
-        
+
+    ## NHDS Shapefiles [ TNM:2:Shapefile ]
+    ## unzip only nhd_waterbodies
+    ## clip to region and remove null feature name
+    ## merge and union
+    ## unzip only nhd_area
+    ## merge and uin
+    ## merge and union nhd_area and nhd_waterbody
+    ## edit via gis to cover region in water.
+    ## make a waffles 'coastline' module using tnm and/or gmt gsshg
+                    
 ## =============================================================================
 ##
 ## Mainline - run  from console.

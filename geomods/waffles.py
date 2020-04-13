@@ -57,7 +57,8 @@ def grd2gdal(src_grd, dst_fmt = 'GTiff', verbose = False):
     status = 0
     if os.path.exists(src_grd):
         #dst_gdal = os.path.join(src_grd[:-4], gdalfun._fext(dst_fmt))
-        dst_gdal = '{}.{}'.format(src_grd[:-4], gdalfun._fext(dst_fmt))
+        dst_gdal = '{}.{}'.format(os.path.basename(src_grd).split('.')[0], gdalfun._fext(dst_fmt))
+        #dst_gdal = '{}.{}'.format(len(os.path.basename(src_grd).split('.')[-1]), gdalfun._fext(dst_fmt))
         print dst_gdal
         grd2gdal_cmd = ('gmt grdconvert {} {}=gd+n-9999:{} -V\
         '.format(src_grd, dst_gdal, dst_fmt))
