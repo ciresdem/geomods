@@ -1101,25 +1101,32 @@ class tnm:
             dtags = self._datasets[ds[0]]['tags']
             #print dtags
             if len(ds) > 1:
-                dtag = dtags.keys()[ds[1]]
-                sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
-                if len(self._tnm_df) == 0:
-                    formats = self._datasets[ds[0]]['tags'][dtag]['formats']
-                    self._tnm_df = formats
-                sbDTags.append(sbDTag)
+                if len(dtags) == 0:
+                    sbDTags.append( self._datasets[ds[0]]['sbDatasetTag'])
+                else:
+                    dtag = dtags.keys()[ds[1]]
+                    sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
+                    if len(self._tnm_df) == 0:
+                        formats = self._datasets[ds[0]]['tags'][dtag]['formats']
+                        self._tnm_df = formats
+                    sbDTags.append(sbDTag)
             else:
                 if len(self._tnm_df) == 0:
                     all_formats = True
                 else: all_formats = False
 
-                for dtag in dtags.keys():
-                    sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
-                    #if all_formats:
-                    formats = self._datasets[ds[0]]['tags'][dtag]['formats']
-                    #print formats
-                    for ff in formats:
-                        self._tnm_df.append(ff)
-                    sbDTags.append(sbDTag)
+                if len(dtags) == 0:
+                    sbDTags.append( self._datasets[ds[0]]['sbDatasetTag'])
+                else:
+                    for dtag in dtags.keys():
+                        sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
+                        #if all_formats:
+                        if len(self._tnm_df) == 0:
+                            formats = self._datasets[ds[0]]['tags'][dtag]['formats']
+                            #print formats
+                            for ff in formats:
+                                self._tnm_df.append(ff)
+                        sbDTags.append(sbDTag)
 
         #print sbDTags
 
