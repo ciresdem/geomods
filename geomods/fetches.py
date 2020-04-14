@@ -1029,28 +1029,28 @@ class tnm:
 
         self._tnm_ds = []
         self._tnm_df = []
-
+        
         self.stop = callback
         self._want_proc = True
         self._req = None
         
         self.region = extent
-        region_data = { 'bbox':self.region.bbox }
-        coast_code = { 'q':'Coastline' }
-        dataset_code = { 'code':'nbd,bathydem' }
+        #region_data = { 'bbox':self.region.bbox }
+        #coast_code = { 'q':'Coastline' }
+        #dataset_code = { 'code':'nbd,bathydem' }
 
         self._elevation_datasets = ['Topobathymetric Lidar DEM', 'Topobathymetric Lidar Point Cloud', 'National Elevation Dataset (NED) 1 arc-second', 'National Elevation Dataset (NED) 1/3 arc-second', 'National Elevation Dataset (NED) 1/9 arc-second', 'Digital Elevation Model (DEM) 1 meter']
         
         if extent is not None:
             #print self._tnm_dataset_url
             
-            self._req = fetch_req(self._tnm_dataset_url, dataset_code)
-            self._reqc = fetch_req(self._tnm_dataset_url, coast_code)
+            self._req = fetch_req(self._tnm_dataset_url)
+            #self._reqc = fetch_req(self._tnm_dataset_url, coast_code)
             #print self._req
             if self._req is not None:
                 try:
                     self._datasets = self._req.json()
-                    self._datasets.append(self._reqc.json()[0])
+                    #self._datasets.append(self._reqc.json()[0])
                 except:
                     print 'error, try again'
                     self._status = -1
@@ -1062,12 +1062,11 @@ class tnm:
         pb.opm = 'loaded The National Map fetch module.'
         pb.end(self._status)
 
-    def run(self, index = None, dataset = None, subdataset = None, formats = None, filters = []):
+    def run(self, index = None, dataset = None, subdataset = None, formats = None, extent = None):
         '''Run the TNM (National Map) fetching module.'''
 
-        self._want_update = False
-        self._filters = filters.split(',')
-        
+        #self._want_update = False
+
         if self._status == 0:
             if index is not None:
                 self.print_datasets()
@@ -1084,6 +1083,10 @@ class tnm:
             if formats is not None:
                 self._tnm_df = formats.split(',')
             else: self._tnm_df = []
+
+            if extent is not None:
+                self._extents = [str(extent)]
+            else: self._extent = []
             
             self.filter_datasets()
         return(self._results)
@@ -1092,12 +1095,12 @@ class tnm:
         '''Filter TNM datasets.'''
 
         tw = utils._progress('filtering TNM dataset results...')
-        req = None
-        extent = None
+        #req = None
+        #extent = None
         sbDTags = []
         for ds in self._tnm_ds:
             dtags = self._datasets[ds[0]]['tags']
-
+            print dtags
             if len(ds) > 1:
                 dtag = dtags.keys()[ds[1]]
                 sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
@@ -1110,33 +1113,17 @@ class tnm:
                     all_formats = True
                 else: all_formats = False
 
-                #for dtag in dtags.keys():
-                sbDTag = self._datasets[ds[0]]['sbDatasetTag']
-                if all_formats:
-                    formats = self._datasets[ds[0]]['formats']
+                for dtag in dtags.keys():
+                    sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
+                    #if all_formats:
+                    formats = self._datasets[ds[0]]['tags'][dtag]['formats']
+                    #print formats
                     for ff in formats:
                         self._tnm_df.append(ff)
+                    sbDTags.append(sbDTag)
 
-                if ds[0] == 1:
-                    sbDTag = self._elevation_datasets
-                    if len(self._tnm_df) == 0:
-                        self._tnm_df.append('IMG')
-
-                if ds[0] == 2:
-                    sbDTag = ['National Hydrography Dataset (NHD) Best Resolution']
-                    extent = 'HU-4 Subregion'
-                    
-                sbDTags.append(sbDTag)
-                
-                # for dtag in dtags.keys():
-                #     sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
-                #     if all_formats:
-                #         formats = self._datasets[ds[0]]['tags'][dtag]['formats']
-                #         for ff in formats:
-                #             self._tnm_df.append(ff)
-                #     sbDTags.append(sbDTag)
-
-        #print sbDTags
+        print sbDTags
+        print self._tnm_df
         self.data = { 'datasets':sbDTags,
                       'bbox':self.region.bbox }
 
@@ -1155,12 +1142,12 @@ class tnm:
 
         else: self._status = -1
         #print self._dataset_results
-        print self._filters
+        #print self._filters
         if len(self._dataset_results) > 0:
             for item in self._dataset_results['items']:
-                if len(self._filters) > 0:
-                    for j in self._filters:
-                        if eval(j):
+                if self._extents is not None:
+                    for extent in self._extents:
+                        if item['extent'] == extent:
                             f_url = item['downloadURL']
                             self._results.append([f_url, f_url.split('/')[-1], 'tnm'])
                 else:
@@ -1174,7 +1161,9 @@ class tnm:
         for i,j in enumerate(self._datasets):
             print('%s: %s [ %s ]' %(i, j['title'], ", ".join(j['formats'])))
             for m,n in enumerate(j['tags']):
+                #print('\t%s: %s [ %s ] [ %s ]' %(m, n, ", ".join(j['tags'][n]['formats']), ', '.join(j['extents'])))
                 print('\t%s: %s [ %s ]' %(m, n, ", ".join(j['tags'][n]['formats'])))
+            #print j
 
 ## =============================================================================
 ##
@@ -1635,7 +1624,7 @@ def main():
             for arg in args:
                 p_arg = arg.split('=')
                 args_d[p_arg[0]] = p_arg[1]
-        
+
             r = fl.run(**args_d)
 
             if len(r) == 0:
