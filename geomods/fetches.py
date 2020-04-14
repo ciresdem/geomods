@@ -1148,11 +1148,15 @@ class tnm:
                 if len(self._extents) > 0:
                     for extent in self._extents:
                         if item['extent'] == extent:
-                            f_url = item['downloadURL']
-                            self._results.append([f_url, f_url.split('/')[-1], 'tnm'])
+                            try:
+                                f_url = item['downloadURL']
+                                self._results.append([f_url, f_url.split('/')[-1], 'tnm'])
+                            except: pass
                 else:
-                    f_url = item['downloadURL']
-                    self._results.append([f_url, f_url.split('/')[-1], 'tnm'])
+                    try:
+                        f_url = item['downloadURL']
+                        self._results.append([f_url, f_url.split('/')[-1], 'tnm'])
+                    except: pass
 
         tw.opm = 'filtered \033[1m{}\033[m data files from TNM dataset results.'.format(len(self._results))
         tw.end(self._status)
