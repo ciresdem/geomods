@@ -362,7 +362,8 @@ class dc:
         self._results = []
 
         self._index = False
-
+        self._filters = filters
+        
         if os.path.exists(self._ref_vector): 
             self._has_vector = True
         else: self._has_vector = False
@@ -378,13 +379,12 @@ class dc:
         pb.opm = 'loaded Digital Coast fetch module.'
         pb.end(self._status)
         
-    def run(self, index = False, filters = [], update = False):
+    def run(self, index = False, update = False):
         '''Run the Digital Coast fetching module'''
 
         self._index = index
 
         self._want_update = update
-        self._filters = filters.split(',')
         
         if self._want_update:
             self._update()
@@ -626,7 +626,8 @@ class nos:
 
         self.stop = callback
         self._want_proc = True
-
+        self._filters = filters
+        
         self.region = extent
         if extent is not None: 
             self._bounds = bounds2geom(extent.region)
@@ -636,12 +637,11 @@ class nos:
         pb.opm = 'loaded NOS fetch module.'
         pb.end(self._status)
 
-    def run(self, filters = [], update = False):
+    def run(self, update = False):
         '''Run the NOS fetching module.'''
 
         self._want_update = update
-        self._filters = filters.split(',')
-        
+                
         if self._want_update:
             self._update()
         else:
@@ -819,7 +819,8 @@ class charts():
         self._chart_feats = []
 
         self.stop = callback
-
+        self._filters = filters
+        
         self.region = extent
         if extent is not None: 
             self._boundsGeom = bounds2geom(extent.region)
@@ -830,8 +831,6 @@ class charts():
 
     def run(self, filters = [], update = False):
         '''Run the charts fetching module.'''
-
-        self._filters = filters.split(',')
 
         self._want_update = update
         
@@ -1086,7 +1085,7 @@ class tnm:
 
             if extent is not None:
                 self._extents = [str(extent)]
-            else: self._extent = []
+            else: self._extents = []
             
             self.filter_datasets()
         return(self._results)
@@ -1100,7 +1099,7 @@ class tnm:
         sbDTags = []
         for ds in self._tnm_ds:
             dtags = self._datasets[ds[0]]['tags']
-            print dtags
+            #print dtags
             if len(ds) > 1:
                 dtag = dtags.keys()[ds[1]]
                 sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
@@ -1122,8 +1121,9 @@ class tnm:
                         self._tnm_df.append(ff)
                     sbDTags.append(sbDTag)
 
-        print sbDTags
-        print self._tnm_df
+        #print sbDTags
+
+        #print self._tnm_df
         self.data = { 'datasets':sbDTags,
                       'bbox':self.region.bbox }
 
@@ -1145,7 +1145,7 @@ class tnm:
         #print self._filters
         if len(self._dataset_results) > 0:
             for item in self._dataset_results['items']:
-                if self._extents is not None:
+                if len(self._extents) > 0:
                     for extent in self._extents:
                         if item['extent'] == extent:
                             f_url = item['downloadURL']
@@ -1446,11 +1446,11 @@ class ngs:
 ## =============================================================================
 
 fetch_infos = { 
-    'dc':[lambda x, f, c: dc(x, f, c), 'digital coast [:index=False:filters=None:update=False]'],
-    'nos':[lambda x, f, c: nos(x, f, c), 'noaa nos bathymetry [:filters=None:update=False]'],
-    'charts':[lambda x, f, c: charts(x, f, c), 'noaa nautical charts [:filters=None:update=False]'],
+    'dc':[lambda x, f, c: dc(x, f, c), 'digital coast [:index=False:update=False]'],
+    'nos':[lambda x, f, c: nos(x, f, c), 'noaa nos bathymetry [:update=False]'],
+    'charts':[lambda x, f, c: charts(x, f, c), 'noaa nautical charts [:update=False]'],
     'srtm':[lambda x, f, c: srtm_cgiar(x, f, c), 'srtm from cgiar [None]'],
-    'tnm':[lambda x, f, c: tnm(x, f, c), 'the national map [:index=False:dataset=1:format=IMG:filters=None]'],
+    'tnm':[lambda x, f, c: tnm(x, f, c), 'the national map [:index=False:dataset=1:format=IMG]'],
     'mb':[lambda x, f, c: mb(x, f, c), 'noaa multibeam [None]'],
     'gmrt':[lambda x, f, c: gmrt(x, f, c), 'gmrt [:layer=topo:res=max:fmt=netcdf:multi=False]'],
     'usace':[lambda x, f, c: usace(x, f, c), 'usace bathymetry [None]'],
@@ -1476,6 +1476,7 @@ Options:
 \t\t\tor an OGR-compatible vector file with regional polygons. 
 \t\t\tIf a vector file is supplied it will search each region found therein.
   -l, --list-only\tOnly fetch a list of surveys in the given region.
+  -f, --filter\t\tSQL style filters for certain datasets.
   -p, --process\t\tProcess fetched data to ASCII XYZ format.
 
   --update\t\tUpdate the stored list of surveys.
@@ -1484,10 +1485,10 @@ Options:
 
 Examples:
  % sudo {} --update
- % {} -R -90.75/-88.1/28.7/31.25 nos:filters="Date > 2000"
+ % {} -R -90.75/-88.1/28.7/31.25 nos -f "Date > 2000"
  % {} dc -R tiles.shp -p
- % {} -R tiles.shp dc:filters="Datatype LIKE 'lidar%'" -l > dc_lidar.urls
- % {} -R -89.75/-89.5/30.25/30.5 tnm:dataset=1
+ % {} -R tiles.shp dc -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
+ % {} -R -89.75/-89.5/30.25/30.5 tnm:dataset=4
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
 '''.format(os.path.basename(sys.argv[0]),
