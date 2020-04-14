@@ -291,7 +291,7 @@ class dem:
             p_arg = arg.split('=')
             args_d[p_arg[0]] = p_arg[1]
 
-            #self.o_name = '{}_{}'.format(self.o_name, dem_mod)
+        #self.o_name = '{}_{}'.format(self.o_name, dem_mod)
             
         if self.status == 0:
             _dem_mods[dem_mod][0](self)(**args_d)

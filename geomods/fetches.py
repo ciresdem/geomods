@@ -369,8 +369,6 @@ class dc:
 
         self.stop = callback
         self._want_proc = True
-        self._want_update = False
-        self._filters = filters
 
         self.region = extent
         if extent is not None: 
@@ -380,10 +378,13 @@ class dc:
         pb.opm = 'loaded Digital Coast fetch module.'
         pb.end(self._status)
         
-    def run(self, index = False):
+    def run(self, index = False, filters = [], update = False):
         '''Run the Digital Coast fetching module'''
 
         self._index = index
+
+        self._want_update = update
+        self._filters = filters.split(',')
         
         if self._want_update:
             self._update()
@@ -625,8 +626,6 @@ class nos:
 
         self.stop = callback
         self._want_proc = True
-        self._want_update = False
-        self._filters = filters
 
         self.region = extent
         if extent is not None: 
@@ -637,9 +636,12 @@ class nos:
         pb.opm = 'loaded NOS fetch module.'
         pb.end(self._status)
 
-    def run(self):
+    def run(self, filters = [], update = False):
         '''Run the NOS fetching module.'''
 
+        self._want_update = update
+        self._filters = filters.split(',')
+        
         if self._want_update:
             self._update()
         else:
@@ -817,8 +819,6 @@ class charts():
         self._chart_feats = []
 
         self.stop = callback
-        self._want_update = False
-        self._filters = filters
 
         self.region = extent
         if extent is not None: 
@@ -828,9 +828,13 @@ class charts():
         pb.opm = 'loaded CHARTS fetch module.'
         pb.end(self._status)
 
-    def run(self):
+    def run(self, filters = [], update = False):
         '''Run the charts fetching module.'''
 
+        self._filters = filters.split(',')
+
+        self._want_update = update
+        
         if self._want_update:
             self._update()
         else:
@@ -1028,8 +1032,6 @@ class tnm:
 
         self.stop = callback
         self._want_proc = True
-        self._want_update = False
-        self._filters = filters
         self._req = None
         
         self.region = extent
@@ -1060,9 +1062,12 @@ class tnm:
         pb.opm = 'loaded The National Map fetch module.'
         pb.end(self._status)
 
-    def run(self, index = None, dataset = None, subdataset = None, formats = None):
+    def run(self, index = None, dataset = None, subdataset = None, formats = None, filters = []):
         '''Run the TNM (National Map) fetching module.'''
 
+        self._want_update = False
+        self._filters = filters.split(',')
+        
         if self._status == 0:
             if index is not None:
                 self.print_datasets()
@@ -1309,49 +1314,79 @@ class gmrt:
     '''Fetch raster data from the GMRT'''
 
     def __init__(self, extent = None, filters = [], callback = None):
+
         pb = utils._progress('loading GMRT fetch module...')
         self._gmrt_grid_url = "https://www.gmrt.org/services/GridServer?"
+        self._gmrt_grid_urls_url = "https://www.gmrt.org/services/GridServer/urls?"
+        self._gmrt_grid_metadata_url = "https://www.gmrt.org/services/GridServer/metadata?"
         self._outdir = os.path.join(os.getcwd(), 'gmrt')
 
+        self._gmrt_url = self._gmrt_grid_url
+        
         self._status = 0
         self._results = []
         self._ref_vector = None
 
         self.stop = callback
         self._want_proc = True
-        self._want_update = False
-        self._filters = filters
 
         self.region = extent
-        if extent is not None: 
-            self.data = { 'north':extent.north,
-                          'west':extent.west,
-                          'south':extent.south,
-                          'east':extent.east,
-                          'layer':'topo',
-                          'resolution':'max',
-                          'format':'geotiff' }
-        
-            self._req = fetch_req(self._gmrt_grid_url, params = self.data, tries = 4)
-
-            gmrt_fn = self._req.headers['content-disposition'].split('=')[1].strip()
-            outf = os.path.join(self._outdir,
-                                '{}_{}.{}'.format(gmrt_fn.split('.')[0],
-                                                  self.region.fn,
-                                                  gmrt_fn.split('.')[1]))
-
-            self._results = [self._req.url, outf, 'gmrt']
             
-        pb.opm = 'loaded GMRT fetch module.'
-        pb.end(self._status)
+        pb.end(self._status, 'loaded GMRT fetch module.')
 
-    def run(self):
+    def run(self, layer = 'topo', res = 'max', fmt = 'netcdf', multi = False):
         '''Run the GMRT fetching module'''
+
+        self.layer = layer
+        self.fmt = fmt
+        self.resolution = res
+        self.multi = multi
+        
+        if multi:
+            self._gmrt_url = self._gmrt_grid_urls_url
+        
+        self.query_gmrt()
         
         if self._req is not None:
             return([self._results])
-        else: return([])            
+        else: return([])
 
+    def query_gmrt(self):
+        
+        if self.region is None:
+            self._results = []
+        else:
+            self.data = { 'north':self.region.north,
+                          'west':self.region.west,
+                          'south':self.region.south,
+                          'east':self.region.east }
+
+            if not self.multi:
+                self.data['layer'] = self.layer
+            #else:
+            
+            self.data['mformat'] = 'json'
+            self.data['resolution'] = self.resolution
+            self.data['format'] = self.fmt
+
+            
+            self._req = fetch_req(self._gmrt_grid_url, params = self.data, tries = 5, timeout = 10)
+            #print self._req.url
+            gmrt_urls = self._req.json()
+            for url in gmrt_urls:
+                #print url
+                #tmp_req = fetch_req(url, tries = 5, timeout = 10)
+                #print tmp_req.headers
+                #gmrt_fn = tmp_req.headers['content-disposition'].split('=')[1].strip()
+                #outf = os.path.join(self._outdir,
+                #                    '{}_{}.{}'.format(gmrt_fn.split('.')[0],
+                #                                      self.region.fn,
+                #                                      gmrt_fn.split('.')[1]))
+                #self._results.append([url, outf, 'gmrt'])
+                self._results.append([url, 'gmrt'])
+
+            #self._results = [self._req.url, outf, 'gmrt']
+        
 ## =============================================================================
 ##
 ## National Geodetic Survey (NGS)
@@ -1422,13 +1457,13 @@ class ngs:
 ## =============================================================================
 
 fetch_infos = { 
-    'dc':[lambda x, f, c: dc(x, f, c), 'digital coast [:index=False:filters=None]'],
-    'nos':[lambda x, f, c: nos(x, f, c), 'noaa nos bathymetry [:filters=None]'],
-    'charts':[lambda x, f, c: charts(x, f, c), 'noaa nautical charts [:filters=None]'],
+    'dc':[lambda x, f, c: dc(x, f, c), 'digital coast [:index=False:filters=None:update=False]'],
+    'nos':[lambda x, f, c: nos(x, f, c), 'noaa nos bathymetry [:filters=None:update=False]'],
+    'charts':[lambda x, f, c: charts(x, f, c), 'noaa nautical charts [:filters=None:update=False]'],
     'srtm':[lambda x, f, c: srtm_cgiar(x, f, c), 'srtm from cgiar [None]'],
-    'tnm':[lambda x, f, c: tnm(x, f, c), 'the national map [:index=False:dataset=1:subdataset=1:format=format0,format1,...]'],
+    'tnm':[lambda x, f, c: tnm(x, f, c), 'the national map [:index=False:dataset=1:format=IMG:filters=None]'],
     'mb':[lambda x, f, c: mb(x, f, c), 'noaa multibeam [None]'],
-    'gmrt':[lambda x, f, c: gmrt(x, f, c), 'gmrt [None]'],
+    'gmrt':[lambda x, f, c: gmrt(x, f, c), 'gmrt [:layer=topo:res=max:fmt=netcdf:multi=False]'],
     'usace':[lambda x, f, c: usace(x, f, c), 'usace bathymetry [None]'],
     'ngs':[lambda x, f, c: ngs(x, f, c), 'ngs monuments [None]']
 }
@@ -1441,7 +1476,7 @@ def fetch_desc(x):
 
 _usage = '''{} ({}): Fetch geographic elevation data.
 
-usage: {} [ -fhlpRuv [ args ] ] module[:parameter=value]* ...
+usage: {} [ -hlpRv [ args ] ] module[:parameter=value]* ...
 
 Modules:
   {}
@@ -1452,7 +1487,6 @@ Options:
 \t\t\tor an OGR-compatible vector file with regional polygons. 
 \t\t\tIf a vector file is supplied it will search each region found therein.
   -l, --list-only\tOnly fetch a list of surveys in the given region.
-  -f, --filter\t\tSQL style attribute filter; use ? to see available field names.
   -p, --process\t\tProcess fetched data to ASCII XYZ format.
 
   --update\t\tUpdate the stored list of surveys.
@@ -1461,10 +1495,10 @@ Options:
 
 Examples:
  % sudo {} --update
- % {} nos charts -R -90.75/-88.1/28.7/31.25 -f "Date > 2000"
+ % {} -R -90.75/-88.1/28.7/31.25 nos:filters="Date > 2000"
  % {} dc -R tiles.shp -p
- % {} dc -R tiles.shp -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
- % {} -R -89.75/-89.5/30.25/30.5 tnm::1:4
+ % {} -R tiles.shp dc:filters="Datatype LIKE 'lidar%'" -l > dc_lidar.urls
+ % {} -R -89.75/-89.5/30.25/30.5 tnm:dataset=1
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
 '''.format(os.path.basename(sys.argv[0]),
@@ -1626,9 +1660,9 @@ def main():
                         stop_threads = True
 
                     fr.join()
-            pb.opm = 'ran fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...\
+            opm = 'ran fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...\
             '.format(fetch_mod, this_region.region_string, rn+1, len(these_regions))
-            pb.end(status)
+            pb.end(status, opm)
 
 if __name__ == '__main__':
     main()
