@@ -34,6 +34,8 @@ import gdalfun
 import utils
 import vdatum
 
+import json
+
 _version = '0.1.0'
 
 ## =============================================================================
@@ -46,6 +48,7 @@ proc_infos = {
     'gdal':[lambda x, a: x.proc_gdal(*a), 'process gdal data to chunked XYZ [:split_value:increment:input_vdatum]'],
     'lidar':[lambda x, a: x.proc_las(*a), 'process lidar las/laz data to XYZ [:increment:input_vdatum]'],
     'ascii':[lambda x, a: x.proc_ascii(*a), 'process ascii xyz data to XYZ [:delim:x_loc,y_loc,z_loc:skip_lines:increment:input_vdatum]'],
+    'enc':[lambda x, a: x.proc_enc(*a), 'process ENC *.000 data. []'],
 }
 
 def _proc_queue(q):
@@ -121,6 +124,7 @@ class procs:
         self.gdal_exts = ['.tif', '.img', '.asc']
         self.lidar_exts = ['.las', '.laz']
         self.ascii_exts = ['.xyz', '.ascii', '.csv', '.dat']
+        self.enc_exts = ['.000']
 
     def run(self, args):
         '''Run the elevation data processor.
@@ -188,7 +192,7 @@ class procs:
             if os.stat(o_xyz).st_size != 0:
                 dl_f = '{}.datalist'.format(os.path.abspath(self.src_dir).split('/')[-1])
                 s_datalist = datalists.datalist(os.path.join(self.xyz_dir, dl_f))
-                s_datalist._append_datafile('{}'.format(os.path.basename(o_xyz)), 168, 1)
+                s_datalist._append_datafile(['{}'.format(os.path.basename(o_xyz)), 168, 1])
                 s_datalist._reset()
 
                 out, status = utils.run_cmd('mbdatalist -O -I{}'.format(os.path.join(self.xyz_dir, dl_f)), False, False)
@@ -314,6 +318,22 @@ class procs:
 
         self.proc_xyz(tmp_ascii, block, i_vert)
         os.remove(tmp_ascii)
+
+    def proc_enc(self):
+        '''process ENC data'''
+
+        if os.path.basename(self.src_file).split('.')[-1].lower() == 'zip':
+            zips = self.unzip(self.src_file)
+            for ext in self.enc_exts:
+                for zf in zips:
+                    if ext in zf.lower():
+                        src_000 = os.path.join(self.proc_dir, zf)
+                        break
+        else: src_000 = self.src_file
+
+        src_xyz = os.path.join(self.proc_dir, os.path.basename(src_000).split('.')[0] + '.xyz')
+        self.proc_000(src_000, src_xyz)
+        self.proc_xyz(src_xyz, block = None, i_vert = 'mllw')
         
     def proc_ogr(self):
         pass

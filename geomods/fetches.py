@@ -102,6 +102,9 @@ def fetch_queue(q, p = None):
                 elif this_dt == 'lidar':
                     proc_mod = 'lidar'
                     proc_opts = [True, None]
+                elif this_dt == 'enc':
+                    proc_mod = 'enc'
+                    proc_opts = []
                 else:
                     proc_mod = 'None'
                     proc_opts = []
