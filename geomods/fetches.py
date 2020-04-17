@@ -647,6 +647,7 @@ class nos:
                 
         if self._want_update:
             self._update()
+            return([])
         else:
             self.search_gmt()
             #self._results = list(set(self._results))
@@ -839,6 +840,7 @@ class charts():
         
         if self._want_update:
             self._update()
+            return([])
         else:
             self.search_gmt()
 
@@ -896,7 +898,10 @@ class charts():
     def _update(self):
         '''Update or create the reference vector file'''
 
+        utils._msg('updating reference vector: {}'.format(self._ref_vector))
+        
         for dt in self._dt_xml.keys():
+            utils._msg('updating {}'.format(dt))
             self._checks = dt
 
             self.chart_xml = fetch_nos_xml(self._dt_xml[self._checks])
@@ -1642,28 +1647,28 @@ def main():
 
             r = fl.run(**args_d)
 
-            if len(r) == 0:
-                if not want_update:
-                    status = -1
+            #if len(r) == 0:
+            #    if not want_update:
+            #        status = -1
+            #else:
+            if want_list:
+                for result in r:
+                    print(result[0])
             else:
-                if want_list:
-                    for result in r:
-                        print(result[0])
-                else:
-                    fr = fetch_results(r, this_region, fl._outdir, want_proc, lambda: stop_threads)
+                fr = fetch_results(r, this_region, fl._outdir, want_proc, lambda: stop_threads)
 
-                    try:
-                        fr.start()
-                        while True:
-                            time.sleep(1)
-                            pb.update()
-                            if not fr.is_alive():
-                                break
-                    except (KeyboardInterrupt, SystemExit): 
-                        fr._status = -1
-                        stop_threads = True
+                try:
+                    fr.start()
+                    while True:
+                        time.sleep(1)
+                        pb.update()
+                        if not fr.is_alive():
+                            break
+                except (KeyboardInterrupt, SystemExit): 
+                    fr._status = -1
+                    stop_threads = True
 
-                    fr.join()
+                fr.join()
             opm = 'ran fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...\
             '.format(fetch_mod, this_region.region_string, rn+1, len(these_regions))
             pb.end(status, opm)
