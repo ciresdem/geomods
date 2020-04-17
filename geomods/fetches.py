@@ -1498,12 +1498,10 @@ Options:
   -f, --filter\t\tSQL style filters for certain datasets.
   -p, --process\t\tProcess fetched data to ASCII XYZ format.
 
-  --update\t\tUpdate the stored list of surveys.
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
 
 Examples:
- % sudo {} --update
  % {} -R -90.75/-88.1/28.7/31.25 nos -f "Date > 2000"
  % {} dc -R tiles.shp -p
  % {} -R tiles.shp dc -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
