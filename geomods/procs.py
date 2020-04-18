@@ -36,7 +36,7 @@ import vdatum
 
 import json
 
-_version = '0.1.0'
+_version = '0.1.1'
 
 ## =============================================================================
 ##
@@ -48,7 +48,9 @@ proc_infos = {
     'gdal':[lambda x, a: x.proc_gdal(*a), 'process gdal data to chunked XYZ [:split_value:increment:input_vdatum]'],
     'lidar':[lambda x, a: x.proc_las(*a), 'process lidar las/laz data to XYZ [:increment:input_vdatum]'],
     'ascii':[lambda x, a: x.proc_ascii(*a), 'process ascii xyz data to XYZ [:delim:x_loc,y_loc,z_loc:skip_lines:increment:input_vdatum]'],
-    'enc':[lambda x, a: x.proc_enc(*a), 'process ENC *.000 data. []'],
+    'ogr':[lambda x, a: x.proc_ogr(*a), 'process OGR data. [layer:height]'],
+    'mb':[lambda x, a: x.proc_mb(*a), 'process Multibeam data. []'],
+    'ngs':[lambda x, a: x.proc_ngs(*a), 'process NGS json data. []'],
 }
 
 def _proc_queue(q):
@@ -59,13 +61,15 @@ def _proc_queue(q):
         if not work[0][-1]():
             proc_args = tuple(work[0])
             proc_mod_args = tuple(work[1])
-            proc_d = procs(*proc_args)
-            try:
+            if proc_args[1] is not None:
+                print proc_args
+                proc_d = procs(*proc_args)
+                #try:
                 proc_d.run(proc_mod_args)
-            except:
-                sys.stderr.write('\x1b[2K\r')
-                sys.stderr.write('procs: error, unknown error processing {}\n'.format(work[0][0]))
-                sys.stderr.flush()
+                #except:
+                #   sys.stderr.write('\x1b[2K\r')
+                #  sys.stderr.write('procs: error, unknown error processing {}\n'.format(work[0][0]))
+                # sys.stderr.flush()
        
         q.task_done()
 
@@ -124,7 +128,7 @@ class procs:
         self.gdal_exts = ['.tif', '.img', '.asc']
         self.lidar_exts = ['.las', '.laz']
         self.ascii_exts = ['.xyz', '.ascii', '.csv', '.dat']
-        self.enc_exts = ['.000']
+        self.ogr_exts = ['.000', '.shp', '.gmt']
 
     def run(self, args):
         '''Run the elevation data processor.
@@ -209,27 +213,10 @@ class procs:
             tmp_xyz = os.path.basename(src_xyz.lower())
             os.rename(src_xyz, tmp_xyz)
             self.this_vd.run_vdatum(os.path.relpath(tmp_xyz))
-            os.rename(os.path.join(self.this_vd.ds_dir, os.path.basename(tmp_xyz)), dst_xyz)
+            os.rename(os.path.join(self.this_vd.ds_dir.lower(), os.path.basename(tmp_xyz)), dst_xyz)
             os.remove(tmp_xyz)
         else: self.status = -1
-
-    def proc_000(self, src_000, dst_xyz):
-        '''process ENC .000 file to XYZ via OGR.'''
         
-        ds_000 = ogr.Open(src_000)
-        layer_s = ds_000.GetLayerByName('SOUNDG')
-        if layer_s is not None:
-            o_xyz = open(dst_xyz, 'w')
-            for f in layer_s:
-                g = json.loads(f.GetGeometryRef().ExportToJson())
-                for xyz in g['coordinates']:
-                    xyz_l = '{} {} {}\n'.format(xyz[0], xyz[1], xyz[2]*-1)
-                    o_xyz.write(xyz_l)
-            o_xyz.close()
-        else: self.status = -1
-
-        ds_000 = layer_s = None
-
     def xyz_region(self, src_xyz):
         out, self.status = utils.run_cmd('gmt gmtinfo {} -I-'.format(src_xyz), False, False)
         o_region = regions.region(out[2:])
@@ -256,7 +243,7 @@ class procs:
                         out, self.status = utils.run_cmd('gmt blockmedian {} -I{} {} -r -V > {}\
                         '.format(src_xyz, inc, this_region.gmt, tmp_xyz), False, False)
                     else:
-                        out, self.status = utils.run_cmd('gmt gmtselect {} {} -V > {}\
+                        out, self.status = utils.run_cmd('gmt gmtselect {} {} -V -o0,1,2 > {}\
                         '.format(src_xyz, this_region.gmt, tmp_xyz), False, False)
 
                     if os.stat(tmp_xyz).st_size != 0:
@@ -274,6 +261,20 @@ class procs:
                         os.remove(dst_xyz)
                     else: self.xyzs.append(dst_xyz)
 
+    def proc_ngs(self):
+        import csv
+        
+        with open(self.src_file, 'r') as json_file:
+            r = json.load(json_file)
+        
+        if len(r) > 0:
+            for rn, this_region in enumerate(self.dst_regions):
+                outfile = open(os.path.join(self.src_dir, 'ngs_results_{}.csv'.format(this_region.fn)), 'w')
+                outcsv = csv.writer(outfile)
+                outcsv.writerow(r[0].keys())
+                [outcsv.writerow(row.values()) for row in r]
+                outfile.close()
+                    
     def proc_las(self, block = None, i_vert = None, classes = '2 29'):
         '''process las/laz lidar data to XYZ.'''
 
@@ -319,27 +320,52 @@ class procs:
         self.proc_xyz(tmp_ascii, block, i_vert)
         os.remove(tmp_ascii)
 
-    def proc_enc(self):
-        '''process ENC data'''
+    def proc_mb(self, region = None):
+        '''process mb data'''
+
+        ## mblist to xyz
+        #print self.dst_regions[0].gmt
+        src_xyz = os.path.basename(self.src_file).split('.')[0] + '.xyz'
+        mbl_cmd = 'mblist -MX20 -OXYZ -I{}  > {}'.format(self.src_file, src_xyz)
+        out, self.status = utils.run_cmd(mbl_cmd, True, True)
+        
+        self.proc_xyz(src_xyz, block = None, i_vert = 'lmsl')
+        
+    def proc_ogr(self, layer = None, z = 'Height', i_vert = None):
+        '''process OGR data to XYZ via OGR.'''
 
         if os.path.basename(self.src_file).split('.')[-1].lower() == 'zip':
             zips = self.unzip(self.src_file)
-            for ext in self.enc_exts:
+            for ext in self.ogr_exts:
                 for zf in zips:
                     if ext in zf.lower():
-                        src_000 = os.path.join(self.proc_dir, zf)
+                        src_ogr = os.path.join(self.proc_dir, zf)
                         break
-        else: src_000 = self.src_file
-
-        src_xyz = os.path.join(self.proc_dir, os.path.basename(src_000).split('.')[0] + '.xyz')
-        self.proc_000(src_000, src_xyz)
-        self.proc_xyz(src_xyz, block = None, i_vert = 'mllw')
+        else: src_ogr = self.src_file
         
-    def proc_ogr(self):
-        pass
+        dst_xyz = os.path.join(self.proc_dir, os.path.basename(src_ogr).split('.')[0] + '.xyz')
+        
+        ds_ogr = ogr.Open(src_ogr)
+        if layer is not None:
+            layer_s = ds_ogr.GetLayerByName(layer) #'SOUNDG'
+        else: layer_s = ds_ogr.GetLayer()
+        
+        if layer_s is not None:
+            o_xyz = open(dst_xyz, 'w')
+            for f in layer_s:
+                g = json.loads(f.GetGeometryRef().ExportToJson())
+                for xyz in g['coordinates']:
+                    if z != 'Height':
+                        xyz_l = '{} {} {}\n'.format(xyz[0], xyz[1], xyz[2])
+                    else: xyz_l = '{} {} {}\n'.format(xyz[0], xyz[1], xyz[2]*-1)
+                    o_xyz.write(xyz_l)
+            o_xyz.close()
+        else: self.status = -1
 
-    def proc_mb(self):
-        pass
+        ds_ogr = layer_s = None
+
+        if os.path.exists(dst_xyz):
+            self.proc_xyz(dst_xyz, block = None, i_vert = i_vert)
     
     def proc_gdal(self, split = None, block = None, i_vert = None):
         '''process gdal grid data to XYZ.'''

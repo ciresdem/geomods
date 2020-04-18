@@ -106,7 +106,7 @@ class vdatum:
         vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},0,1,2:{}:{} region:{}\
         '.format(self.ihorz, self.ivert, self.ohorz, self.overt, self.fd, src_fn, self.ds_dir, self.region)
         #print vdc
-        out, status = utils.run_cmd('java -jar {} {}'.format(self.vdatum_path, vdc), self.verbose, True)
+        out, status = utils.run_cmd('java -jar {} {}'.format(self.vdatum_path, vdc), True, True)
         #out, status = run_cmd('java -Djava.awt.headless=true -jar {} {}'.format(self.vdatum_path, vdc), self.verbose, True)
 
         return(status)

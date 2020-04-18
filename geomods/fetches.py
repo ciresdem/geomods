@@ -103,10 +103,16 @@ def fetch_queue(q, p = None):
                     proc_mod = 'lidar'
                     proc_opts = [True, None]
                 elif this_dt == 'enc':
-                    proc_mod = 'enc'
+                    proc_mod = 'ogr'
+                    proc_opts = ['SOUNDG', 'Depth', 'mllw']
+                elif this_dt == 'mb':
+                    proc_mod = 'mb'
+                    proc_opts = []
+                elif this_dt == 'ngs':
+                    proc_mod = 'ngs'
                     proc_opts = []
                 else:
-                    proc_mod = 'None'
+                    proc_mod = None
                     proc_opts = []
                 
                 if os.path.exists(fetch_args[1]):
@@ -245,7 +251,7 @@ class fetch_results(threading.Thread):
         self.fetch_q.join()
         if self.want_proc:
             proc_q.join()
-        
+    
 ## =============================================================================
 ##
 ## Reference Vector
@@ -372,29 +378,33 @@ class dc:
         else: self._has_vector = False
 
         self.stop = callback
-        self._want_proc = True
 
         self.region = extent
         if extent is not None: 
             self._boundsGeom = bounds2geom(extent.region)
         else: self._status = -1
 
-        pb.opm = 'loaded Digital Coast fetch module.'
-        pb.end(self._status)
+        pb.end(self._status, 'loaded Digital Coast fetch module.')
         
     def run(self, index = False, update = False):
         '''Run the Digital Coast fetching module'''
 
+        if index.lower() == 'false':
+            index = False
+        
         self._index = index
 
+        if update.lower() == 'false':
+            update = False
+        
         self._want_update = update
         
         if self._want_update:
             self._update()
             return([])
-        else:
-            self.search_gmt()
-            return(self._results)
+
+        self.search_gmt()
+        return(self._results)
         
     ## ==============================================
     ## Reference Vector Generation
@@ -587,11 +597,11 @@ class dc:
                             ts = os.remove(os.path.join('dc_tile_index/', i))
                         os.removedirs(os.path.join('.', 'dc_tile_index'))
                         os.remove(os.path.join('.', sshpz))
+                        
         if len(self._results) == 0: self._status = -1
         gmt1 = layer = None
 
-        tw.opm = 'filtered \033[1m{}\033[m data files from Digital Coast reference vector'.format(len(self._results))
-        tw.end(self._status)
+        tw.end(self._status, 'filtered \033[1m{}\033[m data files from Digital Coast reference vector'.format(len(self._results)))
 
 ## =============================================================================
 ##
@@ -632,32 +642,34 @@ class nos:
         self._filters = filters
         
         self.region = extent
-        if extent is not None: 
-            self._bounds = bounds2geom(extent.region)
-        else: self._status = -1
-
-        self.fetch_q = queue.Queue()
-        pb.opm = 'loaded NOS fetch module.'
-        pb.end(self._status)
+        self._bounds = None
+        
+        pb.end(self._status, 'loaded NOS fetch module.')
 
     def run(self, update = False):
         '''Run the NOS fetching module.'''
 
+        if update.lower() == 'false':
+            update = False
+        
         self._want_update = update
                 
         if self._want_update:
             self._update()
             return([])
-        else:
-            self.search_gmt()
-            #self._results = list(set(self._results))
-            t = np.asarray(self._results)
-            p = t != ''
-            r = t[p.all(1)]
-            #rr = [tuple(row) for row in r]
-            #unique_results = np.unique(rr)
 
-            return(r.tolist())
+        if self.region is None:
+            return([])
+        
+        self._bounds = bounds2geom(self.region.region)
+        
+        self.search_gmt()
+
+        t = np.asarray(self._results)
+        p = t != ''
+        r = t[p.all(1)]
+
+        return(r.tolist())
 
     ## ==============================================
     ## Reference Vector Generation
@@ -758,8 +770,7 @@ class nos:
             update_ref_vector(self._local_ref_vector, self._surveys, self._has_vector)
 
             self._surveys = []
-            tw.opm = 'scanned {}...'.format(j)
-            tw.end(self._status)
+            tw.end(self._status, 'scanned {}...'.format(j))
 
     ## ==============================================
     ## Filter for results
@@ -786,8 +797,7 @@ class nos:
                         self._results.append([i, i.split('/')[-1], feature.GetField('Datatype')])
 
         gmt1 = layer = None
-        tw.opm = 'filtered \033[1m{}\033[m data files from NOS reference vector'.format(len(self._results))
-        tw.end(self._status)
+        tw.end(self._status, 'filtered \033[1m{}\033[m data files from NOS reference vector'.format(len(self._results)))
 
 ## =============================================================================
 ##
@@ -802,7 +812,7 @@ class charts():
 
     def __init__(self, extent = None, filters = [], callback = None):
         pb = utils._progress('loading CHARTS fetch module...')
-        self.fetch_q = queue.Queue()
+        #self.fetch_q = queue.Queue()
 
         self._enc_data_catalog = 'http://www.charts.noaa.gov/ENCs/ENCProdCat_19115.xml'
         self._rnc_data_catalog = 'http://www.charts.noaa.gov/RNCs/RNCProdCat_19115.xml'
@@ -816,6 +826,7 @@ class charts():
 
         self._dt_xml = { 'ENC':self._enc_data_catalog,
                          'RNC':self._rnc_data_catalog }
+        
         self._checks = self._dt_xml.keys()[0]
 
         self._status = 0
@@ -826,25 +837,33 @@ class charts():
         self._filters = filters
         
         self.region = extent
-        if extent is not None: 
-            self._boundsGeom = bounds2geom(extent.region)
-        else: self._status = -1
+        self._boundsGeom = None
+        
+        pb.end(self._status, 'loaded CHARTS fetch module.')
 
-        pb.opm = 'loaded CHARTS fetch module.'
-        pb.end(self._status)
-
-    def run(self, filters = [], update = False):
+    def run(self, datatype = None, update = False):
         '''Run the charts fetching module.'''
 
+        if update.lower() == 'false':
+            update = False
+        
         self._want_update = update
         
         if self._want_update:
             self._update()
             return([])
-        else:
-            self.search_gmt()
 
-            return self._results
+        if self.region is None:
+            return([])
+
+        if datatype.lower() == 'none':
+            datatype = None
+        
+        self.dt = datatype
+        self._boundsGeom = bounds2geom(self.region.region)
+        self.search_gmt()
+
+        return self._results
       
     ## ==============================================
     ## Reference Vector Generation
@@ -933,11 +952,13 @@ class charts():
         for feature1 in layer:
             geom = feature1.GetGeometryRef()
             if self._boundsGeom.Intersects(geom):
-                self._results.append([feature1.GetField('Data'), feature1.GetField('Data').split('/')[-1], feature1.GetField('Datatype')])
+                if self.dt is not None:
+                    if feature1.GetField('Datatype').lower() == self.dt.lower():
+                        self._results.append([feature1.GetField('Data'), feature1.GetField('Data').split('/')[-1], feature1.GetField('Datatype')])
+                else: self._results.append([feature1.GetField('Data'), feature1.GetField('Data').split('/')[-1], feature1.GetField('Datatype')])
 
         ds = layer = None
-        tw.opm = 'filtered \033[1m{}\033[m data files from CHARTS reference vector.'.format(len(self._results))
-        tw.end(self._status)
+        tw.end(self._status, 'filtered \033[1m{}\033[m data files from CHARTS reference vector.'.format(len(self._results)))
 
 ## =============================================================================
 ##
@@ -956,27 +977,26 @@ class srtm_cgiar:
         self._srtm_dl_url = 'http://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/'
 
         self._status = 0
-        self._results = []
         self._outdir = os.path.join(os.getcwd(), 'srtm')
         self._ref_vector = os.path.join(fetchdata, 'srtm.gmt')
         if not os.path.exists(self._ref_vector):
             self._status = -1
 
-        self.stop = callback
-        self._want_proc = True
-        self._want_update = False
+        self._results = []
         self._filters = filters
 
         self._boundsGeom = None
-        if extent is not None: 
-            self._boundsGeom = bounds2geom(extent.region)
+        self.region = extent
 
-        pb.opm = 'loaded SRTM (CGIAR) fetch module.'
-        pb.end(self._status)
+        pb.end(self._status, 'loaded SRTM (CGIAR) fetch module.')
 
     def run(self):
         '''Run the SRTM fetching module.'''
 
+        if self.region is None:
+            return([])
+
+        self._boundsGeom = bounds2geom(self.region.region)
         self.search_gmt()
 
         return(self._results)
@@ -1003,8 +1023,7 @@ class srtm_cgiar:
                 out_srtm = 'srtm_{:02}_{:02}.zip'.format(srtm_lon, srtm_lat)
                 self._results.append(['{}{}'.format(self._srtm_dl_url, out_srtm), out_srtm, 'srtm'])
 
-        tw.opm = 'filtered \033[1m{}\033[m data files from SRTM reference vector.'.format(len(self._results))
-        tw.end(self._status)
+        tw.end(self._status, 'filtered \033[1m{}\033[m data files from SRTM reference vector.'.format(len(self._results)))
 
 ## =============================================================================
 ##
@@ -1025,67 +1044,50 @@ class tnm:
         self._tnm_api_url = "http://viewer.nationalmap.gov/tnmaccess/"
         self._tnm_dataset_url = "http://viewer.nationalmap.gov/tnmaccess/api/datasets?"
         self._tnm_product_url = "http://viewer.nationalmap.gov/tnmaccess/api/products?"
-
+        self._outdir = os.path.join(os.getcwd(), 'tnm')
+        
         self._status = 0
         self._req = None
         self._results = []
         self._dataset_results = {}
 
-        self._outdir = os.path.join(os.getcwd(), 'tnm')
-        self._ref_vector = None
-
         self._tnm_ds = []
         self._tnm_df = []
         
-        self.stop = callback
-        self._want_proc = True
-        self._req = None
-        
+        self._req = None        
         self.region = extent
-        #region_data = { 'bbox':self.region.bbox }
-        #coast_code = { 'q':'Coastline' }
-        #dataset_code = { 'code':'nbd,bathydem' }
-
-        self._elevation_datasets = ['Topobathymetric Lidar DEM', 'Topobathymetric Lidar Point Cloud', 'National Elevation Dataset (NED) 1 arc-second', 'National Elevation Dataset (NED) 1/3 arc-second', 'National Elevation Dataset (NED) 1/9 arc-second', 'Digital Elevation Model (DEM) 1 meter']
         
-        if extent is not None:
-            #print self._tnm_dataset_url
-            
-            self._req = fetch_req(self._tnm_dataset_url)
-            #self._reqc = fetch_req(self._tnm_dataset_url, coast_code)
-            #print self._req
-            if self._req is not None:
-                try:
-                    self._datasets = self._req.json()
-                    #self._datasets.append(self._reqc.json()[0])
-                except:
-                    print 'error, try again'
-                    self._status = -1
-            else: self._status = -1
-        else: self._status = -1
+        pb.end(self._status, 'loaded The National Map fetch module.')
 
-        #self.print_datasets()
-        
-        pb.opm = 'loaded The National Map fetch module.'
-        pb.end(self._status)
-
-    def run(self, index = None, dataset = None, subdataset = None, formats = None, extent = None):
+    def run(self, index = False, ds = 3, sub_ds = None, formats = None, extent = None):
         '''Run the TNM (National Map) fetching module.'''
 
-        #self._want_update = False
+        if self.region is None:
+            return([])
+        
+        self._req = fetch_req(self._tnm_dataset_url)
+
+        if self._req is not None:
+            try:
+                self._datasets = self._req.json()
+            except:
+                print 'error, try again'
+                self._status = -1
+        else: self._status = -1
+
+        if index.lower() == 'false':
+            index = False
 
         if self._status == 0:
-            if index is not None:
+            if index:
                 self.print_datasets()
                 sys.exit()
 
-            if dataset is not None:
-                this_ds = [int(dataset)]
-                if subdataset is not None:
-                    this_ds.append(int(subdataset))
+            this_ds = [int(ds)]
+            if sub_ds is not None:
+                this_ds.append(int(sub_ds))
 
-                self._tnm_ds = [this_ds]
-            else: self._tnm_ds = [[1]]
+            self._tnm_ds = [this_ds]
 
             if formats is not None:
                 self._tnm_df = formats.split(',')
@@ -1096,24 +1098,25 @@ class tnm:
             else: self._extents = []
             
             self.filter_datasets()
+            
         return(self._results)
 
     def filter_datasets(self):
         '''Filter TNM datasets.'''
 
         tw = utils._progress('filtering TNM dataset results...')
-        #req = None
-        #extent = None
         sbDTags = []
+        
         for ds in self._tnm_ds:
             dtags = self._datasets[ds[0]]['tags']
-            #print dtags
+            
             if len(ds) > 1:
                 if len(dtags) == 0:
                     sbDTags.append( self._datasets[ds[0]]['sbDatasetTag'])
                 else:
                     dtag = dtags.keys()[ds[1]]
                     sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
+                    
                     if len(self._tnm_df) == 0:
                         formats = self._datasets[ds[0]]['tags'][dtag]['formats']
                         self._tnm_df = formats
@@ -1128,36 +1131,31 @@ class tnm:
                 else:
                     for dtag in dtags.keys():
                         sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
-                        #if all_formats:
+
                         if len(self._tnm_df) == 0:
                             formats = self._datasets[ds[0]]['tags'][dtag]['formats']
-                            #print formats
+
                             for ff in formats:
                                 self._tnm_df.append(ff)
+                                
                         sbDTags.append(sbDTag)
 
-        #print sbDTags
-
-        #print self._tnm_df
         self.data = { 'datasets':sbDTags,
                       'bbox':self.region.bbox }
 
-        #print self._tnm_df
         if len(self._tnm_df) > 0:
             self.data['prodFormats'] = ','.join(self._tnm_df)
 
-        #print self.data
         req = fetch_req(self._tnm_product_url, params = self.data)
-        #print req.url
+
         if req is not None:
             try:
                 self._dataset_results = req.json()
             except ValueError:
                 print "tnm server error, try again"
-
+                
         else: self._status = -1
-        #print self._dataset_results
-        #print self._filters
+
         if len(self._dataset_results) > 0:
             for item in self._dataset_results['items']:
                 if len(self._extents) > 0:
@@ -1173,16 +1171,13 @@ class tnm:
                         self._results.append([f_url, f_url.split('/')[-1], 'tnm'])
                     except: pass
 
-        tw.opm = 'filtered \033[1m{}\033[m data files from TNM dataset results.'.format(len(self._results))
-        tw.end(self._status)
+        tw.end(self._status, 'filtered \033[1m{}\033[m data files from TNM dataset results.'.format(len(self._results)))
 
     def print_datasets(self):
         for i,j in enumerate(self._datasets):
             print('%s: %s [ %s ]' %(i, j['title'], ", ".join(j['formats'])))
             for m,n in enumerate(j['tags']):
-                #print('\t%s: %s [ %s ] [ %s ]' %(m, n, ", ".join(j['tags'][n]['formats']), ', '.join(j['extents'])))
                 print('\t%s: %s [ %s ]' %(m, n, ", ".join(j['tags'][n]['formats'])))
-            #print j
 
 ## =============================================================================
 ##
@@ -1200,68 +1195,45 @@ class mb:
         pb = utils._progress('loading Multibeam fetch module...')
         self._mb_data_url = "https://data.ngdc.noaa.gov/platforms/"
         self._mb_search_url = "https://maps.ngdc.noaa.gov/mapviewer-support/multibeam/files.groovy?"
-        self._ref_vector = None
         self._outdir = os.path.join(os.getcwd(), 'mb')
 
         self._status = 0
         self._req = None
         self._results = []
-        self._surveys = []
-        self._survey_list = []
-
-        self.stop = callback
-        self._want_proc = True
-        self._want_update = False
-        self._filters = filters
 
         self.region = extent
-        if extent is not None:
-            self.data = { 'geometry':extent.bbox }
-            self._req = fetch_req(self._mb_search_url, params = self.data)
-            if self._req is not None:
-                self._survey_list = self._req.content.split('\n')[:-1]
-            else: self._status = -1
-        else: self._status = -1
 
         pb.opm = 'loaded Multibeam fetch module.'
         pb.end(self._status)
 
     def run(self):
         '''Run the MB (multibeam) fetching module.'''
-        if self._status == 0:
-            for r in self._survey_list:
+
+        if self.region is None:
+            return([])
+        
+        self.data = { 'geometry':self.region.bbox }
+        
+        self._req = fetch_req(self._mb_search_url, params = self.data)
+
+        if self._req is not None:
+            survey_list = self._req.content.split('\n')[:-1]
+
+            for r in survey_list:
                 dst_pfn = r.split(' ')[0]
-                dst_fn = r.split(' ')[0].split('/')[-1:][0]
-                survey = r.split(' ')[0].split('/')[6]
+                dst_fn = dst_pfn.split('/')[-1:][0]
+                survey = dst_pfn.split('/')[6]
                 dn = r.split(' ')[0].split('/')[:-1]
                 data_url = self._mb_data_url + '/'.join(r.split('/')[3:])
                 self._results.append([data_url.split(' ')[0], '/'.join([survey, dst_fn]), 'mb'])
 
         return(self._results)
         
-    def proc_results(self, local):
-        for res in self._survey_list:
-            survey = res.split(' ')[0].split('/')[6]
-            if survey not in self._surveys:
-                self._surveys.append(survey)
-
-            if local: 
-                sf = open(survey + '.mb-1', 'a')
-                sf.write('.' + res)
-                sf.write('\n')
-                sf.close()
-            else:
-                su = open(survey + '.url', 'a')
-                data_url = self._mb_data_url + '/'.join(res.split('/')[3:])
-                su.write(data_url.split(' ')[0])
-                su.write('\n')
-                su.close()
-
 ## =============================================================================
 ##
 ## USACE Fetch
 ##
-## Fetch USACE bathymetric surveys
+## Fetch USACE bathymetric surveys via eHydro
 ##
 ## =============================================================================
 
@@ -1273,40 +1245,36 @@ class usace:
         self._usace_gj_api_url = 'https://opendata.arcgis.com/datasets/80a394bae6b547f1b5788074261e11f1_0.geojson'
         self._usace_gs_api_url = 'https://services7.arcgis.com/n1YM8pTrFmm7L4hs/arcgis/rest/services/eHydro_Survey_Data/FeatureServer/0/query?outFields=*&where=1%3D1'
         self._outdir = os.path.join(os.getcwd(), 'usace')
-        self._ref_vector = None
 
         self._status = 0
         self._req = None
         self._results = []
-        self._survey_list = []
-
-        self.stop = callback
-        self._want_proc = True
-        self._want_update = False
-        self._filters = filters
 
         self.region = extent
-        if extent is not None:
-            self.data = { 'geometry':extent.bbox,
-                          'inSR':4326,
-                          'f':'pjson' }
- 
-            self._req = fetch_req(self._usace_gs_api_url, params = self.data)
-            if self._req is not None:
-                self._survey_list = self._req.json()
-            else: self._status = -1
-        else: self._status = -1
+        
+        pb.end(self._status, 'loaded USACE fetch module.')
 
-        pb.opm = 'loaded USACE fetch module.'
-        pb.end(self._status)
-
-    def run(self):
+    def run(self, stype = None):
         '''Run the USACE fetching module'''
 
-        if self._status == 0:
-            for feature in self._survey_list['features']:
+        if self.region is None:
+            return([])
+        
+        self.data = { 'geometry':self.region.bbox,
+                      'inSR':4326,
+                      'outSR':4326,
+                      'f':'pjson' }
+ 
+        self._req = fetch_req(self._usace_gs_api_url, params = self.data)
+
+        if self._req is not None:
+            survey_list = self._req.json()
+            for feature in survey_list['features']:
                 fetch_fn = feature['attributes']['SOURCEDATALOCATION']
-                self._results.append([fetch_fn, fetch_fn.split('/')[-1], 'usace'])
+                if stype is not None:
+                    if feature['attributes']['SURVEYTYPE'].lower() == stype.lower():
+                        self._results.append([fetch_fn, fetch_fn.split('/')[-1], 'usace'])
+                else: self._results.append([fetch_fn, fetch_fn.split('/')[-1], 'usace'])
 
         return(self._results)
 
@@ -1315,6 +1283,7 @@ class usace:
 ## GMRT Fetch
 ##
 ## fetch extracts of the GMRT.
+## https://www.gmrt.org/index.php
 ##
 ## =============================================================================
 
@@ -1324,77 +1293,48 @@ class gmrt:
     def __init__(self, extent = None, filters = [], callback = None):
 
         pb = utils._progress('loading GMRT fetch module...')
-        self._gmrt_grid_url = "https://www.gmrt.org/services/GridServer?"
-        self._gmrt_grid_urls_url = "https://www.gmrt.org/services/GridServer/urls?"
+        self._gmrt_grid_url = "https://www.gmrt.org:443/services/GridServer?"
+        self._gmrt_grid_urls_url = "https://www.gmrt.org:443/services/GridServer/urls?"
         self._gmrt_grid_metadata_url = "https://www.gmrt.org/services/GridServer/metadata?"
         self._outdir = os.path.join(os.getcwd(), 'gmrt')
-
-        self._gmrt_url = self._gmrt_grid_url
         
         self._status = 0
         self._results = []
-        self._ref_vector = None
-
-        self.stop = callback
-        self._want_proc = True
 
         self.region = extent
             
         pb.end(self._status, 'loaded GMRT fetch module.')
 
-    def run(self, layer = 'topo', res = 'max', fmt = 'netcdf', multi = False):
+    def run(self, res = 'max', fmt = 'netcdf'):
         '''Run the GMRT fetching module'''
 
-        self.layer = layer
-        self.fmt = fmt
-        self.resolution = res
-        self.multi = multi
-        
-        if multi:
-            self._gmrt_url = self._gmrt_grid_urls_url
-        
-        self.query_gmrt()
-        
-        if self._req is not None:
-            return([self._results])
-        else: return([])
-
-    def query_gmrt(self):
-        
         if self.region is None:
-            self._results = []
-        else:
-            self.data = { 'north':self.region.north,
-                          'west':self.region.west,
-                          'south':self.region.south,
-                          'east':self.region.east }
+            return([])
 
-            if not self.multi:
-                self.data['layer'] = self.layer
-            #else:
-            
-            self.data['mformat'] = 'json'
-            self.data['resolution'] = self.resolution
-            self.data['format'] = self.fmt
+        self.data = { 'north':self.region.north,
+                      'west':self.region.west,
+                      'south':self.region.south,
+                      'east':self.region.east,
+                      'mformat':'json',
+                      'resolution':res,
+                      'format':fmt}
+        
+        self._req = fetch_req(self._gmrt_grid_urls_url, params = self.data, tries = 10, timeout = 2)
 
-            
-            self._req = fetch_req(self._gmrt_grid_url, params = self.data, tries = 5, timeout = 10)
-            #print self._req.url
+        if self._req is not None:
             gmrt_urls = self._req.json()
             for url in gmrt_urls:
-                #print url
-                #tmp_req = fetch_req(url, tries = 5, timeout = 10)
-                #print tmp_req.headers
-                #gmrt_fn = tmp_req.headers['content-disposition'].split('=')[1].strip()
-                #outf = os.path.join(self._outdir,
-                #                    '{}_{}.{}'.format(gmrt_fn.split('.')[0],
-                #                                      self.region.fn,
-                #                                      gmrt_fn.split('.')[1]))
-                #self._results.append([url, outf, 'gmrt'])
-                self._results.append([url, 'gmrt'])
+                opts = {}
+                for url_opt in url.split('?')[1].split('&'):
+                    opt_kp = url_opt.split('=')
+                    opts[opt_kp[0]] = opt_kp[1]
 
-            #self._results = [self._req.url, outf, 'gmrt']
-        
+                url_region = regions.region('/'.join([opts['west'], opts['east'], opts['south'], opts['north']]))
+                outf = 'gmrt_{}_{}.{}'.format(opts['layer'], url_region.fn, gdalfun._fext(opts['format']))
+
+                self._results.append([url, outf, 'gmrt'])
+
+        return(self._results)
 ## =============================================================================
 ##
 ## National Geodetic Survey (NGS)
@@ -1404,60 +1344,39 @@ class gmrt:
 ## =============================================================================
 
 class ngs:
-    '''Fetch NGS monuments from NGS'''
+    '''Fetch NGS monuments from NOAA'''
 
     def __init__(self, extent = None, filters = [], callback = None):
         pb = utils._progress('loading NGS Monument fetch module...')
         self._ngs_search_url = 'http://geodesy.noaa.gov/api/nde/bounds?'
         self._outdir = os.path.join(os.getcwd(), 'ngs')
-        self._ref_vector = None
 
         self._status = 0
         self._req = None
         self._results = []
 
-        self.stop = callback
-        self._want_proc = True
-        self._want_update = False
-        self._filters = filters
-
         self.region = extent
-        if extent is not None:
-            self.data = { 'maxlon':extent.east,
-                          'minlon':extent.west,
-                          'maxlat':extent.north,
-                          'minlat':extent.south }
 
-            self._req = fetch_req(self._ngs_search_url, params = self.data)
+        pb.end(self._status, 'loaded NGS Monument fetch module.')
 
-        pb.opm = 'loaded NGS Monument fetch module.'
-        pb.end(self._status)
-
-    def run(self):
+    def run(self, csv = False):
         '''Run the NGS (monuments) fetching module.'''
 
-        self._results.append([self._req.url, 'ngs_results_{}.txt'.format(self.region.fn), 'ngs'])
+        if self.region is None:
+            return([])
+        
+        self.data = { 'maxlon':self.region.east,
+                      'minlon':self.region.west,
+                      'maxlat':self.region.north,
+                      'minlat':self.region.south }
+
+        self._req = fetch_req(self._ngs_search_url, params = self.data)
+        
+        if self._req is not None:
+            self._results.append([self._req.url, 'ngs_results_{}.json'.format(self.region.fn), 'ngs'])
+        
         return(self._results)
         
-    def proc_results(self):
-        try:
-            r = self._results.json()
-
-            if len(r) > 0:
-                if not os.path.exists(self._outdir):
-                    os.makedirs(self._outdir)
-
-                outfile = open(os.path.join(self._outdir,
-                                            'ngs_results_{}.csv'.format(self.region.fn)), 'w')
-            
-                outcsv = csv.writer(outfile)
-                outcsv.writerow(r[0].keys())
-                for row in r:
-                    outcsv.writerow(row.values())
-
-                outfile.close()
-        except: self._status = -1
-
 ## =============================================================================
 ##
 ## Run fetch from command-line
@@ -1465,47 +1384,73 @@ class ngs:
 ## =============================================================================
 
 fetch_infos = { 
-    'dc':[lambda x, f, c: dc(x, f, c), 'digital coast [:index=False:update=False]'],
-    'nos':[lambda x, f, c: nos(x, f, c), 'noaa nos bathymetry [:update=False]'],
-    'charts':[lambda x, f, c: charts(x, f, c), 'noaa nautical charts [:update=False]'],
-    'srtm':[lambda x, f, c: srtm_cgiar(x, f, c), 'srtm from cgiar [None]'],
-    'tnm':[lambda x, f, c: tnm(x, f, c), 'the national map [:index=False:dataset=1:format=IMG]'],
-    'mb':[lambda x, f, c: mb(x, f, c), 'noaa multibeam [None]'],
-    'gmrt':[lambda x, f, c: gmrt(x, f, c), 'gmrt [:layer=topo:res=max:fmt=netcdf:multi=False]'],
-    'usace':[lambda x, f, c: usace(x, f, c), 'usace bathymetry [None]'],
-    'ngs':[lambda x, f, c: ngs(x, f, c), 'ngs monuments [None]']
+    'dc':[lambda x, f, c: dc(x, f, c), '''NOAA Digital Coast access
+    \t\tdefaults: dc:index=False:update=False
+    \t\t:index=[True/False] - True to display indexed results.
+    \t\t:update=[True/False] - True to update stored reference vector.
+    \t\t--filter fields: 'Name, 'Date', 'Datatype'.'''],
+    'nos':[lambda x, f, c: nos(x, f, c), '''NOAA NOS bathymetry surveys and data (hydro & BAG)
+    \t\tdefaults: nos:update=False
+    \t\t:update=[True/False] - True to update stored reference vector.
+    \t\t--filter fields: 'Name, 'Date', 'Datatype'.'''],
+    'charts':[lambda x, f, c: charts(x, f, c), '''NOAA Nautical CHARTS (RNC & ENC)
+    \t\tdefaults: charts:datatype=None:update=False
+    \t\t:dataype=[ENC/RNC] - Only fetch either ENC or RNC data.
+    \t\t:update=[True/False] - True to update stored reference vector.
+    \t\t--filter fields: 'Name, 'Date', 'Datatype'.'''],
+    'srtm':[lambda x, f, c: srtm_cgiar(x, f, c), '''SRTM elevation data from CGIAR'''],
+    'tnm':[lambda x, f, c: tnm(x, f, c), '''The National Map (TNM) from USGS
+    \t\tdefaults: tnm:ds=1:sub_ds=None:formats=None:index=False
+    \t\t:index=[True/False] - True to display an index of available datasets.
+    \t\t:ds=[dataset index value (0-15)] - see :index=True for dataset index values.
+    \t\t:sub_ds=[sub-dataset index value (0-x)] - see :index=True for sub-dataset index values.
+    \t\t:formats=[data-set format] - see :index=True for dataset format options.'''],
+    'mb':[lambda x, f, c: mb(x, f, c), '''NOAA MULTIBEAM survey data'''],
+    'gmrt':[lambda x, f, c: gmrt(x, f, c), '''The Global Multi-Reosolution Topography Data Synthesis (GMRT) 
+    \t\tdefaults: gmrt:res=max:fmt=netcdf
+    \t\t:res=[an Integer power of 2 zoom level (<=1024)]
+    \t\t:fmt=[netcdf/geotiff/esriascii/coards]'''],
+    'usace':[lambda x, f, c: usace(x, f, c), '''USACE bathymetry surveys via eHydro'''],
+    'ngs':[lambda x, f, c: ngs(x, f, c), '''NOAA NGS monuments''']
 }
+
+# def fetch_desc(x):
+#     fd = []
+#     for key in x: 
+#         fd.append('{:10}\t\t{}'.format(key, x[key][1]))
+#     return fd
 
 def fetch_desc(x):
     fd = []
     for key in x: 
-        fd.append('{:10}\t\t{}'.format(key, x[key][1]))
+        fd.append('\033[1m{:10}\033[m{}'.format(key, x[key][1]))
     return fd
 
 _usage = '''{} ({}): Fetch geographic elevation data.
 
 usage: {} [ -hlpRv [ args ] ] module[:parameter=value]* ...
 
-Modules:
-  {}
-
 Options:
   -R, --region\t\tSpecifies the desired region to search;
 \t\t\tThis can either be a GMT-style region ( -R xmin/xmax/ymin/ymax )
 \t\t\tor an OGR-compatible vector file with regional polygons. 
 \t\t\tIf a vector file is supplied it will search each region found therein.
-  -l, --list-only\tOnly fetch a list of surveys in the given region.
+  -l, --list\t\tReturn a list of fetch URLs in the given region.
   -f, --filter\t\tSQL style filters for certain datasets.
   -p, --process\t\tProcess fetched data to ASCII XYZ format.
+\t\t\trequires external data processing programs (GMT/GDAL/MBSYSTEM/LASTOOLS/VDATUM)
 
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
 
+Modules and their options:
+  {}
+
 Examples:
  % {} -R -90.75/-88.1/28.7/31.25 nos -f "Date > 2000"
- % {} dc -R tiles.shp -p
+ % {} -R tiles.shp -p dc nos charts:datatype=enc
  % {} -R tiles.shp dc -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
- % {} -R -89.75/-89.5/30.25/30.5 tnm:dataset=4
+ % {} -R -89.75/-89.5/30.25/30.5 tnm:ds=4:formats=IMG gmrt:res=max:fmt=geotiff
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
 '''.format(os.path.basename(sys.argv[0]),
@@ -1543,7 +1488,7 @@ def main():
             extent = str(sys.argv[i + 1])
             i = i + 1
         elif arg[:2] == '-R':
-            iregion = str(arg[2:])
+            extent = str(arg[2:])
 
         elif arg == '--list-only' or arg == '-l':
             want_list = True
@@ -1575,10 +1520,11 @@ def main():
 
         i = i + 1
 
-    if extent is None and want_update is False and len(f) == 0:
+    if len(mod_opts) == 0:
+        utils._error_msg('you must select a fetch module')
         print(_usage)
         sys.exit(1)
-
+        
     for key in mod_opts.keys():
         mod_opts[key] = [None if x == '' else x for x in mod_opts[key]]
         
@@ -1589,13 +1535,6 @@ def main():
     #if want_proc:
     #    utils.check_config()
     
-    # if want_proc:    
-    #     gmt_vers = utils._cmd_check('gmt', 'gmt --version')
-    #     mbgrid_vers = utils._cmd_check('mbgrid', 'mbgrid -version | grep Version')
-    #     gdal_vers = utils._cmd_check('gdal-config', 'gdal-config --version')
-    #     lastools_vers = utils._cmd_check('las2txt', 'las2txt -version')
-    #     vdatum_verss = utils._module_check('vdatum', lambda: vdatum().vdatum_path, lambda: vdatum().vdatum)
-
     ## ==============================================
     ## process input region(s)
     ## ==============================================
@@ -1613,8 +1552,7 @@ def main():
             if not this_region._valid: 
                 status = -1
 
-        tw.opm = 'loaded {} region(s)'.format(len(these_regions))
-        tw.end(status)
+        tw.end(status, 'loaded {} region(s)'.format(len(these_regions)))
     else: these_regions = [regions.region('-180/180/0/90')]
 
     ## ==============================================
@@ -1636,8 +1574,8 @@ def main():
             pb = utils._progress('running fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...\
             '.format(fetch_mod, this_region.region_string, rn+1, len(these_regions)))
             fl = fetch_infos[fetch_mod][0](this_region.buffer(5, percentage = True), f, lambda: stop_threads)
-            fl._want_update = want_update
-
+            ## TODO: set procs to buffered region!1!
+            
             args_d = {}
             for arg in args:
                 p_arg = arg.split('=')
@@ -1645,10 +1583,6 @@ def main():
 
             r = fl.run(**args_d)
 
-            #if len(r) == 0:
-            #    if not want_update:
-            #        status = -1
-            #else:
             if want_list:
                 for result in r:
                     print(result[0])
@@ -1665,11 +1599,10 @@ def main():
                 except (KeyboardInterrupt, SystemExit): 
                     fr._status = -1
                     stop_threads = True
-
+                 
                 fr.join()
-            opm = 'ran fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...\
-            '.format(fetch_mod, this_region.region_string, rn+1, len(these_regions))
-            pb.end(status, opm)
+            pb.end(status, 'ran fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...\
+            '.format(fetch_mod, this_region.region_string, rn+1, len(these_regions)))
 
 if __name__ == '__main__':
     main()

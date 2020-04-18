@@ -154,8 +154,8 @@ def _fext(src_drv_name):
     '''return the common file extention given a GDAL driver name'''
     
     fexts = None
-    drv = gdal.GetDriverByName(src_drv_name)
     try:
+        drv = gdal.GetDriverByName(src_drv_name)
         if drv.GetMetadataItem(gdal.DCAP_RASTER):
             fexts = drv.GetMetadataItem(gdal.DMD_EXTENSIONS)
 
@@ -168,6 +168,8 @@ def _fext(src_drv_name):
             fext = 'img'
         elif src_drv_name == 'GMT':
             fext = 'grd'
+        elif src_drv_name.lower() == 'netcdf':
+            fext = 'nc'
         else: fext = 'gdal'
         
     return(fext)
