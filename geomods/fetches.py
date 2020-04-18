@@ -1421,18 +1421,15 @@ fetch_infos = {
     \t\t< dc:datatype=None:index=False:update=False >
     \t\t:datatype=[lidar/raster] - Only fetch lidar or raster data.
     \t\t:index=[True/False] - True to display indexed results.
-    \t\t:update=[True/False] - True to update stored reference vector.
-    \t\t--filter fields: 'Name, 'Date', 'Datatype'.'''],
+    \t\t:update=[True/False] - True to update stored reference vector.'''],
     'nos':[lambda x, f, c: nos(x, f, c), '''NOAA NOS bathymetry surveys and data (hydro & BAG)
     \t\t< nos:datatype=None:update=False >
     \t\t:datatype=[bag/xyz] - Only fetch BAG or Hydro-XYZ data.
-    \t\t:update=[True/False] - True to update stored reference vector.
-    \t\t--filter fields: 'Name, 'Date', 'Datatype'.'''],
+    \t\t:update=[True/False] - True to update stored reference vector.'''],
     'charts':[lambda x, f, c: charts(x, f, c), '''NOAA Nautical CHARTS (RNC & ENC)
     \t\t< charts:datatype=None:update=False >
     \t\t:dataype=[ENC/RNC] - Only fetch either ENC or RNC data.
-    \t\t:update=[True/False] - True to update stored reference vector.
-    \t\t--filter fields: 'Name, 'Date', 'Datatype'.'''],
+    \t\t:update=[True/False] - True to update stored reference vector.'''],
     'srtm':[lambda x, f, c: srtm_cgiar(x, f, c), '''SRTM elevation data from CGIAR'''],
     'tnm':[lambda x, f, c: tnm(x, f, c), '''The National Map (TNM) from USGS
     \t\t< tnm:ds=1:sub_ds=None:formats=None:index=False >
