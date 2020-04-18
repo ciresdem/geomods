@@ -1472,8 +1472,9 @@ Options:
 \t\t\tIf a vector file is supplied it will search each region found therein.
   -l, --list\t\tReturn a list of fetch URLs in the given region.
   -f, --filter\t\tSQL style filters for certain datasets.
+\t\t\tFields to filter include: 'Name', 'Date' and 'Datatype'
   -p, --process\t\tProcess fetched data to ASCII XYZ format.
-\t\tNote: requires external data processing programs (GMT/GDAL/MBSYSTEM/LASTOOLS/VDATUM)
+\t\t\tRequires external data processing programs (GMT/GDAL/MBSYSTEM/LASTOOLS/VDATUM)
 
   --help\t\tPrint the usage text
   --version\t\tPrint the version information

@@ -230,8 +230,9 @@ class procs:
 
             for rn, this_region in enumerate(self.dst_regions):
                 self.status = 0
-
+                
                 if regions.regions_intersect_p(this_region, data_region):
+ 
                     tmp_xyz = os.path.join(self.xyz_dir, '{}_tmp.xyz'.format(os.path.basename(src_xyz).split('.')[0]))
                     dst_xyz = os.path.join(self.xyz_dir, '{}_{}.xyz'.format(os.path.basename(src_xyz).split('.')[0], this_region.fn))
 
