@@ -95,7 +95,7 @@ def fetch_queue(q, p = None):
                     proc_opts = [None, True, 'mllw']
                 elif this_dt == 'gmrt' or this_dt == 'raster' or this_dt == 'srtm':
                     proc_mod = 'gdal'
-                    proc_opts = [None, True, None]
+                    proc_opts = [None, None, None]
                 elif this_dt == 'geodas_xyz':
                     proc_mod = 'ascii'
                     proc_opts = [',', '2,1,3', 1, True, 'mllw']
@@ -1338,7 +1338,7 @@ class gmrt:
             
         pb.end(self._status, 'loaded GMRT fetch module.')
 
-    def run(self, res = 'max', fmt = 'netcdf'):
+    def run(self, res = 'max', fmt = 'geotiff'):
         '''Run the GMRT fetching module'''
 
         if self.region is None:
@@ -1439,7 +1439,7 @@ fetch_infos = {
     \t\t:formats=[data-set format] - see :index=True for dataset format options.'''],
     'mb':[lambda x, f, c: mb(x, f, c), '''NOAA MULTIBEAM survey data'''],
     'gmrt':[lambda x, f, c: gmrt(x, f, c), '''The Global Multi-Reosolution Topography Data Synthesis (GMRT) 
-    \t\t< gmrt:res=max:fmt=netcdf >
+    \t\t< gmrt:res=max:fmt=geotiff >
     \t\t:res=[an Integer power of 2 zoom level (<=1024)]
     \t\t:fmt=[netcdf/geotiff/esriascii/coards]'''],
     'usace':[lambda x, f, c: usace(x, f, c), '''USACE bathymetry surveys via eHydro'''],
@@ -1618,6 +1618,8 @@ def main():
 
             r = fl.run(**args_d)
 
+            utils._msg('found {} data files.'.format(len(r)))
+            
             if want_list:
                 for result in r:
                     print(result[0])
