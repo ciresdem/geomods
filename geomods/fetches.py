@@ -389,16 +389,18 @@ class dc:
     def run(self, index = False, update = False):
         '''Run the Digital Coast fetching module'''
 
-        if index.lower() == 'false':
-            index = False
+        if index:
+            if index.lower() == 'false':
+                index = False
         
         self._index = index
-
-        if update.lower() == 'false':
-            update = False
         
         self._want_update = update
         
+        if update:
+            if update.lower() == 'false':
+                update = False
+                
         if self._want_update:
             self._update()
             return([])
@@ -649,8 +651,9 @@ class nos:
     def run(self, update = False):
         '''Run the NOS fetching module.'''
 
-        if update.lower() == 'false':
-            update = False
+        if update:
+            if update.lower() == 'false':
+                update = False
         
         self._want_update = update
                 
@@ -844,8 +847,9 @@ class charts():
     def run(self, datatype = None, update = False):
         '''Run the charts fetching module.'''
 
-        if update.lower() == 'false':
-            update = False
+        if uptdate:
+            if update.lower() == 'false':
+                update = False
         
         self._want_update = update
         
@@ -856,8 +860,9 @@ class charts():
         if self.region is None:
             return([])
 
-        if datatype.lower() == 'none':
-            datatype = None
+        if datatype is not None:
+            if datatype.lower() == 'none':
+                datatype = None
         
         self.dt = datatype
         self._boundsGeom = bounds2geom(self.region.region)
@@ -1075,8 +1080,9 @@ class tnm:
                 self._status = -1
         else: self._status = -1
 
-        if index.lower() == 'false':
-            index = False
+        if index:
+            if index.lower() == 'false':
+                index = False
 
         if self._status == 0:
             if index:
@@ -1385,29 +1391,29 @@ class ngs:
 
 fetch_infos = { 
     'dc':[lambda x, f, c: dc(x, f, c), '''NOAA Digital Coast access
-    \t\tdefaults: dc:index=False:update=False
+    \t\tdc:index=False:update=False
     \t\t:index=[True/False] - True to display indexed results.
     \t\t:update=[True/False] - True to update stored reference vector.
     \t\t--filter fields: 'Name, 'Date', 'Datatype'.'''],
     'nos':[lambda x, f, c: nos(x, f, c), '''NOAA NOS bathymetry surveys and data (hydro & BAG)
-    \t\tdefaults: nos:update=False
+    \t\tnos:update=False
     \t\t:update=[True/False] - True to update stored reference vector.
     \t\t--filter fields: 'Name, 'Date', 'Datatype'.'''],
     'charts':[lambda x, f, c: charts(x, f, c), '''NOAA Nautical CHARTS (RNC & ENC)
-    \t\tdefaults: charts:datatype=None:update=False
+    \t\tcharts:datatype=None:update=False
     \t\t:dataype=[ENC/RNC] - Only fetch either ENC or RNC data.
     \t\t:update=[True/False] - True to update stored reference vector.
     \t\t--filter fields: 'Name, 'Date', 'Datatype'.'''],
     'srtm':[lambda x, f, c: srtm_cgiar(x, f, c), '''SRTM elevation data from CGIAR'''],
     'tnm':[lambda x, f, c: tnm(x, f, c), '''The National Map (TNM) from USGS
-    \t\tdefaults: tnm:ds=1:sub_ds=None:formats=None:index=False
+    \t\ttnm:ds=1:sub_ds=None:formats=None:index=False
     \t\t:index=[True/False] - True to display an index of available datasets.
     \t\t:ds=[dataset index value (0-15)] - see :index=True for dataset index values.
     \t\t:sub_ds=[sub-dataset index value (0-x)] - see :index=True for sub-dataset index values.
     \t\t:formats=[data-set format] - see :index=True for dataset format options.'''],
     'mb':[lambda x, f, c: mb(x, f, c), '''NOAA MULTIBEAM survey data'''],
     'gmrt':[lambda x, f, c: gmrt(x, f, c), '''The Global Multi-Reosolution Topography Data Synthesis (GMRT) 
-    \t\tdefaults: gmrt:res=max:fmt=netcdf
+    \t\tgmrt:res=max:fmt=netcdf
     \t\t:res=[an Integer power of 2 zoom level (<=1024)]
     \t\t:fmt=[netcdf/geotiff/esriascii/coards]'''],
     'usace':[lambda x, f, c: usace(x, f, c), '''USACE bathymetry surveys via eHydro'''],

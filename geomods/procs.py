@@ -62,7 +62,7 @@ def _proc_queue(q):
             proc_args = tuple(work[0])
             proc_mod_args = tuple(work[1])
             if proc_args[1] is not None:
-                print proc_args
+                #print proc_args
                 proc_d = procs(*proc_args)
                 #try:
                 proc_d.run(proc_mod_args)
