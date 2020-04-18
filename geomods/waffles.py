@@ -923,7 +923,7 @@ def main():
             opts = arg.split(':')
             if opts[0] in _dem_mods.keys():
                 mod_opts[opts[0]] = list(opts[1:])
-            else: utils._progress().err_msg('invalid module name `{}`'.format(opts[0]))
+            else: utils._error_msg('invalid module name `{}`'.format(opts[0]))
 
         i = i + 1
 

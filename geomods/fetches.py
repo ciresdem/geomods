@@ -386,7 +386,7 @@ class dc:
 
         pb.end(self._status, 'loaded Digital Coast fetch module.')
         
-    def run(self, index = False, update = False):
+    def run(self, datatype = None, index = False, update = False):
         '''Run the Digital Coast fetching module'''
 
         if index:
@@ -395,17 +395,25 @@ class dc:
         
         self._index = index
         
-        self._want_update = update
-        
         if update:
             if update.lower() == 'false':
                 update = False
+
+        self._want_update = update
                 
         if self._want_update:
             self._update()
             return([])
 
+        if datatype is not None:
+            if datatype.lower() == 'none':
+                datatype = None
+            else: self.datatype = datatype
+            
+        self.datatype = datatype
+        
         self.search_gmt()
+        
         return(self._results)
         
     ## ==============================================
@@ -530,6 +538,11 @@ class dc:
                 surv_id = surv_url.split('/')[-2]
                 surv_dt = feature1.GetField('Datatype')
 
+                if self.datatype is not None:
+                    if self.datatype.lower() not in surv_dt:
+                        next(layer, None)
+                        continue
+            
                 if self._index:
                     print("%s (%s): %s (%s) - %s" %(feature1.GetField("ID"),feature1.GetField("Datatype"),feature1.GetField("Name"),feature1.GetField("Date"),feature1.GetField("Data")))
                 else:
@@ -541,7 +554,7 @@ class dc:
 
                     #if self._status == 0:
                     if 'lidar' in surv_dt:
-
+                        
                         ## ==============================================
                         ## Lidar data has a minmax.csv file to get extent
                         ## for each survey file.
@@ -648,7 +661,7 @@ class nos:
         
         pb.end(self._status, 'loaded NOS fetch module.')
 
-    def run(self, update = False):
+    def run(self, datatype = None, update = False):
         '''Run the NOS fetching module.'''
 
         if update:
@@ -665,14 +678,23 @@ class nos:
             return([])
         
         self._bounds = bounds2geom(self.region.region)
-        
+
+        if datatype is not None:
+            if datatype.lower() == 'none':
+                datatype = None
+            else: self.datatype = datatype
+            
+        self.datatype = datatype
+
         self.search_gmt()
 
-        t = np.asarray(self._results)
-        p = t != ''
-        r = t[p.all(1)]
-
-        return(r.tolist())
+        if len(self._results) > 0:
+            t = np.asarray(self._results)
+            p = t != ''
+            r = t[p.all(1)]
+            
+            return(r.tolist())
+        else: return([])
 
     ## ==============================================
     ## Reference Vector Generation
@@ -795,9 +817,14 @@ class nos:
                 geom = feature.GetGeometryRef()
                 if geom.Intersects(self._bounds):
                     fldata = feature.GetField('Data').split(',')
-
-                    for i in fldata:
-                        self._results.append([i, i.split('/')[-1], feature.GetField('Datatype')])
+                    if feature.GetField('Datatype').lower() != 'none':
+                        if self.datatype is not None:
+                            if self.datatype.lower() in feature.GetField('Datatype').lower():
+                                for i in fldata:
+                                    self._results.append([i, i.split('/')[-1], feature.GetField('Datatype')])
+                        else:
+                            for i in fldata:
+                                self._results.append([i, i.split('/')[-1], feature.GetField('Datatype')])
 
         gmt1 = layer = None
         tw.end(self._status, 'filtered \033[1m{}\033[m data files from NOS reference vector'.format(len(self._results)))
@@ -1391,29 +1418,31 @@ class ngs:
 
 fetch_infos = { 
     'dc':[lambda x, f, c: dc(x, f, c), '''NOAA Digital Coast access
-    \t\tdc:index=False:update=False
+    \t\t< dc:datatype=None:index=False:update=False >
+    \t\t:datatype=[lidar/raster] - Only fetch lidar or raster data.
     \t\t:index=[True/False] - True to display indexed results.
     \t\t:update=[True/False] - True to update stored reference vector.
     \t\t--filter fields: 'Name, 'Date', 'Datatype'.'''],
     'nos':[lambda x, f, c: nos(x, f, c), '''NOAA NOS bathymetry surveys and data (hydro & BAG)
-    \t\tnos:update=False
+    \t\t< nos:datatype=None:update=False >
+    \t\t:datatype=[bag/xyz] - Only fetch BAG or Hydro-XYZ data.
     \t\t:update=[True/False] - True to update stored reference vector.
     \t\t--filter fields: 'Name, 'Date', 'Datatype'.'''],
     'charts':[lambda x, f, c: charts(x, f, c), '''NOAA Nautical CHARTS (RNC & ENC)
-    \t\tcharts:datatype=None:update=False
+    \t\t< charts:datatype=None:update=False >
     \t\t:dataype=[ENC/RNC] - Only fetch either ENC or RNC data.
     \t\t:update=[True/False] - True to update stored reference vector.
     \t\t--filter fields: 'Name, 'Date', 'Datatype'.'''],
     'srtm':[lambda x, f, c: srtm_cgiar(x, f, c), '''SRTM elevation data from CGIAR'''],
     'tnm':[lambda x, f, c: tnm(x, f, c), '''The National Map (TNM) from USGS
-    \t\ttnm:ds=1:sub_ds=None:formats=None:index=False
+    \t\t< tnm:ds=1:sub_ds=None:formats=None:index=False >
     \t\t:index=[True/False] - True to display an index of available datasets.
     \t\t:ds=[dataset index value (0-15)] - see :index=True for dataset index values.
     \t\t:sub_ds=[sub-dataset index value (0-x)] - see :index=True for sub-dataset index values.
     \t\t:formats=[data-set format] - see :index=True for dataset format options.'''],
     'mb':[lambda x, f, c: mb(x, f, c), '''NOAA MULTIBEAM survey data'''],
     'gmrt':[lambda x, f, c: gmrt(x, f, c), '''The Global Multi-Reosolution Topography Data Synthesis (GMRT) 
-    \t\tgmrt:res=max:fmt=netcdf
+    \t\t< gmrt:res=max:fmt=netcdf >
     \t\t:res=[an Integer power of 2 zoom level (<=1024)]
     \t\t:fmt=[netcdf/geotiff/esriascii/coards]'''],
     'usace':[lambda x, f, c: usace(x, f, c), '''USACE bathymetry surveys via eHydro'''],
@@ -1444,7 +1473,7 @@ Options:
   -l, --list\t\tReturn a list of fetch URLs in the given region.
   -f, --filter\t\tSQL style filters for certain datasets.
   -p, --process\t\tProcess fetched data to ASCII XYZ format.
-\t\t\trequires external data processing programs (GMT/GDAL/MBSYSTEM/LASTOOLS/VDATUM)
+\t\tNote: requires external data processing programs (GMT/GDAL/MBSYSTEM/LASTOOLS/VDATUM)
 
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
@@ -1454,8 +1483,8 @@ Modules and their options:
 
 Examples:
  % {} -R -90.75/-88.1/28.7/31.25 nos -f "Date > 2000"
- % {} -R tiles.shp -p dc nos charts:datatype=enc
- % {} -R tiles.shp dc -f "Datatype LIKE 'lidar%'" -l > dc_lidar.urls
+ % {} -R region.shp -p dc nos:datatype=bag charts:datatype=enc
+ % {} -R region.shp dc:datatype=lidar -l > dc_lidar.urls
  % {} -R -89.75/-89.5/30.25/30.5 tnm:ds=4:formats=IMG gmrt:res=max:fmt=geotiff
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
@@ -1522,7 +1551,9 @@ def main():
 
         else: 
             opts = arg.split(':')
-            mod_opts[opts[0]] = list(opts[1:])
+            if opts[0] in fetch_infos.keys():
+                mod_opts[opts[0]] = list(opts[1:])
+            else: utils._error_msg('invalid module name `{}`'.format(opts[0]))
 
         i = i + 1
 
@@ -1580,12 +1611,12 @@ def main():
             pb = utils._progress('running fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...\
             '.format(fetch_mod, this_region.region_string, rn+1, len(these_regions)))
             fl = fetch_infos[fetch_mod][0](this_region.buffer(5, percentage = True), f, lambda: stop_threads)
-            ## TODO: set procs to buffered region!1!
-            
+
             args_d = {}
             for arg in args:
                 p_arg = arg.split('=')
-                args_d[p_arg[0]] = p_arg[1]
+                if len(p_arg) > 1:
+                    args_d[p_arg[0]] = p_arg[1]
 
             r = fl.run(**args_d)
 
@@ -1603,9 +1634,9 @@ def main():
                         if not fr.is_alive():
                             break
                 except (KeyboardInterrupt, SystemExit): 
-                    fr._status = -1
+                    fl._status = -1
                     stop_threads = True
-                 
+
                 fr.join()
             pb.end(status, 'ran fetch module \033[1m{}\033[m on region \033[1m{}\033[m ({}/{})...\
             '.format(fetch_mod, this_region.region_string, rn+1, len(these_regions)))
