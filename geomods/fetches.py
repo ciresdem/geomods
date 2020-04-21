@@ -101,7 +101,7 @@ def fetch_queue(q, p = None):
                     proc_opts = [',', '2,1,3', 1, True, 'mllw']
                 elif this_dt == 'lidar':
                     proc_mod = 'lidar'
-                    proc_opts = [True, None]
+                    proc_opts = [None, None]
                 elif this_dt == 'enc':
                     proc_mod = 'ogr'
                     proc_opts = ['SOUNDG', 'Depth', 'mllw']
@@ -1470,7 +1470,7 @@ Options:
   -l, --list\t\tReturn a list of fetch URLs in the given region.
   -f, --filter\t\tSQL style filters for certain datasets.
 \t\t\tFields to filter include: 'Name', 'Date' and 'Datatype'
-  -p, --process\t\tProcess fetched data to ASCII XYZ format.
+  -p, --process\t\tProcess fetched data to ASCII XYZ format. <beta>
 \t\t\tRequires external data processing programs (GMT/GDAL/MBSYSTEM/LASTOOLS/VDATUM)
 
   --help\t\tPrint the usage text

@@ -245,7 +245,7 @@ class procs:
                         '.format(src_xyz, inc, this_region.gmt, tmp_xyz), False, False)
                     else:
                         out, self.status = utils.run_cmd('gmt gmtselect {} {} -V -o0,1,2 > {}\
-                        '.format(src_xyz, this_region.gmt, tmp_xyz), False, False)
+                        '.format(src_xyz, this_region.gmt, tmp_xyz), True, True)
 
                     if os.stat(tmp_xyz).st_size != 0:
                         if i_vert is not None:
