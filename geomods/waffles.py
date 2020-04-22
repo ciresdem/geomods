@@ -757,31 +757,49 @@ class dem:
 ## =============================================================================
 
 _dem_mods = {
-    'mbgrid': [lambda x: x.mbgrid, 'Weighted SPLINE DEM via mbgrid', ':tension=35:dist=3/10:use_datalists=False'],
-    'surface': [lambda x: x.surface, 'SPLINE DEM via GMT surface', ':tension=.35:relaxation=1.2:lower_limit=d:upper_limit=d'],
-    'triangulate': [lambda x: x.triangulate, 'TRIANGULATION DEM via GMT triangulate', None],
-    'nearneighbor': [lambda x: x.nearneighbor, 'NEARNEIGHBOR DEM via GMT', 'radius=6s'],
-    'num': [lambda x: x.num, 'Uninterpolated DEM via GMT xyz2grd', ':mode=n'],
-    'mask': [lambda x: x.mask, 'Data MASK grid', 'None'],
-    'invdst': [lambda x: x.invdst, 'Inverse Distance DEM via gdal_grid', ':power=2.0:smoothing=0.0:radus1=0.1:radius2:0.1'],
-    'average': [lambda x: x.m_average, 'Moving Average DEM via gdal_grid', ':radius1=0.01:radius2=0.01'],
-    'linear': [lambda x: x.linear, 'Linear triangulation DEM via gdal_grid', ':radius=-1'],
-    'vdatum': [lambda x: x.vdatum, 'VDATUM transformation grid', ':ivert=navd88:overt=mhw:region=3'],
+    'mbgrid': [lambda x: x.mbgrid, '''Weighted SPLINE DEM via mbgrid
+    \t\t\t< mbgrid:tension=35:dist=3/10:use_datalists=False >
+    \t\t\t:tension=[0-100] - Spline tension.
+    \t\t\t:dist=[value] - MBgrid -C switch (distance to fill nodata with spline)'''],
+    'surface': [lambda x: x.surface, '''SPLINE DEM via GMT surface
+    \t\t\t< surface:tension=.35:relaxation=1.2:lower_limit=d:upper_limit=d >
+    \t\t\t:tension=[0-1] - Spline tension.'''],
+    'triangulate': [lambda x: x.triangulate, '''TRIANGULATION DEM via GMT triangulate'''],
+    'nearneighbor': [lambda x: x.nearneighbor, '''NEARNEIGHBOR DEM via GMT
+    \t\t\t< nearneighbor:radius=6s >
+    \t\t\t:radius=[value] - Nearest Neighbor search radius'''],
+    'num': [lambda x: x.num, '''Uninterpolated DEM via GMT xyz2grd
+    \t\t\t< num:mode=n >
+    \t\t\t:mode=[key] - xyz2grd -A switch to specify mode of grid population.'''],
+    'mask': [lambda x: x.mask, '''Data MASK grid'''],
+    'invdst': [lambda x: x.invdst, '''INVERSE DISTANCE DEM via gdal_grid
+    \t\t\t< invdst:power=2.0:smoothing=0.0:radus1=0.1:radius2:0.1 >'''],
+    'average': [lambda x: x.m_average, '''Moving AVERAGE DEM via gdal_grid
+    \t\t\t< average:radius1=0.01:radius2=0.01 >'''],
+    'linear': [lambda x: x.linear, '''LINEAR triangulation DEM via gdal_grid
+    \t\t\t< linear:radius=-1 >
+    \t\t\t:radius=[value] - Linear interpolation search radius.'''],
+    'vdatum': [lambda x: x.vdatum, '''VDATUM transformation grid
+    \t\t\t< vdatum:ivert=navd88:overt=mhw:region=3 >
+    \t\t\t:ivert=[vdatum] - Input VDatum vertical datum.
+    \t\t\t:overt=[vdatum] - Output VDatum vertical datum.
+    \t\t\t:region=[0-10] - VDatum region (3 is CONUS)'''],
 }
 #'spatial-metadata': [lambda x: x.spatial_metadata, 'DEM SPATIAL METADATA', ':epsg'],
 #'uncertainty': [lambda x: x.uncertainty, 'DEM UNCERTAINTY grid <beta>', ':gridding-module'],
 
 def dem_mod_desc(x):
-    out = 'Modules:\n'
+    #out = 'Modules:\n'
+    fd = []
     for key in x:
-        out += '  {:16}\t{} [{}]\n'.format(key, x[key][-2], x[key][-1])
-    return(out)
+        #out += '  {:16}\t{} [{}]\n'.format(key, x[key][-2], x[key][-1])
+        fd.append('\033[1m{:18}\033[m{}'.format(key, x[key][-1]))
+    return('\n  '.join(fd))
 
 _waffles_usage = '''{} ({}): Process and generate Digital Elevation Models and derivatives
 
 usage: {} [ -ahprsuvCEFIORX [ args ] ] module[:parameter=value]* ...
 
-{}
 Options:
   -R, --region\t\tSpecifies the desired REGION;
 \t\t\tThis can either be a GMT-style region ( -R xmin/xmax/ymin/ymax )
@@ -804,10 +822,13 @@ Options:
   --version\t\tPrint the version information
   --verbose\t\tIncrease the verbosity
 
+Modules and their options:
+  {}
+
  Examples:
  % {} -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 -V surface:tension=.7
  % {} -I input.datalist -E .3333333s -X 2 -R input_tiles_ply.shp -V -r -s -u mbgrid
- % {} -R-82.5/-82.25/26.75/27 -E0.0000925 vdatum:i_vdatum=navd88:o_vdatum=mhw:vd_region=3 -O ncei -p -r
+ % {} -R-82.5/-82.25/26.75/27 -E0.0000925 vdatum:ivert=navd88:overt=mhw:region=3 -O ncei -p -r
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
 '''.format( os.path.basename(sys.argv[0]), 
