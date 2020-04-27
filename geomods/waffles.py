@@ -248,7 +248,7 @@ class dem:
         self.o_fmt = o_fmt
         self.extend = int(o_extend)
 
-        self.proc_region = self.region.buffer((self.extend * 2) * self.inc)
+        self.proc_region = self.region.buffer((self.extend * 10) * self.inc)
         self.dist_region = self.region.buffer(self.extend * self.inc)
 
         #self.datalist.region = self.proc_region

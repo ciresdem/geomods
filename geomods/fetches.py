@@ -874,7 +874,7 @@ class charts():
     def run(self, datatype = None, update = False):
         '''Run the charts fetching module.'''
 
-        if uptdate:
+        if update:
             if update.lower() == 'false':
                 update = False
         
