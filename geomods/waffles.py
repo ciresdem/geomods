@@ -1061,6 +1061,7 @@ def main():
             ## ==============================================
 
             utils._msg('Module: {}'.format(dem_mod))
+            args = tuple(mod_opts[dem_mod])
             utils._msg('Module Options: {}'.format(args))
             
             ## most modules need a datalist and a region and an increment to be valid, except vdatum doesn't need a datalist...
@@ -1069,13 +1070,11 @@ def main():
                     utils._error_msg('a valid datalist is needed to run module: {}...'.format(dem_mod))
                     break
                 else:
-                    utils._msg('Datalist: {}'.format(this_datalist._path_basename))
-                    utils._msg('Region: {}'.format(this_datalist.region.gmt))
+                    utils._msg('Datalist: {}'.format(this_datalist))
+                    utils._msg('Region: {}'.format(this_region.gmt))
             else:
-                utils._msg('Datalist: {}'.format(this_datalist))
-                utils._msg('Region: {}'.format(this_region))
-            
-            args = tuple(mod_opts[dem_mod])
+                utils._msg('Datalist: {}'.format(this_datalist._path_basename))
+                utils._msg('Region: {}'.format(this_datalist.region.gmt))
 
             utils._msg('Increment: {}'.format(i_inc))
             utils._msg('Output: {}'.format(o_name))
