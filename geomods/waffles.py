@@ -31,7 +31,7 @@ import gdalfun
 import metadata
 import utils
         
-_version = '0.3.0'
+_version = '0.3.1'
 
 def inc2str_inc(inc):
     '''convert a WGS84 geographic increment to a str_inc (e.g. 0.0000925 ==> `13`)'''
@@ -56,7 +56,6 @@ def grd2gdal(src_grd, dst_fmt = 'GTiff', verbose = False):
     
     status = 0
     if os.path.exists(src_grd):
-        #dst_gdal = os.path.join(src_grd[:-4], gdalfun._fext(dst_fmt))
         dst_gdal = '{}.{}'.format(os.path.basename(src_grd).split('.')[0], gdalfun._fext(dst_fmt))
         #dst_gdal = '{}.{}'.format(len(os.path.basename(src_grd).split('.')[-1]), gdalfun._fext(dst_fmt))
         print dst_gdal
@@ -248,25 +247,14 @@ class dem:
         self.o_fmt = o_fmt
         self.extend = int(o_extend)
 
-        self.proc_region = self.region.buffer((self.extend * 10) * self.inc)
+        self.proc_region = self.region.buffer((self.extend * 2) * self.inc)
         self.dist_region = self.region.buffer(self.extend * self.inc)
 
-        #self.datalist.region = self.proc_region
-        
         self.status = 0
         self.stop = callback
         self.verbose = verbose
 
         self.o_name = o_name
-
-        # if o_b_name is None:
-        #     if o_name is None: 
-        #         o_name = self.datalist._path_basename.split('.')[0]
-        #     else: o_name = os.path.basename(o_name).split('.')[0]
-
-        #     str_inc = inc2str_inc(self.inc)
-        #     self.o_name = '{}{}_{}_{}'.format(o_name, str_inc, self.region.fn, this_year())
-        # else: self.o_name = os.path.join(os.path.dirname(o_b_name), os.path.basename(o_b_name).split('.')[0])
 
         self.dem = '{}.grd'.format(self.o_name)
         self.pb = utils._progress()
@@ -277,14 +265,6 @@ class dem:
         
     def run(self, dem_mod = 'mbgrid', args = ()):
         '''Run the DEM module `dem_mod` using args `dem_mod_args`.'''
-
-        #if dem_mod != 'mbgrid' and dem_mod != 'conversion-grid' and dem_mod != 'spatial-metadata' and dem_mod != 'uncertainty':
-        #    if len(self.datalist.datafiles) == 0:
-        #        self.datalist._load_data()
-        #    if len(self.datalist.datafiles) == 0:
-        #        self.status = -1
-
-        #self.dem = '{}_{}.{}'.format(self.o_name, dem_mod, gdalfun._fext(self.o_fmt))
 
         args_d = {}
         for arg in args:
@@ -465,10 +445,6 @@ class dem:
         reg_str = ''
         if self.node == 'pixel':
             reg_str = '-r'
-
-        #dem_nn_cmd = ('gmt blockmean {} -I{:.10f} -V {} | gmt nearneighbor {} -I{:.10f} -S{} -V -G{}_nn.grd {}\
-        #'.format(self.proc_region.gmt, self.inc, reg_str, self.proc_region.gmt, self.inc, radius, self.o_name, reg_str))
-        #out, self.status = utils.run_cmd(dem_nn_cmd, self.verbose, self.verbose, self.datalist._dump_data)
 
         dem_nn_cmd = ('gmt nearneighbor {} -I{:.10f} -S{} -V -G{}_nn.grd {}\
         '.format(self.proc_region.gmt, self.inc, radius, self.o_name, reg_str))
@@ -702,15 +678,11 @@ class dem:
             this_vd.ivert = ivert
             this_vd.overt = overt
 
-            #dem_name = '{}to{}'.format(this_vd.ivert, this_vd.overt)
-            #self.dem = '{}_{}.grd'.format(self.o_name.split('.')[0], dem_name)
             self.dem = '{}.grd'.format(self.o_name)
 
             this_vd.run_vdatum('empty.xyz')
 
             if os.path.exists('result/empty.xyz') and os.stat('result/empty.xyz').st_size != 0:
-                #out, status = utils.run_cmd('gmt gmtinfo result/empty.xyz -C')
-                #empty_infos = out.split()
                 empty_infos = gmtinfo('result/empty.xyz', self.verbose)
 
                 if empty_infos[4] > 0:
@@ -734,11 +706,8 @@ class dem:
                 os.removedirs('result')
             except: pass
         else: self.dem = None
-        #return(self.dem)
 
     def spatial_metadata(self, epsg = 4269):
-        #self.datalist.i_fmt = -1
-        #self.datalist._load_data()
         sm = metadata.spatial_metadata(self.datalist, self.region, i_inc = self.inc, o_name = self.o_name, o_extend = self.extend, callback = self.stop, verbose = self.verbose)
         sm.want_queue = True
         sm.run(epsg)

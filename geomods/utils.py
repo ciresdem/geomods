@@ -28,7 +28,7 @@ import threading
 
 import ConfigParser
 
-_version = '0.1.5'
+_version = '0.1.6'
 
 _license = '''geomods, version {}
 Copyright (c) 2010 - 2020 CIRES Coastal DEM Team
@@ -382,6 +382,18 @@ def geomods_config():
         i = i + 1
 
     gc = check_config(True, want_verbose)
-    print gc
+    _msg(gc)
+
+    import pkg_resources
+    pkg = pkg_resources.get_distribution('geomods')
+    _msg('Geomods Console Scripts:')
+    for src in pkg._get_metadata('entry_points.txt'):
+        _msg(src)
+    for src in pkg._get_metadata('SOURCES.txt'):
+        if 'scripts' in src:
+            _msg(src)
+    
+
+    
         
 ### End

@@ -1418,30 +1418,30 @@ class ngs:
 
 fetch_infos = { 
     'dc':[lambda x, f, c: dc(x, f, c), '''NOAA Digital Coast access
-    \t\t< dc:datatype=None:index=False:update=False >
-    \t\t:datatype=[lidar/raster] - Only fetch lidar or raster data.
-    \t\t:index=[True/False] - True to display indexed results.
-    \t\t:update=[True/False] - True to update stored reference vector.'''],
+    \t\t\t< dc:datatype=None:index=False:update=False >
+    \t\t\t:datatype=[lidar/raster] - Only fetch lidar or raster data.
+    \t\t\t:index=[True/False] - True to display indexed results.
+    \t\t\t:update=[True/False] - True to update stored reference vector.'''],
     'nos':[lambda x, f, c: nos(x, f, c), '''NOAA NOS bathymetry surveys and data (hydro & BAG)
-    \t\t< nos:datatype=None:update=False >
-    \t\t:datatype=[bag/xyz] - Only fetch BAG or Hydro-XYZ data.
-    \t\t:update=[True/False] - True to update stored reference vector.'''],
+    \t\t\t< nos:datatype=None:update=False >
+    \t\t\t:datatype=[bag/xyz] - Only fetch BAG or Hydro-XYZ data.
+    \t\t\t:update=[True/False] - True to update stored reference vector.'''],
     'charts':[lambda x, f, c: charts(x, f, c), '''NOAA Nautical CHARTS (RNC & ENC)
-    \t\t< charts:datatype=None:update=False >
-    \t\t:dataype=[ENC/RNC] - Only fetch either ENC or RNC data.
-    \t\t:update=[True/False] - True to update stored reference vector.'''],
+    \t\t\t< charts:datatype=None:update=False >
+    \t\t\t:dataype=[ENC/RNC] - Only fetch either ENC or RNC data.
+    \t\t\t:update=[True/False] - True to update stored reference vector.'''],
     'srtm':[lambda x, f, c: srtm_cgiar(x, f, c), '''SRTM elevation data from CGIAR'''],
     'tnm':[lambda x, f, c: tnm(x, f, c), '''The National Map (TNM) from USGS
-    \t\t< tnm:ds=1:sub_ds=None:formats=None:index=False >
-    \t\t:index=[True/False] - True to display an index of available datasets.
-    \t\t:ds=[dataset index value (0-15)] - see :index=True for dataset index values.
-    \t\t:sub_ds=[sub-dataset index value (0-x)] - see :index=True for sub-dataset index values.
-    \t\t:formats=[data-set format] - see :index=True for dataset format options.'''],
+    \t\t\t< tnm:ds=1:sub_ds=None:formats=None:index=False >
+    \t\t\t:index=[True/False] - True to display an index of available datasets.
+    \t\t\t:ds=[dataset index value (0-15)] - see :index=True for dataset index values.
+    \t\t\t:sub_ds=[sub-dataset index value (0-x)] - see :index=True for sub-dataset index values.
+    \t\t\t:formats=[data-set format] - see :index=True for dataset format options.'''],
     'mb':[lambda x, f, c: mb(x, f, c), '''NOAA MULTIBEAM survey data'''],
     'gmrt':[lambda x, f, c: gmrt(x, f, c), '''The Global Multi-Reosolution Topography Data Synthesis (GMRT) 
-    \t\t< gmrt:res=max:fmt=geotiff >
-    \t\t:res=[an Integer power of 2 zoom level (<=1024)]
-    \t\t:fmt=[netcdf/geotiff/esriascii/coards]'''],
+    \t\t\t< gmrt:res=max:fmt=geotiff >
+    \t\t\t:res=[an Integer power of 2 zoom level (<=1024)]
+    \t\t\t:fmt=[netcdf/geotiff/esriascii/coards]'''],
     'usace':[lambda x, f, c: usace(x, f, c), '''USACE bathymetry surveys via eHydro'''],
     'ngs':[lambda x, f, c: ngs(x, f, c), '''NOAA NGS monuments''']
 }
@@ -1455,7 +1455,8 @@ fetch_infos = {
 def fetch_desc(x):
     fd = []
     for key in x: 
-        fd.append('\033[1m{:10}\033[m{}'.format(key, x[key][1]))
+        #fd.append('\033[1m{:10}\033[m{}'.format(key, x[key][1]))
+        fd.append('\033[1m{:18}\033[m{}'.format(key, x[key][-1]))
     return fd
 
 _usage = '''{} ({}): Fetch geographic elevation data.
