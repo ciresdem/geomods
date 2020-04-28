@@ -1073,7 +1073,7 @@ def main():
                     utils._msg('Region: {}'.format(this_datalist.region.gmt))
             else:
                 utils._msg('Datalist: {}'.format(this_datalist))
-                utils._msg('Region: {}'.format(this_region)
+                utils._msg('Region: {}'.format(this_region))
             
             args = tuple(mod_opts[dem_mod])
 
