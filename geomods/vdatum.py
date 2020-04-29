@@ -40,9 +40,14 @@ class vdatum:
         self.status = 0
         
         if vdatum_path is None:
-            self.vdatum_path = self._find_vdatum()[0]
-            if self.status != 0:
-                self.vdatum_path = None
+            co = ConfigParser.ConfigParser()
+            try:
+                co.read(utils.CONFIG_FILE)
+                self.vdatum_path = co.get('VDATUM', 'jar')
+            except:
+                self.vdatum_path = self._find_vdatum()[0]
+                if self.status != 0:
+                    self.vdatum_path = None
         else: self.vdatum_path = vdatum_path
 
         #     co = ConfigParser.ConfigParser()

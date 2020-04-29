@@ -1463,7 +1463,10 @@ _usage = '''{} ({}): Fetch geographic elevation data.
 
 usage: {} [ -hlpRv [ args ] ] module[:parameter=value]* ...
 
-Options:
+Modules and their options:
+  {}
+
+General Options:
   -R, --region\t\tSpecifies the desired region to search;
 \t\t\tThis can either be a GMT-style region ( -R xmin/xmax/ymin/ymax )
 \t\t\tor an OGR-compatible vector file with regional polygons. 
@@ -1476,9 +1479,6 @@ Options:
 
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
-
-Modules and their options:
-  {}
 
 Examples:
  % {} -R -90.75/-88.1/28.7/31.25 nos -f "Date > 2000"

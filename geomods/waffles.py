@@ -45,6 +45,7 @@ def inc2str_inc(inc):
 def this_year():
     '''return the current year'''
 
+    
     import datetime
 
     return(datetime.datetime.now().strftime('%Y'))
@@ -769,7 +770,10 @@ _waffles_usage = '''{} ({}): Process and generate Digital Elevation Models and d
 
 usage: {} [ -ahprsuvCEFIORX [ args ] ] module[:parameter=value]* ...
 
-Options:
+Modules and their options:
+  {}
+
+General Options:
   -R, --region\t\tSpecifies the desired REGION;
 \t\t\tThis can either be a GMT-style region ( -R xmin/xmax/ymin/ymax )
 \t\t\tor an OGR-compatible vector file with regional polygons. 
@@ -777,7 +781,7 @@ Options:
   -I, --datalist\tThe input DATALIST.
   -E, --increment\tGridding CELL-SIZE in native units or GMT-style increments.
   -F, --format\t\tOutput grid FORMAT. [GTiff]
-  -O, --output-name\tOutput naming BASENAME.
+  -O, --output-name\tBASENAME for all outputs.
   -X, --extend\t\tNumber of cells with which to EXTEND the REGION. [6]
   -C, --clip\t\tCLIP the output to the clip polygon. [clip_ply.shp:invert=False]
 
@@ -790,9 +794,6 @@ Options:
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
   --verbose\t\tIncrease the verbosity
-
-Modules and their options:
-  {}
 
  Examples:
  % {} -Iinput.datalist -E0.000277777 -R-82.5/-82.25/26.75/27 -V surface:tension=.7
@@ -974,7 +975,6 @@ def main():
 
         if i_datalist is not None:
             this_datalist = datalists.datalist(i_datalist, this_region.buffer((o_extend * 2) * i_inc), verbose = want_verbose)
-            #this_datalist = datalists.datalist(i_datalist, this_region, verbose = want_verbose)
             if not this_datalist._valid_p():
                 utils._error_msg('invalid datalist')
                 status = -1
@@ -996,7 +996,6 @@ def main():
             if this_datalist is None:
                 o_name = 'waffles'
             else: o_name = this_datalist._path_basename.split('.')[0]
-        #else: o_name = o_bn.split('.')[0]
         else: o_name = os.path.join(os.path.dirname(o_bn), os.path.basename(o_bn).split('.')[0])
         
         if want_prefix:
