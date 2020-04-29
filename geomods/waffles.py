@@ -96,7 +96,7 @@ def gmtinfo(src_xyz, verbose = False):
     if not os.path.exists(src_xyz):
         return([])
     else:
-        gmtinfo_cmd = ('gmt grdinfo {} -C'.format(src_xyz))
+        gmtinfo_cmd = ('gmt gmtinfo {} -C'.format(src_xyz))
         out, status = utils.run_cmd(gmtinfo_cmd, verbose, False)
         try:
             os.remove('gmt.conf')
