@@ -357,8 +357,8 @@ class procs:
                 g = json.loads(f.GetGeometryRef().ExportToJson())
                 for xyz in g['coordinates']:
                     if z != 'Height':
-                        xyz_l = '{} {} {}\n'.format(xyz[0], xyz[1], xyz[2])
-                    else: xyz_l = '{} {} {}\n'.format(xyz[0], xyz[1], xyz[2]*-1)
+                        xyz_l = '{} {} {}\n'.format(xyz[0], xyz[1], xyz[2]*-1)
+                    else: xyz_l = '{} {} {}\n'.format(xyz[0], xyz[1], xyz[2])
                     o_xyz.write(xyz_l)
             o_xyz.close()
         else: self.status = -1
