@@ -97,7 +97,7 @@ def gmtinfo(src_xyz, verbose = False):
         return([])
     else:
         gmtinfo_cmd = ('gmt gmtinfo {} -C'.format(src_xyz))
-        out, status = utils.run_cmd(gmtinfo_cmd, verbose, False)
+        out, status = utils.run_cmd(gmtinfo_cmd, verbose, verbose)
         try:
             os.remove('gmt.conf')
         except: pass
