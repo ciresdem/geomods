@@ -13,10 +13,18 @@ External Dependencies for DEM generation and data processing:
  - LASTools
  - VDatum 4.x
 
-Install:
+Install via git:
 
  % git clone https://github.com/ciresdem/geomods.git
  % cd geomods
+ % python setup.py build
+ % sudo python setup.py install --record geomods.install
+
+Install via zip:
+
+ % wget https://github.com/ciresdem/geomods/archive/master.zip
+ % unzip master.zip
+ % cd master
  % python setup.py build
  % sudo python setup.py install --record geomods.install
 
