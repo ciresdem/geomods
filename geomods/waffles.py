@@ -44,7 +44,6 @@ def inc2str_inc(inc):
 
 def this_year():
     '''return the current year'''
-
     
     import datetime
 
@@ -393,7 +392,8 @@ class dem:
         if self.node == 'pixel':
             reg_str = '-r'
 
-        dem_surf_cmd = ('gmt blockmean {} -I{:.10f} -V {} | gmt surface -V {} -I{:.10f} -G{}_p.grd -T{} -Z{} -Ll{} -Lu{} {}\
+        self.datalist.want_weights = True
+        dem_surf_cmd = ('gmt blockmean {} -I{:.10f} -Wi -V {} | gmt surface -V {} -I{:.10f} -G{}_p.grd -T{} -Z{} -Ll{} -Lu{} {}\
         '.format(self.proc_region.gmt, self.inc, reg_str, self.proc_region.gmt, self.inc, self.o_name, tension, relaxation, lower_limit, upper_limit, reg_str))
         out, self.status = utils.run_cmd(dem_surf_cmd, self.verbose, self.verbose, self.datalist._dump_data)
 
@@ -447,8 +447,8 @@ class dem:
         if self.node == 'pixel':
             reg_str = '-r'
 
-        dem_nn_cmd = ('gmt nearneighbor {} -I{:.10f} -S{} -V -G{}_nn.grd {}\
-        '.format(self.proc_region.gmt, self.inc, radius, self.o_name, reg_str))
+        dem_nn_cmd = ('gmt blockmean {} -I{:.10f} -V | gmt nearneighbor {} -I{:.10f} -S{} -V -G{}_nn.grd {}\
+        '.format(self.proc_region.gmt, self.inc, self.proc_region.gmt, self.inc, radius, self.o_name, reg_str))
         out, self.status = utils.run_cmd(dem_nn_cmd, self.verbose, self.verbose, self.datalist._dump_data)
 
         if self.status == 0:
@@ -530,7 +530,8 @@ class dem:
         out_size_x = int((self.dist_region.east - self.dist_region.west) / self.inc)
         out_size_y = int((self.dist_region.north - self.dist_region.south) / self.inc)
 
-        self.status = datalists.datalist2csv(self.datalist, self.proc_region, self.inc, self.node, self.o_name, self.verbose)
+        self.datalist.to_ogr_csv(block = self.inc, o_name = self.o_name)
+        #self.status = datalists.datalist2csv(self.datalist, self.proc_region, self.inc, self.node, self.o_name, self.verbose)
 
         gg_cmd = 'gdal_grid -zfield "field_3" -txe {} {} -tye {} {} -outsize {} {} \
         -a invdist:power={}:smoothing={}:radius1={}:radius2={}:angle={}:max_points={}:min_points={}:nodata={} -l {} {}.vrt {}.grd -of netCDF --config GDAL_NUM_THREADS ALL_CPUS\
@@ -558,8 +559,9 @@ class dem:
             
         out_size_x = int((self.dist_region.east - self.dist_region.west) / self.inc)
         out_size_y = int((self.dist_region.north - self.dist_region.south) / self.inc)
-        
-        self.status = datalists.datalist2csv(self.datalist, self.proc_region, self.inc, self.node, self.o_name, self.verbose)
+
+        self.datalist.to_ogr_csv(block = self.inc, o_name = self.o_name)
+        #self.status = datalists.datalist2csv(self.datalist, self.proc_region, self.inc, self.node, self.o_name, self.verbose)
         
         gg_cmd = 'gdal_grid -zfield "field_3" -txe {} {} -tye {} {} -outsize {} {}\
         -a average:radius1={}:radius2={}:angle={}:min_points={}:nodata={} -l {} {}.vrt {}.grd -of netCDF --config GDAL_NUM_THREADS ALL_CPUS\
@@ -586,8 +588,9 @@ class dem:
             
         out_size_x = int((self.dist_region.east - self.dist_region.west) / self.inc)
         out_size_y = int((self.dist_region.north - self.dist_region.south) / self.inc)
-        
-        self.status = datalists.datalist2csv(self.datalist, self.proc_region, self.inc, self.node, self.o_name, self.verbose)
+
+        self.datalist.to_ogr_csv(block = self.inc, o_name = self.o_name)
+        #self.status = datalists.datalist2csv(self.datalist, self.proc_region, self.inc, self.node, self.o_name, self.verbose)
         
         gg_cmd = 'gdal_grid -zfield "field_3" -txe {} {} -tye {} {} -outsize {} {}\
         -a linear:radius={}:nodata={} -l {} {}.vrt {}.grd -of netCDF --config GDAL_NUM_THREADS ALL_CPUS\
@@ -974,7 +977,7 @@ def main():
         if stop_threads: break
 
         if i_datalist is not None:
-            this_datalist = datalists.datalist(i_datalist, this_region.buffer((o_extend * 2) * i_inc), verbose = want_verbose)
+            this_datalist = datalists.datalist(i_datalist, this_region, verbose = want_verbose)
             if not this_datalist._valid_p():
                 utils._error_msg('invalid datalist')
                 status = -1
@@ -991,6 +994,8 @@ def main():
             utils._error_msg('no region or datalist; aborting...')
             status = -1
             break
+
+        this_datalist.region = this_datalist.region.buffer((o_extend * 2) * i_inc)
         
         if o_bn is None:
             if this_datalist is None:
@@ -1045,10 +1050,14 @@ def main():
                 utils._msg('Region: {}'.format(this_datalist.region.gmt))
 
             utils._msg('Increment: {}'.format(i_inc))
-            utils._msg('Output: {}'.format(o_name))
+            utils._msg('Output Name: {}'.format(o_name))
+            extent = this_region.buffer(o_extend * i_inc).region
+            xcount = int((extent[3] - extent[2]) / i_inc) + 1
+            ycount = int((extent[1] - extent[0]) / i_inc) + 1
+            utils._msg('Output Grid Size: {}/{}'.format(xcount, ycount))
             
             pb = utils._progress('running geomods dem module \033[1m{}\033[m on region ({}/{}): \033[1m{}\033[m...\
-            '.format(dem_mod.upper(), rn + 1, len(these_regions), this_region.region_string))
+            '.format(dem_mod.upper(), rn + 1, len(these_regions), this_region.region))
             dl = dem(this_datalist, this_region, i_inc = i_inc, o_name = o_name, o_node = node_reg,\
                      o_fmt = o_fmt, o_extend = o_extend, clip_ply = clip_ply, callback = lambda: stop_threads, verbose = want_verbose)
             t = threading.Thread(target = dl.run, args = (dem_mod, args))
@@ -1057,7 +1066,7 @@ def main():
                 t.start()
                 while True:
                     time.sleep(1)
-                    pb.update()
+                    #pb.update()
                     if not t.is_alive():
                         break
             except (KeyboardInterrupt, SystemExit): 

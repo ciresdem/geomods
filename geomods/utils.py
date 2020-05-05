@@ -216,7 +216,7 @@ cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in
 def run_cmd(cmd, verbose = False, prog = True, data_fun = None):
     '''Run a command with or without a progress bar while passing data'''
 
-    if prog: pb = _progress('running cmd: \033[1m{}\033[m...'.format(cmd[:84]))
+    if prog: pb = _progress('running cmd: \033[1m{}\033[m...'.format(cmd.rstrip()))
     if data_fun is not None:
         pipe_stdin = subprocess.PIPE
     else: pipe_stdin = None
@@ -240,7 +240,7 @@ def run_cmd(cmd, verbose = False, prog = True, data_fun = None):
     p.stderr.close()
     p.stdout.close()
 
-    if prog: pb.end(p.returncode, 'ran cmd: \033[1m{}\033[m.'.format(cmd[:84]))
+    if prog: pb.end(p.returncode, 'ran cmd: \033[1m{}\033[m.'.format(cmd.rstrip()))
 
     return out, p.returncode
 
@@ -291,6 +291,7 @@ class _progress:
 
         if self.opm is not None:
             self._clear_stderr()
+            #sys.stderr.write('\r {}  {:40}\n'.format(" " * (self.tw - 1), self.opm))
             sys.stderr.write('\r {}  {:40}\n'.format(" " * (self.tw - 1), self.opm))
             #sys.stderr.flush()
         

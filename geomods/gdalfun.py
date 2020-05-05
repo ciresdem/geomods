@@ -177,6 +177,7 @@ def _fext(src_drv_name):
 def _gather_infos(src_ds):
     '''Gather information from `src_ds` GDAL dataset.'''
 
+    ## remove band info...
     ds_config = {}
 
     ds_config['nx'] = src_ds.RasterXSize
@@ -379,7 +380,7 @@ def _write_gdal(src_arr, dst_gdal, ds_config, dst_fmt = 'GTiff', verbose = False
 
     if verbose: sys.stderr.write('geomods: writing gdal grid...')
     
-    driver = gdal.GetDriverByName(ds_config['fmt'])
+    driver = gdal.GetDriverByName(dst_fmt)
     if os.path.exists(dst_gdal):
         driver.Delete(dst_gdal)
     
@@ -547,12 +548,11 @@ def cut(src_fn, srcwin, dst_fn):
     
     ds_arr = None
 
-def dump(src_gdal, dst_xyz = sys.stdout, dump_nodata = False, srcwin = None, mask = None, warp_to_wgs = False):
+def dump(src_gdal, dst_xyz = sys.stdout, delim = ' ', weight = None, dump_nodata = False, srcwin = None, mask = None, warp_to_wgs = False):
     '''Dump `src_gdal` GDAL file to ASCII XYZ'''
 
     status = 0
     band_nums = []
-    delim = ' '
     skip = 1
     
     msk_band = None
@@ -563,6 +563,10 @@ def dump(src_gdal, dst_xyz = sys.stdout, dump_nodata = False, srcwin = None, mas
     if band_nums == []: band_nums = [1]
 
     src_ds = gdal.Open(src_gdal)
+
+    if weight is None:
+        w_string = ''
+    else: w_string = '{}{}'.format(delim, weight)
     
     if src_ds is not None:
         bands = []
@@ -587,14 +591,10 @@ def dump(src_gdal, dst_xyz = sys.stdout, dump_nodata = False, srcwin = None, mas
             srcwin = (0, 0, ds_config['nx'], ds_config['ny'])
 
         dst_fh = dst_xyz
-        # fixme
-        #if dst_xyz is not None:
-        #    try:
-        #        dst_fh = open(dst_xyz, 'wt')
-        #    except: dst_fh = dst_xyz
-        #else: dst_fh = sys.stdout
-
-        band_format = (("%g" + delim) * len(bands)).rstrip(delim) + '\n'
+        zs = len(bands)
+        if weight is not None: zs+=1
+            
+        band_format = (("%g" + delim) * zs).rstrip(delim) + '\n'
 
         if abs(gt[0]) < 180 and abs(gt[3]) < 180 \
            and abs(ds_config['nx'] * gt[1]) < 180 \
@@ -607,7 +607,7 @@ def dump(src_gdal, dst_xyz = sys.stdout, dump_nodata = False, srcwin = None, mas
             data = []
             for band in bands:
                 if band.GetNoDataValue() is not None:
-                    nodata.append((band_format % band.GetNoDataValue()).rstrip())
+                    nodata.append(('{}'.format(band.GetNoDataValue())))
                 band_data = band.ReadAsArray(srcwin[0], y, srcwin[2], 1)
 
                 if msk_band is not None:
@@ -624,21 +624,21 @@ def dump(src_gdal, dst_xyz = sys.stdout, dump_nodata = False, srcwin = None, mas
                 geo_x = gt[0] + (x + 0.5) * gt[1] + (y + 0.5) * gt[2]
                 geo_y = gt[3] + (x + 0.5) * gt[4] + (y + 0.5) * gt[5]
 
-                #geo_x = gt[0] + x * (0.5 * gt[1]) + y * (0.5 * gt[2])
-                #geo_y = gt[3] + x * (0.5 * gt[4]) + y * (0.5 * gt[5])
-
                 x_i_data = []
                 for i in range(len(bands)):
                     x_i_data.append(data[i][x_i])
 
                 z = x_i_data[0]
-                band_str = band_format % z
+
+                if weight is not None:
+                    band_str = band_format % (z, weight)
+                else: band_str = band_format % (z)
                 
                 if warp_to_wgs:
                     point = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(geo_x, geo_y))
                     point.Transform(dst_trans)
                     pnt = point.GetPoint()
-                    line = '{} {} {}'.format(pnt[0], pnt[1], band_str)
+                    line = '{} {} {}{}'.format(pnt[0], pnt[1], band_str, w_string)
                 else: line = format % (float(geo_x), float(geo_y), band_str)
 
                 if dump_nodata:
@@ -647,9 +647,6 @@ def dump(src_gdal, dst_xyz = sys.stdout, dump_nodata = False, srcwin = None, mas
                     if band_str.rstrip() not in nodata:
                         dst_fh.write(line)
 
-        #try:
-        #    dst_fh.close()
-        #except: pass
         srcds = src_mask = None
 
 def dumpy(src_gdal, dump_nodata = False, srcwin = None):
@@ -657,7 +654,6 @@ def dumpy(src_gdal, dump_nodata = False, srcwin = None):
     Function taken from GDAL's `gdal2xyz.py` script.'''
 
     delim = ' '
-    skip = 1
 
     srcds = gdal.Open(src_gdal)
 
@@ -667,39 +663,30 @@ def dumpy(src_gdal, dump_nodata = False, srcwin = None):
         if srcwin is None:
             srcwin = (0,0,srcds.RasterXSize,srcds.RasterYSize)
 
-        band_format = (("%g" + delim) * len(bands)).rstrip(delim) + '\n'
-        if abs(gt[0]) < 180 and abs(gt[3]) < 180 \
-           and abs(srcds.RasterXSize * gt[1]) < 180 \
-           and abs(srcds.RasterYSize * gt[5]) < 180:
-            format = '%.10g' + delim + '%.10g' + delim + '%s'
-        else:
-            format = '%.3f' + delim + '%.3f' + delim + '%s'
-
-        for y in range(srcwin[1], srcwin[1] + srcwin[3], skip):
+        for y in range(srcwin[1], srcwin[1] + srcwin[3], 1):
 
             nodata = ['-9999', 'nan']
             data = []
 
-            if band.GetNoDataValue() is not None:
-                nodata.append(band_format % band.GetNoDataValue())
+            if band.GetNoDataValue() is not None: nodata.append(band.GetNoDataValue())
+            
             band_data = band.ReadAsArray(srcwin[0], y, srcwin[2], 1)    
             band_data = np.reshape(band_data, (srcwin[2], ))
             data.append(band_data)
 
-            for x_i in range(0, srcwin[2], skip):
+            for x_i in range(0, srcwin[2], 1):
                 x = x_i + srcwin[0]
-                geo_x = gt[0] + (x + 0.5) * gt[1] + (y + 0.5) * gt[2]
-                geo_y = gt[3] + (x + 0.5) * gt[4] + (y + 0.5) * gt[5]
+                geo_x, geo_y = _pixel2geo(x, y, gt)
                 x_i_data = []
-                for i in range(len(bands)):
+                for i in range(1):
                     x_i_data.append(data[i][x_i])
-
-                band_str = band_format % tuple(x_i_data)
-                line = format % (float(geo_x), float(geo_y), band_str)
+                    
+                z = x_i_data[0]
+                line = [geo_x, geo_y, z]
                 if dump_nodata:
                     yield(line)
                 else:
-                    if band_str not in nodata:
+                    if str(z) not in nodata:
                         yield(line)
 
         srcds = None
@@ -1044,9 +1031,11 @@ def xyz_mask(src_xyz, dst_gdal, extent, cellsize,
 
     if verbose: sys.stderr.write('geomods: processing xyz data...')
 
-    for this_xyz in xyz_parse(src_xyz):
-        x = float(this_xyz[xloc])
-        y = float(this_xyz[yloc])
+    #for this_xyz in xyz_parse(src_xyz):
+    for this_xyz in src_xyz:
+        
+        x = this_xyz[xloc]
+        y = this_xyz[yloc]
 
         if x > extent[0] and x < extent[1]:
             if y > extent[2] and y < extent[3]:

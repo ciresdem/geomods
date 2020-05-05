@@ -41,6 +41,8 @@ _version = '0.1.2'
 ##
 ## a format of -1 represents a datalist
 ## a format of 168 represents XYZ data
+## a format of 200 represents GDAL data
+## a format of 236 represents projected GDAL data
 ##
 ## each xyz file in a datalist should have an associated '*.inf' file 
 ## for faster processing
@@ -68,8 +70,17 @@ def xyz_parse(src_xyz):
                 this_delim = delim
                 break
 
-        yield this_xyz
+        yield [float(x) for x in this_xyz]
 
+def xyz_line(line, dst_port = sys.stdout, delimiter = ' ', weight = None):
+    #try:
+    if weight is None:
+        w_string = ''
+    else: w_string = '{}{}'.format(delimiter, weight)
+    
+    dst_port.write('{}{}\n'.format(delimiter.join([str(x) for x in line]), w_string))
+    #except: sys.exit(1)
+        
 def xyz_region(src_xyz):
     '''return a region based on a src_xyz file using GMT...'''
     
@@ -100,18 +111,14 @@ def xyz_inf(src_xyz):
 def xy_in_region_p(src_xy, src_region):
     '''return True if point [x, y] is inside region [w, e, s, n], else False.'''
 
-    x = src_xyz[0]
-    y = src_xyz[1]
+    x = src_xy[0]
+    y = src_xy[1]
 
-    if x < src_region[0]:
-        return False
-    elif x > src_region[1]:
-        return False
-    elif y < src_region[2]:
-        return False
-    elif y > src_region[3]:
-        return False
-    else: return True
+    if x < src_region[0]: return(False)
+    elif x > src_region[1]: return(False)
+    elif y < src_region[2]: return(False)
+    elif y > src_region[3]: return(False)
+    else: return(True)
 
 def xyz_inf_gmt(src_xyz):
     '''generate an info (.inf) file from a src_xyz file using GMT.'''
@@ -134,78 +141,8 @@ def gdal_inf_gmt(src_gdal):
 def generate_inf(data_path, data_fmt = 168):
     '''generate an info (.inf) file from the data_path'''
     
-    this_region = datafile_region(data_path, data_fmt)
+    this_region = parse_or_gen_inf(data_path, data_fmt)
     return(this_region)
-
-def datafile_region(data_path, data_fmt = 168):
-    '''Read .inf file and extract minmax info.
-    the .inf file can either be an MBSystem style inf file
-    or the result of `gmt gmtinfo file.xyz -C`, which is
-    a 6 column line with minmax info, etc.'''
-
-    if data_fmt == 200:
-        minmax = (map(str, gdalfun._extent(data_path)))
-    elif data_fmt == 168:    
-        path_i = data_path + '.inf'
-
-        minmax = [0, 0, 0, 0]
-        if not os.path.exists(path_i):
-            xyz_inf_mb(data_path)
-
-        if os.path.exists(path_i):
-            iob = open(path_i)
-            for il in iob:
-                til = il.split()
-                if len(til) > 1:
-                    try: ## GMT inf
-                        minmax[0] = float(til[0])
-                        minmax[1] = float(til[1])
-                        minmax[2] = float(til[2])
-                        minmax[3] = float(til[3])
-                    except: ## mbsystem inf
-                        if til[0] == 'Minimum':
-                            if til[1] == 'Longitude:':
-                                minmax[0] = til[2]
-                                minmax[1] = til[5]
-                            elif til[1] == 'Latitude:':
-                                minmax[2] = til[2]
-                                minmax[3] = til[5]
-
-    try: 
-        o_region = regions.region('/'.join(minmax))
-    except: o_region = None
-
-    #print minmax
-    if 0. in map(float, minmax): o_region = None
-    
-    return(o_region)
-
-def datalist2csv(datalist, region, inc, node_reg, o_name, verbose):
-
-    status = 0
-
-    reg_str = ''
-    if node_reg == 'pixel':
-        reg_str = '-r'
-
-    ## todo: make xyz_block function of some kind to replace blockmean here.
-    out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = COMMA', verbose, verbose)
-    bm_cmd = ('gmt blockmean {} -I{:.7f} -V {} > {}.csv\
-    '.format(region.gmt, inc, reg_str, o_name))
-    out, status = utils.run_cmd(bm_cmd, verbose, verbose, datalist._dump_data)
-    
-    o_vrt = open('{}.vrt'.format(o_name), 'w')
-    t = '''<OGRVRTDataSource>
-  <OGRVRTLayer name="{}">
-    <SrcDataSource>{}.csv</SrcDataSource>
-    <GeometryType>wkbPoint</GeometryType>
-    <GeometryField encoding="PointFromColumns" x="field_1" y="field_2" z="field_3"/>
-  </OGRVRTLayer>
-</OGRVRTDataSource>'''.format(o_name, o_name)
-    o_vrt.write(t)
-    o_vrt.close()
-    
-    return(status)
 
 def datalist_set_weight(data_e, weight = None):
     if weight is not None:
@@ -218,71 +155,96 @@ def datalist_set_weight(data_e, weight = None):
                 dweight = float(data_e[2])
             except: dweight = 1
         else: dweight = 1
-    return dweight
 
-def datalist_bounds(dl, layer, region, inc):
-    '''gather geometries from datalist `dl` and append
-    results to ogr `layer`. Load the datalist, generate
-    a NUM-MSK grid, polygonize said NUM-MSK then union
-    the polygon and add it to the output layer.
-    `dl` is a datalist line [dl_path, dl_fmt, dl_weight, metadata..., ...]
-    `layer` is an OGR layer object.'''
+    return(dweight)
 
-    status = 0
-    defn = layer.GetLayerDefn()
-    this_datalist = datalists.datalist(dl[0], region)
-    this_datalist._load_data()
-
-    try:
-        o_v_fields = [dl[3], dl[4], dl[5], dl[6], dl[7], dl[8], dl[9], dl[10].strip()]
-    except: o_v_fields = [this_datalist._name, 'Unknown', 0, 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
-
-    pb = utils._progress('gathering geometries from \033[1m{}\033[m...'.format(this_datalist._path_basename))
-    this_mask = this_datalist.mask(inc = inc)
-    if not os.path.exists(this_mask):
-        status = -1
-    else:
-        utils.remove_glob('{}_poly.*'.format(this_o_name))
-
-        tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(this_datalist._name))
-        tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(this_datalist._name), None, ogr.wkbMultiPolygon)
-        tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
-        
-        pb1 = utils._progress('polygonizing \033[1m{}\033[m...'.format(this_datalist._path_basename))
-        gdalfun.polygonize(this_mask, tmp_layer, verbose = True)
-        pb1.opm = 'polygonized \033[1m{}\033[m.'.format(this_datalist._path_basename)
-        pb1.end(status)
-
-        if len(tmp_layer) > 1:
-            out_feat = gdalfun.ogr_mask_union(tmp_layer, 'DN', defn)
-            for i, f in enumerate(gdalfun._ogr_get_layer_fields(layer)):
-                out_feat.SetField(f, o_v_fields[i])
-
-            layer.CreateFeature(out_feat)
-            
-        tmp_ds = tmp_layer = out_feat = None
-        utils.remove_glob('{}_poly.*'.format(this_datalist._name))
-        os.remove(this_mask)
-
-    pb.opm = 'gathered geometries from \033[1m{}\033[m.'.format(this_datalist._path_basename)
-    pb.end(status)
-
-def dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
-    '''load a datalist and gather all datafiles found therein.'''
+def parse_inf(inf_file):
+    minmax = [0, 0, 0, 0]
     
+    with open(inf_file) as iob:
+        for il in iob:
+            til = il.split()
+            if len(til) > 1:
+                try: ## GMT/GeoMods inf
+                    minmax = [float(x) for x in til]
+                except: ## mbsystem inf
+                    if til[0] == 'Minimum':
+                        if til[1] == 'Longitude:':
+                            minmax[0] = til[2]
+                            minmax[1] = til[5]
+                        elif til[1] == 'Latitude:':
+                            minmax[2] = til[2]
+                            minmax[3] = til[5]
+    return(minmax)
+
+def parse_or_gen_inf(data_path, data_fmt = 168):
+    '''Read .inf file and extract minmax info.
+    the .inf file can either be an MBSystem style inf file
+    or the result of `gmt gmtinfo file.xyz -C`, which is
+    a 6 column line with minmax info, etc.
+    returns the region of the inf file.'''
+
+    if data_fmt == 168:    
+        path_i = data_path + '.inf'
+
+        if not os.path.exists(path_i):
+            xyz_inf_gmt(data_path)
+            
+        if os.path.exists(path_i):
+            minmax = map(str, parse_inf(path_i)[:4])
+        
+    elif data_fmt == 200: minmax = (map(str, gdalfun._extent(data_path)))
+
+    try: 
+        o_region = regions.region('/'.join(minmax))
+    except: o_region = None
+
+    if 0. in map(float, minmax): o_region = None
+    
+    return(o_region)
+
+## TODO: add weighted mean...
+def block_entry(entry, region = None, increment = 1, ptArray = [], sumArray = [], dst_gt = None, verbose = False):
+
     if verbose: utils._msg('using data file {}'.format(entry[0]))        
-    if entry[1] == 168: # xyz
+    if entry[1] == 168:
         with open(entry[0]) as infile:
-            for line in infile:
-                dst_port.write(line)
-    elif entry[1] == 200: #gdal
+            for this_xyz in xyz_parse(infile):
+                if region is not None:
+                    if xy_in_region_p(this_xyz, region.region):
+                        xpos, ypos = gdalfun._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
+                        ptArray[ypos, xpos] += 1
+                        sumArray[ypos, xpos] += this_xyz[2]
+
+    elif entry[1] == 200:
         if region is not None:
             srcwin = gdalfun._srcwin(entry[0], region.region)
-            #print srcwin
         else: srcwin = None
-        gdalfun.dump(entry[0], dst_xyz = dst_port, dump_nodata = False, srcwin = srcwin, mask = None, warp_to_wgs = False)
-    
-def archive_entry(entry, a_name, dirname = 'archive', region = None, verbose = None):
+        for this_xyz in gdalfun.dumpy(entry[0], dump_nodata = False, srcwin = srcwin):
+            if region is not None:
+                if xy_in_region_p(this_xyz, region.region):
+                    xpos, ypos = gdalfun._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
+                    ptArray[ypos, xpos] += 1
+                    sumArray[ypos, xpos] += this_xyz[2]
+
+def dump_entry(entry, dst_port = sys.stdout, region = None, delimiter = ' ', verbose = False):
+    '''load a datalist and gather all datafiles found therein.'''
+
+    if verbose: utils._msg('using data file {}'.format(entry[0]))        
+    if entry[1] == 168:
+        with open(entry[0]) as infile:
+            for line in xyz_parse(infile):
+                if region is not None:
+                    if xy_in_region_p(line, region.region):
+                        xyz_line(line, dst_port, delimiter, entry[2])
+                else: xyz_line(line, dst_port, delimiter, entry[2])
+    elif entry[1] == 200:
+        if region is not None:
+            srcwin = gdalfun._srcwin(entry[0], region.region)
+        else: srcwin = None
+        gdalfun.dump(entry[0], dst_xyz = dst_port, delim = delimiter, weight = entry[2], dump_nodata = False, srcwin = srcwin, mask = None, warp_to_wgs = False)
+
+def archive_entry(entry, a_name, dirname = 'archive', region = None, delimiter = ' ', verbose = None):
 
     i_dir = os.path.dirname(entry[0])
     i_xyz = os.path.basename(entry[0]).split('.')[0]
@@ -298,10 +260,10 @@ def archive_entry(entry, a_name, dirname = 'archive', region = None, verbose = N
         os.makedirs(a_xyz_dir)
 
     with open(a_xyz, 'w') as fob:
-        dump_entry(entry, dst_port = fob, region = region, verbose = verbose)
+        dump_entry(entry, dst_port = fob, region = region, delimiter = delimiter, verbose = verbose)
 
     d = datalist(os.path.join(a_dir, entry[-1] + '.datalist'))
-    d._append_datafile([os.path.join('xyz', i_xyz + '.xyz') if x[0] == 0 else 168 if x[0] == 1 else x[1] for x in enumerate(entry[:-1])])
+    d._append_entry([os.path.join('xyz', i_xyz + '.xyz') if x[0] == 0 else 168 if x[0] == 1 else x[1] for x in enumerate(entry[:-1])])
 
     generate_inf(a_xyz, 168)
     
@@ -310,25 +272,35 @@ class datalist:
     Supports XYZ and GDAL data.'''
 
     def __init__(self, i_datalist, i_region = None, i_fmt = None, verbose = False):
+
+        self.dl_entry = i_datalist.split(':')
+        #print self.dl_entry
+        i_datalist = self.dl_entry[0]
+        
         if not os.path.exists(i_datalist): 
             open(i_datalist, 'a').close()
 
         self.region = i_region
         self.i_fmt = i_fmt
+        self.verbose = verbose
+        self.want_weights = False
+        
+        self.delim = ' '
         
         self._path = i_datalist
         self._path_dirname = os.path.dirname(self._path)
         self._path_basename = os.path.basename(self._path)
         self._name = os.path.basename(self._path).split('.')[0]
-        if self.region is not None:
-            self._name_r = self._name + self.region.fn
-        else: self._name_r = self._name
+
         self.datalist = []
         self.datalists = []
         self.datafiles = []
-        self.verbose = verbose
         self.archive_datalist = None
-        
+
+        if self.region is not None:
+            self._name_r = self._name + self.region.fn
+        else: self._name_r = self._name
+
         self._parse()
 
     def _reset(self):
@@ -363,21 +335,57 @@ class datalist:
     def _parse(self):
         '''read a datalist and parse the entries.'''
         
-        with open(self._path, 'r') as fob:
-            for dl in fob:
-                if self._valid_entry_p(dl):
-                    dl_cols = [x.strip() for x in dl.split(' ')][:3]
-                    dl_gmds_cols = [y.strip() for y in [x for x in dl.split(' ')][3:]]
-                    dl_gmds_cols = [x.strip() for x in ' '.join(dl_gmds_cols).split(',')]
-                    if len(dl_cols) == 3:
-                        dl_cols.append(dl_gmds_cols)
-                    #dl_cols = [x.strip() for x in dl.split(' ')]
-                    self.datalist.append([os.path.join(self._path_dirname, x[1]) if x[0] == 0 else float(x[1]) if x[0] < 3 else x[1] for x in enumerate(dl_cols)])
+        if len(self.dl_entry) == 1:
+            with open(self._path, 'r') as fob:
+                for dl in fob:
+                    if self._valid_entry_p(dl):
+                        dl_cols = [x.strip() for x in dl.split(' ')][:3]
+                        dl_gmds_cols = [y.strip() for y in [x for x in dl.split(' ')][3:]]
+                        dl_gmds_cols = [x.strip() for x in ' '.join(dl_gmds_cols).split(',')]
+                        if len(dl_cols) == 3:
+                            dl_cols.append(dl_gmds_cols)
+                        #dl_cols = [x.strip() for x in dl.split(' ')]
+                        self.datalist.append([os.path.join(self._path_dirname, x[1]) if x[0] == 0 else float(x[1]) if x[0] < 3 else x[1] for x in enumerate(dl_cols)])
+        elif len(self.dl_entry) >= 2:
+            if self._valid_entry_p(' '.join(self.dl_entry)):
+                self.datalist.append([self.dl_entry[0] if x[0] == 0 else float(x[1]) if x[0] < 3 else x[1] for x in enumerate(self.dl_entry)])
 
+    def _proc_data(self, proc = lambda entry: sys.stdout.write('{}\n'.format(entry[0])), weight = None):
+        '''Recurse through the datalist and run proc on each data file.'''
+
+        for data_e in self.datalist:
+            dpath = data_e[0]
+            try:
+                dformat = int(data_e[1])
+            except: dformat = 168
+            
+            if weight is None and self.want_weights:
+                weight = datalist_set_weight(data_e, weight)
+                
+            try:
+                data_e[2] = weight
+            except: data_e.append(weight)
+            
+            if dformat == -1:
+                d = datalist(dpath, self.region, self.i_fmt, self.verbose)
+                if self.i_fmt == -1:
+                    data_e.append(d._name)
+                    data_mb = data_e[:3]
+                    data_gm = data_e[3:]
+                    #proc([x[1] if x[0] == 0 else int(x[1]) if x[0] < 3 else x[1] for x in enumerate(data_e)])
+                    proc([x[1] if x[0] == 0 else x[1] for x in enumerate(data_e)])
+                d._proc_data(proc, weight)
+
+            else:
+                if self.usable_entry_p(data_e):
+                    data_e.append(self._name)
+                    #proc([x[1] if x[0] == 0 else int(x[1]) if x[0] < 3 else x[1] for x in enumerate(data_e)])
+                    proc([x[1] if x[0] == 0 else x[1] for x in enumerate(data_e)])
+                    
     def _dump_data(self, dst_port = sys.stdout):
         '''dump the data from the datalist to stdout.'''
         
-        self._proc_data(lambda entry: dump_entry(entry, dst_port, self.region, self.verbose))
+        self._proc_data(lambda entry: dump_entry(entry, dst_port = dst_port, delimiter = self.delim, region = self.region, verbose = self.verbose))
 
     def _load_datalists(self):
         '''load a datalist and gather all datalists found therein.'''
@@ -411,145 +419,128 @@ class datalist:
 
         if self.verbose:
             if len(self.datafiles) == 0: status = -1
-            pb.end(status, 'loaded datalist `\033[1m{}\033[m` and found {} data files.'.format(self._name, len(self.datafiles)))
-        
+            pb.end(status, 'loaded datalist `\033[1m{}\033[m` and found {} data files.'.format(self._name, len(self.datafiles)))                    
+            
     def _archive(self, dirname = 'archive'):
 
-        self._proc_data(lambda entry: archive_entry(entry, a_name = self._name_r, dirname = dirname, region = self.region, verbose = self.verbose))
-
+        self._proc_data(lambda entry: archive_entry(entry, a_name = self._name_r, dirname = dirname, region = self.region, delimiter = self.delim, verbose = self.verbose))
         self.datalists = [[self._path, -1, 1, self._name]]
         self.i_fmt = -1
+        
         self._proc_data(lambda entry: self.datalists.append(entry))
-        #os.makedirs(os.path.join('archive', self._name_r))
         d = datalist(os.path.join(dirname, self._name_r, self._name_r + '.datalist'), verbose = self.verbose)
         self._load_datalists()
+        
         for i in self.datalists:
             dl_n = i[-1]
             dl_p = os.path.join('data', dl_n, dl_n + '.datalist')
             if os.path.exists(os.path.join(dirname, self._name_r, dl_p)):
-                d._append_datafile([dl_p, -1, i[2]])
+                d._append_entry([dl_p, -1, i[2]])
                 
         self.archive_datalist = d
-        
-    def _proc_data(self, proc = lambda entry: sys.stdout.write(entry), weight = None):
-        '''Recurse through the datalist and run proc on each data file.'''
-
-        for data_e in self.datalist:
-            dpath = data_e[0]
-            try:
-                dformat = int(data_e[1])
-            except: dformat = 168
-            dweight = datalist_set_weight(data_e, weight)
-            if len(data_e) > 2:
-                try:
-                    float(data_e[2])
-                except: data_e.append(dweight)
-            else: data_e.append(dweight)
-            
-            ## ==============================================
-            ## Datalist format -1
-            ## Open as a datalist and recurse
-            ## ==============================================
-
-            if dformat == -1:
-                d = datalist(dpath, self.region, self.i_fmt, self.verbose)
-                if self.i_fmt == -1:
-                    data_e.append(d._name)
-                    data_mb = data_e[:3]
-                    data_gm = data_e[3:]
-                    #print data_mb
-                    #print data_gm
-                    #data_ee = 
-                    proc([x[1] if x[0] == 0 else int(x[1]) if x[0] < 3 else x[1] for x in enumerate(data_e)])
-                d._proc_data(proc, dweight)
-
-            ## ==============================================
-            ## Data formats 0+
-            ## check if passes tests and append to datafiles if so.
-            ## ==============================================
-
-            else:
-                usable = True
-                if self.i_fmt is not None and self.i_fmt != dformat: usable = False
-
-                if usable:
-                    if not os.path.exists(dpath): usable = False
-                    if usable:
-                        dinf_region = datafile_region(dpath, data_fmt = dformat)
-                        if dinf_region is None: usable = False
-                        
-                        if self.region is not None and dinf_region is not None:
-                            if not regions.regions_intersect_p(self.region, dinf_region):
-                                usable = False
-                                
-                if usable:
-                    data_e.append(self._name)
-                    proc([x[1] if x[0] == 0 else int(x[1]) if x[0] < 3 else x[1] for x in enumerate(data_e)])
-
+                            
     def _gen_inf(self):
         '''load a dalist and process datafiles'''
 
         self._proc_data(lambda entry: generate_inf(entry[0], entry[1]))
-                
-    def _append_datafile(self, entry):
+
+    def usable_entry_p(self, entry):
+        usable = True
+        if self.i_fmt is not None and self.i_fmt != entry[1]: usable = False
+
+        if usable:
+            if not os.path.exists(entry[0]): usable = False
+
+            if usable:
+                if self.region is not None:
+                    dinf_region = parse_or_gen_inf(entry[0], data_fmt = entry[1])
+                    if dinf_region is None: usable = False
+
+                    if usable:
+                        if not regions.regions_intersect_p(self.region, dinf_region): usable = False
+        return(usable)
+        
+    def _append_entry(self, entry):
         '''append a datalist entry to a datalist, given filename, format and weight'''
 
         with open(self._path, 'a') as outfile:
             outfile.write('{}\n'.format(' '.join([str(x) for x in entry])))
-            #outfile.write('{} {} {}\n'.format(dfile, dformat, dweight))
-
         self._reset()
 
-    def _echo_datafiles(self, osep='/n'):
-        '''return a string of datafiles in the datalist'''
-
-        data_paths = [x[0] for x in self.datafiles]
-        return(osep.join(data_paths))
-
-    def _cat_port(self, dst_port):
-        '''Catenate the xyz data from the datalist to the dst_port.'''
+    def to_ogr_csv(self, block = None, o_name = None):
+        '''dump the data from the DATALIST to OGR-compatible CSV file'''
         
-        #try:
-        for df in self.datafiles:
-            if self.verbose: utils._msg('using data file {}'.format(df[0]))
-            if df[1] == 168: # xyz
-                with open(df[0]) as infile:
-                    for line in infile:
-                        dst_port.write(line)
-            elif df[1] == 200: #gdal
-                gdalfun.dump(df[0], dst_xyz = dst_port, warp_to_wgs = False)
-        #except: utils._error_msg('pipe broken.')
+        ## thin data first?
+        if o_name is None:
+            o_name = self._name
+            
+        delim = self.delim
+        self.delim = ','
+        with open('{}.csv'.format(o_name), 'w') as outfile:
+            if block is not None:
+                for l in self._block(block):
+                    xyz_line(l, dst_port = outfile, delimiter=self.delim)
+                    #self._dump_data(outfile)
 
-    def _caty(self):
-        '''Catenate the xyz data from the datalist to a generator
-        usage: for line in self._caty(): proc(line)'''
-
-        for df in self.datafiles:
-            if self.verbose: utils._msg('using data file {}'.format(df[0]))
-            if df[1] == 168: # xyz
-                with open(df[0]) as infile:
-                    for line in infile:
-                        yield(line)
-            elif df[1] == 200: #gdal
-                gdalfun.dumpy(df[0])
-        
+        o_vrt = open('{}.vrt'.format(o_name), 'w')
+        t = '''<OGRVRTDataSource>
+  <OGRVRTLayer name="{}">
+    <SrcDataSource>{}.csv</SrcDataSource>
+    <GeometryType>wkbPoint</GeometryType>
+    <GeometryField encoding="PointFromColumns" x="field_1" y="field_2" z="field_3"/>
+  </OGRVRTLayer>
+</OGRVRTDataSource>'''.format(o_name, o_name)
+        o_vrt.write(t)
+        o_vrt.close()
+        self.delim = delim
+                
     def gather_region(self):
 
         out_regions = []
-        #self.proc_datafiles = lambda entry: out_regions.append(datafile_region(entry[0], entry[1]))
-        #self._proc_data()
-        self._proc_data(lambda entry: out_regions.append(datafile_region(entry[0], entry[1])))
+        self._proc_data(lambda entry: out_regions.append(parse_or_gen_inf(entry[0], entry[1])))
         out_regions = [x for x in out_regions if x is not None]
         out_region = out_regions[0]
+
         for i in out_regions[1:]:
             out_region = regions.regions_merge(out_region, i)
                 
         self.region = out_region
+
+    def _block(self, increment = 1):
+
+        import numpy as np
+
+        if self.region is None:
+            self.gather_region()
+            
+        extent = self.region.region
+        print extent
+        print increment
+        xcount = int((extent[1] - extent[0]) / increment) + 1
+        ycount = int((extent[3] - extent[2]) / increment) + 1
+        dst_gt = (extent[0], increment,0, extent[3], 0, (increment * -1.))
+
+        
+        sumArray = np.zeros((ycount, xcount))
+        ptArray = np.zeros((ycount, xcount))
+
+        self._proc_data(lambda entry: block_entry(entry, self.region, increment, ptArray, sumArray, dst_gt, self.verbose))
+
+        ptArray[ptArray==0] = np.nan
+        outArray = sumArray / ptArray
+        for y in range(0, ycount, 1):
+            for x_i in range(0, xcount, 1):
+                geo_x, geo_y = gdalfun._pixel2geo(x_i, y, dst_gt)
+                z = outArray[y][x_i]
+                if not np.isnan(z):
+                    yield([geo_x, geo_y, z])
         
     def mask(self, region = None, inc = .000277777, o_name = None, o_fmt = 'GTiff'):
         '''Generate a num-msk with GDAL from a datalist.'''
 
         if region is None:
+            if self.region is None:
+                self.gather_region()
             region = self.region.region
 
         if o_name is None:
@@ -559,7 +550,7 @@ class datalist:
 
         if len(self.datafiles) == 0:
             self._load_data()
-        
+        ## REDO! CATY() IS DEPR
         gdalfun.xyz_mask(self._caty(), o_mask, region, inc, dst_format = o_fmt, verbose = self.verbose)
         
         return(o_mask)    
@@ -586,8 +577,10 @@ Options:
   -g, --glob\t\tGLOB FORMAT data into the DATALIST.
   -i, --info-file\tGenerate INF files for the data in the DATALIST
   -l, --list\t\tLIST the datafiles from the DATALIST.
+  -m, --mask\t\tMASK the datafiles from the DATALIST.
   -r, --region-info\tReturn the full REGION of the DATALIST.
   -s, --spatial-md\tGenerate SPATIAL-METADATA from the DATALIST.
+  -w, --weights\t\toutput weights along with each datalist.
 
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
@@ -621,6 +614,8 @@ def main():
     want_dump = False
     want_list = False
     want_archive = False
+    want_mask = False
+    want_weights = False
     dl_fmt = None
     #dl_fmts = []
     
@@ -684,6 +679,9 @@ def main():
         elif arg == '--list' or arg == '-l':
             want_list = True
 
+        elif arg == '--mask' or arg == '-m':
+            want_mask = True
+
         elif arg == '--archive' or arg == '-a':
             want_archive = True
 
@@ -692,6 +690,9 @@ def main():
 
         elif arg == '--region-info' or arg == '-r':
             want_region = True
+
+        elif arg == '--weights' or arg == '-w':
+            want_weights = True
 
         elif arg == '--help' or arg == '-h':
             print(_usage)
@@ -714,7 +715,7 @@ def main():
         i = i + 1
 
     if i_datalist is None:
-        print (_usage)
+        print(_usage)
         sys.exit(1)
         
     #utils.check_config()
@@ -751,7 +752,8 @@ def main():
         ## ==============================================
 
         this_datalist = datalist(i_datalist, this_region, dl_fmt, verbose = want_verbose)
-
+        this_datalist.want_weights = want_weights
+        
         if want_glob:
             if dl_fmt is None:
                 dl_fmts = _known_fmts.keys()
@@ -759,28 +761,17 @@ def main():
             for key in dl_fmts:
                 for f in _known_fmts[key]:
                     globs = glob.glob('*.{}'.format(f))
-                    [this_datalist._append_datafile([x, key, 1]) for x in globs]
+                    [this_datalist._append_entry([x, key, 1]) for x in globs]
 
         if this_datalist._valid_p():
 
-            ## ==============================================
-            ## Generate inf files for the datalist
-            ## ==============================================
-
-            if want_inf:
-                this_datalist._gen_inf()
-
-            ## ==============================================
-            ## Print thre maximum datalist region
-            ## ==============================================
+            #this_datalist.to_ogr_csv(block=i_inc)
+            
+            if want_inf: this_datalist._gen_inf()
 
             if want_region:
                 this_datalist.gather_region()
                 sys.stdout.write('{}\n'.format(this_datalist.region.gmt))
-                
-            ## ==============================================
-            ## Generate spatial metadata for the datalist
-            ## ==============================================
 
             if want_sm:
                 import metadata
@@ -788,41 +779,17 @@ def main():
                 if this_datalist.region is None:
                     this_datalist.gather_region()
 
-                print this_datalist.region.region
-                #this_datalist.i_fmt = -1
-                #this_datalist._load_data()
-                    
-                #print this_datalist.datafiles
-                    
                 sm = metadata.spatial_metadata(this_datalist, this_datalist.region, i_inc = i_inc, o_name = o_bn, callback = lambda: False, verbose = want_verbose)
                 sm.want_queue = False
                 sm.run()
 
-            ## ==============================================
-            ## load the data from the datalist and
-            ## print to stdout
-            ## ==============================================
-            
-            if want_dump:
-                this_datalist._dump_data()
+            if want_mask: this_datalist.mask()
 
-            if want_list:
-                this_datalist._load_datalists()
-                for i in this_datalist.datalists:
-                    print i
-                    
-            if want_archive:
-                this_datalist._archive()
-                #this_datalist._load_data()
-                #print this_datalist.datalists
-                #print this_datalist.datafiles
-                #this_datalist._cat_port(sys.stdout)
+            if want_dump: this_datalist._dump_data()
 
-            #if this_datalist.region is None:
-            #    this_datalist.gather_region()
-            #print this_datalist.datalist
-            #print this_datalist.datalists
-            #print this_datalist.datafiles
+            if want_list: this_datalist._proc_data()
+
+            if want_archive: this_datalist._archive()
 
 if __name__ == '__main__':
     main()    
