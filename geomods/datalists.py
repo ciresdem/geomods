@@ -27,7 +27,7 @@ import regions
 import gdalfun
 import utils
 
-_version = '0.1.2'
+_version = '0.2.0'
 
 ## =============================================================================
 ##
@@ -42,7 +42,7 @@ _version = '0.1.2'
 ## a format of -1 represents a datalist
 ## a format of 168 represents XYZ data
 ## a format of 200 represents GDAL data
-## a format of 236 represents projected GDAL data
+## a format of 300 represents LAS/LAZ data
 ##
 ## each xyz file in a datalist should have an associated '*.inf' file 
 ## for faster processing
@@ -55,8 +55,12 @@ _version = '0.1.2'
 ## =============================================================================
 
 _known_delims = [',', ' ', '\t', '/', ':']
-_known_fmts = {168: ['xyz', 'dat'],
-               200: ['tif', 'img']}
+
+## fmt: [dump_func, inf_func, [known, extentions]]
+_dl_fmts = { 168: [lambda e, d, r, l, v: dump_168(e, d, r, l, v), lambda p: xyz_inf_gmt(p), ['xyz', 'dat']],
+             200: [lambda e, d, r, l, v: dump_200(e, d, r, l, v), lambda p: gdal_inf(p), ['tif', 'img', 'asc', 'grd']],
+             300: [lambda e, d, r, l, v: dump_200(e, d, r, l, v), lambda p: las_inf_lastools(p), ['las', 'laz']],
+}
 
 def xyz_parse(src_xyz):
     '''xyz file parsing generator'''
@@ -73,6 +77,8 @@ def xyz_parse(src_xyz):
         yield [float(x) for x in this_xyz]
 
 def xyz_line(line, dst_port = sys.stdout, delimiter = ' ', weight = None):
+    '''write XYZ `line` to `dst_port` using `delimiter` and `weight`'''
+    
     #try:
     if weight is None:
         w_string = ''
@@ -87,6 +93,18 @@ def xyz_region(src_xyz):
     out, status = utils.run_cmd('gmt gmtinfo {} -I-'.format(src_xyz), False, True)
     o_region = regions.region(out[2:])
     return(o_region)
+
+def xy_in_region_p(src_xy, src_region):
+    '''return True if point [x, y] is inside region [w, e, s, n], else False.'''
+
+    x = src_xy[0]
+    y = src_xy[1]
+
+    if x < src_region[0]: return(False)
+    elif x > src_region[1]: return(False)
+    elif y < src_region[2]: return(False)
+    elif y > src_region[3]: return(False)
+    else: return(True)
 
 def xyz_inf(src_xyz):
     '''return minmax info from a src_xyz file.'''
@@ -108,18 +126,6 @@ def xyz_inf(src_xyz):
                 
     return(minmax)
 
-def xy_in_region_p(src_xy, src_region):
-    '''return True if point [x, y] is inside region [w, e, s, n], else False.'''
-
-    x = src_xy[0]
-    y = src_xy[1]
-
-    if x < src_region[0]: return(False)
-    elif x > src_region[1]: return(False)
-    elif y < src_region[2]: return(False)
-    elif y > src_region[3]: return(False)
-    else: return(True)
-
 def xyz_inf_gmt(src_xyz):
     '''generate an info (.inf) file from a src_xyz file using GMT.'''
     
@@ -131,11 +137,19 @@ def xyz_inf_mb(src_xyz):
 
     out, status = utils.run_cmd('mbdatalist -O -F168 -I{}'.format(src_xyz), False, False)
     return(out, status)
-    
+
+def gdal_inf(src_gdal):
+    '''generate an info (.inf) file from a src_gdal file using GDAL.'''
+        
+    minmax = (map(str, gdalfun._extent(src_gdal)))
+    with open('{}.inf'.format(src_gdal), 'w') as inf:
+        inf.write('{}\n'.format(' '.join(minmax)))
+    return(0, 0)
+
 def gdal_inf_gmt(src_gdal):
     '''generate an info (.inf) file from a src_gdal file using GMT.'''
         
-    out, status = utils.run_cmd('gmt grdinfo {} -C > {}.inf'.format(src_gdal, src_gdal), False, False)
+    out, status = utils.run_cmd('gmt grdinfo {} -C > {}.inf'.format(src_gdal, src_gdal), True, True)
     return(out, status)
 
 def generate_inf(data_path, data_fmt = 168):
@@ -143,20 +157,6 @@ def generate_inf(data_path, data_fmt = 168):
     
     this_region = parse_or_gen_inf(data_path, data_fmt)
     return(this_region)
-
-def datalist_set_weight(data_e, weight = None):
-    if weight is not None:
-        try:
-            dweight = float(weight)
-        except: dweight = 1
-    else:
-        if len(data_e) > 2:
-            try:
-                dweight = float(data_e[2])
-            except: dweight = 1
-        else: dweight = 1
-
-    return(dweight)
 
 def parse_inf(inf_file):
     minmax = [0, 0, 0, 0]
@@ -183,25 +183,38 @@ def parse_or_gen_inf(data_path, data_fmt = 168):
     or the result of `gmt gmtinfo file.xyz -C`, which is
     a 6 column line with minmax info, etc.
     returns the region of the inf file.'''
-
-    if data_fmt == 168:    
+    
+    minmax = None
+    if os.path.exists(data_path):
         path_i = data_path + '.inf'
-
         if not os.path.exists(path_i):
-            xyz_inf_gmt(data_path)
-            
+            _dl_fmts[data_fmt][1](data_path)
+
         if os.path.exists(path_i):
             minmax = map(str, parse_inf(path_i)[:4])
-        
-    elif data_fmt == 200: minmax = (map(str, gdalfun._extent(data_path)))
 
     try: 
         o_region = regions.region('/'.join(minmax))
     except: o_region = None
 
-    if 0. in map(float, minmax): o_region = None
-    
+    if o_region is not None:
+        if 0. in map(float, minmax): o_region = None
+
     return(o_region)
+
+def datalist_set_weight(data_e, weight = None):
+    if weight is not None:
+        try:
+            dweight = float(weight)
+        except: dweight = 1
+    else:
+        if len(data_e) > 2:
+            try:
+                dweight = float(data_e[2])
+            except: dweight = 1
+        else: dweight = 1
+
+    return(dweight)
 
 ## TODO: add weighted mean...
 def block_entry(entry, region = None, increment = 1, ptArray = [], sumArray = [], dst_gt = None, verbose = False):
@@ -227,22 +240,26 @@ def block_entry(entry, region = None, increment = 1, ptArray = [], sumArray = []
                     ptArray[ypos, xpos] += 1
                     sumArray[ypos, xpos] += this_xyz[2]
 
-def dump_entry(entry, dst_port = sys.stdout, region = None, delimiter = ' ', verbose = False):
-    '''load a datalist and gather all datafiles found therein.'''
+def dump_168(entry, dst_port = sys.stdout, region = None, delimiter = ' ', verbose = False):
+    with open(entry[0]) as infile:
+        for line in xyz_parse(infile):
+            if region is not None:
+                if xy_in_region_p(line, region.region):
+                    xyz_line(line, dst_port, delimiter, entry[2])
+            else: xyz_line(line, dst_port, delimiter, entry[2])
 
-    if verbose: utils._msg('using data file {}'.format(entry[0]))        
-    if entry[1] == 168:
-        with open(entry[0]) as infile:
-            for line in xyz_parse(infile):
-                if region is not None:
-                    if xy_in_region_p(line, region.region):
-                        xyz_line(line, dst_port, delimiter, entry[2])
-                else: xyz_line(line, dst_port, delimiter, entry[2])
-    elif entry[1] == 200:
-        if region is not None:
-            srcwin = gdalfun._srcwin(entry[0], region.region)
-        else: srcwin = None
-        gdalfun.dump(entry[0], dst_xyz = dst_port, delim = delimiter, weight = entry[2], dump_nodata = False, srcwin = srcwin, mask = None, warp_to_wgs = False)
+def dump_200(entry, dst_port = sys.stdout, region = None, delimiter = ' ', verbose = False):
+    if region is not None:
+        srcwin = gdalfun._srcwin(entry[0], region.region)
+    else: srcwin = None
+    gdalfun.dump(entry[0], dst_xyz = dst_port, delim = delimiter, weight = entry[2], \
+                 dump_nodata = False, srcwin = srcwin, mask = None, warp_to_wgs = False)
+                    
+def dump_entry(entry, dst_port = sys.stdout, region = None, delimiter = ' ', verbose = False):
+    '''dump a datalist entry as xyz'''
+
+    if verbose: utils._msg('using data file {}'.format(entry[0]))
+    _dl_fmts[entry[1]][0](entry, dst_port, region, delimiter, verbose)
 
 def archive_entry(entry, a_name, dirname = 'archive', region = None, delimiter = ' ', verbose = None):
 
@@ -465,6 +482,10 @@ class datalist:
 
         with open(self._path, 'a') as outfile:
             outfile.write('{}\n'.format(' '.join([str(x) for x in entry])))
+
+        if self.verbose:
+            utils._msg('adding datalist entry: {}'.format(' '.join([str(x) for x in entry])))
+            
         self._reset()
 
     def to_ogr_csv(self, block = None, o_name = None):
@@ -756,10 +777,10 @@ def main():
         
         if want_glob:
             if dl_fmt is None:
-                dl_fmts = _known_fmts.keys()
+                dl_fmts = _dl_fmts.keys()
             else: dl_fmts = [dl_fmt]
             for key in dl_fmts:
-                for f in _known_fmts[key]:
+                for f in _dl_fmts[key][-1]:
                     globs = glob.glob('*.{}'.format(f))
                     [this_datalist._append_entry([x, key, 1]) for x in globs]
 

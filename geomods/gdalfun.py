@@ -313,6 +313,7 @@ def _gt2extent(ds_config, warp_to_wgs = False):
 
     return([x_origin, x_origin + x_inc * ds_config['nx'], y_origin + y_inc * ds_config['ny'], y_origin])
 
+## add z
 def _extent(src_fn, warp_to_wgs = False):
     extent = None
     ds = gdal.Open(src_fn)
@@ -607,7 +608,8 @@ def dump(src_gdal, dst_xyz = sys.stdout, delim = ' ', weight = None, dump_nodata
             data = []
             for band in bands:
                 if band.GetNoDataValue() is not None:
-                    nodata.append(('{}'.format(band.GetNoDataValue())))
+                    #nodata.append(('{:.10}'.format(band.GetNoDataValue())))
+                    nodata.append('%g' % band.GetNoDataValue())
                 band_data = band.ReadAsArray(srcwin[0], y, srcwin[2], 1)
 
                 if msk_band is not None:
@@ -644,7 +646,8 @@ def dump(src_gdal, dst_xyz = sys.stdout, delim = ' ', weight = None, dump_nodata
                 if dump_nodata:
                     dst_fh.write(line)
                 else:
-                    if band_str.rstrip() not in nodata:
+                    #print band_str.split()[0]
+                    if band_str.split()[0] not in nodata:
                         dst_fh.write(line)
 
         srcds = src_mask = None

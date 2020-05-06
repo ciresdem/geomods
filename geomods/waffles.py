@@ -112,6 +112,18 @@ def grdcut(src_grd, src_region, dst_grd, verbose = False):
     if os.path.exists(src_grd):
         cut_cmd1 = ('gmt grdcut -V {} -G{} {}'.format(src_grd, dst_grd, src_region.gmt))
         out, status = utils.run_cmd(cut_cmd1, verbose, verbose)
+    else: status = -1
+
+    return(status)
+
+def grdfilter(src_grd, dst_grd, dist = '3s', verbose = False):
+    '''filter `src_grd` '''
+
+    status = 0
+    if os.path.exists(src_grd):
+        ft_cmd1 = ('gmt grdfilter -V {} -G{} -R{} -Fc{} -D1'.format(src_grd, dst_grd, src_grd, dist))
+        out, status = utils.run_cmd(ft_cmd1, verbose, verbose)
+    else: status = -1
 
     return(status)
 
@@ -238,7 +250,8 @@ class dem:
     DEM Modules include, `mbgrid`, `surface`, `num`, `mean`, `bathy`'''
 
     def __init__(self, i_datalist, i_region, i_inc = 0.0000925925, o_name = None,\
-                 o_node = 'pixel', o_fmt = 'GTiff', o_extend = 6, clip_ply = None, callback = lambda: False, verbose = False):
+                 o_node = 'pixel', o_fmt = 'GTiff', o_extend = 6, fltr = None, clip_ply = None, \
+                 callback = lambda: False, verbose = False):
         self.datalist = i_datalist
         self.region = i_region
         self.inc = float(i_inc)
@@ -261,6 +274,7 @@ class dem:
 
         self.gc = utils.check_config(False, self.verbose)
 
+        self.fltr = fltr
         self.clip_ply = clip_ply
         
     def run(self, dem_mod = 'mbgrid', args = ()):
@@ -276,6 +290,9 @@ class dem:
         if self.status == 0:
             _dem_mods[dem_mod][0](self)(**args_d)
 
+        if self.fltr is not None:
+            self.filter_dem(self.fltr)
+            
         if self.clip_ply is not None:
             clip_args = {}
             cp = self.clip_ply.split(':')
@@ -297,6 +314,11 @@ class dem:
             
         return(self.dem)
 
+    def filter_dem(self, fltr_dist = 3):
+
+        status = grdfilter(self.dem, '{}_f.grd'.format(self.o_name), dist = fltr_dist, verbose = self.verbose)
+        if status == 0: os.rename('{}_f.grd'.format(self.o_name), self.dem)
+    
     ## ==============================================
     ## run mbgrid on the datalist and generate the DEM
     ## note: mbgrid will cause popen to hang if stdout 
@@ -771,7 +793,7 @@ def dem_mod_desc(x):
 
 _waffles_usage = '''{} ({}): Process and generate Digital Elevation Models and derivatives
 
-usage: {} [ -ahprsuvCEFIORX [ args ] ] module[:parameter=value]* ...
+usage: {} [ -ahprsuvCEFIORTX [ args ] ] module[:parameter=value]* ...
 
 Modules and their options:
   {}
@@ -786,6 +808,7 @@ General Options:
   -F, --format\t\tOutput grid FORMAT. [GTiff]
   -O, --output-name\tBASENAME for all outputs.
   -X, --extend\t\tNumber of cells with which to EXTEND the REGION. [6]
+  -T, --filter\t\tFILTER the output using a Cosine Arch filter at -T<dist(km)> search distance.
   -C, --clip\t\tCLIP the output to the clip polygon. [clip_ply.shp:invert=False]
 
   -a, --archive\t\tArchive the data from the DATALIST in the REGION.
@@ -824,11 +847,13 @@ def main():
     want_unc = False
     want_archive = False
     want_prefix = False
+    want_filter = False
     mod_opts = {}
     o_bn = None
     o_fmt = 'GTiff'
     node_reg = 'pixel'
     o_extend = 6
+    filter_dist = None
     clip_ply = None
 
     argv = sys.argv
@@ -876,6 +901,12 @@ def main():
             i = i + 1
         elif arg[:2] == '-X':
             o_extend = int(arg[2:])
+
+        elif arg == '--filter' or arg == '-T':
+            filter_dist = argv[i + 1]
+            i = i + 1
+        elif arg[:2] == '-T':
+            filter_dist = arg[2:]
 
         elif arg == '--clip' or arg == '-C':
             clip_ply = str(argv[i + 1])
@@ -1059,8 +1090,9 @@ def main():
             pb = utils._progress('running geomods dem module \033[1m{}\033[m on region ({}/{}): \033[1m{}\033[m...\
             '.format(dem_mod.upper(), rn + 1, len(these_regions), this_region.region))
             dl = dem(this_datalist, this_region, i_inc = i_inc, o_name = o_name, o_node = node_reg,\
-                     o_fmt = o_fmt, o_extend = o_extend, clip_ply = clip_ply, callback = lambda: stop_threads, verbose = want_verbose)
+                     o_fmt = o_fmt, o_extend = o_extend, fltr = filter_dist, clip_ply = clip_ply, callback = lambda: stop_threads, verbose = want_verbose)
             t = threading.Thread(target = dl.run, args = (dem_mod, args))
+            dl.want_filter = want_filter
             
             try:
                 t.start()
