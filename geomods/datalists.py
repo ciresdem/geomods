@@ -362,10 +362,10 @@ class datalist:
                         if len(dl_cols) == 3:
                             dl_cols.append(dl_gmds_cols)
                         #dl_cols = [x.strip() for x in dl.split(' ')]
-                        self.datalist.append([os.path.join(self._path_dirname, x[1]) if x[0] == 0 else float(x[1]) if x[0] < 3 else x[1] for x in enumerate(dl_cols)])
+                        self.datalist.append([os.path.join(self._path_dirname, x[1]) if x[0] == 0 else int(x[1]) if x[0] < 2 else x[1] for x in enumerate(dl_cols)])
         elif len(self.dl_entry) >= 2:
             if self._valid_entry_p(' '.join(self.dl_entry)):
-                self.datalist.append([self.dl_entry[0] if x[0] == 0 else float(x[1]) if x[0] < 3 else x[1] for x in enumerate(self.dl_entry)])
+                self.datalist.append([self.dl_entry[0] if x[0] == 0 else int(x[1]) if x[0] < 2 else x[1] for x in enumerate(self.dl_entry)])
 
     def _proc_data(self, proc = lambda entry: sys.stdout.write('{}\n'.format(entry[0])), weight = None):
         '''Recurse through the datalist and run proc on each data file.'''

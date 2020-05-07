@@ -260,7 +260,7 @@ class dem:
         self.o_fmt = o_fmt
         self.extend = int(o_extend)
 
-        self.proc_region = self.region.buffer((self.extend * 2) * self.inc)
+        self.proc_region = self.region.buffer((self.extend * self.inc) + self.inc * 2)
         self.dist_region = self.region.buffer(self.extend * self.inc)
 
         self.status = 0
@@ -733,6 +733,19 @@ class dem:
             except: pass
         else: self.dem = None
 
+    def rem_rep(self):
+        '''IBCAO `remove-replace` weighted gridding'''
+
+        ## weight thresh - w <= 1 -> low; w >1 -> high ??
+        
+        ## Grid low-weights at self.inc / 3 w/ 'surface'
+        ## Resample to self.inc to make BASE grid
+        ## Grid high-weights at self.inc w/ nearneighbor (possibly invdst) to make HIGH grid
+        ## Calculate differences between BASE and HIGH
+        ## Grid differences w/ surface/mbgrid/invdst and clip to buffer-zone
+        ## Apply differences to BASE grid
+
+        
     def spatial_metadata(self, epsg = 4269):
         sm = metadata.spatial_metadata(self.datalist, self.region, i_inc = self.inc, o_name = self.o_name, o_extend = self.extend, callback = self.stop, verbose = self.verbose)
         sm.want_queue = True
@@ -753,7 +766,7 @@ class dem:
 
 _dem_mods = {
     'mbgrid': [lambda x: x.mbgrid, '''Weighted SPLINE DEM via mbgrid
-    \t\t\t< mbgrid:tension=35:dist=3/10:use_datalists=False >
+    \t\t\t< mbgrid:tension=35:dist=10/3:use_datalists=False >
     \t\t\t:tension=[0-100] - Spline tension.
     \t\t\t:dist=[value] - MBgrid -C switch (distance to fill nodata with spline)'''],
     'surface': [lambda x: x.surface, '''SPLINE DEM via GMT surface
@@ -1026,7 +1039,7 @@ def main():
             status = -1
             break
 
-        this_datalist.region = this_datalist.region.buffer((o_extend * 2) * i_inc)
+        this_datalist.region = this_datalist.region.buffer(10 * i_inc)
         
         if o_bn is None:
             if this_datalist is None:
