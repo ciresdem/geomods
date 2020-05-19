@@ -9,7 +9,7 @@ if __name__ == '__main__':
     try:
         infile = sys.argv[1]
     except:
-        waffles.error_msg("you must enter an infile; x360.py input")
+        waffles.echo_error_msg("you must enter an infile; x360.py input")
         sys.exit(0)
         
     if len(sys.argv) > 2: which_way = sys.argv[2]
