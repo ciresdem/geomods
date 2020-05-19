@@ -1,10 +1,6 @@
 #!/usr/bin/env python
 ##
 import sys
-import os
-import re
-import numpy as np
-
 import waffles
 
 if __name__ == '__main__':
