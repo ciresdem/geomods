@@ -68,12 +68,11 @@ if __name__ == '__main__':
         waffles.echo_error_msg('you must enter an input file')
         sys.exit(1)
 
-    if not os.path.exists(elev):
-        waffles.echo_error_msg('{} is not a valid file'.format(elev))
-    else:
+    if os.path.exists(elev):
         output_name = elev[:-4] + '_crop.tif'
         ds = gdal.Open(elev)
         out_array, out_config = waffles.gdal_crop(ds)
         ds = None
         waffles.write_gdal(out_array, output_name, out_config)
+    else: waffles.echo_error_msg('{} is not a valid file'.format(elev))
 ### End

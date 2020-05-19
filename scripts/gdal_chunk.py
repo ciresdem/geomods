@@ -72,11 +72,12 @@ if __name__ == '__main__':
         i = i + 1
 
     if src_fn is None:
+        waffles.echo_error_msg('you must enter an input file')
         sys.stderr.write(_usage)
         sys.exit(1)
 
     if not os.path.exists(src_fn):
-        waffles.error_msg('{} is not valid'.format(src_fn))
+        waffles.echo_error_msg('{} is not valid'.format(src_fn))
     else: waffles.gdal_chunks(src_fn, chunk_value)
 
 ### End
