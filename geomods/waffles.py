@@ -836,8 +836,10 @@ def np_gaussian_blur(in_array, size):
     return(out_array)
 
 def gdal_blur(ds, dst_gdal, sf = 1):
+    '''gaussian blur on ds array'''
     ds_config = gdal_gather_infos(ds)
     ds_array = ds.GetRasterBand(1).ReadAsArray(0, 0, ds_config['nx'], ds_config['ny'])
+    ds_array[ds_array == ds_config['ndv']] = 0
     smooth_array = np_gaussian_blur(ds_array, int(sf))
     return(gdal_write(smooth_array, dst_gdal, ds_config))
 
