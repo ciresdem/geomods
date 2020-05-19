@@ -26,11 +26,9 @@
 
 import os
 import sys
-
-import geomods
+from geomods import waffles
 
 _version = '0.0.3'
-
 _usage = '''gdal_chunk.py ({}): chunk a gdal grid
 
 usage: gdal_chunk.py [ file ]
@@ -47,41 +45,38 @@ usage: gdal_chunk.py [ file ]
  Examples:
  % gdal_chunk.py input.tif --chunk 1000
 
-CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version)
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
+'''.format(_version)
 
 if __name__ == '__main__':
     src_fn = None
     chunk_value = 1000
-
     i = 1
     while i < len(sys.argv):
         arg = sys.argv[i]
-
-        if arg == '-c' or arg == '-chunk' or arg == '--chunk':
+        if arg == '-C' or arg == '-c' or arg == '-chunk' or arg == '--chunk':
             try:
                 chunk_value = int(sys.argv[i + 1])
             except: pass
             i = i + 1
         elif arg == '-help' or arg == '--help' or arg == '-h':
-            print(_usage)
-            sys.exit(1)
+            sys.stderr.write(_usage)
+            sys.exit(-1)
         elif arg == '-version' or arg == '--version':
-            print('gdal_chunk.py, version {}\n{}'.format(_version, geomods._license))
-            sys.exit(1)
-        elif src_fn is None:
-            src_fn = arg
+            sys.stdout.write('{}\n'.format(_version))
+            sys.exit(-1)
+        elif src_fn is None: src_fn = arg
         else:
-            print(_usage)
-            sys.exit(1)
-
+            sys.stderr.write(_usage)
+            sys.exit(-1)
         i = i + 1
 
     if src_fn is None:
-        print(_usage)
+        sys.stderr.write(_usage)
         sys.exit(1)
 
     if not os.path.exists(src_fn):
-        geomods.waffles.error_msg('{} is not valid'.format(src_fn))
-    else: geomods.waffles.gdal_chunks(src_fn, chunk_value, verbose = True)
+        waffles.error_msg('{} is not valid'.format(src_fn))
+    else: waffles.gdal_chunks(src_fn, chunk_value)
 
 ### End

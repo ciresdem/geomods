@@ -93,7 +93,7 @@ import osr
 ## ==============================================
 ## General utility functions - utils.py
 ## ==============================================
-_version = '0.5.0'
+_version = '0.5.1'
 
 def con_dec(x, dec):
     '''Return a float string with n decimals

@@ -19,10 +19,7 @@
 
 ## Modules
 
-from utils import *
 from waffles import *
-from datalists import *
-
 from fetches import *
 
 #from archook import locate_arcgis, get_arcpy
