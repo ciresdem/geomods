@@ -554,6 +554,32 @@ def gdal_split(src_gdal, split_value = 0):
         ua = la = ds_arr = src_ds = None
         return([dst_upper, dst_lower])
     else: return(None)
+
+def gdal_crop(src_fn):
+    '''Crop `src_fn` GDAL file by it's NoData value. Returns cropped array.'''
+    ds_config = gdal_gather_infos(src_ds)
+    ds_arr = src_ds.GetRasterBand(1).ReadAsArray()
+
+    src_arr[elev_array == ds_config['ndv']] = np.nan
+    nans = np.isnan(src_arr)
+    nancols = np.all(nans, axis=0)
+    nanrows = np.all(nans, axis=1)
+
+    firstcol = nancols.argmin()
+    firstrow = nanrows.argmin()        
+    lastcol = len(nancols) - nancols[::-1].argmin()
+    lastrow = len(nanrows) - nanrows[::-1].argmin()
+
+    dst_arr = src_arr[firstrow:lastrow,firstcol:lastcol]
+    src_arr = None
+
+    dst_arr[np.isnan(dst_arr)] = ds_config['nv']
+    GeoT = ds_config['geoT']
+    dst_x_origin = GeoT[0] + (GeoT[1] * firstcol)
+    dst_y_origin = GeoT[3] + (GeoT[5] * firstrow)
+    dst_geoT = [dst_x_origin, GeoT[1], 0.0, dst_y_origin, 0.0, GeoT[5]]
+    ds_config['geoT'] = dst_geoT
+    return(dst_arr, ds_config)
     
 def gdal_prj_file(dst_fn, epsg):
     '''generate a .prj file given an epsg code'''

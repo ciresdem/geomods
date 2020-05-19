@@ -26,12 +26,10 @@
 
 import os
 import sys
-
 import gdal
-import geomods
+from geomods import waffles
 
-_version = '0.0.4'
-
+_version = '0.0.5'
 _usage = '''gdal_crop.py ({}): crop a gdal grid by the nodata value
 
 usage: gdal_crop.py [ file ]
@@ -45,51 +43,37 @@ usage: gdal_crop.py [ file ]
  Examples:
  % gdal_crop.py input.tif
 
-CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>'''.format(_version)
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
+'''.format(_version)
 
 if __name__ == '__main__':    
     elev = None
-    split_value = 0
-
     i = 1
     while i < len(sys.argv):
         arg = sys.argv[i]
-
         if arg == '-help' or arg == '--help' or arg == '-h':
-            print(_usage)
+            sys.stderr.write(_usage)
             sys.exit(1)
-
         elif arg == '-version' or arg == '--version':
-            print('gdal_crop.py, version {}\n{}'.format(_version, geomods._license))
+            sys.stderr.write('{}\n'.format(_version))
             sys.exit(1)
-
-        elif elev is None:
-            elev = arg
-
+        elif elev is None: elev = arg
         else:
-            print(_usage)
+            sys.stderr.write(_usage)
             sys.exit(1)
-
         i = i + 1
 
     if elev is None:
-        print(_usage)
+        sys.stderr.write(_usage)
+        waffles.echo_error_msg('you must enter an input file')
         sys.exit(1)
 
     if not os.path.exists(elev):
-        print('Error: %s is not a valid file' %(elev))
+        waffles.echo_error_msg('{} is not a valid file'.format(elev))
     else:
-        output_name=elev[:-4] + '_crop.tif'
-
-        out_array, out_config = geomods.gdalfun.gdal_crop(elev)
-        outsize = out_array.shape
-
-        #Export Tif
-        ods = gdal.GetDriverByName('GTiff').Create(output_name, outsize[1], outsize[0], 1, out_config['dt'])
-        ods.SetGeoTransform(out_config['geoT'])
-        ods.SetProjection(out_config['proj'])
-        ods.GetRasterBand(1).SetNoDataValue(out_config['ndv'])
-        ods.GetRasterBand(1).WriteArray(out_array)
-
-        ods = None
+        output_name = elev[:-4] + '_crop.tif'
+        ds = gdal.Open(elev)
+        out_array, out_config = waffles.gdal_crop(ds)
+        ds = None
+        waffles.write_gdal(out_array, output_name, out_config)
 ### End
