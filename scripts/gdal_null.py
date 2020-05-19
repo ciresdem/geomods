@@ -28,14 +28,9 @@ import sys
 import os
 import numpy as np
 import gdal
+from geomods import waffles
 
-try:
-    progress = gdal.TermProgress_nocb
-except:
-    progress = gdal.TermProgress
-
-_version = '0.1.7'
-
+_version = '0.1.8'
 _usage = '''gdal_null.py ({}): generate a null grid
 usage: gdal_null.py [-region xmin xmax ymin ymax] [-cell_size value]
                     [-t_nodata value] [-d_format grid-format] [-overwrite]
@@ -53,119 +48,27 @@ def verbosePrint(xcount, ycount, extent, cellsize, outf):
     print('--')
 
 def createNullCopy(srcfile, outfile, nodata, outformat, verbose, overwrite):
+    '''copy a gdal grid and make a nodata grid'''
     ds = gdal.Open(srcfile)
-    gt = ds.GetGeoTransform()
-    #print ds.RasterXSize,ds.RasterYSize
-    
-    progress( 0.0 )
-    
-    (ycount,xcount) = ds.RasterYSize,ds.RasterXSize
+    ds_config = waffles.gdal_gather_infos(ds)
+    gt = ds_config['geoT']
 
-    if nodata is None:
-        nodata = ds.GetRasterBand(1).GetNoDataValue()
-    if nodata is None:
-        nodata = -9999
-
-    #if verbose:
-    #    print nodata
+    if nodata is None: nodata = ds_config['ndv']
+    if nodata is None: nodata = -9999
+    ds_config['ndv'] = nodata
 
     ds = None
-    dsArray = np.zeros([ycount,xcount])
-
-    progress( 0.2 )
-
+    dsArray = np.zeros([ds_config['ny'],ds_config['nx']])
     dsArray[:] = float(nodata)
-
-    progress( 0.4 )
-
-    # Create the output GDAL Raster
-    driver = gdal.GetDriverByName("GTiff")
-
-    if os.path.exists(outfile):
-        if not overwrite:
-            progress( 1.0 )
-            sys.exit("gdal_null: Error - %s already exists!  Use -overwrite to force an \
-overwrite of the output file." %(outfile))
-        else:
-            driver.Delete(outfile)
-            if verbose:
-                print >> sys.stderr, "gdal_null: Warning - Overwriting file %s " %(outfile)
-
-    dst_ds = driver.Create(outfile, xcount, ycount, 1, gdal.GDT_Float32)
-
-    if dst_ds is None:
-        progress( 1.0 )
-        sys.exit("gdal_null: failed to open output file...%s" %(outfile))
-
-    dst_ds.SetGeoTransform(gt)
-    dst_band = dst_ds.GetRasterBand(1)
-
-    progress( 0.75 )
-
-    dst_band.SetNoDataValue(nodata)
-
-    # Write Numpy Array to the GDAL Raster Band
-    dst_band.WriteArray(dsArray)
-    dst_ds = None
-    progress( 1.0 )
+    waffles.gdal_write(dsArray, outf, ds_config)
     
 def createGrid(outfile, extent, cellsize, nodata, outformat, verbose, overwrite):
-
-    # Set the rows and columns for the output grid
-    ysize = extent[3] - extent[2]
-    xsize = extent[1] - extent[0]
-    xcount = int(xsize/cellsize)+1
-    ycount = int(ysize/cellsize)+1
-
-    if verbose:
-        verbosePrint(xcount, ycount, extent, cellsize, outformat)
-
-    # Create the output GDAL Raster
-    if outformat == "AAIGrid":
-        driver = gdal.GetDriverByName("MEM")
-    else:
-        driver = gdal.GetDriverByName(outformat)
-
-    if os.path.exists(outfile):
-        if not overwrite:
-            sys.exit("gdal_null: Error - %s already exists! Use -overwrite to force an \
-overwrite of the output file." %(outfile))
-        else:
-            driver.Delete(outfile)
-            if verbose:
-                print >> sys.stderr, "gdal_null: Warning - Overwriting file %s " %(outfile)
-
-    dst_ds = driver.Create(outfile, xcount, ycount, 1, gdal.GDT_Float32)
-    if dst_ds is None:
-        sys.exit("gdal_null: failed to open output file...%s" %(outfile))
-
-    gt = (extent[0],cellsize,0,extent[3],0,(cellsize*-1.))
-    dst_ds.SetGeoTransform(gt)
-    dst_band = dst_ds.GetRasterBand(1)
-
-    if nodata is None:
-        nodata = 0
-
-    dst_band.SetNoDataValue(nodata)
-
-    # Create a Numpy Array filled with 0's
+    '''create a nodata grid'''
+    xcount, ycount, gt = waffles.gdal_region2gt(extent, cellsize)
+    ds_config = waffles.gdal_set_infos(xcount, ycount, xcount * ycount, gt, gdal_sr_wkt(epsg), gdal.GDT_Float32, nodata, outformat)
     nullArray = np.zeros( (ycount, xcount) )
-
     nullArray[nullArray==0]=nodata
-
-    # Write Numpy Array to the GDAL Raster Band
-    dst_band.WriteArray(nullArray)
-
-    if outformat == "AAIGrid":
-        driver = gdal.GetDriverByName(outformat)
-        dst_ds_aai = driver.CreateCopy(outfile, dst_ds)
-    
-    # Clear the GDAL Raster(s)x
-    dst_ds = None
-    dst_ds_aai = None
-
-    if verbose:
-        print '\ngdal_null: Grid created.'
+    waffles.gdal_write(nullArray, outfile, ds_config)
 
 if __name__ == '__main__':
 
@@ -177,62 +80,47 @@ if __name__ == '__main__':
     verbose = False
     nodata = None
     output = None
-
-    gdal.AllRegister()
-    argv = gdal.GeneralCmdLineProcessor( sys.argv )
-    if argv is None:
-        sys.exit(0)
-        
-    # Parse command line arguments.
     i = 1
-    while i < len(argv):
-        arg = argv[i]
-
+    
+    while i < len(sys.argv):
+        arg = sys.argv[i]
         if arg == '-region' or arg == '-r' or arg == '--region':
             extent = (float(argv[i+1]),float(argv[i+2]),
                       float(argv[i+3]),float(argv[i+4]))
             i = i + 4
-
         elif arg == '-cell_size' or arg == '-s' or arg == '--cell_size':
             cellsize = float(argv[i+1])
             i = i + 1
-
         elif arg == '-d_format' or arg == 'd' or arg == '--d_format':
             d_format = str(argv[i+1])
             i = i + 1
-
         elif arg == '-t_nodata' or arg == '-t' or arg == '--t_nodata':
             nodata = float(argv[i+1])
             i = i + 1
-
         elif arg == '-copy' or arg == '-c' or arg == '--copy':
             cpgrd = argv[i+1]
             i = i + 1
-            
         elif arg == '-overwrite' or arg == '--overwrite':
             overwrite = True
-            
         elif arg == '-verbose' or arg == '--verbose':
             verbose = True
-
         elif arg[0] == '-':
-            print(_usage)
+            sys.stderr.write(_usage)
             sys.exit(1)
-
         elif output is None:
             output = arg
-
         else:
-            print(_usage)
+            sys.stderr.write(_usage)
             sys.exit(1)
 
         i = i + 1
 
     if output is None:
-        print(_usage)
+        sys.stderr.write(_usage)
+        waffles.echo_error_msg('you must enter an output file name')
         sys.exit(0)
-    if extent == None:
-        extent = '1'
+        
+    if extent == None:  extent = '1'
 
     #Run the program given the user input
     if cpgrd is not None:
