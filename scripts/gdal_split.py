@@ -31,21 +31,11 @@ from gdalconst import *
 from osgeo import osr
 from osgeo import gdal
 
-try:
-    progress = gdal.TermProgress_nocb
-except:
-    progress = gdal.TermProgress
+from geomods import waffles
 
-import geomods.gdalfun
+_version = "0.0.9"
 
-_version = "0.0.8"
-
-_license = """
-version %s
-    """ %(_version)
-
-_usage = """
-gdal_split.py: Split the topo from a gdal file (>0)
+_usage = '''gdal_split.py: Split the topo from a gdal file (>0)
 
 usage: gdal_split.py [ -s [ args ] ] [ file ]
 
@@ -60,8 +50,8 @@ Example:
 gdal_split.py input.tif
 gdal_split.py input.tif -split -1
 
-gdal_split.py v.%s 
-""" %(_version)
+gdal_split.py v.{}
+'''.format(_version)
 
 if __name__ == '__main__':
     
@@ -69,43 +59,33 @@ if __name__ == '__main__':
     split_value = 0
     outFormat = 'GTiff'
     
-    gdal.AllRegister()
-    argv = gdal.GeneralCmdLineProcessor( sys.argv )
-    if argv is None:
-        sys.exit(0)
-
     i = 1
     while i < len(sys.argv):
         arg = sys.argv[i]
-
         if arg == '-s' or arg == '-split' or arg == '--split':
             split_value = float(sys.argv[i+1])
             i = i + 1
-
         elif arg == '-help' or arg == '--help' or arg == '-h':
-            print(_usage)
+            sys.stderr.write(_usage)
             sys.exit(1)
-
         elif arg == '-version' or arg == '--version':
-            print('gdal_split.py v.%s' %(_version))
-            print(_license)
+            sys.stderr.write('gdal_split.py v.{}'.format(_version))
             sys.exit(1)
-
         elif elev is None:
             elev = arg
-
         else:
-            print(_usage)
+            sys.stderr.write(_usage)
             sys.exit(1)
 
         i = i + 1
 
     if elev is None:
-        print(_usage)
+        sys.stderr.write(_usage)
+        waffles.echo_error_msg('you must enter an input file')
         sys.exit(1)
 
     if not os.path.exists(elev):
-        print("Error: %s is not a valid file" %(elev))
-    else: geomods.gdalfun.gdal_split(elev, split_value)
+        waffles.echo_error_msg("{} is not a valid file".format(elev))
+    else: waffles.gdal_split(elev, split_value)
 
 ### End
