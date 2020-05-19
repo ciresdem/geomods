@@ -79,5 +79,4 @@ if __name__ == '__main__':
     if not os.path.exists(src_fn):
         waffles.echo_error_msg('{} is not valid'.format(src_fn))
     else: waffles.gdal_chunks(src_fn, chunk_value)
-
 ### End

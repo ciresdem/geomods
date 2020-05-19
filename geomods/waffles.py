@@ -1410,12 +1410,12 @@ def waffles_run(wg = _waffles_grid_info):
     if wg['fltr'] is not None:
         try:
             fltr = wg['fltr']
-            if wg['gc']['GMT'] is not None:
-                out, status = gmt_grdfilter(dem, 'tmp_fltr.tif=gd+n-9999:GTiff', dist = fltr, verbose = True)
-            else:
-                ds = gdal.Open(dem)
-                out, status = gdal_blur(ds, 'tmp_fltr.tif', wg['fltr'])
-                ds = None
+            #if wg['gc']['GMT'] is not None:
+            #    out, status = gmt_grdfilter(dem, 'tmp_fltr.tif=gd+n-9999:GTiff', dist = fltr, verbose = True)
+            #else:
+            ds = gdal.Open(dem)
+            out, status = gdal_blur(ds, 'tmp_fltr.tif', wg['fltr'])
+            ds = None
             if status == 0: os.rename('tmp_fltr.tif', dem)
         except TypeError as e: echo_error_msg('{}'.format(e))
         

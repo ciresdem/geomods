@@ -29,13 +29,9 @@ import scipy.fftpack._fftpack as sff
 from gdalconst import *
 from osgeo import osr
 from osgeo import gdal
+from geomods import waffles
 
-_version = '0.0.5'
-
-_license = '''
-version {}
-    '''.format(_version)
-
+_version = '0.0.6'
 _usage = '''smooth_dem_bathy.py ({}): smooth the bathymetry in a DEM
 smooth_dem_bathy.py: A script that smooths the bathy areas of DEM (below 0) and merges back with original, unsmoothed topo.
 
@@ -182,31 +178,24 @@ if __name__ == '__main__':
     i = 1
     while i < len(sys.argv):
         arg = sys.argv[i]
-
         if arg == '-s' or arg == '-smooth' or arg == '--smooth':
             smooth_factor = sys.argv[i+1]
             i = i + 1
-
         elif arg == '-i':
             in_list = sys.argv[i+1]
             i = i + 1
-
         elif arg == '-help' or arg == '--help' or arg == '-h':
             print(_usage)
             sys.exit(1)
-
         elif arg == '-version' or arg == '--version':
             print('smooth_dem_bathy.py v.%s' %(_version))
             print(_license)
             sys.exit(1)
-
         elif elev is None:
             elev = arg
-
         else:
             print(_usage)
             sys.exit(1)
-
         i = i + 1
 
     if elev is None and in_list is None:
