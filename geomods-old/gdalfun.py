@@ -28,27 +28,9 @@ import gdal
 import osr
 from gdalconst import *
 
-import utils
-
 gdal.PushErrorHandler('CPLQuietErrorHandler')
 GDAL_OPTS = ["COMPRESS=LZW", "INTERLEAVE=PIXEL", "TILED=YES",\
              "SPARSE_OK=TRUE", "BIGTIFF=YES" ]
-
-_known_delims = [',', ' ', '\t', '/', ':']
-
-def xyz_parse(src_xyz):
-    '''xyz file parsing generator'''
-    
-    for xyz in src_xyz:
-        this_line = xyz.strip()
-
-        for delim in _known_delims:
-            this_xyz = this_line.split(delim)
-            if len(this_xyz) > 1:
-                this_delim = delim
-                break
-
-        yield this_xyz
 
 def _ogr_create_polygon(coords):
     '''convert coords to Wkt'''
@@ -65,17 +47,17 @@ def _ogr_create_polygon(coords):
     
     return(poly_wkt)
 
-def bounds2geom(bounds):
-    '''convert a bounds [west, east, south, north] to an 
+def _extent2geom(extent):
+    '''convert an extent [west, east, south, north] to an 
     OGR geometry'''
 
-    b1 = [[bounds[2], bounds[0]],
-          [bounds[2], bounds[1]],
-          [bounds[3], bounds[1]],
-          [bounds[3], bounds[0]],
-          [bounds[2], bounds[0]]]
+    eg = [[extent[2], extent[0]],
+          [extent[2], extent[1]],
+          [extent[3], extent[1]],
+          [extent[3], extent[0]],
+          [extent[2], extent[0]]]
 
-    geom = ogr.CreateGeometryFromWkt(_ogr_create_polygon(b1))
+    geom = ogr.CreateGeometryFromWkt(_ogr_create_polygon(eg))
     
     return(geom)
 
@@ -110,8 +92,7 @@ def ogr_mask_union(src_layer, src_field, dst_defn = None, callback = lambda: Fal
     `src_field` holds a value of 0 or 1. optionally, specify
     an output layer defn for the unioned feature.'''
 
-    #if verbose: sys.stderr.write('uniioning polygons...')
-    if verbose: pb = utils._progress('unioning polygons...')
+    if verbose: sys.stderr.write('geomods: unioning polygons...')
     
     if dst_defn is None:
         dst_defn = src_layer.GetLayerDefn()
@@ -132,13 +113,13 @@ def ogr_mask_union(src_layer, src_field, dst_defn = None, callback = lambda: Fal
     out_feat.SetGeometry(union)
     union = multi = None
 
-    #if verbose: sys.stderr.write('.ok\n')
-    if verbose: pb.end(0, 'unioned polygons.')
+    if verbose: sys.stderr.write('.ok\n')
     
     return(out_feat)
 
 def _ogr_extents(src_ds):
     '''return the extent(s) of the ogr dataset'''
+    
     these_extents = []
     if os.path.exists(src_ds):
         poly = ogr.Open(src_ds)
@@ -162,14 +143,10 @@ def _fext(src_drv_name):
         if fexts is not None:
             fext = fexts.split()[0]
     except:
-        if src_drv_name == 'GTiff':
-            fext = 'tif'
-        elif src_drv_name == 'HFA':
-            fext = 'img'
-        elif src_drv_name == 'GMT':
-            fext = 'grd'
-        elif src_drv_name.lower() == 'netcdf':
-            fext = 'nc'
+        if src_drv_name == 'GTiff': fext = 'tif'
+        elif src_drv_name == 'HFA': fext = 'img'
+        elif src_drv_name == 'GMT': fext = 'grd'
+        elif src_drv_name.lower() == 'netcdf': fext = 'nc'
         else: fext = 'gdal'
         
     return(fext)
@@ -177,9 +154,7 @@ def _fext(src_drv_name):
 def _gather_infos(src_ds):
     '''Gather information from `src_ds` GDAL dataset.'''
 
-    ## remove band info...
     ds_config = {}
-
     ds_config['nx'] = src_ds.RasterXSize
     ds_config['ny'] = src_ds.RasterYSize
     ds_config['nb'] = src_ds.RasterCount
@@ -190,8 +165,7 @@ def _gather_infos(src_ds):
     ds_config['ndv'] = src_ds.GetRasterBand(1).GetNoDataValue()
     ds_config['fmt'] = src_ds.GetDriver().ShortName
 
-    if ds_config['ndv'] is None:
-        ds_config['ndv'] = -9999
+    if ds_config['ndv'] is None: ds_config['ndv'] = -9999
     
     return(ds_config)
 
@@ -223,24 +197,16 @@ def _infos(src_fn, full = False):
             ds_config['zmin'] = min_z
             ds_config['zmax'] = max_z
             
-    t = ds = None
-    return(ds_config)
+        t = ds = None
+        
+        return(ds_config)
+    else: return(None)
 
 def _cpy_infos(src_config):
     dst_config = {}
     for dsc in src_config.keys():
         dst_config[dsc] = src_config[dsc]
     return(dst_config)
-
-def _con_dec(x, dec):
-    '''Return a float string with n decimals
-    (used for ascii output).'''
-
-    if x is None:
-        return
-
-    fstr = "%." + str( dec ) + "f"
-    return(fstr % x)
 
 def _geo2pixel(geo_x, geo_y, geoTransform):
     '''Convert a geographic x,y value to a pixel location of geoTransform'''
@@ -288,6 +254,8 @@ def _invert_gt(geoTransform):
     return(outGeoTransform)
 
 def _gt2extent(ds_config, warp_to_wgs = False):
+    '''convert a gdal geo-tranform to an extent [w, e, s, n]'''
+    
     geoT = ds_config['geoT']
     
     x_origin = geoT[0]
@@ -315,46 +283,52 @@ def _gt2extent(ds_config, warp_to_wgs = False):
 
 ## add z
 def _extent(src_fn, warp_to_wgs = False):
-    extent = None
+    '''return the extent of the src_fn gdal file.'''
+    
     ds = gdal.Open(src_fn)
     if ds is not None:
         ds_config = _gather_infos(ds)
         extent = _gt2extent(ds_config, warp_to_wgs)
         
-    return(extent)
+        return(extent)
+    else: return(None)
 
 def _srcwin(src_fn, extent):
+    '''given a gdal file src_fn and an extent [w, e, s, n],
+    output the appropriate gdal srcwin.'''
+    
     ds = gdal.Open(src_fn)
     if ds is not None:
         ds_config = _gather_infos(ds)
 
-    gt = ds_config['geoT']
-    x_origin = gt[0]
-    y_origin = gt[3]
-    x_inc = gt[1]
-    y_inc = gt[5]
+        gt = ds_config['geoT']
+        x_origin = gt[0]
+        y_origin = gt[3]
+        x_inc = gt[1]
+        y_inc = gt[5]
 
-    this_x_origin = int((extent[0] - x_origin) / x_inc)
-    this_y_origin = int((extent[3] - y_origin) / y_inc)
+        this_x_origin = int((extent[0] - x_origin) / x_inc)
+        this_y_origin = int((extent[3] - y_origin) / y_inc)
 
-    this_x_end = int((extent[1] - x_origin) / x_inc)
-    this_y_end = int((extent[2] - y_origin) / y_inc)
+        this_x_end = int((extent[1] - x_origin) / x_inc)
+        this_y_end = int((extent[2] - y_origin) / y_inc)
 
-    this_x_size = int(this_x_end - this_x_origin) + 1
-    this_y_size = int(this_y_end - this_y_origin) + 1
+        this_x_size = int(this_x_end - this_x_origin) + 1
+        this_y_size = int(this_y_end - this_y_origin) + 1
 
-    if this_x_origin < 0: this_x_origin = 0
-    if this_y_origin < 0: this_y_origin = 0
-    if this_x_size < 0: this_x_size = 0
-    if this_y_size < 0: this_y_size = 0
-    if this_x_size > ds_config['nx'] - this_x_origin: this_x_size = ds_config['nx'] - this_x_origin
-    if this_y_size > ds_config['ny'] - this_y_origin: this_y_size = ds_config['ny'] - this_y_origin
-    
-    srcwin = (this_x_origin, this_y_origin, this_x_size, this_y_size)
+        if this_x_origin < 0: this_x_origin = 0
+        if this_y_origin < 0: this_y_origin = 0
+        if this_x_size < 0: this_x_size = 0
+        if this_y_size < 0: this_y_size = 0
+        if this_x_size > ds_config['nx'] - this_x_origin: this_x_size = ds_config['nx'] - this_x_origin
+        if this_y_size > ds_config['ny'] - this_y_origin: this_y_size = ds_config['ny'] - this_y_origin
 
-    return(srcwin)
+        srcwin = (this_x_origin, this_y_origin, this_x_size, this_y_size)
 
-def sr_wkt(epsg, esri = False):
+        return(srcwin)
+    else: return(None)
+
+def _sr_wkt(epsg, esri = False):
     '''convert an epsg code to wkt'''
     
     wkt = None
@@ -363,71 +337,68 @@ def sr_wkt(epsg, esri = False):
         sr = osr.SpatialReference()
         sr.ImportFromEPSG(epsg)
         if esri: sr.MorphToESRI()
-        
         wkt = sr.ExportToWkt()
-    except: sys.stderr.write('geomods: error, invalid epsg code\n')
-
-    sr = None
-    return(wkt)
+        sr = None
+        return(wkt)
+    except:
+        sys.stderr.write('geomods: error, invalid epsg code\n')
+        return(None)
 
 def _prj_file(dst_fn, epsg):
     '''generate a .prj file given an epsg code'''
     
     with open(dst_fn, 'w') as out:
-        out.write(sr_wkt(int(epsg), True))
+        out.write(_sr_wkt(int(epsg), True))
+    return(0)
 
-def _write_gdal(src_arr, dst_gdal, ds_config, dst_fmt = 'GTiff', verbose = False):
+def _set_gdal_epsg(src_gdal, epsg = 4326):
+    '''set the projection of src_gdal to epsg'''
+    
+    ds = gdal.Open(src_gdal, gdal.GA_Update)
+    if ds:
+        ds.SetProjection(_sr_wkt(int(epsg)))
+        ds = None
+
+        return(0)
+    else: return(None)
+        
+def gdal_write (src_arr, dst_gdal, ds_config, dst_fmt = 'GTiff', verbose = False):
     '''write src_arr Array to gdal file dst_gdal using src_config'''
 
     if verbose: sys.stderr.write('geomods: writing gdal grid...')
-    
+
     driver = gdal.GetDriverByName(dst_fmt)
     if os.path.exists(dst_gdal):
         driver.Delete(dst_gdal)
     
     ds = driver.Create(dst_gdal, ds_config['nx'], ds_config['ny'], 1, ds_config['dt'])
-    ds.SetGeoTransform(ds_config['geoT'])
-    ds.SetProjection(ds_config['proj'])
-    ds.GetRasterBand(1).SetNoDataValue(ds_config['ndv'])
-    ds.GetRasterBand(1).WriteArray(src_arr)
-    ds = None
-
-    if verbose: sys.stderr.write('ok\n')
+    if ds is not None:
+        ds.SetGeoTransform(ds_config['geoT'])
+        ds.SetProjection(ds_config['proj'])
+        ds.GetRasterBand(1).SetNoDataValue(ds_config['ndv'])
+        ds.GetRasterBand(1).WriteArray(src_arr)
+        ds = None
+        if verbose: sys.stderr.write('ok\n')
+        return(0)
+    else: return(None)
     
-## =============================================================================
-##
-## GDAL Functions for external use
-##
-## TODO: Allow for specified output format
-##       Allow for export to XYZ
-##       Allow for return of chunks list
-##
-## =============================================================================
-
-def chunks(src_fn, n_chunk = 10, verbose = False):
+def gdal_chunks(src_fn, n_chunk = 10, verbose = False):
     '''split `src_fn` GDAL file into chunks with `n_chunk` cells squared.'''
 
     band_nums = []
     o_chunks = []
     
     if band_nums == []: band_nums = [1]
-
+    i_chunk = 0
+    x_i_chunk = 0
+    x_chunk = n_chunk
+    
     src_ds = gdal.Open(src_fn)
 
     if src_ds is not None:
         ds_config = _gather_infos(src_ds)
-
-        #bands = []
-        #for band_num in band_nums:
         band = src_ds.GetRasterBand(1)
-        #if band is not None:
-        #bands.append(band)
-                
         gt = ds_config['geoT']
-
-        i_chunk = 0
-        x_i_chunk = 0
-        x_chunk = n_chunk
 
         if verbose: sys.stderr.write('geomods: chunking grid...')
         while True:
@@ -468,7 +439,7 @@ def chunks(src_fn, n_chunk = 10, verbose = False):
                     dst_config['ny'] = this_y_size
                     dst_config['geoT'] = dst_gt
                     
-                    _write_gdal(band_data, dst_fn, dst_config)
+                    gdal_write(band_data, dst_fn, dst_config)
 
                 band_data = None
 
@@ -486,70 +457,62 @@ def chunks(src_fn, n_chunk = 10, verbose = False):
                 
         if verbose: sys.stderr.write('ok\n')
         src_ds = None
+        
         return(o_chunks)
+    else: return(None)
 
-def crop(src_fn):
+def gdal_crop(src_fn):
     '''Crop `src_fn` GDAL file by it's NoData value.
     Returns cropped array.'''
     
     src_ds = gdal.Open(src_fn)
 
-    if src_ds is None:
-        return(None)
+    if src_ds is not None:
+        ds_config = _gather_infos(src_ds)
+        ds_arr = src_ds.GetRasterBand(1).ReadAsArray()
+        src_ds = None
 
-    ds_config = _gather_infos(src_ds)
-    ds_arr = src_ds.GetRasterBand(1).ReadAsArray()
+        src_arr[elev_array == ds_config['ndv']] = np.nan
+        nans = np.isnan(src_arr)
+        nancols = np.all(nans, axis=0)
+        nanrows = np.all(nans, axis=1)
 
-    src_ds = None
+        firstcol = nancols.argmin()
+        firstrow = nanrows.argmin()        
+        lastcol = len(nancols) - nancols[::-1].argmin()
+        lastrow = len(nanrows) - nanrows[::-1].argmin()
+
+        dst_arr = src_arr[firstrow:lastrow,firstcol:lastcol]
+        src_arr = None
+
+        dst_arr[np.isnan(dst_arr)] = ds_config['nv']
+
+        GeoT = ds_config['geoT']
+        dst_x_origin = GeoT[0] + (GeoT[1] * firstcol)
+        dst_y_origin = GeoT[3] + (GeoT[5] * firstrow)
+        dst_geoT = [dst_x_origin, GeoT[1], 0.0, dst_y_origin, 0.0, GeoT[5]]
+        ds_config['geoT'] = dst_geoT
+
+        return(dst_arr, ds_config)
+    else: return(None)
+
+def gdal_cut(src_fn, srcwin, dst_fn):
+    '''cut src_fn gdal file to srcwin and output dst_fn gdal file'''
     
-    src_arr[elev_array == ds_config['ndv']] = np.nan
-    nans = np.isnan(src_arr)
-    nancols = np.all(nans, axis=0)
-    nanrows = np.all(nans, axis=1)
-
-    firstcol = nancols.argmin()
-    firstrow = nanrows.argmin()        
-    lastcol = len(nancols) - nancols[::-1].argmin()
-    lastrow = len(nanrows) - nanrows[::-1].argmin()
-    
-    dst_arr = src_arr[firstrow:lastrow,firstcol:lastcol]
-
-    src_arr = None
-
-    dst_arr[np.isnan(dst_arr)] = ds_config['nv']
-
-    GeoT = ds_config['geoT']
-    dst_x_origin = GeoT[0] + (GeoT[1] * firstcol)
-    dst_y_origin = GeoT[3] + (GeoT[5] * firstrow)
-    dst_geoT = [dst_x_origin, GeoT[1], 0.0, dst_y_origin, 0.0, GeoT[5]]
-    ds_config['geoT'] = dst_geoT
-    
-    return(dst_arr, ds_config)
-
-def cut(src_fn, srcwin, dst_fn):
-
     src_ds = gdal.Open(src_fn)
 
-    if src_ds is None:
-        return(None)
+    if src_ds is not None:
+        ds_config = _gather_infos(src_ds)
+        gt = ds_config['geoT']
+        ds_arr = src_ds.GetRasterBand(1).ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
+        dst_gt = (gt[0] + (srcwin[0] * gt[1]), gt[1], 0., gt[3] + (srcwin[1] * gt[5]), 0., gt[5])
+        ds_config = _set_infos(srcwin[2], srcwin[3], srcwin[2] * srcwin[3], dst_gt, _sr_wkt(4326), ds_config['dt'], ds_config['ndv'], ds_config['fmt'])
+        src_ds = None
+        return(gdal_write(ds_arr, dst_fn, ds_config))
+    return(None)
 
-    ds_config = _gather_infos(src_ds)
-    gt = ds_config['geoT']
-    #print srcwin
-    ds_arr = src_ds.GetRasterBand(1).ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
-    #ds_arr = np.reshape(ds_arr, (srcwin[2], ))
-    #print ds_arr
-
-    dst_gt = (gt[0] + (srcwin[0] * gt[1]), gt[1], 0., gt[3] + (srcwin[1] * gt[5]), 0., gt[5])
-
-    ds_config = _set_infos(srcwin[2], srcwin[3], srcwin[2] * srcwin[3], dst_gt, sr_wkt(4326), ds_config['dt'], ds_config['ndv'], ds_config['fmt'])
-    src_ds = None
-    
-    _write_gdal(ds_arr, dst_fn, ds_config)
-    
-    ds_arr = None
-
-def dump(src_gdal, dst_xyz = sys.stdout, delim = ' ', weight = None, dump_nodata = False, srcwin = None, mask = None, warp_to_wgs = False):
+## todo: cleanup this function...
+def gdal_dump(src_gdal, dst_xyz = sys.stdout, delim = ' ', weight = None, dump_nodata = False, srcwin = None, mask = None, warp_to_wgs = False):
     '''Dump `src_gdal` GDAL file to ASCII XYZ'''
 
     status = 0
@@ -568,7 +531,7 @@ def dump(src_gdal, dst_xyz = sys.stdout, delim = ' ', weight = None, dump_nodata
     if weight is None:
         w_string = ''
     else: w_string = '{}{}'.format(delim, weight)
-    
+
     if src_ds is not None:
         bands = []
         for band_num in band_nums: 
@@ -652,11 +615,8 @@ def dump(src_gdal, dst_xyz = sys.stdout, delim = ' ', weight = None, dump_nodata
 
         srcds = src_mask = None
 
-def dumpy(src_gdal, dump_nodata = False, srcwin = None):
-    '''Dump `src_gdal` GDAL file to ASCII XYZ
-    Function taken from GDAL's `gdal2xyz.py` script.'''
-
-    delim = ' '
+def gdal_yield(src_gdal, dump_nodata = False, srcwin = None):
+    '''Yield `src_gdal` GDAL file to XYZ.'''
 
     srcds = gdal.Open(src_gdal)
 
@@ -691,18 +651,19 @@ def dumpy(src_gdal, dump_nodata = False, srcwin = None):
                 else:
                     if str(z) not in nodata:
                         yield(line)
-
         srcds = None
     
-def infos(src_fn, full = False):
+def gdal_infos(src_fn, full = False):
+    '''return the ds_config and extent of the src_fn gdal file.'''
+    
     ds = gdal.Open(src_fn)
     if ds is not None:
         ds_config = _gather_infos(ds)
-        print ds_config
-        print _gt2extent(ds_config)
-    ds = None
+        ds = None
+        return(ds_config, _gt2extent(ds_config))
+    else: return(None)
         
-def null(dst_fn, extent, cellsize, nodata = -9999, outformat = 'GTiff'):
+def gdal_null(dst_fn, extent, cellsize, nodata = -9999, outformat = 'GTiff'):
     '''generate a `null` grid with gdal'''
 
     ysize = extent[3] - extent[2]
@@ -710,55 +671,52 @@ def null(dst_fn, extent, cellsize, nodata = -9999, outformat = 'GTiff'):
     xcount = int(xsize / cellsize) + 1
     ycount = int(ysize / cellsize) + 1
     
-    nullArray = np.zeros((ycount, xcount))
-    nullArray[nullArray == 0] = nodata
+    null_array = np.zeros((ycount, xcount))
+    null_array[null_array == 0] = nodata
 
     dst_gt = (extent[0], cellsize, 0, extent[3], 0, (cellsize * -1.))
-    ds_config = _set_infos(xcount, ycount, xcount * ycount, dst_gt, sr_wkt(4326), gdal.GDT_Float32, -9999, outformat)
-    _write_gdal(nullArray, dst_fn, ds_config)
+    ds_config = _set_infos(xcount, ycount, xcount * ycount, dst_gt, _sr_wkt(4326), gdal.GDT_Float32, -9999, outformat)
+    return(gdal_write(null_array, dst_fn, ds_config))
     
-def percentile(src_fn, perc = 95):
+def gdal_percentile(src_fn, perc = 95):
+    '''calculate the `perc` percentile of src_fn gdal file.'''
 
     ds = gdal.Open(src_fn)
-    myarray = np.array(ds.GetRasterBand(1).ReadAsArray())
-    x_dim=myarray.shape[0]
-    #myarray[myarray==0]=np.nan
+    if ds is not None:
+        ds_array = np.array(ds.GetRasterBand(1).ReadAsArray())
+        x_dim = ds_array.shape[0]
+        ds_array_flat = ds_array.flatten()
+        p = np.percentile(ds_array_flat, perc)
 
-    myarray_flat=myarray.flatten()
-    
-    #p = np.nanpercentile(myarray_flat, perc)
-    #p = np.percentile(myarray_flat, perc)
-    #myarray_flat = myarray_flat[~np.isnan(myarray_flat)]
-    p = np.percentile(myarray_flat, perc)
+        if p==p:
+            percentile=p
+            if percentile < 2:
+                percentile = 2
+        else: percentile = 1
 
-    if p==p:
-        percentile=p
-        if percentile < 2:
-            percentile = 2
-    else: percentile = 1
+        ds = ds_array = None
 
-    ds = myarray = None
-    
-    return(percentile)
+        return(percentile)
+    else: return(None)
 
-def polygonize(src_gdal, dst_layer, verbose = False):
+def gdal_polygonize(src_gdal, dst_layer, verbose = False):
     '''run gdal.Polygonize on src_gdal and add polygon to dst_layer'''
     
     src_ds = gdal.Open(src_gdal)
-    srcband = src_ds.GetRasterBand(1)
+    if src_ds is not None:
+        srcband = src_ds.GetRasterBand(1)
 
-    if verbose:
-        #sys.stderr.write('geomods: polygonizing grid...')
-        pb = utils._progress('polygonizing grid...')
-        cb = lambda x, y, z: pb.update()
-    else: cb = None
-    gdal.Polygonize(srcband, None, dst_layer, 0, [], cb)
-    #if verbose: sys.stderr.write('ok\n')
-    if verbose: pb.end(0, 'polygonized grid.')
-    
-    src_ds = srcband = None
+        if verbose: sys.stderr.write('geomods: polygonizing grid...')
+        try:
+            gdal.Polygonize(srcband, None, dst_layer, 0, [])
+        except KeyboardInterrupt, e:
+            sys.exit(1)
+        if verbose: sys.stderr.write('ok\n')
+        src_ds = srcband = None
+        return(0)
+    else: return(None)
 
-def proximity(src_fn, dst_fn):
+def gdal_proximity(src_fn, dst_fn):
     '''Compute a proximity grid via GDAL'''
 
     prog_func = None
@@ -773,7 +731,6 @@ def proximity(src_fn, dst_fn):
         if dst_ds is None:
             drv = gdal.GetDriverByName('GTiff')
             dst_ds = drv.Create(dst_fn, ds_config['nx'], ds_config['ny'], 1, ds_config['dt'], [])
-            #dst_ds = drv.Create(dst_fn, ds_config['nx'], ds_config['ny'], 1, gdal.GDT_Float32, [])
 
         dst_ds.SetGeoTransform(ds_config['geoT'])
         dst_ds.SetProjection(ds_config['proj'])
@@ -782,10 +739,12 @@ def proximity(src_fn, dst_fn):
         dst_band.SetNoDataValue(ds_config['ndv'])
 
         gdal.ComputeProximity(src_band, dst_band, ['DISTUNITS=PIXEL'], callback = prog_func)
-
         dst_band = src_band = dst_ds = src_ds = None
+        
+        return(0)
+    else: return(None)
 
-def query(src_xyz, src_grd, out_form):
+def gdal_query(src_xyz, src_grd, out_form):
     '''Query a gdal-compatible grid file with xyz data.'''
 
     xyzl = []
@@ -798,11 +757,9 @@ def query(src_xyz, src_grd, out_form):
     ds = gdal.Open(src_grd)
     if ds is not None:
         ds_config = _gather_infos(ds)
-
         ds_band = ds.GetRasterBand(1)
         ds_gt = ds_config['geoT']
         ds_nd = ds_config['ndv']
-
         tgrid = ds_band.ReadAsArray()
 
         ## ==============================================   
@@ -827,25 +784,23 @@ def query(src_xyz, src_grd, out_form):
                 if g != ds_nd:
                     d = z - g
                     m = z + g
-                    c = _con_dec(math.fabs(float(d / (g + 0.00000001) * 100)), 2)
-                    s = _con_dec(math.fabs(d / (z + (g + 0.00000001))), 4)
-                    d = _con_dec(d, 4)
+                    c = con_dec(math.fabs(float(d / (g + 0.00000001) * 100)), 2)
+                    s = con_dec(math.fabs(d / (z + (g + 0.00000001))), 4)
+                    d = con_dec(d, 4)
 
                     outs = []
                     for i in out_form:
                         outs.append(vars()[i])
-                    #xyzl.append(np.array(outs, dtype = ds_config['dtn']))
-                    xyzl.append(np.array(outs, dtype = 'Float32'))
-                    #xyzl.append(np.array(outs))
+                    xyzl.append(np.array(outs, dtype = ds_config['dtn']))
+                    #xyzl.append(np.array(outs, dtype = 'Float32'))
         dsband = ds = None
-        #out_array = np.array(xyzl, dtype = ds_config['dtn'])
-        out_array = np.array(xyzl, dtype = 'Float32')
-        #out_array = np.array(xyzl)
+        out_array = np.array(xyzl, dtype = ds_config['dtn'])
+        #out_array = np.array(xyzl, dtype = 'Float32')
 
     return(out_array)
     
-def split(src_gdal, split_value = 0):
-    '''split raster into two peices based on z value'''
+def gdal_split(src_gdal, split_value = 0):
+    '''split raster into two based on z value'''
 
     dst_upper = os.path.join(os.path.dirname(src_gdal), '{}_upper.tif'.format(os.path.basename(src_gdal)[:-4]))
     dst_lower = os.path.join(os.path.dirname(src_gdal), '{}_lower.tif'.format(os.path.basename(src_gdal)[:-4]))
@@ -853,7 +808,6 @@ def split(src_gdal, split_value = 0):
     src_ds = gdal.Open(src_gdal)
     if src_ds is not None:
         src_config = _gather_infos(src_ds)
-        
         dst_config = _cpy_infos(src_config)
         dst_config['fmt'] = 'GTiff'
 
@@ -861,26 +815,29 @@ def split(src_gdal, split_value = 0):
 
         upper_array = ds_arr
         upper_array[upper_array <= split_value] = src_config['ndv'] 
-        _write_gdal(upper_array, dst_upper, dst_config)
+        gdal_write(upper_array, dst_upper, dst_config)
         upper_array = None
 
         lower_array = ds_arr
         lower_array[lower_array >= split_value] = src_config['ndv']
-        _write_gdal(lower_array, dst_lower, dst_config)
+        gdal_write(lower_array, dst_lower, dst_config)
         lower_array = src_ds = None
 
         return([dst_upper, dst_lower])
+    else: return(None)
 
-def sum(src_gdal):
-    elev = gdal.Open(src_gdal)
+def gdal_sum(src_gdal):
+    '''sum the z vale of src_gdal'''
     
-    elev_array = elev.GetRasterBand(1).ReadAsArray() 
-    sums = np.sum(elev_array)
-    
-    elev = elev_array = None
-    return(sums)
+    ds = gdal.Open(src_gdal)
+    if ds is not None:
+        ds_array = ds.GetRasterBand(1).ReadAsArray() 
+        sums = np.sum(ds_array)
+        ds = ds_array = None
+        return(sums)
+    else: return(None)
 
-def transformation(src_epsg, dst_epsg):
+def osr_transformation(src_epsg, dst_epsg):
 
     src_srs = osr.SpatialReference()
     src_srs.ImportFromEPSG(src_epsg)
@@ -891,7 +848,7 @@ def transformation(src_epsg, dst_epsg):
     dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
     return(dst_trans)
                     
-def transform(src_gdal):
+def gdal_transform(src_gdal):
 
     src_ds = gdal.Open(src_gdal)
 
@@ -920,6 +877,7 @@ def xyz2gdal(src_xyz, dst_gdal, extent, cellsize,
     '''Create a GDAL supported grid from xyz data
     `zvalue` of `d` generates a num grid'''
 
+    pointnum = 0
     dst_nodata=-9999
 
     ysize = extent[3] - extent[2]
@@ -930,15 +888,14 @@ def xyz2gdal(src_xyz, dst_gdal, extent, cellsize,
     
     if zvalue == 'z': sumArray = np.zeros((ycount, xcount))
     ptArray = np.zeros((ycount, xcount))
-    
-    pointnum = 0
 
     if verbose: sys.stderr.write('geomods: processing xyz data...')
 
-    for this_xyz in xyz_parse(src_xyz):
-        x = float(this_xyz[xloc])
-        y = float(this_xyz[yloc])
-        z = float(this_xyz[int(zloc)].strip())
+    #for this_xyz in xyz_parse(src_xyz):
+    for this_xyz in src_xyz:
+        x = this_xyz[xloc]
+        y = this_xyz[yloc]
+        z = this_xyz[int(zloc)].strip()
 
         if x > extent[0] and x < extent[1]:
             if y > extent[2] and y < extent[3]:
@@ -960,62 +917,9 @@ def xyz2gdal(src_xyz, dst_gdal, extent, cellsize,
     
     if verbose: sys.stderr.write('ok\n')
 
-    ds_config = _set_infos(xcount, ycount, xcount * ycount, dst_gt, sr_wkt(4326), gdal.GDT_Int32, dst_nodata, 'GTiff')
-    _write_gdal(outarray, dst_gdal, ds_config)
+    ds_config = _set_infos(xcount, ycount, xcount * ycount, dst_gt, _sr_wkt(4326), gdal.GDT_Int32, dst_nodata, 'GTiff')
     
-    outarray = None 
-
-def xyz2ogr(src_xyz, dst_ogr, xloc = 0, yloc = 1, zloc = 2, dst_fmt = 'ESRI Shapefile', overwrite = True, verbose = False):
-
-    driver = ogr.GetDriverByName(dst_fmt)
-    if os.path.exists(dst_ogr):
-        driver.DeleteDataSource(dst_ogr)
-    ds = driver.CreateDataSource(dst_ogr)
-
-    layer = ds.CreateLayer(dst_ogr, geom_type = ogr.wkbPoint25D)
-
-    oft_title = "Longitude"
-    oft_string = ogr.OFTReal
-    fdw = 12
-    fdp = 8
-    fd = ogr.FieldDefn(oft_title, oft_string)
-    fd.SetWidth(fdw)
-    fd.SetPrecision(fdp)
-    layer.CreateField(fd)
-
-    oft_title = "Latitude"
-    oft_string = ogr.OFTReal
-    fdw = 12
-    fdp = 8
-    fd = ogr.FieldDefn(oft_title, oft_string)
-    fd.SetWidth(fdw)
-    fd.SetPrecision(fdp)
-    layer.CreateField(fd)
-
-    oft_title = "Elevation"
-    oft_string = ogr.OFTReal
-    fdw = 12
-    fdp = 8
-    fd = ogr.FieldDefn(oft_title, oft_string)
-    fd.SetWidth(fdw)
-    fd.SetPrecision(fdp)
-    layer.CreateField(fd)
-    
-    f = ogr.Feature(feature_def = layer.GetLayerDefn())
-    
-    for this_xyz in xyz_parse(src_xyz):
-        x = float(this_xyz[xloc])
-        y = float(this_xyz[yloc])
-        z = float(this_xyz[zloc])
-
-        f.SetField(0, x)
-        f.SetField(1, y)
-        f.SetField(2, z)
-
-        wkt = 'POINT(%f %f %f)' % (x,y,z)
-        g = ogr.CreateGeometryFromWkt(wkt)
-        f.SetGeometryDirectly(g)
-        layer.CreateFeature(f)
+    return(gdal_write(outarray, dst_gdal, ds_config))
         
 ## add option for grid/pixel node registration...currently pixel node only.
 def xyz_mask(src_xyz, dst_gdal, extent, cellsize,
@@ -1047,9 +951,57 @@ def xyz_mask(src_xyz, dst_gdal, extent, cellsize,
 
     if verbose: sys.stderr.write('ok\n')
         
-    ds_config = _set_infos(xcount, ycount, xcount * ycount, dst_gt, sr_wkt(4326), gdal.GDT_Int32, -9999, 'GTiff')
-    _write_gdal(ptArray, dst_gdal, ds_config, verbose)
+    ds_config = _set_infos(xcount, ycount, xcount * ycount, dst_gt, _sr_wkt(4326), gdal.GDT_Int32, -9999, 'GTiff')
     
-    ptArray = None
+    return(gdal_write(ptArray, dst_gdal, ds_config, verbose = verbose))
 
+def xyz2ogr(src_xyz, dst_ogr, xloc = 0, yloc = 1, zloc = 2, dst_fmt = 'ESRI Shapefile',\
+            overwrite = True, verbose = False):
+    '''Make a point vector OGR file from a src_xyz table data'''
+    
+    driver = ogr.GetDriverByName(dst_fmt)
+    if os.path.exists(dst_ogr):
+        driver.DeleteDataSource(dst_ogr)
+    ds = driver.CreateDataSource(dst_ogr)
+
+    layer = ds.CreateLayer(dst_ogr, geom_type = ogr.wkbPoint25D)
+
+    oft_title = "Longitude"
+    oft_string = ogr.OFTReal
+    fdw = 12
+    fdp = 8
+    fd = ogr.FieldDefn(oft_title, oft_string)
+    fd.SetWidth(fdw)
+    fd.SetPrecision(fdp)
+    layer.CreateField(fd)
+
+    oft_title = "Latitude"
+    fd = ogr.FieldDefn(oft_title, oft_string)
+    fd.SetWidth(fdw)
+    fd.SetPrecision(fdp)
+    layer.CreateField(fd)
+
+    oft_title = "Elevation"
+    fd = ogr.FieldDefn(oft_title, oft_string)
+    fd.SetWidth(fdw)
+    fd.SetPrecision(fdp)
+    layer.CreateField(fd)
+    
+    f = ogr.Feature(feature_def = layer.GetLayerDefn())
+    
+    #for this_xyz in xyz_parse(src_xyz):
+    for this_xyz in src_xyz:
+        x = this_xyz[xloc]
+        y = this_xyz[yloc]
+        z = this_xyz[zloc]
+
+        f.SetField(0, x)
+        f.SetField(1, y)
+        f.SetField(2, z)
+
+        wkt = 'POINT(%f %f %f)' % (x,y,z)
+        g = ogr.CreateGeometryFromWkt(wkt)
+        f.SetGeometryDirectly(g)
+        layer.CreateFeature(f)
+    
 ### End

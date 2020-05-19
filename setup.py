@@ -22,7 +22,7 @@ from setuptools import setup
 
 setup(
     name = 'geomods',
-    version = '0.1.6',
+    version = '0.2.0',
     description = 'Modules and scripts for utilizing geographic data Digital Elevation Models',
     license = 'MIT',
     author = 'CIRES Coastal DEM Team',
@@ -37,12 +37,9 @@ setup(
     ], 
     entry_points = {
         'console_scripts': [
-            'cudem.py = geomods.waffles:main',
-            'waffles = geomods.waffles:main',
+            'waffles = geomods.waffles:waffles_cli',
+            'datalists = geomods.waffles:datalists_cli',
             'fetches = geomods.fetches:main',
-            'datalists = geomods.datalists:main',
-            'procs = geomods.procs:main',
-            'geomods-config = geomods.utils:geomods_config',
         ],
     },
     scripts = [

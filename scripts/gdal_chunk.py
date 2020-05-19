@@ -29,7 +29,7 @@ import sys
 
 import geomods
 
-_version = '0.0.2'
+_version = '0.0.3'
 
 _usage = '''gdal_chunk.py ({}): chunk a gdal grid
 
@@ -62,18 +62,14 @@ if __name__ == '__main__':
                 chunk_value = int(sys.argv[i + 1])
             except: pass
             i = i + 1
-
         elif arg == '-help' or arg == '--help' or arg == '-h':
             print(_usage)
             sys.exit(1)
-
         elif arg == '-version' or arg == '--version':
             print('gdal_chunk.py, version {}\n{}'.format(_version, geomods._license))
             sys.exit(1)
-
         elif src_fn is None:
             src_fn = arg
-
         else:
             print(_usage)
             sys.exit(1)
@@ -85,7 +81,7 @@ if __name__ == '__main__':
         sys.exit(1)
 
     if not os.path.exists(src_fn):
-        print('Error: {} is not a valid file'.format(src_fn))
-    else: geomods.gdalfun.chunks(src_fn, chunk_value, verbose = True)
+        geomods.waffles.error_msg('{} is not valid'.format(src_fn))
+    else: geomods.waffles.gdal_chunks(src_fn, chunk_value, verbose = True)
 
 ### End

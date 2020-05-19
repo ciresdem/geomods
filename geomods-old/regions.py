@@ -19,31 +19,18 @@
 ##
 ### Code:
 
-import gdalfun
-
 _version = '0.1.1'
+
+import gdalfun
 
 ## =============================================================================
 ##
-## Region Class
+## Region functions - regions.py
 ##
 ## a region is a geographic bounding-box with 4 corners and the
 ## region object made from the region_string 'east/west/south/north'
 ##
 ## =============================================================================
-
-def _inc(inc_str):
-    units = inc_str[-1]
-
-    if units == 'c': ## arc-seconds (old)
-        inc = float(inc_str[:-1]) / 3600
-    elif units == 's': ## arc-seconds
-        inc = float(inc_str[:-1]) / 3600
-    elif units == 'm': ## arc-minutes
-        inc = float(inc_str[:-1]) / 360
-    else: inc = float(inc_str)    
-    
-    return(inc)
 
 def regions_intersect_p_depr(region_a, region_b):
     '''Return True if region_a and region_b intersect.'''
@@ -53,8 +40,10 @@ def regions_intersect_p_depr(region_a, region_b):
     return(reduced_region._valid)
 
 def regions_intersect_p(region_a, region_b):
-    geom_a = gdalfun.bounds2geom(region_a.region)
-    geom_b = gdalfun.bounds2geom(region_b.region)
+    '''Return True if region_a and region_b intersect.'''
+        
+    geom_a = gdalfun._extent2geom(region_a.region)
+    geom_b = gdalfun._extent2geom(region_b.region)
 
     if geom_a.Intersects(geom_b):
         return(True)
@@ -81,7 +70,7 @@ def regions_reduce(region_a, region_b):
         region_c[3] = region_a.north
     else: region_c[3] = region_b.north
     
-    return(region('/'.join(map(str, region_c))))
+    return(region(region_c))
     
 def regions_merge(region_a, region_b):
     '''merge two regions into a single region'''
@@ -103,14 +92,20 @@ def regions_merge(region_a, region_b):
         region_c[3] = region_a.north
     else: region_c[3] = region_b.north
     
-    return(region('/'.join(map(str, region_c))))    
+    return(region(region_c))
     
 class region:
     '''geographic bounding box regtions 'w/e/s/n' '''
 
-    def __init__(self, region_string):
-        self.region_string = region_string
-        self.region = map(float, region_string.split('/'))
+    def __init__(self, extent):
+
+        try:
+            self.region_string = extent
+            self.region = map(float, extent.split('/'))
+        except:
+            self.region_string = '/'.join(map(str, extent))
+            self.region = extent
+            
         self._reset()
 
     def _reset(self):
@@ -160,7 +155,7 @@ class region:
         if percentage: bv = self.pct(bv)
         region_b = [self.region[0] - bv, self.region[1] + bv, self.region[2] - bv, self.region[3] + bv]
 
-        return(region("/".join(map(str, region_b))))
+        return(region(region_b))
 
     def center(self):
         xc = self.west + (self.east - self.west / 2)
@@ -170,7 +165,6 @@ class region:
     
     def chunk(self, inc, n_chunk = 10):
         '''chunk the region into n_chunk by n_chunk cell regions, given inc.'''
-        import math
 
         i_chunk = 0
         x_i_chunk = 0
@@ -199,7 +193,7 @@ class region:
                 if geo_x_t > self.east: geo_x_t = self.east
                 if geo_x_o > self.east: geo_x_o = self.west
                 
-                this_region = region('{}/{}/{}/{}'.format(geo_x_o, geo_x_t, geo_y_o, geo_y_t))
+                this_region = region([geo_x_o, geo_x_t, geo_y_o, geo_y_t])
                 o_chunks.append(this_region)
 
                 if y_chunk >= region_y_size:
@@ -221,31 +215,5 @@ class region:
         nsp = (self.north - self.south) * (pctv * .01)
 
         return((ewp + nsp) / 2)
-
-    ## FIXME
-    def split(self, sv):
-        '''split region by split-value `sv`'''
-        
-        split_regions = []
-        
-        ew = (self.east - self.west) / sv
-        ns = (self.north - self.south) / sv
-
-        ewo = self.west
-        ewn = self.west+ew
-        nso = self.south
-        nsn = self.south+ew
-
-        for i in range(1, sv + 1):
-
-            region_sub = [ewo, ewn, nso, nsn]
-            split_regions.append(region('/'.join(map(str, region_sub))))
-
-            ewo = ewn
-            ewn += ew
-            nso = nsn
-            nsn += ns
-
-        return(split_regions)
 
 ### End

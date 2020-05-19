@@ -30,7 +30,7 @@ import utils
 import Queue as queue
 import threading
 import time
-    
+
 ## =============================================================================
 ##
 ## spatial-metadata module:
@@ -53,6 +53,9 @@ class spatial_metadata:
     
     def __init__(self, i_datalist, i_region, i_inc = 0.0000925925, o_name = None, o_extend = 6, callback = lambda: False, verbose = False):
 
+        ## TODO: update for python3
+        import Queue as queue
+        
         self.dl_q = queue.Queue()
         self.datalist = i_datalist
         self.inc = i_inc
@@ -64,7 +67,7 @@ class spatial_metadata:
         self.verbose = verbose
         self.want_queue = True
 
-        self.gc = utils.check_config(False, self.verbose)
+        self.gc = check_config(False, self.verbose)
         
         self.v_fields = ['Name', 'Agency', 'Date', 'Type',
                          'Resolution', 'HDatum', 'VDatum', 'URL']
@@ -80,7 +83,7 @@ class spatial_metadata:
             self.o_name = self.datalist._name
         else: self.o_name = o_name
 
-        self.datalist._load_datalists()
+        #self.datalist._load_datalists()
         
     def _gather_from_queue(self):
         '''Gather geometries from a queue of [[datalist, layer], ...].'''
@@ -100,42 +103,40 @@ class spatial_metadata:
         a NUM-MSK grid, polygonize said NUM-MSK then union
         the polygon and add it to the output layer.'''
 
-        #this_datalist = datalists.datalist(dl[0], self.dist_region, verbose = self.verbose)
-        this_datalist = datalists.datalist(dl[0], self.region, verbose = self.verbose)
+        this_datalist = datalist(dl[0], self.region, verbose = self.verbose)
         this_o_name = this_datalist._name        
         this_datalist._load_data()
 
         if len(this_datalist.datafiles) > 0:
             try:
-                #o_v_fields = [dl[3], dl[4], dl[5], dl[6], dl[7], dl[8], dl[9], dl[10].strip()]
-                o_v_fields = dl[3]
+                o_v_fields = entry[3]
                 if len(o_v_fields) != 8:
                     o_v_fields = [this_datalist._name, 'Unknown', '0', 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
             except: o_v_fields = [this_datalist._name, 'Unknown', '0', 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
-            pb = utils._progress('gathering geometries from datalist \033[1m{}\033[m...'.format(this_o_name))
+            if self.verbose: echo_msg('gathering geometries from datalist \033[1m{}\033[m...'.format(this_o_name))
 
             if self.gc['BOUNDS'] is not None:
                 o_v_fields = ['\\"{}\\"'.format(x) if ' ' in x else x for x in o_v_fields]
-                utils.run_cmd('bounds -k {}/{} -n "{}" -gg --verbose >> {}.gmt\
-                '.format(self.inc, self.dist_region.region_string, '|'.join(o_v_fields), layer), self.verbose, self.verbose, this_datalist._dump_data)
+                run_cmd('bounds -k {}/{} -n "{}" -gg --verbose >> {}.gmt\
+                '.format(self.inc, self.dist_region.region_string, '|'.join(o_v_fields), layer), verbose = self.verbose, data_fun = this_datalist._dump_data)
             else:
                 defn = layer.GetLayerDefn()
                 if self.gc['GMT'] is None:
                     use_gmt = False
                 else: use_gmt = True
-                
-                this_dem = waffles.dem(this_datalist, this_datalist.region, i_inc = self.inc, o_fmt = 'GTiff', o_extend = self.extend, verbose = self.verbose)
-                this_mask = this_dem.mask(use_gmt)
+
+                this_dem = waffles(this_datalist, self.region, i_inc = self.inc, o_fmt = 'GTiff', o_name = this_datalist._name, o_extend = self.extend, verbose = self.verbose)
+                this_mask = this_dem.run('mask')
 
                 if os.path.exists(this_mask) and not self.stop():
                     ## should use more unique name...crashes when 2 datalists have same name at same time...
-                    utils.remove_glob('{}_poly.*'.format(this_o_name))
+                    remove_glob('{}_poly.*'.format(this_o_name))
 
                     tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(this_o_name))
                     tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(this_o_name), None, ogr.wkbMultiPolygon)
                     tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
 
-                    gdalfun.polygonize(this_mask, tmp_layer, verbose = self.verbose)
+                    gdalfun.gdal_polygonize(this_mask, tmp_layer, verbose = self.verbose)
 
                     if len(tmp_layer) > 1:
                         out_feat = gdalfun.ogr_mask_union(tmp_layer, 'DN', defn, self.stop, verbose = self.verbose)
@@ -145,26 +146,31 @@ class spatial_metadata:
                         layer.CreateFeature(out_feat)
 
                     tmp_ds = tmp_layer = out_feat = None
-                    utils.remove_glob('{}_poly.*'.format(this_o_name))
-                    utils.remove_glob('{}*'.format(this_mask[:-3]))
+                    remove_glob('{}_poly.*'.format(this_o_name))
+                    remove_glob('{}*'.format(this_mask[:-3]))
 
-            pb.end(0, 'gathered geometries from datalist \033[1m{}\033[m.'.format(this_o_name))
+        echo_msg('gathered geometries from datalist \033[1m{}\033[m.'.format(this_o_name))
 
     def run(self, epsg = 4269):
         '''Run the spatial-metadata module and Geneate spatial metadata from the datalist
         specify the output project epsg.'''
 
-        pb = utils._progress('generating SPATIAL-METADATA for {}...'.format(self.datalist._name))
+        echo_msg('generating SPATIAL-METADATA for {}...'.format(self.datalist._name))
         dst_vec = '{}_sm.shp'.format(self.o_name)
         dst_layername = '{}_sm'.format(self.o_name)
-        utils.remove_glob('{}.*'.format(dst_layername))
+        remove_glob('{}.*'.format(dst_layername))
         gdalfun._prj_file('{}.prj'.format(dst_layername), epsg)
+
+        self.datalist._load_datalists()
+        #print self.datalist.datalists
         
         if self.gc['BOUNDS'] is not None:
             with open('{}.gmt'.format(dst_layername), 'w') as gmtf:
                 gmtf.write('# @VGMT1.0 @GMULTIPOLYGON\n# @N{}\n# @T{}\n# FEATURE_DATA\n'.format('|'.join(self.v_fields), '|'.join(self.t_fields)))
             for dl in self.datalist.datalists:
                 self._gather_from_datalist(dl, dst_layername)
+            #self.datalist._proc_data(lambda entry: self._gather_from_datalist(entry, dst_layername))
+            
         else:
             ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource(dst_vec)
             if ds is not None:
@@ -196,11 +202,12 @@ class spatial_metadata:
                 
         ds = layer = None
         if self.gc['BOUNDS'] is not None:
-            utils.run_cmd('ogr2ogr {} {}.gmt'.format(dst_vec, dst_layername))
+            run_cmd('ogr2ogr {} {}.gmt'.format(dst_vec, dst_layername, verbose = self.verbose))
             
         if not os.path.exists(dst_vec):
             dst_vec = None
 
-        pb.end(0, 'generated SPATIAL-METADATA for {}.'.format(self.datalist._name))
+        echo_msg('generated SPATIAL-METADATA for {}.'.format(self.datalist._name))
         return(dst_vec)
+
 ### End

@@ -18,15 +18,13 @@
 ### Code:
 
 ## Modules
+
 from utils import *
-from vdatum import *
-from regions import *
-from datalists import *
-from gdalfun import *
-from procs import *
-from uncertainty import *
-from metadata import *
-from fetches import *
 from waffles import *
-        
+from datalists import *
+
+from fetches import *
+
+#from archook import locate_arcgis, get_arcpy
+
 ### End

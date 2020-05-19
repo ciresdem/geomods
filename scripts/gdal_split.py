@@ -106,6 +106,6 @@ if __name__ == '__main__':
 
     if not os.path.exists(elev):
         print("Error: %s is not a valid file" %(elev))
-    else: geomods.gdalfun.split(elev, split_value)
+    else: geomods.gdalfun.gdal_split(elev, split_value)
 
 ### End

@@ -81,7 +81,7 @@ if __name__ == '__main__':
     else:
         output_name=elev[:-4] + '_crop.tif'
 
-        out_array, out_config = geomods.gdalfun.crop(elev)
+        out_array, out_config = geomods.gdalfun.gdal_crop(elev)
         outsize = out_array.shape
 
         #Export Tif

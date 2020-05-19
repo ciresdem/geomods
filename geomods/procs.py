@@ -25,16 +25,14 @@ import time
 import zipfile
 import gzip
 import threading
-import Queue as queue
 import ogr
-
-import regions
-import datalists
-import gdalfun
-import utils
-import vdatum
-
 import json
+
+import waffles
+
+try:
+    import Queue as queue
+except: import queue as queue
 
 _version = '0.1.1'
 
@@ -43,7 +41,6 @@ _version = '0.1.1'
 ## Data Processing Classes and functions.
 ## 
 ## =============================================================================
-
 proc_infos = { 
     'gdal':[lambda x, a: x.proc_gdal(*a), 'process gdal data to chunked XYZ [:split_value:increment:input_vdatum]'],
     'lidar':[lambda x, a: x.proc_las(*a), 'process lidar las/laz data to XYZ [:increment:input_vdatum]'],
@@ -385,11 +382,11 @@ class procs:
             os.rename(tmp_gdal, src_gdal)
         else: src_gdal = self.src_file
 
-        out_chunks = gdalfun.chunks(src_gdal, 1000)
+        out_chunks = gdalfun.gdal_chunks(src_gdal, 1000)
         for chunk in out_chunks:
             if not self.stop():
                 if split is not None:
-                    split_chunk = gdalfun.split(chunk, int(split))
+                    split_chunk = gdalfun.gdal_split(chunk, int(split))
                     chunk_gdal = split_chunk[0]
                 else: chunk_gdal = chunk
                 
