@@ -69,7 +69,6 @@
 ## Add gdal modules
 ## Add remove/replace module
 ## Add source uncertainty to uncertainty module
-## Get -w (weight) option working
 ## Add LAS/LAZ support to datalits
 ## Merge with fetch and allow for http datatype in datalists?
 ##
@@ -1252,7 +1251,7 @@ def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False)
 ## ==============================================
 _datalist_pass_hooks = {-1: lambda e: os.path.exists(e[0]), 168: lambda e: os.path.exists(e[0]), 200: lambda e: os.path.exists(e[0])}
 _datalist_inf_hooks = {-1: lambda e: inf_datalist(e), 168: lambda e: xyz_inf_entry(e), 200: lambda e: gdal_inf_entry(e)}
-_datalist_hooks = {-1: lambda e, v: datalist(e[0], verbose = v), 168: lambda e, v: xyz_dump_entry(e, verbose = v), 200: lambda e, v: gdal_dump_entry(e, verbose = v)}
+_datalist_hooks = {-1: lambda e, f, w, v: datalist(e[0], fmt = f, wt = w, verbose = v), 168: lambda e, f, w, v: xyz_dump_entry(e, verbose = v), 200: lambda e, f, w, v: gdal_dump_entry(e, verbose = v)}
 
 def datalist_inf(dl, fmt = None):
     '''return the region of the datalist.'''
@@ -1286,48 +1285,55 @@ def inf_datalist(e):
         with open('{}.inf'.format(e[0]), 'w') as inf:
             inf.write('{}\n'.format(' '.join([str(x) for x in minmax])))
 
-def archive_entry(entry, a_name, dirname = 'archive', region = None, delimiter = ' ', verbose = None):
+def archive_entry(entry, dirname = 'archive', region = None, verbose = None):
     '''archive a datalist entry.
     a datalist entry is [path, format, weight, ...]'''
+    if region is None:
+        a_name = entry[-1]
+    else: a_name = '{}_{}_{}'.format(entry[-1], region_format(region, 'fn'), this_year())
+    
     i_dir = os.path.dirname(entry[0])
     i_xyz = os.path.basename(entry[0]).split('.')[0]
     a_dir = os.path.join(dirname, a_name, 'data', entry[-1])
     a_xyz_dir = os.path.join(a_dir, 'xyz')
     a_xyz = os.path.join(a_xyz_dir, i_xyz + '.xyz')
+    
     if not os.path.exists(a_dir): os.makedirs(a_dir)
     if not os.path.exists(a_xyz_dir): os.makedirs(a_xyz_dir)
+
+    
     with open(a_xyz, 'w') as fob:
-        dump_entry(entry, dst_port = fob, region = region, delimiter = delimiter, verbose = verbose)
-    d = datalist(os.path.join(a_dir, entry[-1] + '.datalist'))
-    d._append_entry([os.path.join('xyz', i_xyz + '.xyz') if x[0] == 0 else 168 if x[0] == 1 else x[1] for x in enumerate(entry[:-1])])
-    generate_inf(a_xyz, 168)
+        if entry[1] == 168:
+            xyz_dump_entry(entry, dst_port = fob, region = region, verbose = verbose)
+        elif entry[1] == 200:
+            gdal_dump_entry(entry, dst_port = fob, region = region, verbose = verbose)
             
 def datalist_append_entry(entry, datalist):
     '''append entry to datalist'''
     with open(datalist, 'a') as outfile:
         outfile.write('{}\n'.format(' '.join([str(x) for x in entry])))
 
-def datalist_archive(dl, arch_dir = 'archive', region = None, verbose = False):
+def datalist_archive(wg, arch_dir = 'archive', region = None, verbose = False):
     '''dump the data from datalist to dst_port'''
     if region is not None:
         #_datalist_pass_hooks[-1] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
         _datalist_pass_hooks[168] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
         _datalist_pass_hooks[200] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
-    _datalist_hooks[-1] = lambda e, v: datalist(e[0], verbose = v)
-    _datalist_hooks[168] = lambda e, v: archive_entry(e, region = region, dst_port = dst_port, verbose = v)
-    _datalist_hooks[200] = lambda e, v: archive_entry(e, region = region, dst_port = dst_port, verbose = v)
-    datalist(dl, verbose = verbose)
+    _datalist_hooks[-1] = lambda e, f, w, v: datalist(e[0], wt = w, verbose = v)
+    _datalist_hooks[168] = lambda e, f, w, v: archive_entry(e, dirname = arch_dir, region = region, verbose = v)
+    _datalist_hooks[200] = lambda e, f, w, v: archive_entry(e, dirname = arch_dir, region = region, verbose = v)
+    datalist(wg['datalist'], wt = 1 if wg['weights'] else None, verbose = verbose)
         
-def datalist_dump(dl, dst_port = sys.stdout, region = None, verbose = False):
+def datalist_dump(wg, dst_port = sys.stdout, region = None, verbose = False):
     '''dump the data from datalist to dst_port'''
     if region is not None:
         #_datalist_pass_hooks[-1] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
         _datalist_pass_hooks[168] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
         _datalist_pass_hooks[200] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
-    _datalist_hooks[-1] = lambda e, v: datalist(e[0], verbose = v)
-    _datalist_hooks[168] = lambda e, v: xyz_dump_entry(e, region = region, dst_port = dst_port, verbose = v)
-    _datalist_hooks[200] = lambda e, v: gdal_dump_entry(e, region = region, dst_port = dst_port, verbose = v)
-    datalist(dl, verbose = verbose)
+    _datalist_hooks[-1] = lambda e, f, w, v: datalist(e[0], wt = w, verbose = v)
+    _datalist_hooks[168] = lambda e, f, w, v: xyz_dump_entry(e, region = region, dst_port = dst_port, verbose = v)
+    _datalist_hooks[200] = lambda e, f, w, v: gdal_dump_entry(e, region = region, dst_port = dst_port, verbose = v)
+    datalist(wg['datalist'], wt = 1 if wg['weights'] else None, verbose = verbose)
 
 def datalist_echo(entry):
     '''echo datalist entry'''
@@ -1396,20 +1402,23 @@ def datalist_io(dpipe):
         yield(this_xyz)
     f.seek(0)
 
-def datalist(dl, fmt = -1, wt = 1, verbose = False):
+def datalist(dl, fmt = -1, wt = None, verbose = False):
     '''recurse a datalist/entry'''
     this_dir = os.path.dirname(dl)
     these_entries = datalist2py(dl)
     if len(these_entries) == 0: these_entries = [entry2py(dl)]
     for this_entry in these_entries:
         this_entry[0] = os.path.join(this_dir, this_entry[0])
-        this_entry[2] = wt * this_entry[2]
+        if wt is not None:
+            this_entry[2] = wt * this_entry[2]
+            wt = this_entry[2]
+        else: this_entry[2] = wt
         this_entry_md = ' '.join(this_entry[3:]).split(',')
         this_entry = this_entry[:3] + [this_entry_md] + [os.path.basename(dl).split('.')[0]]
         if _datalist_pass_hooks[this_entry[1]](this_entry):
             if verbose is True:
                 echo_msg('{} {}'.format('scanning datalist' if this_entry[1] == -1 else 'using datafile', this_entry[0]))
-            _datalist_hooks[this_entry[1]](this_entry, verbose)
+            _datalist_hooks[this_entry[1]](this_entry, fmt, wt, verbose)
 
 ## ==============================================
 ## DEM module: generate a Digital Elevation Model using a variety of methods
@@ -1452,21 +1461,49 @@ _waffles_modules = {
     \t\t\t  :ivert=[vdatum] - Input VDatum vertical datum.
     \t\t\t  :overt=[vdatum] - Output VDatum vertical datum.
     \t\t\t  :region=[0-10] - VDatum region (3 is CONUS)'''],
+    'mbgrid': [lambda args: waffles_mbgrid(**args), '''Weighted SPLINE DEM via mbgrid
+    \t\t\t < mbgrid:tension=35:dist=10/3:use_datalists=False >
+    \t\t\t  :tension=[0-100] - Spline tension.
+    \t\t\t  :dist=[value] - MBgrid -C switch (distance to fill nodata with spline)
+    \t\t\t  :use_datalists=[True/False] - use waffles built-in datalists'''],
 }
 waffles_module_desc = lambda x: '\n  '.join(['{:22}{}'.format(key, x[key][-1]) for key in x])
 waffles_proc_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * 10) + (wg['inc'] * wg['extend']))
 waffles_dist_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * wg['extend']))
 waffles_proc_str = lambda wg: region_format(waffles_proc_region(wg), 'gmt')
-waffles_dl_func = lambda wg: lambda p: datalist_dump(wg['datalist'], dst_port = p, region = waffles_proc_region(wg), verbose = True)
+waffles_dl_func = lambda wg: lambda p: datalist_dump(wg, dst_port = p, region = waffles_proc_region(wg), verbose = True)
 waffles_gmt_reg_str = lambda wg: '-r' if wg['node'] == 'pixel' else ''
+
+## ==============================================
+## run mbgrid on the datalist and generate the DEM
+## note: mbgrid will cause popen to hang if stdout 
+## is not cleared...should add output file to send to...
+## ==============================================
+def waffles_mbgrid(dist = '10/3', tension = 35, want_datalists = False):
+    '''Generate a DEM with MBSystem's mbgrid program.'''
+    import shutil
+    if wg['gc']['MBGRID'] is None:
+        echo_error_msg('MBSystem must be installed to use the MBGRID module')
+        return(None, -1)
+    if wg['gc']['GMT'] is None:
+        echo_error_msg('GMT must be installed to use the MBGRID module')
+        return(None, -1)
+
+    if want_datalists:
+        datalist_archive(dirname = '.mb_tmp_datalist')
+        wg['datalist'] = datalist_master('.mb_tmp_datalist/archive.datalist')
+        
+    out, self.status = run_mbgrid(wg['datalist'], waffles_proc_str(wg), wg['inc'], wg['name'], dist = dist, tension = tension, verbose = True)
+    remove_glob('*.cmd')
+    if want_datalists: shutil.rmtree('.mb_tmp_datalist')
 
 def waffles_gmt_surface(wg = _waffles_grid_info, tension = .35, relaxation = 1.2, lower_limit = 'd', upper_limit = 'd'):
     '''generate a DEM with GMT surface'''
     if wg['gc']['GMT'] is None:
         echo_error_msg('GMT must be installed to use the SURFACE module')
         return(None, -1)
-    dem_surf_cmd = ('gmt blockmean {} -I{:.10f} -Wi -V {} | gmt surface -V {} -I{:.10f} -G{}.tif=gd+n-9999:GTiff -T{} -Z{} -Ll{} -Lu{} {}\
-    '.format(waffles_proc_str(wg), wg['inc'], waffles_gmt_reg_str(wg), waffles_proc_str(wg), wg['inc'], wg['name'], tension, relaxation, lower_limit, upper_limit, waffles_gmt_reg_str(wg)))
+    dem_surf_cmd = ('gmt blockmean {} -I{:.10f}{} -V {} | gmt surface -V {} -I{:.10f} -G{}.tif=gd+n-9999:GTiff -T{} -Z{} -Ll{} -Lu{} {}\
+    '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', waffles_gmt_reg_str(wg), waffles_proc_str(wg), wg['inc'], wg['name'], tension, relaxation, lower_limit, upper_limit, waffles_gmt_reg_str(wg)))
     return(run_cmd(dem_surf_cmd, verbose = True, data_fun = waffles_dl_func(wg)))
 
 def waffles_gmt_triangulate(wg = _waffles_grid_info):
@@ -1474,8 +1511,8 @@ def waffles_gmt_triangulate(wg = _waffles_grid_info):
     if wg['gc']['GMT'] is None:
         echo_error_msg('GMT must be installed to use the TRIANGULATE module')
         return(None, -1)
-    dem_tri_cmd = ('gmt blockmean {} -I{:.10f} -Wi -V {} | gmt triangulate {} -I{:.10f} -V -G{}.tif=gd+n-9999:GTiff {}\
-    '.format(waffles_proc_str(wg), wg['inc'], waffles_gmt_reg_str(wg), waffles_proc_str(wg), wg['inc'], wg['name'], waffles_gmt_reg_str(wg)))
+    dem_tri_cmd = ('gmt blockmean {} -I{:.10f}{} -V {} | gmt triangulate {} -I{:.10f} -V -G{}.tif=gd+n-9999:GTiff {}\
+    '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', waffles_gmt_reg_str(wg), waffles_proc_str(wg), wg['inc'], wg['name'], waffles_gmt_reg_str(wg)))
     return(run_cmd(dem_tri_cmd, verbose = True, data_fun = waffles_dl_func(wg)))
 
 def waffles_gmt_nearneighbor(wg = _waffles_grid_info, radius = None):
@@ -1484,8 +1521,8 @@ def waffles_gmt_nearneighbor(wg = _waffles_grid_info, radius = None):
         echo_error_msg('GMT must be installed to use the NEARNEIGHBOR module')
         return(None, -1)
     if radius is None: radius = wg['inc'] * 2
-    dem_nn_cmd = ('gmt blockmean {} -I{:.10f} -Wi -V {} | gmt nearneighbor {} -I{:.10f} -S{} -V -G{}.tif=gd+n-9999:GTiff {}\
-    '.format(waffles_proc_str(wg), wg['inc'], waffles_gmt_reg_str(wg), waffles_proc_str(wg), wg['inc'], radius, wg['name'], waffles_gmt_reg_str(wg)))
+    dem_nn_cmd = ('gmt blockmean {} -I{:.10f}{} -V {} | gmt nearneighbor {} -I{:.10f} -S{} -V -G{}.tif=gd+n-9999:GTiff {}\
+    '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', waffles_gmt_reg_str(wg), waffles_proc_str(wg), wg['inc'], radius, wg['name'], waffles_gmt_reg_str(wg)))
     return(run_cmd(dem_nn_cmd, verbose = True, data_fun = waffles_dl_func(wg)))
 
 def waffles_num(wg = _waffles_grid_info, mode = 'n'):
@@ -1754,7 +1791,7 @@ def waffles_cli(argv = sys.argv):
             wg['epsg'] = argv[i + 1]
             i = i + 1
         elif arg[:2] == '-P': wg['epsg'] = arg[2:]
-        elif arg == '-w': wg['weight'] = True
+        elif arg == '-w': wg['weights'] = True
         elif arg == '-p': want_prefix = True
         elif arg == '-r': wg['node'] = 'grid'
         elif arg == '--verbose' or arg == '-V': want_verbose = True
@@ -1811,7 +1848,7 @@ def waffles_cli(argv = sys.argv):
     bn = wg['name']
     for this_region in these_regions:
         wg['region'] = this_region
-        if want_prefix: wg['name'] = '{}{}_{}_{}'.format(bn, inc2str_inc(wg['inc']), region_format(wg['region'], 'fn'), this_year())    
+        if want_prefix: wg['name'] = '{}{}_{}_{}'.format(bn, inc2str_inc(wg['inc']), region_format(wg['region'], 'fn'), this_year())
         echo_msg(json.dumps(wg, indent=4))
         dem = waffles_run(wg)
 
@@ -1868,28 +1905,33 @@ def datalists_cli(argv = sys.argv):
         _datalist_pass_hooks[-1] = lambda e: regions_intersect_p(region, inf_entry(e))
         _datalist_pass_hooks[168] = lambda e: regions_intersect_p(region, inf_entry(e))
         _datalist_pass_hooks[200] = lambda e: regions_intersect_p(region, inf_entry(e))
-        _datalist_hooks[168] = lambda e, v: xyz_dump_entry(e, region = region, verbose = want_verbose)
-        _datalist_hooks[200] = lambda e, v: gdal_dump_entry(e, region = region, verbose = want_verbose)
+        _datalist_hooks[168] = lambda e, f, w, v: xyz_dump_entry(e, region = region, verbose = want_verbose)
+        _datalist_hooks[200] = lambda e, f, w, v: gdal_dump_entry(e, region = region, verbose = want_verbose)
         
     if want_infos:
         #print(datalist_inf(dl))
-        _datalist_hooks[168] = lambda e, v: datafile_echo(e)
-        _datalist_hooks[200] = lambda e, v: datafile_echo(e)
+        _datalist_hooks[168] = lambda e, f, w, v: datafile_echo(e)
+        _datalist_hooks[200] = lambda e, f, w, v: datafile_echo(e)
         if region is None:
             _datalist_pass_hooks[-1] = lambda e: inf_entry(e, True)
             #_datalist_pass_hooks[168] = lambda e: inf_entry(e)
             #_datalist_pass_hooks[200] = lambda e: inf_entry(e)
-        
+
+    if want_weight:
+        wt = 1
+    else: wt = None
+            
     ## ==============================================
     ## recurse the datalist
     ## ==============================================
     master = datalist_master(dls)
     if master is not None:
         try:
+            #datalist_archive(master, arch_dir = 'archive', region = region, verbose = want_verbose)
             #if want_infos:
             #    print(datalist_inf(dl))
             #else:
-            datalist(master, verbose = want_verbose)
+            datalist(master, wt = wt, verbose = want_verbose)
         except IndexError:
             echo_error_msg('bad datalist file...')
         except KeyboardInterrupt as e:
