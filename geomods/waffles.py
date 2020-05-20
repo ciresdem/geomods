@@ -64,7 +64,7 @@
 ## Adjust the _datalist*hooks dictionary to add custom processing/testing
 ##
 ### TODO:
-## Add vdatum, uncertainty functions and modules
+## Add uncertainty functions and modules
 ## Add mbgrid module
 ## Add gdal modules
 ## Add remove/replace module
@@ -86,6 +86,7 @@ import subprocess
 ## import gdal, etc.
 ## ==============================================
 import numpy as np
+import json
 import gdal
 import ogr
 import osr
@@ -155,7 +156,8 @@ def cmd_check(cmd_str, cmd_vers_str):
     '''check system for availability of 'cmd_str' and return it's version'''
     if cmd_exists(cmd_str): 
         cmd_vers, status = run_cmd('{}'.format(cmd_vers_str))
-        return(cmd_vers.split()[-1].rstrip())
+        return(cmd_vers.rstrip())
+        #return(cmd_vers.split()[-1].rstrip())
     else: return(None)
 
 def config_check(chk_vdatum = False, verbose = False):
@@ -164,7 +166,7 @@ def config_check(chk_vdatum = False, verbose = False):
     py_vers = str(sys.version_info[0]),
     host_os = sys.platform
     _waff_co['platform'] = host_os
-    _waff_co['python'] = py_vers
+    _waff_co['python'] = py_vers[0]
     ae = '.exe' if host_os == 'win32' else ''
 
     #if chk_vdatum: _waff_co['VDATUM'] = vdatum(verbose=verbose).vdatum_path
@@ -597,6 +599,9 @@ def gdal_clip(src_gdal, src_ply = None, invert = False):
 
 def np_split(src_arr, sv = 0, nd = -9999):
     '''split numpy `src_arr` by `sv` (turn u/l into `nd`)'''
+    try:
+        sv = int(sv)
+    except: sv = 0
     u_arr = np.array(src_arr)
     l_arr = np.array(src_arr)
     u_arr[u_arr <= sv] = nd
@@ -918,36 +923,43 @@ def gdal_blur(src_gdal, dst_gdal, sf = 1):
         return(gdal_write(smooth_array, dst_gdal, ds_config))
     else: return([], -1)
 
-def gdal_smooth(src_gdal, dst_gdal, fltr = 10, bathy_only = True, use_gmt = False):
+def gdal_smooth(src_gdal, dst_gdal, fltr = 10, split_value = None, use_gmt = False):
     '''smooth `src_gdal` using smoothing factor `fltr`; optionally
     only smooth bathymetry (sub-zero)'''
     if os.path.exists(src_gdal):
-        if bathy_only:
-            dem_u, dem_l = gdal_split(src_gdal)
+        if split_value is not None:
+            dem_u, dem_l = gdal_split(src_gdal, split_value)
         else: dem_l = src_gdal
         if use_gmt:
             out, status = gmt_grdfilter(dem_l, 'tmp_fltr.tif=gd+n-9999:GTiff', dist = fltr, verbose = True)
         out, status = gdal_blur(dem_l, 'tmp_fltr.tif', fltr)
-        if bathy_only:
+        if split_value is not None:
+            ds = gdal.Open(src_gdal)
+            ds_config = gdal_gather_infos(ds)
+            msk_arr = ds.GetRasterBand(1).ReadAsArray()
+            msk_arr[msk_arr != ds_config['ndv']] = 1
+            msk_arr[msk_arr == ds_config['ndv']] = np.nan
+            ds = None
             u_ds = gdal.Open(dem_u)
             if u_ds is not None:
-                u_config = gdal_gather_infos(u_ds)
+                #u_config = gdal_gather_infos(u_ds)
                 l_ds = gdal.Open('tmp_fltr.tif')
                 if l_ds is not None:
-                    l_config = gdal_gather_infos(l_ds)
+                    #l_config = gdal_gather_infos(l_ds)
                     u_arr = u_ds.GetRasterBand(1).ReadAsArray()
                     l_arr = l_ds.GetRasterBand(1).ReadAsArray()
-                    u_arr[u_arr == u_config['ndv']] = 0
-                    l_arr[l_arr == l_config['ndv']] = 0
-                    ds_arr = u_arr + l_arr
-                    gdal_write(ds_arr, 'merged.tif', l_config)
+                    u_arr[u_arr == ds_config['ndv']] = 0
+                    l_arr[l_arr == ds_config['ndv']] = 0
+                    ds_arr = (u_arr + l_arr) * msk_arr
+                    ds_arr[np.isnan(ds_arr)] = ds_config['ndv']
+                    gdal_write(ds_arr, 'merged.tif', ds_config)
                     l_ds = None
                     remove_glob(dem_l)
                 u_ds = None
                 remove_glob(dem_u)
-            remove_glob('tmp_fltr.tif')
-            os.rename('merged.tif', dst_gdal)
-        else: os.rename('tmp_fltr.tif', dst_gdal)
+            os.rename('merged.tif', 'tmp_fltr.tif')
+            
+        os.rename('tmp_fltr.tif', dst_gdal)
     
 def gdal_polygonize(src_gdal, dst_layer):
     '''run gdal.Polygonize on src_ds and add polygon to dst_layer'''
@@ -989,8 +1001,7 @@ def gdal_chunks(src_fn, n_chunk = 10):
                 this_y_size = this_y_chunk - this_y_origin
 
                 ## chunk size aligns with grid cellsize
-                if this_x_size == 0 or this_y_size == 0:
-                    break
+                if this_x_size == 0 or this_y_size == 0: break
                 
                 srcwin = (this_x_origin, this_y_origin, this_x_size, this_y_size)
                 this_geo_x_origin, this_geo_y_origin = _pixel2geo(this_x_origin, this_y_origin, gt)
@@ -1603,11 +1614,21 @@ def waffles_run(wg = _waffles_grid_info):
         echo_error_msg('cut failed, is the dem open somewhere, {}'.format(e))
             
     ## ==============================================
-    ## optionally filter the DEM batymetry (sub-zero)
+    ## optionally filter the DEM 
     ## ==============================================
     if wg['fltr'] is not None:
+        fltr_args = {}
+        fltr = wg['fltr'].split(':')
+        fltr_args['fltr'] = fltr[0]
+        fltr_args['use_gmt'] = True
+        for arg in fltr[1:]:
+            p_arg = arg.split('=')
+            fltr_args[p_arg[0]] = False if p_arg[1].lower() == 'false' else True
+        if fltr_args['use_gmt']: fltr_args['use_gmt'] = True if wg['gc']['GMT'] is not None else False
+        print(fltr_args)
         try:
-            gdal_smooth(dem, 'tmp_s.tif', fltr = wg['fltr'], bathy_only = True, use_gmt = True if wg['gc']['GMT'] is not None else False)
+            gdal_smooth(dem, 'tmp_s.tif', **fltr_args)
+            #gdal_smooth(dem, 'tmp_s.tif', fltr = wg['fltr'], split_value = 0, use_gmt = True if wg['gc']['GMT'] is not None else False)
             os.rename('tmp_s.tif', dem)
         except TypeError as e: echo_error_msg('{}'.format(e))
         
@@ -1640,6 +1661,8 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     gdal_set_epsg(dem, wg['epsg'])
     waffles_gdal_md(wg)
+
+    return(dem)
         
 ## ==============================================
 ## waffles cli
@@ -1660,9 +1683,11 @@ General Options:
   -P, --epsg\t\tHorizontal projection of data as EPSG code [4326]
   -X, --extend\t\tNumber of cells with which to EXTEND the REGION.
 \t\t\tappend :<num> to extend the processing region: -X6:12
-  -T, --filter\t\tFILTER the output (bathymetry-only) using a Cosine Arch Filter at -T<dist(km)> search distance.
-\t\t\tIf GMT is not available, will perform a Gaussian Blur at -T<factor>. 
-  -C, --clip\t\tCLIP the output to the clip polygon. [clip_ply.shp:invert=False]
+  -T, --filter\t\tFILTER the output using a Cosine Arch Filter at -T<dist(km)> search distance.
+\t\t\tIf GMT is not available, or if :use_gmt=False, will perform a Gaussian filter at -T<factor>. 
+\t\t\tAppend :split_value=<num> to only filter values below <num>.
+\t\t\te.g. -T10:split_value=0:use_gmt=False to smooth bathymetry using Gaussian filter
+  -C, --clip\t\tCLIP the output to the clip polygon -C<clip_ply.shp:invert=False>
 
   -p, --prefix\t\tSet BASENAME to PREFIX (append inc/region/year info to output BASENAME).
   -r, --grid-node\tuse grid-node registration, default is pixel-node
@@ -1708,9 +1733,9 @@ def waffles_cli(argv = sys.argv):
             i += 1
         elif arg[:2] == '-F': wg['fmt'] = arg[2:]
         elif arg == '--filter' or arg == '-T':
-            wg['fltr'] = gmt_inc2inc(argv[i + 1])
+            wg['fltr'] = argv[i + 1]#gmt_inc2inc(argv[i + 1])
             i += 1
-        elif arg[:2] == '-T': wg['fltr'] = gmt_inc2inc(arg[2:])
+        elif arg[:2] == '-T': wg['fltr'] = arg[2:]#gmt_inc2inc(arg[2:])
         elif arg == '--extend' or arg == '-X':
             try:
                 wg['extend'] = int(argv[i + 1])
@@ -1788,8 +1813,8 @@ def waffles_cli(argv = sys.argv):
     for this_region in these_regions:
         wg['region'] = this_region
         if want_prefix: wg['name'] = '{}{}_{}_{}'.format(bn, inc2str_inc(wg['inc']), region_format(wg['region'], 'fn'), this_year())    
-        echo_msg(wg)
-        waffles_run(wg)
+        echo_msg(json.dumps(wg, indent=4))
+        dem = waffles_run(wg)
 
     ## ==============================================
     ## cleanup waffles detritus
@@ -1859,26 +1884,20 @@ def datalists_cli(argv = sys.argv):
     ## ==============================================
     ## recurse the datalist
     ## ==============================================
-    master = '.geomods-master.datalist'
-    with open(master, 'w') as md:
-        for dl in dls:
-            if os.path.exists(dl):
-                if len(dl.split(':')) == 1:
-                    for key in _known_datalist_fmts.keys():
-                        if dl.split(':')[0].split('.')[-1] in _known_datalist_fmts[key]:
-                            md.write('{} {} 1\n'.format(dl, key))
-    try:
-        #if want_infos:
-        #    print(datalist_inf(dl))
-        #else:
-        datalist(master, verbose = want_verbose)
-    except IndexError:
-        echo_error_msg('bad datalist file...')
-    except KeyboardInterrupt as e:
-        echo_error_msg('user killed process')
+    master = datalist_master(dls)
+    if master is not None:
+        try:
+            #if want_infos:
+            #    print(datalist_inf(dl))
+            #else:
+            datalist(master, verbose = want_verbose)
+        except IndexError:
+            echo_error_msg('bad datalist file...')
+        except KeyboardInterrupt as e:
+            echo_error_msg('user killed process')
+            remove_glob(master)
+            sys.exit(-1)
         remove_glob(master)
-        sys.exit(-1)
-    remove_glob(master)
 
 ## ==============================================
 ## mainline -- run waffles directly...
