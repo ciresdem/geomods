@@ -532,10 +532,10 @@ def gdal_clip(src_gdal, src_ply = None, invert = False):
 
 def np_split(src_arr, sv = 0, nd = -9999):
     '''split numpy `src_arr` by `sv` (turn u/l into `nd`)'''
-    u_arr = src_arr
-    l_arr = src_arr
+    u_arr = np.array(src_arr)
+    l_arr = np.array(src_arr)
     u_arr[u_arr <= sv] = nd
-    l_arr[l_arr <= sv] = nd
+    l_arr[l_arr >= sv] = nd
     return(u_arr, l_arr)
     
 def gdal_split(src_gdal, split_value = 0):
@@ -835,13 +835,23 @@ def np_gaussian_blur(in_array, size):
     #out_array = convolve(padded_array, g, mode = 'valid')
     return(out_array)
 
-def gdal_blur(ds, dst_gdal, sf = 1):
-    '''gaussian blur on ds array'''
-    ds_config = gdal_gather_infos(ds)
-    ds_array = ds.GetRasterBand(1).ReadAsArray(0, 0, ds_config['nx'], ds_config['ny'])
-    ds_array[ds_array == ds_config['ndv']] = 0
-    smooth_array = np_gaussian_blur(ds_array, int(sf))
-    return(gdal_write(smooth_array, dst_gdal, ds_config))
+def gdal_blur(src_gdal, dst_gdal, sf = 1):
+    '''gaussian blur on src_gdal'''
+    ds = gdal.Open(src_gdal)
+    if ds is not None:
+        ds_config = gdal_gather_infos(ds)
+        ds_array = ds.GetRasterBand(1).ReadAsArray(0, 0, ds_config['nx'], ds_config['ny'])
+        msk_array = np.array(ds_array)
+        msk_array[msk_array != ds_config['ndv']] = 1
+        msk_array[msk_array == ds_config['ndv']] = np.nan
+        ds_array[ds_array == ds_config['ndv']] = 0
+        smooth_array = np_gaussian_blur(ds_array, int(sf))
+        smooth_array = smooth_array * msk_array
+        mask_array = ds_array = None
+        smooth_array[np.isnan(smooth_array)] = ds_config['ndv']
+        ds = None
+        return(gdal_write(smooth_array, dst_gdal, ds_config))
+    else: return([], -1)
 
 def gdal_polygonize(src_gdal, dst_layer):
     '''run gdal.Polygonize on src_ds and add polygon to dst_layer'''
@@ -1305,11 +1315,12 @@ def waffles_gmt_triangulate(wg = _waffles_grid_info):
     '.format(waffles_proc_str(wg), wg['inc'], waffles_gmt_reg_str(wg), waffles_proc_str(wg), wg['inc'], wg['name'], waffles_gmt_reg_str(wg)))
     return(run_cmd(dem_tri_cmd, verbose = True, data_fun = waffles_dl_func(wg)))
 
-def waffles_gmt_nearneighbor(wg = _waffles_grid_info, radius = '6s'):
+def waffles_gmt_nearneighbor(wg = _waffles_grid_info, radius = None):
     '''genearte a DEM with GMT nearneighbor'''
     if wg['gc']['GMT'] is None:
         echo_error_msg('GMT must be installed to use the NEARNEIGHBOR module')
         return(None, -1)
+    if radius is None: radius = wg['inc'] * 2
     dem_nn_cmd = ('gmt blockmean {} -I{:.10f} -Wi -V {} | gmt nearneighbor {} -I{:.10f} -S{} -V -G{}.tif=gd+n-9999:GTiff {}\
     '.format(waffles_proc_str(wg), wg['inc'], waffles_gmt_reg_str(wg), waffles_proc_str(wg), wg['inc'], radius, wg['name'], waffles_gmt_reg_str(wg)))
     return(run_cmd(dem_nn_cmd, verbose = True, data_fun = waffles_dl_func(wg)))
@@ -1385,6 +1396,41 @@ def waffles_gdal_md(wg):
         ds.SetMetadata(md)
         ds = None
     else: echo_error_msg('failed to set metadata')
+
+def waffles_smooth_dem(wg, bathy_only = True):
+    dem = '{}.tif'.format(wg['name'])
+    if os.path.exists(dem):
+        if bathy_only:
+            dem_u, dem_l = gdal_split(dem)
+        else: dem_l = dem
+        if wg['gc']['GMT'] is not None:
+            out, status = gmt_grdfilter(dem_l, 'tmp_fltr.tif=gd+n-9999:GTiff', dist = wg['fltr'], verbose = True)
+        else: out, status = gdal_blur(dem_l, 'tmp_fltr.tif', wg['fltr'])
+        if bathy_only:
+            u_ds = gdal.Open(dem_u)
+            if u_ds is not None:
+                u_config = gdal_gather_infos(u_ds)
+                l_ds = gdal.Open('tmp_fltr.tif')
+                if l_ds is not None:
+                    l_config = gdal_gather_infos(l_ds)
+
+                    u_arr = u_ds.GetRasterBand(1).ReadAsArray()
+                    l_arr = l_ds.GetRasterBand(1).ReadAsArray()
+
+                    u_arr[u_arr == u_config['ndv']] = 0
+                    l_arr[l_arr == l_config['ndv']] = 0
+
+                    ds_arr = u_arr + l_arr
+
+                    gdal_write(ds_arr, 'merged.tif', l_config)
+                    l_ds = None
+                u_ds = None
+
+            remove_glob(dem_l)
+            remove_glob(dem_u)
+            remove_glob('tmp_fltr.tif')
+            os.rename('merged.tif', dem)
+        else: os.rename('tmp_fltr.tif', dem)
     
 def waffles_run(wg = _waffles_grid_info):
     '''generate a DEM using wg dict settings'''
@@ -1405,26 +1451,25 @@ def waffles_run(wg = _waffles_grid_info):
         echo_error_msg('killed by user, {}'.format(e))
         sys.exit(-1)
 
+    waffles_gdal_md(wg)
+        
     if wg['mod'] == 'spatial-metadata': sys.exit(0)
     ## ==============================================
-    ## optionally filter the DEM
+    ## cut dem to final size - region buffered by (inc * extend)
+    ## ==============================================
+    ds = gdal.Open(dem)
+    if ds is not None:
+        out = gdal_cut(ds, gdal_srcwin(ds, waffles_dist_region(wg)), 'tmp_cut.tif')
+        ds = None
+        if out is not None: os.rename('tmp_cut.tif', dem)
+            
+    ## ==============================================
+    ## optionally filter the DEM batymetry (sub-zero)
     ## ==============================================
     if wg['fltr'] is not None:
         try:
-            fltr = wg['fltr']
-            #if wg['gc']['GMT'] is not None:
-            #    out, status = gmt_grdfilter(dem, 'tmp_fltr.tif=gd+n-9999:GTiff', dist = fltr, verbose = True)
-            #else:
-            ds = gdal.Open(dem)
-            out, status = gdal_blur(ds, 'tmp_fltr.tif', wg['fltr'])
-            ds = None
-            if status == 0: os.rename('tmp_fltr.tif', dem)
+            waffles_smooth_dem(wg)
         except TypeError as e: echo_error_msg('{}'.format(e))
-        
-    ## ==============================================
-    ## set the projection
-    ## ==============================================
-    gdal_set_epsg(dem, wg['epsg'])
         
     ## ==============================================
     ## optionally clip the DEM to polygon
@@ -1441,25 +1486,21 @@ def waffles_run(wg = _waffles_grid_info):
         gdal_clip(**clip_args)
         
     ## ==============================================
-    ## cut dem to final size - region buffered by (inc * extend)
-    ## ==============================================
-    ds = gdal.Open(dem)
-    if ds is not None:
-        out = gdal_cut(ds, gdal_srcwin(ds, waffles_dist_region(wg)), 'tmp_cut.tif')
-        ds = None
-        if out is not None: os.rename('tmp_cut.tif', dem)
-        
-    ## ==============================================
     ## convert to final format
     ## ==============================================
-    waffles_gdal_md(wg)
     if wg['fmt'] != 'GTiff':
         orig_dem = dem
         if wg['gc']['GMT'] is not None:
             dem = gmt_grd2gdal(dem, wg['fmt'])
         else: dem = gdal_gdal2gdal(dem, wg['fmt'])
         remove_glob(orig_dem)
-                
+
+    ## ==============================================
+    ## set the projection and other metadata
+    ## ==============================================
+    gdal_set_epsg(dem, wg['epsg'])
+    waffles_gdal_md(wg)
+        
 ## ==============================================
 ## waffles cli
 ## ==============================================

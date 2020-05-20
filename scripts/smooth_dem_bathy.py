@@ -56,6 +56,12 @@ def open_file_list(in_list, smooth_factor):
             proc_elev(line.strip(), smooth_factor)
     il.close()
 
+def yield_file_list(in_list):
+    with open(in_list, 'r') as iob:
+        for line in iob:
+            if line[0] != '#' and line[0] != '\n':
+                yield(line)
+    
 def gaussian_blur(in_array, size):
     '''blur an array'''
     
@@ -169,6 +175,11 @@ def proc_elev(elev, smooth_factor):
         smoothed_array = None
         print "created Smoothed Geotiff"
 
+def smooth_bathy(src_gdal, smooth_factor):
+    # gdal-split by 0
+    # smooth lower
+    # merge back with upper
+        
 if __name__ == '__main__':
     
     elev = None
@@ -208,7 +219,9 @@ if __name__ == '__main__':
         print(_usage)
         sys.exit(1)
 
-    if in_list: open_file_list(in_list, smooth_factor)
+    if in_list:
+        for lf in yield_file_list(in_list):
+            proc_elev(lf, smooth_factor)
     else: proc_elev(elev, smooth_factor)
 
 ### End
