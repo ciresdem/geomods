@@ -510,15 +510,19 @@ def gdal_write (src_arr, dst_gdal, ds_config, dst_fmt = 'GTiff'):
         return(dst_gdal, 0)
     else: return(None, -1)
 
-def gdal_cut(src_ds, srcwin, dst_fn):
+def gdal_cut(src_gdal, region, dst_fn):
     '''cut src_fn gdal file to srcwin and output dst_fn gdal file'''
-    ds_config = gdal_gather_infos(src_ds)
-    gt = ds_config['geoT']
-    ds_arr = src_ds.GetRasterBand(1).ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
-    dst_gt = (gt[0] + (srcwin[0] * gt[1]), gt[1], 0., gt[3] + (srcwin[1] * gt[5]), 0., gt[5])
-    ds_config = gdal_set_infos(srcwin[2], srcwin[3], srcwin[2] * srcwin[3], dst_gt, gdal_sr_wkt(4326), ds_config['dt'], ds_config['ndv'], ds_config['fmt'])
-    src_ds = None
-    return(gdal_write(ds_arr, dst_fn, ds_config))
+    src_ds = gdal.Open(src_gdal)
+    if src_ds is not None:
+        ds_config = gdal_gather_infos(src_ds)
+        srcwin = gdal_srcwin(src_ds, region)
+        gt = ds_config['geoT']
+        ds_arr = src_ds.GetRasterBand(1).ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
+        dst_gt = (gt[0] + (srcwin[0] * gt[1]), gt[1], 0., gt[3] + (srcwin[1] * gt[5]), 0., gt[5])
+        ds_config = gdal_set_infos(srcwin[2], srcwin[3], srcwin[2] * srcwin[3], dst_gt, gdal_sr_wkt(4326), ds_config['dt'], ds_config['ndv'], ds_config['fmt'])
+        src_ds = None
+        return(gdal_write(ds_arr, dst_fn, ds_config))
+    else: return(None, -1)
 
 def gdal_clip(src_gdal, src_ply = None, invert = False):
     '''clip dem to either a src_ply polygon or the gsshg via GMT. use 'src_ply = None' to use gsshg.'''
@@ -853,6 +857,37 @@ def gdal_blur(src_gdal, dst_gdal, sf = 1):
         return(gdal_write(smooth_array, dst_gdal, ds_config))
     else: return([], -1)
 
+def gdal_smooth(src_gdal, dst_gdal, fltr = 10, bathy_only = True, use_gmt = False):
+    '''smooth `src_gdal` using smoothing factor `fltr`; optionally
+    only smooth bathymetry (sub-zero)'''
+    if os.path.exists(src_gdal):
+        if bathy_only:
+            dem_u, dem_l = gdal_split(src_gdal)
+        else: dem_l = src_gdal
+        if use_gmt:
+            out, status = gmt_grdfilter(dem_l, 'tmp_fltr.tif=gd+n-9999:GTiff', dist = fltr, verbose = True)
+        out, status = gdal_blur(dem_l, 'tmp_fltr.tif', fltr)
+        if bathy_only:
+            u_ds = gdal.Open(dem_u)
+            if u_ds is not None:
+                u_config = gdal_gather_infos(u_ds)
+                l_ds = gdal.Open('tmp_fltr.tif')
+                if l_ds is not None:
+                    l_config = gdal_gather_infos(l_ds)
+                    u_arr = u_ds.GetRasterBand(1).ReadAsArray()
+                    l_arr = l_ds.GetRasterBand(1).ReadAsArray()
+                    u_arr[u_arr == u_config['ndv']] = 0
+                    l_arr[l_arr == l_config['ndv']] = 0
+                    ds_arr = u_arr + l_arr
+                    gdal_write(ds_arr, 'merged.tif', l_config)
+                    l_ds = None
+                    remove_glob(dem_l)
+                u_ds = None
+                remove_glob(dem_u)
+            remove_glob('tmp_fltr.tif')
+            os.rename('merged.tif', dst_gdal)
+        else: os.rename('tmp_fltr.tif', dst_gdal)
+    
 def gdal_polygonize(src_gdal, dst_layer):
     '''run gdal.Polygonize on src_ds and add polygon to dst_layer'''
     ds = gdal.Open('{}'.format(src_gdal))
@@ -1396,42 +1431,7 @@ def waffles_gdal_md(wg):
         ds.SetMetadata(md)
         ds = None
     else: echo_error_msg('failed to set metadata')
-
-def waffles_smooth_dem(wg, bathy_only = True):
-    dem = '{}.tif'.format(wg['name'])
-    if os.path.exists(dem):
-        if bathy_only:
-            dem_u, dem_l = gdal_split(dem)
-        else: dem_l = dem
-        if wg['gc']['GMT'] is not None:
-            out, status = gmt_grdfilter(dem_l, 'tmp_fltr.tif=gd+n-9999:GTiff', dist = wg['fltr'], verbose = True)
-        else: out, status = gdal_blur(dem_l, 'tmp_fltr.tif', wg['fltr'])
-        if bathy_only:
-            u_ds = gdal.Open(dem_u)
-            if u_ds is not None:
-                u_config = gdal_gather_infos(u_ds)
-                l_ds = gdal.Open('tmp_fltr.tif')
-                if l_ds is not None:
-                    l_config = gdal_gather_infos(l_ds)
-
-                    u_arr = u_ds.GetRasterBand(1).ReadAsArray()
-                    l_arr = l_ds.GetRasterBand(1).ReadAsArray()
-
-                    u_arr[u_arr == u_config['ndv']] = 0
-                    l_arr[l_arr == l_config['ndv']] = 0
-
-                    ds_arr = u_arr + l_arr
-
-                    gdal_write(ds_arr, 'merged.tif', l_config)
-                    l_ds = None
-                u_ds = None
-
-            remove_glob(dem_l)
-            remove_glob(dem_u)
-            remove_glob('tmp_fltr.tif')
-            os.rename('merged.tif', dem)
-        else: os.rename('tmp_fltr.tif', dem)
-    
+        
 def waffles_run(wg = _waffles_grid_info):
     '''generate a DEM using wg dict settings'''
     dem = '{}.tif'.format(wg['name'])
@@ -1457,18 +1457,20 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     ## cut dem to final size - region buffered by (inc * extend)
     ## ==============================================
-    ds = gdal.Open(dem)
-    if ds is not None:
-        out = gdal_cut(ds, gdal_srcwin(ds, waffles_dist_region(wg)), 'tmp_cut.tif')
-        ds = None
+    try:
+        out = gdal_cut(dem, waffles_dist_region(wg), 'tmp_cut.tif')
         if out is not None: os.rename('tmp_cut.tif', dem)
+    except OSError as e:
+        remove_glob('tmp_cut.tif')
+        echo_error_msg('cut failed, is the dem open somewhere, {}'.format(e))
             
     ## ==============================================
     ## optionally filter the DEM batymetry (sub-zero)
     ## ==============================================
     if wg['fltr'] is not None:
         try:
-            waffles_smooth_dem(wg)
+            gdal_smooth(dem, 'tmp_s.tif', fltr = wg['fltr'], bathy_only = True, use_gmt = True if wg['gc']['GMT'] is not None else False)
+            os.rename('tmp_s.tif', dem)
         except TypeError as e: echo_error_msg('{}'.format(e))
         
     ## ==============================================
@@ -1520,7 +1522,7 @@ General Options:
   -P, --epsg\t\tHorizontal projection of data as EPSG code [4326]
   -X, --extend\t\tNumber of cells with which to EXTEND the REGION.
 \t\t\tappend :<num> to extend the processing region: -X6:12
-  -T, --filter\t\tFILTER the output using a Cosine Arch Filter at -T<dist(km)> search distance.
+  -T, --filter\t\tFILTER the output (bathymetry-only) using a Cosine Arch Filter at -T<dist(km)> search distance.
 \t\t\tIf GMT is not available, will perform a Gaussian Blur at -T<factor>. 
   -C, --clip\t\tCLIP the output to the clip polygon. [clip_ply.shp:invert=False]
 
