@@ -72,7 +72,13 @@ Examples:
    % waffles -R tiles.shp -E .00000925925 input_data.datalist --verbose -M spatial-metadata
 
  - generate a vertical datum conversion grid:
-   % waffles -R -90/-89/29/30 -E 0.00083333 -M vdatum:navd88:mhw
+   % waffles -R -90/-89/29/30 -E 0.00083333 -M vdatum:ivert=navd88:o_vert=mhw
+
+ - generate a 'bathymetry surface' DEM:
+   % waffles -R region.shp -E 1s -M surface:upper_limit=0 -C coast_ply.shp
+
+ - generate a nearest-neighbor DEM using all the .tif grid files in the current directory:
+   % waffles -R region.shp -E1s -Mnearneighbor:radius=3s *.tif
 
  - split grid file tmp.tif into chunks of 1000x1000 cells:
    % gdal_chunk.py tmp.tif -c 1000

@@ -121,6 +121,13 @@ def remove_glob(glob_str):
         except: pass
     return(0)
 
+def args2dict(args, dict_args = {}):
+    '''args are a list of [key=val] pairs'''
+    for arg in args:
+        p_arg = arg.split('=')
+        dict_args[p_arg[0]] = False if p_arg[1].lower() == 'false' else True if p_arg[1].lower() == 'true' else None if p_arg[1].lower() == 'none' else p_arg[1]
+    return(dict_args)
+
 ## ==============================================
 ## system cmd verification and configs.
 ## ==============================================
@@ -1612,7 +1619,7 @@ def waffles_run(wg = _waffles_grid_info):
     except OSError as e:
         remove_glob('tmp_cut.tif')
         echo_error_msg('cut failed, is the dem open somewhere, {}'.format(e))
-            
+        
     ## ==============================================
     ## optionally filter the DEM 
     ## ==============================================
@@ -1621,14 +1628,10 @@ def waffles_run(wg = _waffles_grid_info):
         fltr = wg['fltr'].split(':')
         fltr_args['fltr'] = fltr[0]
         fltr_args['use_gmt'] = True
-        for arg in fltr[1:]:
-            p_arg = arg.split('=')
-            fltr_args[p_arg[0]] = False if p_arg[1].lower() == 'false' else True
+        fltr_args = args2dict(fltr[1:], fltr_args)        
         if fltr_args['use_gmt']: fltr_args['use_gmt'] = True if wg['gc']['GMT'] is not None else False
-        print(fltr_args)
         try:
             gdal_smooth(dem, 'tmp_s.tif', **fltr_args)
-            #gdal_smooth(dem, 'tmp_s.tif', fltr = wg['fltr'], split_value = 0, use_gmt = True if wg['gc']['GMT'] is not None else False)
             os.rename('tmp_s.tif', dem)
         except TypeError as e: echo_error_msg('{}'.format(e))
         
@@ -1638,13 +1641,9 @@ def waffles_run(wg = _waffles_grid_info):
     if wg['clip'] is not None:
         clip_args = {}
         cp = wg['clip'].split(':')
-        clip_args['src_gdal'] = dem
         clip_args['src_ply'] = cp[0]
-        cargs = cp[1:]
-        for arg in cargs:
-            p_arg = arg.split('=')
-            clip_args[p_arg[0]] = p_arg[1]
-        gdal_clip(**clip_args)
+        clip_args = args2dict(cp[1:])
+        gdal_clip(dem, **clip_args)
         
     ## ==============================================
     ## convert to final format
