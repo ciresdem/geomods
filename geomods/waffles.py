@@ -65,12 +65,12 @@
 ##
 ### TODO:
 ## Add uncertainty functions and modules
-## Add mbgrid module
 ## Add gdal modules
 ## Add remove/replace module
 ## Add source uncertainty to uncertainty module
 ## Add LAS/LAZ support to datalits
 ## Merge with fetch and allow for http datatype in datalists?
+## datalists generation...
 ##
 ### Code:
 import sys
@@ -525,7 +525,7 @@ def run_mbgrid(datalist, region, inc, dst_name, dist = '10/3', tension = 35, ext
 
     if len(dist.split('/')) == 1: dist = dist + '/2'
     mbgrid_cmd = ('mbgrid -I{} {} -E{:.10f}/{:.10f}/degrees! -O{} -A2 -G100 -F1 -N -C{} -S0 -X0.1 -T{} {} > mb_proc.txt \
-    '.format(datalist._path, region_format(region, 'gmt'), inc, inc, dst_name, dist, tension, e_switch))
+    '.format(datalist, region_format(region, 'gmt'), inc, inc, dst_name, dist, tension, e_switch))
     return(run_cmd(mbgrid_cmd, verbose = verbose))
 
 ## ==============================================
@@ -1474,12 +1474,7 @@ waffles_proc_str = lambda wg: region_format(waffles_proc_region(wg), 'gmt')
 waffles_dl_func = lambda wg: lambda p: datalist_dump(wg, dst_port = p, region = waffles_proc_region(wg), verbose = True)
 waffles_gmt_reg_str = lambda wg: '-r' if wg['node'] == 'pixel' else ''
 
-## ==============================================
-## run mbgrid on the datalist and generate the DEM
-## note: mbgrid will cause popen to hang if stdout 
-## is not cleared...should add output file to send to...
-## ==============================================
-def waffles_mbgrid(dist = '10/3', tension = 35, want_datalists = False):
+def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, want_datalists = False):
     '''Generate a DEM with MBSystem's mbgrid program.'''
     import shutil
     if wg['gc']['MBGRID'] is None:
@@ -1492,10 +1487,14 @@ def waffles_mbgrid(dist = '10/3', tension = 35, want_datalists = False):
     if want_datalists:
         datalist_archive(dirname = '.mb_tmp_datalist')
         wg['datalist'] = datalist_master('.mb_tmp_datalist/archive.datalist')
-        
-    out, self.status = run_mbgrid(wg['datalist'], waffles_proc_str(wg), wg['inc'], wg['name'], dist = dist, tension = tension, verbose = True)
+
+    out, status = run_mbgrid(wg['datalist'], waffles_dist_region(wg), wg['inc'], wg['name'], dist = dist, tension = tension, verbose = True)
     remove_glob('*.cmd')
+    gmt_grd2gdal('{}.grd'.format(wg['name']))
+    if wg['node'] == 'pixel': gmt_sample_gnr('{}.tif'.format(wg['name']), verbose = True)
+    remove_glob('{}.grd'.format(wg['name']))
     if want_datalists: shutil.rmtree('.mb_tmp_datalist')
+    return(0, 0)
 
 def waffles_gmt_surface(wg = _waffles_grid_info, tension = .35, relaxation = 1.2, lower_limit = 'd', upper_limit = 'd'):
     '''generate a DEM with GMT surface'''
@@ -1637,12 +1636,12 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     ## gererate the DEM
     ## ==============================================
-    try:
-        out, status = _waffles_modules[wg['mod']][0](args_d)
-    except TypeError as e: echo_error_msg('{}'.format(e))
-    except KeyboardInterrupt as e:
-        echo_error_msg('killed by user, {}'.format(e))
-        sys.exit(-1)
+    #try:
+    out, status = _waffles_modules[wg['mod']][0](args_d)
+    #except TypeError as e: echo_error_msg('{}'.format(e))
+    #except KeyboardInterrupt as e:
+    #    echo_error_msg('killed by user, {}'.format(e))
+    #    sys.exit(-1)
 
     waffles_gdal_md(wg)
         
