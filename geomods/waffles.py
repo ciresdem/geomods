@@ -274,6 +274,59 @@ def region_format(region, t = 'gmt'):
         else: ew = 'w'
         return('{}{:02d}x{:02d}_{}{:03d}x{:02d}'.format(ns, abs(int(region[3])), abs(int(region[3] * 100) % 100), 
                                                         ew, abs(int(region[0])), abs(int(region[0] * 100) % 100)))
+
+## =============================================================================
+##
+## VDatum - vdatumfun.py
+## wrapper functions for NOAA's VDatum
+##
+## Currently only compatible with VDatum > 4.0
+##
+## =============================================================================
+
+_vd_config = {
+    'jar': None,
+    'ivert': 'navd88:m:height',
+    'overt': 'mhw:m:height',
+    'ihorz': 'NAD83_2011',
+    'ohorz': 'NAD83_2011',
+    'region': '3',
+    'fmt': 'txt',
+    'delim': 'space',
+    'result_dir': 'result',
+}
+
+def vdatum_locate_jar():
+    '''Find the VDatum executable on the system and return a list of found vdatum.jar paths'''
+    results = []
+    for root, dirs, files in os.walk('/'):
+        if 'vdatum.jar' in files:
+            results.append(os.path.abspath(os.path.join(root, 'vdatum.jar')))
+            break
+    if len(results) == 0:
+        return(None)
+    else: return(results)
+
+def vdatum_get_version(vd_config = _vd_config):
+    if vd_config['jar'] is None:
+        vd_config['jar'] = vdatum_locate_jar()
+    if vd_config['jar'] is not None:
+        out, status = run_cmd('java -jar {} {}'.format(vd_config['jar'], '-'), verbose = self.verbose)
+        for i in out.decode('utf-8').split('\n'):
+            if '- v' in i.strip():
+                return(i.strip().split('v')[-1])
+    return(None)
+    
+def run_vdatum(src_fn, vd_config = _vd_config):
+    '''Run vdatum on src_fn which is an XYZ file'''
+    if vd_config['jar'] is None:
+        vd_config['jar'] = vdatum_locate_jar()[0]
+    if vd_config['jar'] is not None:
+        vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},0,1,2:{}:{} region:{}\
+        '.format(vd_config['ihorz'], vd_config['ivert'], vd_config['ohorz'], vd_config['overt'], vd_config['delim'], src_fn, vd_config['result_dir'], vd_config['region'])
+        #out, status = run_cmd('java -Djava.awt.headless=true -jar {} {}'.format(self.vdatum_path, vdc), self.verbose, True)
+        return(run_cmd('java -jar {} {}'.format(vd_config['jar'], vdc), verbose = True))
+    else: return([], -1)
     
 ## ==============================================
 ## GMT Wrapper Functions - gmtfun.py
@@ -510,6 +563,14 @@ def gdal_write (src_arr, dst_gdal, ds_config, dst_fmt = 'GTiff'):
         return(dst_gdal, 0)
     else: return(None, -1)
 
+def gdal_null(dst_fn, region, inc, nodata = -9999, outformat = 'GTiff'):
+    '''generate a `null` grid with gdal'''
+    xcount, ycount, dst_gt = gdal_region2gt(region, inc)
+    null_array = np.zeros((ycount, xcount))
+    null_array[null_array == 0] = nodata
+    ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(4326), gdal.GDT_Float32, -9999, outformat)
+    return(gdal_write(null_array, dst_fn, ds_config))
+    
 def gdal_cut(src_gdal, region, dst_fn):
     '''cut src_fn gdal file to srcwin and output dst_fn gdal file'''
     src_ds = gdal.Open(src_gdal)
@@ -1141,8 +1202,8 @@ def xyz_inf(src_xyz):
             elif l[0] > minmax[1]: minmax[1] = l[0]
             if l[1] < minmax[2]: minmax[2] = l[1]
             elif l[1] > minmax[3]: minmax[3] = l[1]
-            if l[1] < minmax[2]: minmax[4] = l[2]
-            elif l[1] > minmax[3]: minmax[5] = l[2]
+            if l[2] < minmax[4]: minmax[4] = l[2]
+            elif l[2] > minmax[5]: minmax[5] = l[2]
     with open('{}.inf'.format(src_xyz.name), 'w') as inf:
         inf.write('{}\n'.format(' '.join([str(x) for x in minmax])))
     return(minmax)
@@ -1207,11 +1268,38 @@ def inf_datalist(e):
         with open('{}.inf'.format(e[0]), 'w') as inf:
             inf.write('{}\n'.format(' '.join([str(x) for x in minmax])))
 
-def datalist_append(entry, datalist):
+def archive_entry(entry, a_name, dirname = 'archive', region = None, delimiter = ' ', verbose = None):
+    '''archive a datalist entry.
+    a datalist entry is [path, format, weight, ...]'''
+    i_dir = os.path.dirname(entry[0])
+    i_xyz = os.path.basename(entry[0]).split('.')[0]
+    a_dir = os.path.join(dirname, a_name, 'data', entry[-1])
+    a_xyz_dir = os.path.join(a_dir, 'xyz')
+    a_xyz = os.path.join(a_xyz_dir, i_xyz + '.xyz')
+    if not os.path.exists(a_dir): os.makedirs(a_dir)
+    if not os.path.exists(a_xyz_dir): os.makedirs(a_xyz_dir)
+    with open(a_xyz, 'w') as fob:
+        dump_entry(entry, dst_port = fob, region = region, delimiter = delimiter, verbose = verbose)
+    d = datalist(os.path.join(a_dir, entry[-1] + '.datalist'))
+    d._append_entry([os.path.join('xyz', i_xyz + '.xyz') if x[0] == 0 else 168 if x[0] == 1 else x[1] for x in enumerate(entry[:-1])])
+    generate_inf(a_xyz, 168)
+            
+def datalist_append_entry(entry, datalist):
     '''append entry to datalist'''
     with open(datalist, 'a') as outfile:
         outfile.write('{}\n'.format(' '.join([str(x) for x in entry])))
-            
+
+def datalist_archive(dl, arch_dir = 'archive', region = None, verbose = False):
+    '''dump the data from datalist to dst_port'''
+    if region is not None:
+        #_datalist_pass_hooks[-1] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+        _datalist_pass_hooks[168] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+        _datalist_pass_hooks[200] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+    _datalist_hooks[-1] = lambda e, v: datalist(e[0], verbose = v)
+    _datalist_hooks[168] = lambda e, v: archive_entry(e, region = region, dst_port = dst_port, verbose = v)
+    _datalist_hooks[200] = lambda e, v: archive_entry(e, region = region, dst_port = dst_port, verbose = v)
+    datalist(dl, verbose = verbose)
+        
 def datalist_dump(dl, dst_port = sys.stdout, region = None, verbose = False):
     '''dump the data from datalist to dst_port'''
     if region is not None:
@@ -1231,6 +1319,23 @@ def datalist_echo(entry):
 def datafile_echo(entry):
     '''echo datafile entry'''
     sys.stderr.write('{}\n'.format([str(x) for x in entry]))
+
+def datalist_master(dls):
+    '''set the master datalist'''
+    master = '.master.datalist'
+    with open(master, 'w') as md:        
+        for dl in dls:
+            if os.path.exists(dl):
+                if len(dl.split(':')) == 1:
+                    for key in _known_datalist_fmts.keys():
+                        if dl.split(':')[0].split('.')[-1] in _known_datalist_fmts[key]:
+                            md.write('{} {} 1\n'.format(dl, key))
+    if os.stat(master).st_size == 0:
+        remove_glob('.master.datalist')
+        echo_error_msg('bad datalist/entry, {}'.format(dls))
+        return(None)
+    
+    return(master)
     
 def entry2py(dle):
     '''convert a datalist entry to python'''
@@ -1312,20 +1417,25 @@ _waffles_grid_info = {
 }
 _waffles_modules = {
     'surface': [lambda args: waffles_gmt_surface(**args), '''SPLINE DEM via GMT surface
-    \t\t\t< surface:tension=.35:relaxation=1.2:lower_limit=d:upper_limit=d >
-    \t\t\t:tension=[0-1] - Spline tension.'''],
+    \t\t\t  < surface:tension=.35:relaxation=1.2:lower_limit=d:upper_limit=d >
+    \t\t\t  :tension=[0-1] - Spline tension.'''],
     'triangulate': [lambda args: waffles_gmt_triangulate(**args), '''TRIANGULATION DEM via GMT triangulate'''],
     'nearneighbor': [lambda args: waffles_gmt_nearneighbor(**args), '''NEAREST NEIGHBOR DEM via GMT nearneighbor
-    \t\t\t< nearneighbor:radius=6s >
-    \t\t\t:radius=[value] - Nearest Neighbor search radius'''],
+    \t\t\t  < nearneighbor:radius=6s >
+    \t\t\t  :radius=[value] - Nearest Neighbor search radius'''],
     'num': [lambda args: waffles_num(**args), '''Uninterpolated DEM populated by mode.
-    \t\t\t< num:mode=n >
-    \t\t\t:mode=[key] - specify mode of grid population: k (mask), m (mean) or n (num)'''],
+    \t\t\t  < num:mode=n >
+    \t\t\t  :mode=[key] - specify mode of grid population: k (mask), m (mean) or n (num)'''],
     'spatial-metadata': [lambda args: waffles_spatial_metadata(**args), '''Datalist SPATIAL METADATA <beta>
-    \t\t\t< spatial-metadata:inc=None >
-    \t\t\t:inc=[increment] - Spatial metadata resolution [default uses -E value]'''],
+    \t\t\t  < spatial-metadata:inc=None >
+    \t\t\t  :inc=[increment] - Spatial metadata resolution [default uses -E value]'''],
+    'vdatum': [lambda args: waffles_vdatum(**args), '''VDATUM transformation grid
+    \t\t\t  < vdatum:ivert=navd88:overt=mhw:region=3 >
+    \t\t\t  :ivert=[vdatum] - Input VDatum vertical datum.
+    \t\t\t  :overt=[vdatum] - Output VDatum vertical datum.
+    \t\t\t  :region=[0-10] - VDatum region (3 is CONUS)'''],
 }
-waffles_module_desc = lambda x: '\n  '.join(['{:18}{}'.format(key, x[key][-1]) for key in x])
+waffles_module_desc = lambda x: '\n  '.join(['{:22}{}'.format(key, x[key][-1]) for key in x])
 waffles_proc_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * 10) + (wg['inc'] * wg['extend']))
 waffles_dist_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * wg['extend']))
 waffles_proc_str = lambda wg: region_format(waffles_proc_region(wg), 'gmt')
@@ -1412,6 +1522,34 @@ def waffles_spatial_metadata(wg):
             remove_glob('{}'.format(ng))
         ds = None
     return(dst_vector, 0)
+
+def waffles_vdatum(wg = _waffles_grid_info, ivert = 'navd88', overt = 'mhw', region = '3'):
+    vc = _vd_config
+    vc['ivert'] = ivert
+    vc['overt'] = overt
+    vc['region'] = region
+
+    gdal_null('empty.tif', waffles_proc_region(wg), 0.00083333, nodata = 0)
+    with open('empty.xyz', 'w') as mt_xyz:
+        gdal_dump_entry(['empty.tif', 200, 1], dst_port = mt_xyz)
+    
+    run_vdatum('empty.xyz', vc)
+    
+    if os.path.exists('result/empty.xyz') and os.stat('result/empty.xyz').st_size != 0:
+        with open('result/empty.xyz') as infile:
+            empty_infos = xyz_inf(infile)
+        print(empty_infos)
+
+        ll = 'd' if empty_infos[4] < 0 else '0'
+        lu = 'd' if empty_infos[5] > 0 else '0'
+        wg['datalist'] = datalist_master(['result/empty.xyz'])
+        out, status = waffles_gmt_surface(wg, tension = 0, upper_limit = lu, lower_limit = ll)
+        
+    remove_glob('empty.*')
+    remove_glob('result/*')
+    remove_glob('.master.datalist')
+    os.removedirs('result')
+    return(out, status)
 
 def waffles_wg_valid_p(wg = _waffles_grid_info):
     '''return True if wg appears valid'''
@@ -1605,29 +1743,6 @@ def waffles_cli(argv = sys.argv):
         else: dls.append(arg)
         i += 1
 
-    if len(dls) == 0:
-        sys.stderr.write(waffles_cli_usage)
-        echo_error_msg('''must specify a datalist/entry file''')
-        sys.exit(-1)
-
-    ## ==============================================
-    ## set the master datalist
-    ## ==============================================
-    master = '.master.datalist'
-    with open(master, 'w') as md:        
-        for dl in dls:
-            if os.path.exists(dl):
-                if len(dl.split(':')) == 1:
-                    for key in _known_datalist_fmts.keys():
-                        if dl.split(':')[0].split('.')[-1] in _known_datalist_fmts[key]:
-                            md.write('{} {} 1\n'.format(dl, key))
-    if os.stat(master).st_size == 0:
-        remove_glob('.master.datalist')
-        sys.stderr.write(waffles_cli_usage)
-        echo_error_msg('bad datalist/entry, {}'.format(dls))
-        sys.exit(-1)        
-    wg['datalist'] = master
-    
     ## ==============================================
     ## set the dem module
     ## ==============================================
@@ -1644,7 +1759,19 @@ def waffles_cli(argv = sys.argv):
         mod_args = tuple(mod_opts[mod])
         wg['mod'] = mod
         wg['mod_args'] = mod_args
-                        
+
+    if wg['mod'] != 'vdatum':
+        if len(dls) == 0:
+            sys.stderr.write(waffles_cli_usage)
+            echo_error_msg('''must specify a datalist/entry file''')
+            sys.exit(-1)
+            
+    ## ==============================================
+    ## set the master datalist
+    ## ==============================================
+    master = datalist_master(dls)
+    wg['datalist'] = master
+
     ## ==============================================
     ## reformat and set the region
     ## ==============================================
@@ -1667,7 +1794,9 @@ def waffles_cli(argv = sys.argv):
     ## ==============================================
     ## cleanup waffles detritus
     ## ==============================================
-    remove_glob(master)
+    try:
+        remove_glob(master)
+    except: pass
 
 ## ==============================================
 ## datalists cli
