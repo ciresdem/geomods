@@ -290,7 +290,6 @@ def region_format(region, t = 'gmt'):
 ## Currently only compatible with VDatum > 4.0
 ##
 ## =============================================================================
-
 _vd_config = {
     'jar': None,
     'ivert': 'navd88:m:height',
@@ -941,10 +940,8 @@ def gdal_smooth(src_gdal, dst_gdal, fltr = 10, split_value = None, use_gmt = Fal
             ds = None
             u_ds = gdal.Open(dem_u)
             if u_ds is not None:
-                #u_config = gdal_gather_infos(u_ds)
                 l_ds = gdal.Open('tmp_fltr.tif')
                 if l_ds is not None:
-                    #l_config = gdal_gather_infos(l_ds)
                     u_arr = u_ds.GetRasterBand(1).ReadAsArray()
                     l_arr = l_ds.GetRasterBand(1).ReadAsArray()
                     u_arr[u_arr == ds_config['ndv']] = 0
@@ -1329,7 +1326,7 @@ def datalist_archive(wg, arch_dir = 'archive', region = None, verbose = False):
     '''dump the data from datalist to dst_port'''
     dlh = datalist_hooks()
     if region is not None:
-        dlh['pass']-1] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+        dlh['pass'][-1] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
         dlh['pass'][168] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
         dlh['pass'][200] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     dlh['proc'][168] = lambda e, d, f, w, v: archive_entry(e, dirname = arch_dir, region = region, verbose = v)
@@ -1432,7 +1429,7 @@ def datalist(dl, dlh = _datalist_hooks, fmt = -1, wt = None, verbose = False):
                 echo_msg('{} {}'.format('scanning datalist' if this_entry[1] == -1 else 'using datafile', this_entry[0]))
             try:
                 dlh['proc'][this_entry[1]](this_entry, dlh, fmt, wt, verbose)
-             except KeyboardInterrupt as e:
+            except KeyboardInterrupt as e:
                 echo_error_msg('user break, {}'.format(e))
                 sys.exit(-1)
             except: pass
@@ -1459,7 +1456,7 @@ _waffles_grid_info = {
     'mod_args': (),
     'gc': config_check()
 }
-waffles_config = lambda: copy.deepcopy(_waffles_gird_info)
+waffles_config = lambda: copy.deepcopy(_waffles_grid_info)
 
 _waffles_modules = {
     'surface': [lambda args: waffles_gmt_surface(**args), '''SPLINE DEM via GMT surface
