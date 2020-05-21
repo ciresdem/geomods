@@ -39,7 +39,6 @@ import numpy as np
 import ogr
 import gdal
 
-import waffles
 #import procs
 
 try:
@@ -47,6 +46,85 @@ try:
 except: import queue as queue
 
 _version = '0.3.2'
+
+## =============================================================================
+## functions from waffles:
+## =============================================================================
+
+def region_format(region, t = 'gmt'):
+    '''format region to string'''
+    if t == 'str': return('/'.join([str(x) for x in region]))
+    elif t == 'gmt': return('-R' + '/'.join([str(x) for x in region]))
+    elif t == 'bbox': return(','.join([str(region[0]), str(region[2]), str(region[1]), str(region[3])]))
+    elif t == 'fn':
+        if region[3] < 0: ns = 's'
+        else: ns = 'n'
+        if region[0] > 0: ew = 'e'
+        else: ew = 'w'
+        return('{}{:02d}x{:02d}_{}{:03d}x{:02d}'.format(ns, abs(int(region[3])), abs(int(region[3] * 100) % 100), 
+                                                        ew, abs(int(region[0])), abs(int(region[0] * 100) % 100)))
+
+def region_valid_p(region):
+    '''return True if region appears valid'''
+    if region is not None:
+        if region[0] < region[1] and region[2] < region[3]: return(True)
+        else: return(False)
+    else: return(False)
+
+def region_pct(region, pctv):
+    '''return the pctv val of the region'''
+    ewp = (region[1] - region[0]) * (pctv * .01)
+    nsp = (region[3] - region[2]) * (pctv * .01)
+    return((ewp + nsp) / 2)
+
+def region_buffer(region, bv = 0, pct = False):
+    '''return the region buffered by bv'''
+    if pct: bv = region_pct(region, bv)
+    return([region[0] - bv, region[1] + bv, region[2] - bv, region[3] + bv])
+
+def gdal_ogr_regions(src_ds):
+    '''return the region(s) of the ogr dataset'''
+    these_regions = []
+    if os.path.exists(src_ds):
+        poly = ogr.Open(src_ds)
+        if poly is not None:
+            p_layer = poly.GetLayer(0)
+            for pf in p_layer:
+                pgeom = pf.GetGeometryRef()
+                these_regions.append(pgeom.GetEnvelope())
+        poly = None
+    return(these_regions)
+
+def gdal_fext(src_drv_name):
+    '''return the common file extention given a GDAL driver name'''
+    fexts = None
+    try:
+        drv = gdal.GetDriverByName(src_drv_name)
+        if drv.GetMetadataItem(gdal.DCAP_RASTER): fexts = drv.GetMetadataItem(gdal.DMD_EXTENSIONS)
+        if fexts is not None: return(fexts.split()[0])
+        else: return(None)
+    except:
+        if src_drv_name == 'GTiff': fext = 'tif'
+        elif src_drv_name == 'HFA': fext = 'img'
+        elif src_drv_name == 'GMT': fext = 'grd'
+        elif src_drv_name.lower() == 'netcdf': fext = 'nc'
+        else: fext = 'gdal'
+        return(fext)
+
+def echo_error_msg2(msg, prefix = 'waffles'):
+    '''echo error msg to stderr'''
+    sys.stderr.write('\x1b[2K\r')
+    sys.stderr.flush()
+    sys.stderr.write('{}: error, {}\n'.format(prefix, msg))
+
+def echo_msg2(msg, prefix = 'waffles'):
+    '''echo msg to stderr'''
+    sys.stderr.write('\x1b[2K\r')
+    sys.stderr.flush()
+    sys.stderr.write('{}: {}\n'.format(prefix, msg))
+
+echo_msg = lambda m: echo_msg2(m, prefix = os.path.basename(sys.argv[0]))
+echo_error_msg = lambda m: echo_error_msg2(m, prefix = os.path.basename(sys.argv[0]))
 
 ## =============================================================================
 ##
@@ -60,9 +138,6 @@ namespaces = {'gmd': 'http://www.isotc211.org/2005/gmd',
               'gmi': 'http://www.isotc211.org/2005/gmi', 
               'gco': 'http://www.isotc211.org/2005/gco',
               'gml': 'http://www.isotc211.org/2005/gml'}
-
-echo_msg = lambda m: waffles.echo_msg2(m, prefix = os.path.basename(sys.argv[0]))
-echo_error_msg = lambda m: waffles.echo_error_msg2(m, prefix = os.path.basename(sys.argv[0]))
 
 def fetch_queue(q, p = None):
     '''fetch queue `q` of fetch results'''
@@ -1091,7 +1166,7 @@ class tnm:
                         sbDTags.append(sbDTag)
 
         self.data = { 'datasets': sbDTags,
-                      'bbox': waffles.region_format(self.region, 'bbox') }
+                      'bbox': region_format(self.region, 'bbox') }
 
         if len(self._tnm_df) > 0:
             self.data['prodFormats'] = ','.join(self._tnm_df)
@@ -1153,7 +1228,7 @@ class mb:
         '''Run the MB (multibeam) fetching module.'''
         if self.region is None: return([])
         
-        self.data = { 'geometry': waffles.region_format(self.region, 'bbox') }
+        self.data = { 'geometry': region_format(self.region, 'bbox') }
         self._req = fetch_req(self._mb_search_url, params = self.data)
         if self._req is not None:
             survey_list = self._req.content.split('\n')[:-1]
@@ -1192,7 +1267,7 @@ class usace:
         if self.region is None:
             return([])
         
-        self.data = { 'geometry': waffles.region_format(self.region, 'bbox'),
+        self.data = { 'geometry': region_format(self.region, 'bbox'),
                       'inSR':4326,
                       'outSR':4326,
                       'f':'pjson' }
@@ -1250,7 +1325,7 @@ class gmrt:
                     opts[opt_kp[0]] = opt_kp[1]
 
                 url_region = [float(opts['west']), float(opts['east']), float(opts['south']), float(opts['north'])]
-                outf = 'gmrt_{}_{}.{}'.format(opts['layer'], waffles.region_format(url_region, 'fn'), waffles.gdal_fext(opts['format']))
+                outf = 'gmrt_{}_{}.{}'.format(opts['layer'], region_format(url_region, 'fn'), gdal_fext(opts['format']))
                 self._results.append([url, outf, 'gmrt'])
         return(self._results)
     
@@ -1281,7 +1356,7 @@ class ngs:
                       'minlat':self.region[2] }
 
         self._req = fetch_req(self._ngs_search_url, params = self.data)
-        if self._req is not None: self._results.append([self._req.url, 'ngs_results_{}.json'.format(waffles.region_format(self.region, 'fn')), 'ngs'])
+        if self._req is not None: self._results.append([self._req.url, 'ngs_results_{}.json'.format(region_format(self.region, 'fn')), 'ngs'])
         return(self._results)
         
 ## =============================================================================
@@ -1424,10 +1499,10 @@ def main():
     if extent is not None:
         try:
             these_regions = [[float(x) for x in extent.split('/')]]
-        except ValueError: these_regions = waffles.gdal_ogr_regions(extent)
+        except ValueError: these_regions = gdal_ogr_regions(extent)
         if len(these_regions) == 0: status = -1
         for this_region in these_regions:
-            if not waffles.region_valid_p(this_region): status = -1
+            if not region_valid_p(this_region): status = -1
         echo_msg('loaded {} region(s)'.format(len(these_regions)))
     else: these_regions = [[-180, 180, 0, 90]]
 
@@ -1444,8 +1519,8 @@ def main():
             status = 0
             args = tuple(mod_opts[fetch_mod])
             echo_msg('running fetch module {} on region {} ({}/{})...\
-            '.format(fetch_mod, waffles.region_format(this_region, 'str'), rn+1, len(these_regions)))
-            fl = fetch_infos[fetch_mod][0](waffles.region_buffer(this_region, 5, pct = True), f, lambda: stop_threads)
+            '.format(fetch_mod, region_format(this_region, 'str'), rn+1, len(these_regions)))
+            fl = fetch_infos[fetch_mod][0](region_buffer(this_region, 5, pct = True), f, lambda: stop_threads)
 
             args_d = {}
             for arg in args:
@@ -1478,7 +1553,7 @@ def main():
                     stop_threads = True
                 fr.join()
             echo_msg('ran fetch module {} on region {} ({}/{})...\
-            '.format(fetch_mod, waffles.region_format(this_region, 'str'), rn+1, len(these_regions)))
+            '.format(fetch_mod, region_format(this_region, 'str'), rn+1, len(these_regions)))
 
 if __name__ == '__main__':  main()
 ### End

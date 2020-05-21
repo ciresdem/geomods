@@ -80,7 +80,7 @@ import time
 import glob
 import math
 import subprocess
-
+import copy
 ## ==============================================
 ## import gdal, etc.
 ## ==============================================
@@ -121,7 +121,7 @@ def remove_glob(glob_str):
     return(0)
 
 def args2dict(args, dict_args = {}):
-    '''args are a list of [key=val] pairs'''
+    '''args are a list of ['key=val'] pairs'''
     for arg in args:
         p_arg = arg.split('=')
         dict_args[p_arg[0]] = False if p_arg[1].lower() == 'false' else True if p_arg[1].lower() == 'true' else None if p_arg[1].lower() == 'none' else p_arg[1]
@@ -134,7 +134,7 @@ cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in
 
 def run_cmd(cmd, data_fun = None, verbose = False):
     '''Run a command with or without a progress bar while passing data'''
-    if verbose: echo_msg('running cmd: \033[1m{}\033[m...'.format(cmd.rstrip()))    
+    if verbose: echo_msg('running cmd: {}...'.format(cmd.rstrip()))    
     if data_fun is not None:
         pipe_stdin = subprocess.PIPE
     else: pipe_stdin = None
@@ -155,7 +155,7 @@ def run_cmd(cmd, data_fun = None, verbose = False):
     out = p.stdout.read()
     p.stderr.close()
     p.stdout.close()
-    if verbose: echo_msg('ran cmd: \033[1m{}\033[m and returned {}.'.format(cmd.rstrip(), p.returncode))
+    if verbose: echo_msg('ran cmd: {} and returned {}.'.format(cmd.rstrip(), p.returncode))
     return(out, p.returncode)
 
 def cmd_check(cmd_str, cmd_vers_str):
@@ -163,7 +163,6 @@ def cmd_check(cmd_str, cmd_vers_str):
     if cmd_exists(cmd_str): 
         cmd_vers, status = run_cmd('{}'.format(cmd_vers_str))
         return(cmd_vers.rstrip())
-        #return(cmd_vers.split()[-1].rstrip())
     else: return(None)
 
 def config_check(chk_vdatum = False, verbose = False):
@@ -513,7 +512,8 @@ def gmt_sample_gnr(src_grd, verbose = False):
 ## ==============================================
 def mb_inf(src_xyz, src_fmt = 168):
     '''generate an info (.inf) file from a src_xyz file using MBSystem.'''
-    return(run_cmd('mbdatalist -O -F{} -I{}'.format(src_fmt, src_xyz), True))
+    run_cmd('mbdatalist -O -F{} -I{}'.format(src_fmt, src_xyz), True)
+    return(inf_parse('{}.inf'.format(src_xyz)))
 
 def run_mbgrid(datalist, region, inc, dst_name, dist = '10/3', tension = 35, extras = False, verbose = False):
     '''Run the MBSystem command `mbgrid` given a datalist, region and increment.
@@ -794,13 +794,6 @@ def gdal_region(src_ds):
     ds_config = gdal_gather_infos(src_ds)
     return(gdal_gt2region(ds_config))
 
-def gdal_inf(src_ds):
-    '''generate an info (.inf) file from a src_gdal file using gdal'''
-    minmax = [str(x) for x in gdal_region(src_ds)]
-    with open('{}.inf'.format(src_ds.GetDescription()), 'w') as inf:
-        inf.write('{}\n'.format(' '.join(minmax)))
-    return(minmax)
-
 def _geo2pixel(geo_x, geo_y, geoTransform):
     '''convert a geographic x,y value to a pixel location of geoTransform'''
     if geoTransform[2] + geoTransform[4] == 0:
@@ -1046,15 +1039,12 @@ def run_gdal_grid(datalist, region, inc, o_name, module='invdist', node = 'pixel
     
     o_dem = '{}.tif'.format(o_name)
     datalist.to_ogr(block = inc, o_name = o_name)
-
-    out_size_x = int((region.east - region.west) / inc) + 1
-    out_size_y = int((region.north - region.south) / inc) + 1
-
+    
+    xcount, ycount, dst_gt = gdal_region2gt(region, inc)
     gg_cmd = 'gdal_grid -zfield "Elevation" -txe {:.10f} {:.10f} -tye {:.10f} {:.10f} -outsize {} {} \
     -a {} -l {} {}.shp {} --config GDAL_NUM_THREADS ALL_CPUS\
-    '.format(region.west, region.east, region.north, region.south, out_size_x, out_size_y, module, o_name, o_name, o_dem)
+    '.format(region.west, region.east, region.north, region.south, xcount, ycount, module, o_name, o_name, o_dem)
     out, status = run_cmd(gg_cmd, verbose = verbose)
-
     return(o_dem)
 
 ## ==============================================
@@ -1105,11 +1095,19 @@ def gdal_parse(src_ds, dst_xyz = sys.stdout, weight = None, dump_nodata = False,
             else:
                 if '{:.10f}'.format(z) not in nodata:
                     xyz_line(line, dst_xyz, weight = weight)
+
+def gdal_inf(src_ds):
+    '''generate an info (.inf) file from a src_gdal file using gdal'''
+    minmax = [str(x) for x in gdal_region(src_ds)]
+    with open('{}.inf'.format(src_ds.GetDescription()), 'w') as inf:
+        inf.write('{}\n'.format(' '.join(minmax)))
+    return(minmax)
                     
 def gdal_inf_entry(entry):
     ds = gdal.Open(entry[0])
     minmax = gdal_inf(ds)
     ds = None
+    return(minmax)
                     
 def gdal_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
     ds = gdal.Open(entry[0])
@@ -1146,7 +1144,7 @@ def inf_parse(src_inf):
                             minmax[3] = til[5]
     return([float(x) for x in minmax])
 
-def inf_entry(src_entry, overwrite = False):
+def inf_entry(src_entry):
     '''Read .inf file and extract minmax info.
     the .inf file can either be an MBSystem style inf file
     or the result of `gmt gmtinfo file.xyz -C`, which is
@@ -1155,12 +1153,10 @@ def inf_entry(src_entry, overwrite = False):
     minmax = None
     if os.path.exists(src_entry[0]):
         path_i = src_entry[0] + '.inf'
-        if not os.path.exists(path_i) or overwrite:
-            _datalist_inf_hooks[src_entry[1]](src_entry)
-        if os.path.exists(path_i): minmax = inf_parse(path_i)[:4]
-    if region_valid_p(minmax):
-        return(minmax)
-    else: return(None)
+        if not os.path.exists(path_i):
+            minmax = _datalist_hooks['inf'][src_entry[1]](src_entry)
+        else: minmax = inf_parse(path_i)#[:4]
+    return(minmax)
     
 ## ==============================================
 ## xyz processing (datalists fmt:168)
@@ -1207,6 +1203,14 @@ def xyz_line(line, dst_port = sys.stdout, weight = None):
     l = '{}{}\n'.format(_xyz_config['delim'].join([str(x) for x in line]), w_string)#.encode(dst_port.encoding)
     if dst_port != sys.stdout: l = l.encode('utf-8')
     dst_port.write(l)
+
+def xyz_in_region_p(src_xy, src_region):
+    '''return True if point [x, y] is inside region [w, e, s, n], else False.'''
+    if src_xy[0] < src_region[0]: return(False)
+    elif src_xy[0] > src_region[1]: return(False)
+    elif src_xy[1] < src_region[2]: return(False)
+    elif src_xy[1] > src_region[3]: return(False)
+    else: return(True)
     
 def xyz_inf(src_xyz):
     '''return minmax info from a src_xyz file.'''
@@ -1225,17 +1229,12 @@ def xyz_inf(src_xyz):
         inf.write('{}\n'.format(' '.join([str(x) for x in minmax])))
     return(minmax)
 
-def xyz_in_region_p(src_xy, src_region):
-    '''return True if point [x, y] is inside region [w, e, s, n], else False.'''
-    if src_xy[0] < src_region[0]: return(False)
-    elif src_xy[0] > src_region[1]: return(False)
-    elif src_xy[1] < src_region[2]: return(False)
-    elif src_xy[1] > src_region[3]: return(False)
-    else: return(True)
-
 def xyz_inf_entry(entry):
     with open(entry[0]) as infile:
-        minmax = xyz_inf(infile)
+        try:
+            minmax = mb_inf(infile)
+        except: minmax = xyz_inf(infile)
+    return(minmax)
         
 def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
     '''dump ascii xyz data to dst_port'''
@@ -1249,41 +1248,54 @@ def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False)
 ## ==============================================
 ## datalist processing (datalists fmt:-1)
 ## ==============================================
-_datalist_pass_hooks = {-1: lambda e: os.path.exists(e[0]), 168: lambda e: os.path.exists(e[0]), 200: lambda e: os.path.exists(e[0])}
-_datalist_inf_hooks = {-1: lambda e: inf_datalist(e), 168: lambda e: xyz_inf_entry(e), 200: lambda e: gdal_inf_entry(e)}
-_datalist_hooks = {-1: lambda e, f, w, v: datalist(e[0], fmt = f, wt = w, verbose = v), 168: lambda e, f, w, v: xyz_dump_entry(e, verbose = v), 200: lambda e, f, w, v: gdal_dump_entry(e, verbose = v)}
+_datalist_hooks = {
+    'pass': {
+        -1: lambda e: os.path.exists(e[0]),
+        168: lambda e: os.path.exists(e[0]),
+        200: lambda e: os.path.exists(e[0])
+    },
+    'inf': {
+        -1: lambda e: datalist_inf_entry(e),
+        168: lambda e: xyz_inf_entry(e),
+        200: lambda e: gdal_inf_entry(e)
+    },
+    'proc': {
+        -1: lambda e, d, f, w, v: datalist(e[0], dlh = d, fmt = f, wt = w, verbose = v),
+        168: lambda e, d, f, w, v: xyz_dump_entry(e, verbose = v),
+        200: lambda e, d, f, w, v: gdal_dump_entry(e, verbose = v)
+    },
+}
+datalist_hooks = lambda: copy.deepcopy(_datalist_hooks)
 
-def datalist_inf(dl, fmt = None):
+def datalist_inf(dl, inf_file = True):
     '''return the region of the datalist.'''
     out_regions = []
-    if fmt is None:
-        _datalist_hooks[168] = lambda e, v: out_regions.append(inf_entry(e))
-        _datalist_hooks[200] = lambda e, v: out_regions.append(inf_entry(e))
-    else:
-        try:
-            _datalist_hooks[fmt] = lambda e, v: out_regions.append(inf_entry(e))
-        except KeyError as e:
-            echo_error('bad fmt, {}'.format(e))
-    datalist(dl)
+    minmax = None
+    dlh = datalist_hooks()
+    dlh['proc'][-1] = lambda e, d, f, w, v: out_regions.append(inf_entry(e))
+    dlh['proc'][168] = lambda e, d, f, w, v: out_regions.append(inf_entry(e))
+    dlh['proc'][200] = lambda e, d, f, w, v: out_regions.append(inf_entry(e))
+    datalist(dl, dlh = dlh, verbose = False)
     out_regions = [x for x in out_regions if x is not None]
     if len(out_regions) == 0:
-        return(None)
+        minmax = None
     elif len(out_regions) == 1:
-        print(out_regions[0])
-        return(out_regions[0])
+        minmax = out_regions[0]
     else:
         out_region = out_regions[0]
         for x in out_regions[1:]:
             out_region = regions_merge(out_region, x)
-        return(out_region)
-
-def inf_datalist(e):
-    '''write an inf file for datalist entry e'''
-    minmax = datalist_inf(e[0])
-    if minmax is not None:
-        echo_msg('generating inf for datalist {}'.format(e[0]))
-        with open('{}.inf'.format(e[0]), 'w') as inf:
+        minmax = out_region
+        
+    if minmax is not None and inf_file:
+        echo_msg('generating inf for datalist {}'.format(dl))
+        with open('{}.inf'.format(dl), 'w') as inf:
             inf.write('{}\n'.format(' '.join([str(x) for x in minmax])))
+    return(minmax)
+    
+def datalist_inf_entry(e):
+    '''write an inf file for datalist entry e'''
+    return(datalist_inf(e[0]))
 
 def archive_entry(entry, dirname = 'archive', region = None, verbose = None):
     '''archive a datalist entry.
@@ -1315,25 +1327,25 @@ def datalist_append_entry(entry, datalist):
 
 def datalist_archive(wg, arch_dir = 'archive', region = None, verbose = False):
     '''dump the data from datalist to dst_port'''
+    dlh = datalist_hooks()
     if region is not None:
-        #_datalist_pass_hooks[-1] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
-        _datalist_pass_hooks[168] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
-        _datalist_pass_hooks[200] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
-    _datalist_hooks[-1] = lambda e, f, w, v: datalist(e[0], wt = w, verbose = v)
-    _datalist_hooks[168] = lambda e, f, w, v: archive_entry(e, dirname = arch_dir, region = region, verbose = v)
-    _datalist_hooks[200] = lambda e, f, w, v: archive_entry(e, dirname = arch_dir, region = region, verbose = v)
+        dlh['pass']-1] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+        dlh['pass'][168] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+        dlh['pass'][200] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+    dlh['proc'][168] = lambda e, d, f, w, v: archive_entry(e, dirname = arch_dir, region = region, verbose = v)
+    dlh['proc'][200] = lambda e, d, f, w, v: archive_entry(e, dirname = arch_dir, region = region, verbose = v)
     datalist(wg['datalist'], wt = 1 if wg['weights'] else None, verbose = verbose)
         
 def datalist_dump(wg, dst_port = sys.stdout, region = None, verbose = False):
     '''dump the data from datalist to dst_port'''
+    dlh = datalist_hooks()
     if region is not None:
-        #_datalist_pass_hooks[-1] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
-        _datalist_pass_hooks[168] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
-        _datalist_pass_hooks[200] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
-    _datalist_hooks[-1] = lambda e, f, w, v: datalist(e[0], wt = w, verbose = v)
-    _datalist_hooks[168] = lambda e, f, w, v: xyz_dump_entry(e, region = region, dst_port = dst_port, verbose = v)
-    _datalist_hooks[200] = lambda e, f, w, v: gdal_dump_entry(e, region = region, dst_port = dst_port, verbose = v)
-    datalist(wg['datalist'], wt = 1 if wg['weights'] else None, verbose = verbose)
+        dlh['pass'][-1] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+        dlh['pass'][168] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+        dlh['pass'][200] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+    dlh['proc'][168] = lambda e, d, f, w, v: xyz_dump_entry(e, region = region, dst_port = dst_port, verbose = v)
+    dlh['proc'][200] = lambda e, d, f, w, v: gdal_dump_entry(e, region = region, dst_port = dst_port, verbose = v)
+    datalist(wg['datalist'], dlh = dlh, wt = 1 if wg['weights'] else None, verbose = verbose)
 
 def datalist_echo(entry):
     '''echo datalist entry'''
@@ -1402,7 +1414,7 @@ def datalist_io(dpipe):
         yield(this_xyz)
     f.seek(0)
 
-def datalist(dl, fmt = -1, wt = None, verbose = False):
+def datalist(dl, dlh = _datalist_hooks, fmt = -1, wt = None, verbose = False):
     '''recurse a datalist/entry'''
     this_dir = os.path.dirname(dl)
     these_entries = datalist2py(dl)
@@ -1415,10 +1427,15 @@ def datalist(dl, fmt = -1, wt = None, verbose = False):
         else: this_entry[2] = wt
         this_entry_md = ' '.join(this_entry[3:]).split(',')
         this_entry = this_entry[:3] + [this_entry_md] + [os.path.basename(dl).split('.')[0]]
-        if _datalist_pass_hooks[this_entry[1]](this_entry):
+        if dlh['pass'][this_entry[1]](this_entry):
             if verbose is True:
                 echo_msg('{} {}'.format('scanning datalist' if this_entry[1] == -1 else 'using datafile', this_entry[0]))
-            _datalist_hooks[this_entry[1]](this_entry, fmt, wt, verbose)
+            try:
+                dlh['proc'][this_entry[1]](this_entry, dlh, fmt, wt, verbose)
+             except KeyboardInterrupt as e:
+                echo_error_msg('user break, {}'.format(e))
+                sys.exit(-1)
+            except: pass
 
 ## ==============================================
 ## DEM module: generate a Digital Elevation Model using a variety of methods
@@ -1442,6 +1459,8 @@ _waffles_grid_info = {
     'mod_args': (),
     'gc': config_check()
 }
+waffles_config = lambda: copy.deepcopy(_waffles_gird_info)
+
 _waffles_modules = {
     'surface': [lambda args: waffles_gmt_surface(**args), '''SPLINE DEM via GMT surface
     \t\t\t  < surface:tension=.35:relaxation=1.2:lower_limit=d:upper_limit=d >
@@ -1457,7 +1476,7 @@ _waffles_modules = {
     \t\t\t  < spatial-metadata:inc=None >
     \t\t\t  :inc=[increment] - Spatial metadata resolution [default uses -E value]'''],
     'vdatum': [lambda args: waffles_vdatum(**args), '''VDATUM transformation grid
-    \t\t\t  < vdatum:ivert=navd88:overt=mhw:region=3 >
+    \t\t\t  < vdatum:ivert=navd88:over=mhw:region=3 >
     \t\t\t  :ivert=[vdatum] - Input VDatum vertical datum.
     \t\t\t  :overt=[vdatum] - Output VDatum vertical datum.
     \t\t\t  :region=[0-10] - VDatum region (3 is CONUS)'''],
@@ -1473,7 +1492,8 @@ waffles_dist_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * wg['ex
 waffles_proc_str = lambda wg: region_format(waffles_proc_region(wg), 'gmt')
 waffles_dl_func = lambda wg: lambda p: datalist_dump(wg, dst_port = p, region = waffles_proc_region(wg), verbose = True)
 waffles_gmt_reg_str = lambda wg: '-r' if wg['node'] == 'pixel' else ''
-
+waffles_append_fn = lambda bn, region, inc: '{}{}_{}_{}'.format(bn, inc2str_inc(inc), region_format(region, 'fn'), this_year())
+    
 def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, want_datalists = False):
     '''Generate a DEM with MBSystem's mbgrid program.'''
     import shutil
@@ -1636,15 +1656,14 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     ## gererate the DEM
     ## ==============================================
-    #try:
-    out, status = _waffles_modules[wg['mod']][0](args_d)
-    #except TypeError as e: echo_error_msg('{}'.format(e))
-    #except KeyboardInterrupt as e:
-    #    echo_error_msg('killed by user, {}'.format(e))
-    #    sys.exit(-1)
-
-    waffles_gdal_md(wg)
+    try:
+        out, status = _waffles_modules[wg['mod']][0](args_d)
+    except TypeError as e: echo_error_msg('{}'.format(e))
+    except KeyboardInterrupt as e:
+        echo_error_msg('killed by user, {}'.format(e))
+        sys.exit(-1)
         
+    waffles_gdal_md(wg)
     if wg['mod'] == 'spatial-metadata': sys.exit(0)
     ## ==============================================
     ## cut dem to final size - region buffered by (inc * extend)
@@ -1738,7 +1757,7 @@ CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
 '''.format(waffles_module_desc(_waffles_modules))
 
 def waffles_cli(argv = sys.argv):
-    wg = _waffles_grid_info
+    wg = waffles_config()
     dls = []
     region = None
     module = None
@@ -1835,7 +1854,7 @@ def waffles_cli(argv = sys.argv):
     ## ==============================================
     ## reformat and set the region
     ## ==============================================
-    if region is None: these_regions = [datalist_inf(dl)]
+    if region is None: these_regions = [datalist_inf(master)]
     else:
         try:
             these_regions = [[float(x) for x in region.split('/')]]
@@ -1847,7 +1866,7 @@ def waffles_cli(argv = sys.argv):
     bn = wg['name']
     for this_region in these_regions:
         wg['region'] = this_region
-        if want_prefix: wg['name'] = '{}{}_{}_{}'.format(bn, inc2str_inc(wg['inc']), region_format(wg['region'], 'fn'), this_year())
+        if want_prefix: wg['name'] = waffles_append_fn(bn, wg['region'], wg['inc'])
         echo_msg(json.dumps(wg, indent=4))
         dem = waffles_run(wg)
 
@@ -1861,7 +1880,7 @@ def waffles_cli(argv = sys.argv):
 ## ==============================================
 ## datalists cli
 ## ==============================================
-datalists_cli_usage = '''datalists [-iwR] <datalist/entry>
+datalists_cli_usage = '''datalists [-ciwR] <datalist/entry>
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
 '''
@@ -1871,6 +1890,7 @@ def datalists_cli(argv = sys.argv):
     region = None
     want_weight = False
     want_infos = False
+    rec_infos = False
     want_verbose = False
     i = 1
     while i < len(argv):
@@ -1881,6 +1901,7 @@ def datalists_cli(argv = sys.argv):
         elif arg[:2] == '-R': region = str(arg[2:])
         elif arg == '-w': want_weight = True
         elif arg == '-i': want_infos = True
+        elif arg == '-c': rec_infos = True
         elif arg == '--verbose' or arg == '-V': want_verbose = True
         elif arg == '--help' or arg == '-h':
             sys.stderr.write(datalists_cli_usage)
@@ -1894,6 +1915,7 @@ def datalists_cli(argv = sys.argv):
         sys.stderr.write(datalists_cli_usage)
         echo_error_msg('''must specify a datalist/entry file''')
         sys.exit(-1)
+    dlh = datalist_hooks()
     if region is not None:
         try:
             region = [float(x) for x in region.split('/')]
@@ -1901,24 +1923,13 @@ def datalists_cli(argv = sys.argv):
             sys.stderr.write(datalists_cli_usage)
             echo_error_msg('bad region, {}'.format(e))
             sys.exit(-1)
-        _datalist_pass_hooks[-1] = lambda e: regions_intersect_p(region, inf_entry(e))
-        _datalist_pass_hooks[168] = lambda e: regions_intersect_p(region, inf_entry(e))
-        _datalist_pass_hooks[200] = lambda e: regions_intersect_p(region, inf_entry(e))
-        _datalist_hooks[168] = lambda e, f, w, v: xyz_dump_entry(e, region = region, verbose = want_verbose)
-        _datalist_hooks[200] = lambda e, f, w, v: gdal_dump_entry(e, region = region, verbose = want_verbose)
-        
-    if want_infos:
-        #print(datalist_inf(dl))
-        _datalist_hooks[168] = lambda e, f, w, v: datafile_echo(e)
-        _datalist_hooks[200] = lambda e, f, w, v: datafile_echo(e)
-        if region is None:
-            _datalist_pass_hooks[-1] = lambda e: inf_entry(e, True)
-            #_datalist_pass_hooks[168] = lambda e: inf_entry(e)
-            #_datalist_pass_hooks[200] = lambda e: inf_entry(e)
+        dlh['pass'][-1] = lambda e: regions_intersect_p(region, inf_entry(e))
+        dlh['pass'][168] = lambda e: regions_intersect_p(region, inf_entry(e))
+        dlh['pass'][200] = lambda e: regions_intersect_p(region, inf_entry(e))
+        dlh['proc'][168] = lambda e, d, f, w, v: xyz_dump_entry(e, region = region, verbose = want_verbose)
+        dlh['proc'][200] = lambda e, d, f, w, v: gdal_dump_entry(e, region = region, verbose = want_verbose)
 
-    if want_weight:
-        wt = 1
-    else: wt = None
+    wt = 1 if want_weight else None
             
     ## ==============================================
     ## recurse the datalist
@@ -1927,10 +1938,11 @@ def datalists_cli(argv = sys.argv):
     if master is not None:
         try:
             #datalist_archive(master, arch_dir = 'archive', region = region, verbose = want_verbose)
-            #if want_infos:
-            #    print(datalist_inf(dl))
-            #else:
-            datalist(master, wt = wt, verbose = want_verbose)
+            if want_infos: print(datalist_inf(master, inf_file = False))#sys.stdout.write(' '.format([str(x) for x in datalist_inf(master)]))
+            elif rec_infos:
+                inf_entry([master, -1, 1])
+            else:
+                datalist(master, dlh = dlh, wt = wt, verbose = want_verbose)
         except IndexError:
             echo_error_msg('bad datalist file...')
         except KeyboardInterrupt as e:
