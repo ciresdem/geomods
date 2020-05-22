@@ -127,6 +127,24 @@ def args2dict(args, dict_args = {}):
         dict_args[p_arg[0]] = False if p_arg[1].lower() == 'false' else True if p_arg[1].lower() == 'true' else None if p_arg[1].lower() == 'none' else p_arg[1]
     return(dict_args)
 
+def hav_dst(pnt0, pnt1):
+    '''return the distance between pnt0 and pnt1,
+    using the haversine formula.'''
+    x0 = float(pnt0[0])
+    y0 = float(pnt0[1])
+    x1 = float(pnt1[0])
+    y1 = float(pnt1[1])
+
+    ## ==============================================
+    ## radians in meters
+    ## ==============================================
+    rad = 637100
+    dx = math.radians(x1 - x0)
+    dy = math.radians(y1 - y0)
+    a = math.sin(dx / 2) * math.sin(dx / 2) + math.cos(math.radians(x0)) * math.cos(math.radians(x1)) * math.sin(dy / 2) * math.sin(dy / 2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return(rad * c)
+
 ## ==============================================
 ## system cmd verification and configs.
 ## ==============================================
@@ -202,7 +220,7 @@ echo_error_msg = lambda m: echo_error_msg2(m, prefix = os.path.basename(sys.argv
 ## ==============================================
 ## some known values to make guesses from
 ## ==============================================
-_known_dl_delims = [':', ' ']
+_known_dl_delims = [' ', ':']
 _known_delims = [',', ' ', '\t', '/', ':']
 _known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'dat'], 200: ['tif', 'img', 'grd', 'nc']}
 
@@ -281,6 +299,64 @@ def region_format(region, t = 'gmt'):
         else: ew = 'w'
         return('{}{:02d}x{:02d}_{}{:03d}x{:02d}'.format(ns, abs(int(region[3])), abs(int(region[3] * 100) % 100), 
                                                         ew, abs(int(region[0])), abs(int(region[0] * 100) % 100)))
+
+def region_chunk(region, inc, n_chunk = 10):
+    '''chunk the region into n_chunk by n_chunk cell regions, given inc.'''
+    i_chunk = 0
+    x_i_chunk = 0
+    x_chunk = n_chunk
+    o_chunks = []
+    xcount, ycount, dst_gt = gdal_region2gt(region, inc)
+    
+    while True:
+        y_chunk = n_chunk
+        while True:
+            this_x_origin = x_chunk - n_chunk
+            this_y_origin = y_chunk - n_chunk
+            this_x_size = x_chunk - this_x_origin
+            this_y_size = y_chunk - this_y_origin
+            
+            geo_x_o = region[0] + this_x_origin * inc
+            geo_x_t = geo_x_o + this_x_size * inc
+            geo_y_o = region[2] + this_y_origin * inc
+            geo_y_t = geo_y_o + this_y_size * inc
+
+            if geo_y_t > region[3]: geo_y_t = region[3]
+            if geo_y_o < region[2]: geo_y_o = region[2]
+            if geo_x_t > region[1]: geo_x_t = region[1]
+            if geo_x_o < region[0]: geo_x_0 = region[0]
+            o_chunks.append([geo_x_o, geo_x_t, geo_y_o, geo_y_t])
+        
+            if y_chunk < ycount:
+                y_chunk += n_chunk
+                i_chunk += 1
+            else: break
+        if x_chunk < xcount:
+            x_chunk += n_chunk
+            x_i_chunk += 1
+        else: break
+    return(o_chunks)
+
+def regions_sort(trainers):
+    '''sort regions by distance; regions is a list of [w,e,s,n] regions.'''
+    train_sorted = []
+    for z, train in enumerate(trainers):
+        train_d = []
+        np.random.shuffle(train)
+        while True:
+            if len(train) == 0: break
+            this_center = region_center(train[0][0])
+            train_d.append(train[0])
+            train = train[1:]
+            if len(train) == 0: break
+            dsts = [hav_dst(this_center, region_center(x[0])) for x in train]
+            min_dst = np.percentile(dsts, 50)
+            d_t = lambda t: hav_dst(this_center, region_center(t[0])) > min_dst
+            np.random.shuffle(train)
+            train.sort(reverse=True, key=d_t)
+        echo_msg(' '.join([region_format(x[0], 'gmt') for x in train_d[:25]]))
+        train_sorted.append(train_d)
+    return(train_sorted)
 
 ## =============================================================================
 ##
@@ -602,6 +678,53 @@ def gdal_clip(src_gdal, src_ply = None, invert = False):
         return(run_cmd(gr_cmd, verbose = True))
     else: return(None)
 
+def gdal_query(src_xyz, src_grd, out_form):
+    '''Query a gdal-compatible grid file with xyz data.'''
+    xyzl = []
+    out_array = []
+
+    ## ==============================================
+    ## Process the src grid file
+    ## ==============================================
+    ds = gdal.Open(src_grd)
+    if ds is not None:
+        ds_config = gdal_gather_infos(ds)
+        ds_band = ds.GetRasterBand(1)
+        ds_gt = ds_config['geoT']
+        ds_nd = ds_config['ndv']
+        tgrid = ds_band.ReadAsArray()
+
+        ## ==============================================   
+        ## Process the src xyz data
+        ## ==============================================
+        for xyz in src_xyz:
+            x = xyz[0]
+            y = xyz[1]
+            try: 
+                z = xyz[2]
+            except: z = dsnodata
+
+            if x > ds_gt[0] and y < float(ds_gt[3]):
+                xpos, ypos = _geo2pixel(x, y, ds_gt)
+                try: 
+                    g = tgrid[ypos, xpos]
+                except: g = ds_nd
+
+                d = c = m = s = ds_nd
+                if g != ds_nd:
+                    d = z - g
+                    m = z + g
+                    c = con_dec(math.fabs(float(d / (g + 0.00000001) * 100)), 2)
+                    s = con_dec(math.fabs(d / (z + (g + 0.00000001))), 4)
+                    d = con_dec(d, 4)
+                    outs = []
+                    for i in out_form:
+                        outs.append(vars()[i])
+                    xyzl.append(np.array(outs, dtype = ds_config['dtn']))
+        dsband = ds = None
+        out_array = np.array(xyzl, dtype = ds_config['dtn'])
+    return(out_array)
+    
 def np_split(src_arr, sv = 0, nd = -9999):
     '''split numpy `src_arr` by `sv` (turn u/l into `nd`)'''
     try:
@@ -612,7 +735,7 @@ def np_split(src_arr, sv = 0, nd = -9999):
     u_arr[u_arr <= sv] = nd
     l_arr[l_arr >= sv] = nd
     return(u_arr, l_arr)
-    
+
 def gdal_split(src_gdal, split_value = 0):
     '''split raster file `src_gdal`into two files based on z value'''
     dst_upper = os.path.join(os.path.dirname(src_gdal), '{}_u.tif'.format(os.path.basename(src_gdal)[:-4]))
@@ -722,6 +845,57 @@ def gdal_cpy_infos(src_config):
         dst_config[dsc] = src_config[dsc]
     return(dst_config)
 
+def gdal_sum(src_gdal):
+    '''sum the z vale of src_gdal'''    
+    ds = gdal.Open(src_gdal)
+    if ds is not None:
+        ds_array = ds.GetRasterBand(1).ReadAsArray() 
+        sums = np.sum(ds_array)
+        ds = ds_array = None
+        return(sums)
+    else: return(None)
+
+def gdal_percentile(src_gdal, perc = 95):
+    '''calculate the `perc` percentile of src_fn gdal file.'''
+    ds = gdal.Open(src_gdal)
+    if ds is not None:
+        ds_array = np.array(ds.GetRasterBand(1).ReadAsArray())
+        x_dim = ds_array.shape[0]
+        ds_array_flat = ds_array.flatten()
+        p = np.percentile(ds_array_flat, perc)
+        percentile = 2 if p < 2 else p
+        ds = ds_array = None
+        return(percentile)
+    else: return(None)
+
+def gdal_mask_analysis(mask = None):
+    '''mask is a GDAL mask grid of 0/1'''
+    msk_sum = gdal_sum(mask)
+    msk_gc = gdal_infos(mask)
+    msk_max = float(msk_gc['nx'] * msk_gc['ny'])
+    msk_perc = (msk_sum /msk_max) * 100.
+    return(msk_sum, msk_max, msk_perc)
+    
+def gdal_proximity(src_fn, dst_fn):
+    '''Compute a proximity grid via GDAL'''
+    prog_func = None
+    src_ds = gdal.Open(src_fn)
+    dst_ds = None
+    if src_ds is not None:
+        src_band = src_ds.GetRasterBand(1)
+        ds_config = _gather_infos(src_ds)
+        if dst_ds is None:
+            drv = gdal.GetDriverByName('GTiff')
+            dst_ds = drv.Create(dst_fn, ds_config['nx'], ds_config['ny'], 1, ds_config['dt'], [])
+        dst_ds.SetGeoTransform(ds_config['geoT'])
+        dst_ds.SetProjection(ds_config['proj'])
+        dst_band = dst_ds.GetRasterBand(1)
+        dst_band.SetNoDataValue(ds_config['ndv'])
+        gdal.ComputeProximity(src_band, dst_band, ['DISTUNITS=PIXEL'], callback = prog_func)
+        dst_band = src_band = dst_ds = src_ds = None
+        return(0)
+    else: return(None)
+    
 def gdal_gt2region(ds_config):
     '''convert a gdal geo-tranform to an extent [w, e, s, n]'''
     geoT = ds_config['geoT']
@@ -732,8 +906,8 @@ def gdal_region2gt(region, inc):
     output is a list (xcount, ycount, geot)'''
     ysize = region[3] - region[2]
     xsize = region[1] - region[0]
-    xcount = int(round(xsize / inc))
-    ycount = int(round(ysize / inc))
+    xcount = int(round(xsize / inc)) + 1
+    ycount = int(round(ysize / inc)) + 1
     dst_gt = (region[0], inc, 0, region[3], 0, (inc * -1.))
     return(xcount, ycount, dst_gt)
 
@@ -798,8 +972,8 @@ def _geo2pixel(geo_x, geo_y, geoTransform):
     if geoTransform[2] + geoTransform[4] == 0:
         pixel_x = (geo_x - geoTransform[0]) / geoTransform[1]
         pixel_y = (geo_y - geoTransform[3]) / geoTransform[5]
-    else: pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt( geoTransform))
-    return(int(round(pixel_x)), int(round(pixel_y)))
+    else: pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt(geoTransform))
+    return(int(pixel_x), int(pixel_y))
 
 def _pixel2geo(pixel_x, pixel_y, geoTransform):
     '''convert a pixel location to geographic coordinates given geoTransform'''
@@ -845,9 +1019,12 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format='GTiff', mode='n'):
     `mode` of `m` generates a mean grid
     `mode` of `k` generates a mask grid'''
     xcount, ycount, dst_gt = gdal_region2gt(region, inc)
-    if mode == 'm': sumArray = np.zeros((ycount, xcount))
+    if mode == 'm':
+        sumArray = np.zeros((ycount, xcount))
+        gdt = gdal.GDT_Float32
+    else: gdt = gdal.GDT_Int32
     ptArray = np.zeros((ycount, xcount))
-    ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(4326), gdal.GDT_Int32, -9999, dst_format)
+    ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(4326), gdt, -9999, dst_format)
     for this_xyz in src_xyz:
         x = this_xyz[0]
         y = this_xyz[1]
@@ -855,14 +1032,11 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format='GTiff', mode='n'):
         if x > region[0] and x < region[1]:
             if y > region[2] and y < region[3]:
                 xpos, ypos = _geo2pixel(x, y, dst_gt)
-                try:
-                    ptArray[ypos, xpos] = 1
-                    if mode == 'm': sumArray[ypos, xpos] += float(z)
-                    if mode == 'n' or mode == 'm': 
-                        ptArray[ypos, xpos] += 1
-                    else: ptArray[ypos, xpos] = 1
-                except: pass
+                if mode == 'm': sumArray[ypos, xpos] += z
+                if mode == 'n' or mode == 'm': ptArray[ypos, xpos] += 1
+                else: ptArray[ypos, xpos] = 1
     if mode == 'm':
+        ptArray[ptArray == 0] = np.nan
         outarray = sumArray / ptArray
     elif mode == 'n': outarray = ptArray
     else: outarray = ptArray
@@ -1065,11 +1239,15 @@ def gdal_band2xyz(band_arr, dst_xyz = sys.stdout, gt = None, srcwin = None, nd =
                 if '{:.10f}'.format(z) not in nodata:
                     xyz_line(line, dst_xyz)                    
 
-def gdal_parse(src_ds, dst_xyz = sys.stdout, weight = None, dump_nodata = False, srcwin = None, want_yield = False):
+def gdal_parse(src_ds, dst_xyz = sys.stdout, weight = None, dump_nodata = False, srcwin = None, mask = None):
     '''send the data from gdal file src_gdal to dst_xyz port'''
     band = src_ds.GetRasterBand(1)
     ds_config = gdal_gather_infos(src_ds)
-    gt = ds_config['geoT']        
+    gt = ds_config['geoT']
+    msk_band = None
+    if mask is not None:
+        src_mask = gdal.Open(mask)
+        msk_band = src_mask.GetRasterBand(1)
     if srcwin is None: srcwin = (0, 0, ds_config['nx'], ds_config['ny'])
     
     for y in range(srcwin[1], srcwin[1] + srcwin[3], 1):
@@ -1077,9 +1255,12 @@ def gdal_parse(src_ds, dst_xyz = sys.stdout, weight = None, dump_nodata = False,
         data = []
         if band.GetNoDataValue() is not None: nodata.append('{:.10f}'.format(band.GetNoDataValue()))
         band_data = band.ReadAsArray(srcwin[0], y, srcwin[2], 1)
+        if msk_band is not None:
+            msk_data = msk_band.ReadAsArray(srcwin[0], y, srcwin[2], 1)
+            band_data[msk_data==0]=-9999
         band_data = np.reshape(band_data, (srcwin[2], ))
         data.append(band_data)
-
+        
         for x_i in range(0, srcwin[2], 1):
             x = x_i + srcwin[0]
             geo_x, geo_y = _pixel2geo(x, y, gt)
@@ -1171,6 +1352,11 @@ def xyz_parse(src_xyz):
                 break
         yield([float(x) for x in this_xyz])
 
+def xyz2py(src_xyz):
+    '''return src_xyz as a python list'''
+    xyzpy = []
+    return([xyzpy.append(xyz) for xyz in xyz_parse(src_xyz)])
+    
 def xyz_block(src_xyz, region, inc):
     xcount, ycount, dst_gt = gdal_region2gt(region, inc)
     sum_arr = np.zeros((ycount, xcount))
@@ -1378,6 +1564,11 @@ def entry2py(dle):
     try:
         entry = [x if n == 0 else float(x) if n < 3 else x for n, x in enumerate(this_entry)]
     except ValueError as e: return(None)
+    if len(entry) < 2:
+        for key in _known_datalist_fmts.keys():
+            if entry[0].split('.')[-1] in _known_datalist_fmts[key]:
+                entry.append(key)
+    if len(entry) < 3: entry.append(1)
     return(entry)
     
 def datalist2py(dl):
@@ -1389,10 +1580,10 @@ def datalist2py(dl):
     if this_entry[1] == -1:
         with open(this_entry[0], 'r') as op:
             while True:
-                this_line = op.readline().rstrip()
+                this_line = op.readline()#.rstrip()
                 if not this_line: break
-                if this_line[0] != '#' and this_line[0] != '\n':
-                    these_entries.append(entry2py(this_line))
+                if this_line[0] != '#' and this_line[0] != '\n' and this_line[0] != '':
+                    these_entries.append(entry2py(this_line.rstrip()))
     else: these_entries.append(this_entry)
     return(these_entries)
 
@@ -1548,7 +1739,7 @@ def waffles_num(wg = _waffles_grid_info, mode = 'n'):
     mode of `n` generates a num grid'''
     wg['region'] = region_buffer(wg['region'], wg['inc'] * .5) if wg['node'] == 'grid' else wg['region']
     return(gdal_xyz2gdal(datalist_io(waffles_dl_func(wg)), '{}.tif'.format(wg['name']), waffles_dist_region(wg), wg['inc'], dst_format = wg['fmt'], mode = mode))
-    
+                                
 def waffles_spatial_metadata(wg):
     '''generate spatial-metadata for the top-level of the datalist
     top-level entries in the datalist should include a comma-separated list
@@ -1933,19 +2124,19 @@ def datalists_cli(argv = sys.argv):
     ## ==============================================
     master = datalist_master(dls)
     if master is not None:
-        try:
-            #datalist_archive(master, arch_dir = 'archive', region = region, verbose = want_verbose)
-            if want_infos: print(datalist_inf(master, inf_file = False))#sys.stdout.write(' '.format([str(x) for x in datalist_inf(master)]))
-            elif rec_infos:
-                inf_entry([master, -1, 1])
-            else:
-                datalist(master, dlh = dlh, wt = wt, verbose = want_verbose)
-        except IndexError:
-            echo_error_msg('bad datalist file...')
-        except KeyboardInterrupt as e:
-            echo_error_msg('user killed process')
-            remove_glob(master)
-            sys.exit(-1)
+        #try:
+        #datalist_archive(master, arch_dir = 'archive', region = region, verbose = want_verbose)
+        if want_infos: print(datalist_inf(master, inf_file = False))#sys.stdout.write(' '.format([str(x) for x in datalist_inf(master)]))
+        elif rec_infos:
+            inf_entry([master, -1, 1])
+        else:
+            datalist(master, dlh = dlh, wt = wt, verbose = want_verbose)
+        #except IndexError:
+        #    echo_error_msg('bad datalist file...')
+        #except KeyboardInterrupt as e:
+        #    echo_error_msg('user killed process')
+        #    remove_glob(master)
+        #    sys.exit(-1)
         remove_glob(master)
 
 ## ==============================================
