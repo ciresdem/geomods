@@ -577,6 +577,13 @@ def gmt_sample_gnr(src_grd, verbose = False):
     if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
     return(status)
 
+def gmt_sample_inc(src_grd, inc = 1, verbose = False):
+    '''resamele src_grd to toggle between grid-node and pixel-node
+    grid registration.'''
+    out, status = run_cmd('gmt grdsample -I{:.10f} {} -Gtmp.tif=gd+n-9999:GTiff'.format(inc, src_grd), verbose = verbose)
+    if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
+    return(status)
+
 ## ==============================================
 ## MB-System Wrapper Functions - mbsfun.py
 ##
@@ -1374,8 +1381,6 @@ def xyz2py(src_xyz):
 def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False):
     '''block the src_xyz data to the mean block value'''
     xcount, ycount, dst_gt = gdal_region2gt(region, inc)
-    #sum_arr = np.zeros((ycount, xcount))
-    #pt_arr = np.zeros((ycount, xcount))
     avg_arr = np.empty((ycount, xcount), object)
     avg_arr.fill([])
     if weights:
@@ -1391,11 +1396,6 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False):
                 xpos, ypos = _geo2pixel(x, y, dst_gt)
                 avg_arr[ypos, xpos] = avg_arr[ypos, xpos] + [z]
                 if weights: wt_arr[ypos, xpos] = wt_arr[ypos, xpos] + [w]
-                #sum_arr[ypos, xpos] += z
-                #pt_arr[ypos, xpos] += 1
-
-    #pt_arr[pt_arr == 0] = np.nan
-    #block_arr = sum_arr / pt_arr
     for y in range(0, ycount):
         for x in range(0, xcount):
             if len(avg_arr[y, x]) > 0:
@@ -1404,16 +1404,32 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False):
                 else: z = np.average(avg_arr[y, x])
                 line = [geo_x, geo_y, z]
                 xyz_line(line, dst_xyz)
-                
-    # for y in range(0, ycount):
-    #     for x in range(0, xcount):
-    #         geo_x, geo_y = _pixel2geo(x, y, dst_gt)
-    #         x_i_data = [block_arr[y][x]]
-    #         z = x_i_data[0]
-    #         line = [geo_x, geo_y, z]
-    #         if not np.isnan(z):
-    #             xyz_line(line, dst_xyz)                    
-        
+
+def xyz_block_mean(src_xyz, region, inc, dst_xyz = sys.stdout):
+    '''block the src_xyz data to the mean block value'''
+    xcount, ycount, dst_gt = gdal_region2gt(region, inc)
+    sum_arr = np.zeros((ycount, xcount))
+    pt_arr = np.zeros((ycount, xcount))
+    for this_xyz in src_xyz:
+        x = this_xyz[0]
+        y = this_xyz[1]
+        z = this_xyz[2]
+        if x > region[0] and x < region[1]:
+            if y > region[2] and y < region[3]:
+                xpos, ypos = _geo2pixel(x, y, dst_gt)
+                sum_arr[ypos, xpos] += z
+                pt_arr[ypos, xpos] += 1
+    pt_arr[pt_arr == 0] = np.nan
+    block_arr = sum_arr / pt_arr
+    for y in range(0, ycount):
+        for x in range(0, xcount):
+            geo_x, geo_y = _pixel2geo(x, y, dst_gt)
+            x_i_data = [block_arr[y][x]]
+            z = x_i_data[0]
+            line = [geo_x, geo_y, z]
+            if not np.isnan(z):
+                xyz_line(line, dst_xyz)                    
+    
 def xyz_line(line, dst_port = sys.stdout, weight = None):
     '''write XYZ `line` to `dst_port` using `delimiter` and `weight`'''
     if weight is None:
@@ -1542,14 +1558,8 @@ def archive_entry(entry, dirname = 'archive', region = None, inc = 1, weight = N
     dump_gdal = lambda p: gdal_dump_entry(entry, dst_port = p, region = region, verbose = verbose)
     
     with open(a_xyz, 'w') as fob:
-        if entry[1] == 168:
-            if region is not None:
-                xyz_block(datalist_io(dump_xyz), region, inc, dst_xyz = fob, weights = True if weight is not None else False)
-            else: dump_xyz(fob)
-        elif entry[1] == 200:
-            if region is not None:
-                xyz_block(datalist_io(dump_gdal), region, inc, dst_xyz = fob, weights = True if weight is not None else False)
-            else: dump_gdal(fob)
+        if entry[1] == 168: dump_xyz(fob)
+        elif entry[1] == 200: dump_gdal(fob)
 
     mb_inf(a_xyz)
     datalist_append_entry([i_xyz + '.xyz', 168, entry[2] if entry[2] is not None else 1], a_dl)
@@ -1594,9 +1604,8 @@ def datafile_echo(entry):
     '''echo datafile entry'''
     sys.stderr.write('{}\n'.format([str(x) for x in entry]))
 
-def datalist_master(dls):
+def datalist_master(dls, master = '.master.datalist'):
     '''set the master datalist'''
-    master = '.master.datalist'
     with open(master, 'w') as md:        
         for dl in dls:
             if os.path.exists(dl):
@@ -1605,7 +1614,7 @@ def datalist_master(dls):
                         if dl.split(':')[0].split('.')[-1] in _known_datalist_fmts[key]:
                             md.write('{} {} 1\n'.format(dl, key))
     if os.stat(master).st_size == 0:
-        remove_glob('.master.datalist')
+        remove_glob(master)
         echo_error_msg('bad datalist/entry, {}'.format(dls))
         return(None)
     
@@ -1688,14 +1697,16 @@ def datalist(dl, dlh = _datalist_hooks, fmt = -1, wt = None, verbose = False):
 ## ==============================================
 _waffles_grid_info = {
     'datalist': None,
+    'datalists': [],
     'region': None,
-    'inc': None,
-    'name': 'waffles',
+    'inc': 1,
+    'name': 'waffles_dem',
     'node': 'pixel',
     'fmt': 'GTiff',
     'extend': 0,
     'weights': None,
     'fltr': None,
+    'sample': None,
     'clip': None,
     'epsg': 4326,
     'mod': 'surface',
@@ -1703,6 +1714,34 @@ _waffles_grid_info = {
     'gc': config_check()
 }
 waffles_config = lambda: copy.deepcopy(_waffles_grid_info)
+
+def waffles_dict2wg(wg = _waffles_grid_info):
+    keys = wg.keys()
+    if 'datalist' not in keys: wg['datalist'] = None
+    if 'datalists' not in keys: wg['datalists'] = [x[0] for x in datalist2py(wg['datalist'])]
+    if 'region' not in keys: wg['region'] = None
+    if 'inc' not in keys: wg['inc'] = 1
+    else: wg['inc'] = gmt_inc2inc(str(wg['inc']))
+    if 'name' not in keys: wg['name'] = 'waffles_dem'
+    if 'node' not in keys: wg['node'] = 'pixel'
+    if 'fmt' not in keys: wg['fmt'] = 'GTiff'
+    if 'extend' not in keys: wg['extend'] = 0
+    if 'weights' not in keys: wg['weights'] = None
+    if 'fltr' not in keys: wg['fltr'] = None
+    if 'sample' not in keys: wg['sample'] = None
+    if 'clip' not in keys: wg['clip'] = None
+    if 'epsg' not in keys: wg['epsg'] = 4326
+    if 'mod' not in keys: wg['mod'] = 'surface'
+    if 'mod_args' not in keys: wg['mod_args'] = ()
+    if 'gc' not in keys: wg['gc'] = config_check()
+    
+    if wg['datalist'] is None and len(wg['datalists']) > 0:
+        wg['datalist'] = datalist_master(wg['datalists'], '{}_mstr.datalist'.format(wg['name']))
+    if wg['datalist'] is None:
+        echo_error_msg('invalid datalist/s entry')
+        return(None)
+    if wg['region'] is None or not region_valid_p(wg['region']): wg['region'] = datalist_inf(wg['datalist'])
+    return(wg)
 
 _waffles_modules = {
     'surface': [lambda args: waffles_gmt_surface(**args), '''SPLINE DEM via GMT surface
@@ -1737,8 +1776,8 @@ _waffles_modules = {
     \t\t\t  < archive:arch_dir=archive >
     \t\t\t  :arch_dir=[dirname] - archive data to dirname'''],
 }
-waffles_module_desc2 = lambda x: 'waffles modules:\n  ' + '\n  '.join(['{:22}{}\n'.format(key, x[key][-1]) for key in x])
-waffles_module_desc = lambda x: ', '.join(['{}'.format(key) for key in x])
+waffles_module_long_desc = lambda x: 'waffles modules:\n  ' + '\n  '.join(['{:22}{}\n'.format(key, x[key][-1]) for key in x]) + '\n'
+waffles_module_short_desc = lambda x: ', '.join(['{}'.format(key) for key in x])
 waffles_proc_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * 10) + (wg['inc'] * wg['extend']))
 waffles_dist_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * wg['extend']))
 waffles_proc_str = lambda wg: region_format(waffles_proc_region(wg), 'gmt')
@@ -1848,9 +1887,10 @@ def waffles_spatial_metadata(wg):
         ds = None
     return(dst_vector, 0)
 
-def waffles_archive(wg = _waffles_grid_info, arch_dir = 'archive'):
+def waffles_archive(wg = _waffles_grid_info, arch_dir = None):
     '''archive the datalist to `arch_dir`'''
-    return(datalist_archive(wg, arch_dir = 'archive', region = wg['region'], verbose = True))
+    arch_dir = wg['name'] if arch_dir is None else arch_dir
+    return(datalist_archive(wg, arch_dir = arch_dir, region = wg['region'], verbose = True))
 
 def waffles_vdatum(wg = _waffles_grid_info, ivert = 'navd88', overt = 'mhw', region = '3'):
     vc = _vd_config
@@ -1913,11 +1953,10 @@ def waffles_moving_average(wg = _waffles_grid_info, radius1 = None, radius2 = No
 
 def waffles_wg_valid_p(wg = _waffles_grid_info):
     '''return True if wg appears valid'''
-    if wg['datalist'] is None: return(False)
-    elif wg['region'] is None: return(False)
-    elif wg['inc'] is None: return(False)
+    if wg['datalists'] is None: return(False)
+    if wg['mod'] is None: return(False)
     else: return(True)
-
+        
 def waffles_gdal_md(wg):
     '''add metadata to the waffles dem'''
     ds = gdal.Open('{}.tif'.format(wg['name']), gdal.GA_Update)
@@ -1933,12 +1972,23 @@ def waffles_gdal_md(wg):
 def waffles_run(wg = _waffles_grid_info):
     '''generate a DEM using wg dict settings'''
     dem = '{}.tif'.format(wg['name'])
+
+    ## ==============================================
+    ## validate and/or set the waffles_config
+    ## ==============================================
+    wg = waffles_dict2wg(wg)
+
+    if wg is None:
+        echo_error_msg('invalid configuration, {}'.format(json.dumps(wg, indent=4, sort_keys=True)))
+        sys.exit(-1)
+    
     args_d = {}
     for arg in wg['mod_args']:
         p_arg = arg.split('=')
         args_d[p_arg[0]] = p_arg[1]
     args_d['wg'] = wg
-    
+        
+    echo_msg(json.dumps(wg, indent = 4, sort_keys = True))
     ## ==============================================
     ## gererate the DEM
     ## ==============================================
@@ -1990,6 +2040,13 @@ def waffles_run(wg = _waffles_grid_info):
             gdal_smooth(dem, 'tmp_s.tif', **fltr_args)
             os.rename('tmp_s.tif', dem)
         except TypeError as e: echo_error_msg('{}'.format(e))
+
+    ## ==============================================
+    ## optionally resample the DEM 
+    ## ==============================================
+    if wg['sample'] is not None:
+        if wg['gc']['GMT'] is not None:
+            gmt_sample_inc(dem, inc = wg['sample'], verbose = True)
         
     ## ==============================================
     ## convert to final format
@@ -2005,8 +2062,7 @@ def waffles_run(wg = _waffles_grid_info):
     ## set the projection and other metadata
     ## ==============================================
     gdal_set_epsg(dem, wg['epsg'])
-    waffles_gdal_md(wg)
-
+    waffles_gdal_md(wg)    
     return(dem)
         
 ## ==============================================
@@ -2021,6 +2077,7 @@ General Options:
 \t\t\tIf a vector file is supplied it will search each region found therein.
 \t\t\tIf omitted, use the region gathered from the data in DATALIST.
   -E, --increment\tGridding CELL-SIZE in native units or GMT-style increments.
+\t\t\tappend :<inc> to resample the output to the gibven increment: -E.3333333s:.1111111s
   -F, --format\t\tOutput grid FORMAT. [GTiff]
   -M, --module\t\tDesired DEM MODULE and options. (see available Modules below)
 \t\t\tsyntax is -M module:mod_opt=mod_val:mod_opt1=mod_val1:...
@@ -2033,11 +2090,15 @@ General Options:
 \t\t\tAppend :split_value=<num> to only filter values below <num>.
 \t\t\te.g. -T10:split_value=0:use_gmt=False to smooth bathymetry using Gaussian filter
   -C, --clip\t\tCLIP the output to the clip polygon -C<clip_ply.shp:invert=False>
+  -W, --wg-config\tA waffles config JSON file. If supplied, will overwrite all other options.
+\t\t\tgenerate a waffles_config JSON file using the --config flag.
 
+  -a, --archive\t\tArchive the datalist to the given region.
   -p, --prefix\t\tSet BASENAME to PREFIX (append inc/region/year info to output BASENAME).
   -r, --grid-node\tuse grid-node registration, default is pixel-node
 
   --help\t\tPrint the usage text
+  --config\t\tSave the waffles config JSON and master datalist
   --modules\t\tDisply the module descriptions and usage
   --version\t\tPrint the version information
   --verbose\t\tIncrease the verbosity
@@ -2046,15 +2107,17 @@ Modules (see waffles --modules for more info):
   {}
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
-'''.format(waffles_module_desc(_waffles_modules))
+'''.format(waffles_module_short_desc(_waffles_modules))
 
 def waffles_cli(argv = sys.argv):
     wg = waffles_config()
+    wg_user = None
     dls = []
     region = None
     module = None
     want_prefix = False
     want_verbose = False
+    want_config = False
     i = 1
     while i < len(argv):
         arg = argv[i]
@@ -2067,9 +2130,14 @@ def waffles_cli(argv = sys.argv):
             i += 1
         elif arg[:2] == '-M': module = str(arg[2:])
         elif arg == '--increment' or arg == '-E':
-            wg['inc'] = gmt_inc2inc(argv[i + 1])
+            incs = argv[i + 1].split(':')
+            wg['inc'] = gmt_inc2inc(incs[0])
+            if len(incs) > 1: wg['sample'] = gmt_inc2inc(incs[1])
             i = i + 1
-        elif arg[:2] == '-E': wg['inc'] = gmt_inc2inc(arg[2:])
+        elif arg[:2] == '-E':
+            incs = arg[2:].split(':')
+            wg['inc'] = gmt_inc2inc(arg[2:].split(':')[0])
+            if len(incs) > 1: wg['sample'] = gmt_inc2inc(incs[1])
         elif arg == '--outname' or arg == '-O':
             wg['name'] = argv[i + 1]
             i += 1
@@ -2093,6 +2161,10 @@ def waffles_cli(argv = sys.argv):
                 wg['extend'] = int(arg[2:])
             except ValueError as e:
                 echo_error_msg('invalid -X option, {}'.format(e))
+        elif arg == '--wg-config' or arg == '-W':
+            wg_user = argv[i + 1]
+            i += 1
+        elif arg[:2] == '-W': wg_user = arg[2:]
         elif arg == '--clip' or arg == '-C':
             wg['clip'] = argv[i + 1]
             i = i + 1
@@ -2105,8 +2177,9 @@ def waffles_cli(argv = sys.argv):
         elif arg == '-p': want_prefix = True
         elif arg == '-r': wg['node'] = 'grid'
         elif arg == '--verbose' or arg == '-V': want_verbose = True
+        elif arg == '--config': want_config = True
         elif arg == '--modules' or arg == '-m':
-            sys.stderr.write(waffles_module_desc2(_waffles_modules))
+            sys.stderr.write(waffles_module_long_desc(_waffles_modules))
             sys.exit(0)
         elif arg == '--help' or arg == '-h':
             sys.stderr.write(waffles_cli_usage)
@@ -2118,6 +2191,24 @@ def waffles_cli(argv = sys.argv):
         i += 1
 
     ## ==============================================
+    ## load the user wg json and run waffles with that.
+    ## ==============================================
+    if wg_user is not None:
+        if os.path.exists(wg_user):
+            try:
+                with open(wg_user, 'r') as wgj:
+                    wg = json.load(wgj)
+                #if waffles_wg_valid_p(wg):
+                dem = waffles_run(wg)
+                sys.exit(dem)
+                #else: wg = waffles_config()
+            except ValueError as e:
+                wg = waffles_config()
+                echo_error_msg('could not parse json from {}, {}'.format(wg_user, e))
+        else: echo_error_msg('specified json file does not exist, {}'.format(wg_user))
+        
+    ## ==============================================
+    ## Otherwise run from cli options...
     ## set the dem module
     ## ==============================================
     if module is not None:
@@ -2141,19 +2232,18 @@ def waffles_cli(argv = sys.argv):
             sys.exit(-1)
             
     ## ==============================================
-    ## set the master datalist
+    ## set the datalists
     ## ==============================================
-    master = datalist_master(dls)
-    wg['datalist'] = master
+    wg['datalists'] = dls
 
     ## ==============================================
     ## reformat and set the region
     ## ==============================================
-    if region is None: these_regions = [datalist_inf(master)]
-    else:
+    if region is not None:
         try:
             these_regions = [[float(x) for x in region.split('/')]]
         except ValueError: these_regions = gdal_ogr_regions(region)
+    else: these_regions = [None]
 
     ## ==============================================
     ## run waffles for each input region.
@@ -2161,16 +2251,14 @@ def waffles_cli(argv = sys.argv):
     bn = wg['name']
     for this_region in these_regions:
         wg['region'] = this_region
-        if want_prefix: wg['name'] = waffles_append_fn(bn, wg['region'], wg['inc'])
-        echo_msg(json.dumps(wg, indent=4))
-        dem = waffles_run(wg)
-
-    ## ==============================================
-    ## cleanup waffles detritus
-    ## ==============================================
-    try:
-        remove_glob(master)
-    except: pass
+        if want_prefix or len(these_regions) > 1: wg['name'] = waffles_append_fn(bn, wg['region'], wg['inc'])
+        if want_config:
+            config_name = waffles_append_fn(bn, wg['region'], wg['inc'])
+            wg['datalist'] = datalist_master(wg['datalists'], '{}_mstr.datalist'.format(config_name))
+            with open('{}.json'.format(config_name), 'w') as wg_json:
+                echo_msg('generating waffles config json...')
+                wg_json.write(json.dumps(wg, indent = 4, sort_keys = True))
+        else: dem = waffles_run(wg)
 
 ## ==============================================
 ## datalists cli
