@@ -425,7 +425,7 @@ def gmt_grd_inf(src_grd):
 
 def gmt_inc2inc(inc_str):
     '''convert an GMT-style inc_str (6s) to native units'''
-    if inc_str is None: return(None)
+    if inc_str is None or inc_str == 'None': return(None)
     units = inc_str[-1]
     if units == 'c': inc = float(inc_str[:-1]) / 3600
     elif units == 's': inc = float(inc_str[:-1]) / 3600
@@ -1729,11 +1729,12 @@ def waffles_dict2wg(wg = _waffles_grid_info):
     if 'weights' not in keys: wg['weights'] = None
     if 'fltr' not in keys: wg['fltr'] = None
     if 'sample' not in keys: wg['sample'] = None
+    else: wg['sample'] = gmt_inc2inc(str(wg['sample']))
     if 'clip' not in keys: wg['clip'] = None
     if 'epsg' not in keys: wg['epsg'] = 4326
     if 'mod' not in keys: wg['mod'] = 'surface'
     if 'mod_args' not in keys: wg['mod_args'] = ()
-    if 'gc' not in keys: wg['gc'] = config_check()
+    wg['gc'] = config_check()
     
     if wg['datalist'] is None and len(wg['datalists']) > 0:
         wg['datalist'] = datalist_master(wg['datalists'], '{}_mstr.datalist'.format(wg['name']))
