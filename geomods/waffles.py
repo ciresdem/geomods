@@ -125,11 +125,11 @@ def args2dict(args, dict_args = {}):
         dict_args[p_arg[0]] = False if p_arg[1].lower() == 'false' else True if p_arg[1].lower() == 'true' else None if p_arg[1].lower() == 'none' else p_arg[1]
     return(dict_args)
 
-def int_or_none(val):
-    '''return the val as int or None'''
+def int_or(val, or_val = None):
+    '''return val as int otherwise return or_val'''
     try:
         return(int(val))
-    except: return(None)
+    except: return(or_val)
 
 def hav_dst(pnt0, pnt1):
     '''return the distance between pnt0 and pnt1,
@@ -152,7 +152,7 @@ def hav_dst(pnt0, pnt1):
 ## ==============================================
 ## system cmd verification and configs.
 ## ==============================================
-cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ["PATH"].split(os.pathsep))
+cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ['PATH'].split(os.pathsep))
 
 def run_cmd(cmd, data_fun = None, verbose = False):
     '''Run a command with or without a progress bar while passing data'''
@@ -368,8 +368,9 @@ def regions_sort(trainers):
 ## VDatum - vdatumfun.py
 ## wrapper functions for NOAA's VDatum
 ##
-## Currently only compatible with VDatum > 4.0
+## Currently only compatible with VDatum >= 4.0
 ##
+## TODO: add all vdatum cli options
 ## =============================================================================
 _vd_config = {
     'jar': None,
@@ -410,7 +411,8 @@ def run_vdatum(src_fn, vd_config = _vd_config):
         vd_config['jar'] = vdatum_locate_jar()[0]
     if vd_config['jar'] is not None:
         vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},0,1,2:{}:{} region:{}\
-        '.format(vd_config['ihorz'], vd_config['ivert'], vd_config['ohorz'], vd_config['overt'], vd_config['delim'], src_fn, vd_config['result_dir'], vd_config['region'])
+        '.format(vd_config['ihorz'], vd_config['ivert'], vd_config['ohorz'], vd_config['overt'], \
+                 vd_config['delim'], src_fn, vd_config['result_dir'], vd_config['region'])
         #out, status = run_cmd('java -Djava.awt.headless=true -jar {} {}'.format(self.vdatum_path, vdc), self.verbose, True)
         return(run_cmd('java -jar {} {}'.format(vd_config['jar'], vdc), verbose = True))
     else: return([], -1)
@@ -1359,6 +1361,7 @@ def inf_entry(src_entry):
         if not os.path.exists(path_i):
             minmax = _datalist_hooks['inf'][src_entry[1]](src_entry)
         else: minmax = inf_parse(path_i)#[:4]
+    if not region_valid_p(minmax): minmax = None
     return(minmax)
     
 ## ==============================================
@@ -1743,19 +1746,17 @@ def waffles_dict2wg(wg = _waffles_grid_info):
     if 'node' not in keys: wg['node'] = 'pixel'
     if 'fmt' not in keys: wg['fmt'] = 'GTiff'
     if 'extend' not in keys: wg['extend'] = 0
-    else: wg['extend'] = int_or_none(wg['extend'])
+    else: wg['extend'] = int_or(wg['extend'], 0)
     if 'weights' not in keys: wg['weights'] = None
     if 'fltr' not in keys: wg['fltr'] = None
     if 'sample' not in keys: wg['sample'] = None
     else: wg['sample'] = gmt_inc2inc(str(wg['sample']))
     if 'clip' not in keys: wg['clip'] = None
     if 'epsg' not in keys: wg['epsg'] = 4326
-    else: wg['epsg'] = int_or_none(wg['epsg'])
+    else: wg['epsg'] = int_or(wg['epsg'], 4326)
     if 'mod' not in keys: wg['mod'] = 'surface'
     if 'mod_args' not in keys: wg['mod_args'] = ()
     wg['gc'] = config_check()
-
-    if wg['epsg'] is None: wg['epsg'] = 4326
     ## ==============================================
     ## set the master datalist to the mentioned
     ## datalists/datasets
@@ -1857,7 +1858,8 @@ def waffles_gmt_surface(wg = _waffles_grid_info, tension = .35, relaxation = 1.2
         echo_error_msg('GMT must be installed to use the SURFACE module')
         return(None, -1)
     dem_surf_cmd = ('gmt blockmean {} -I{:.10f}{} -V {} | gmt surface -V {} -I{:.10f} -G{}.tif=gd+n-9999:GTiff -T{} -Z{} -Ll{} -Lu{} {}\
-    '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', waffles_gmt_reg_str(wg), waffles_proc_str(wg), wg['inc'], wg['name'], tension, relaxation, lower_limit, upper_limit, waffles_gmt_reg_str(wg)))
+    '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', waffles_gmt_reg_str(wg), waffles_proc_str(wg), \
+             wg['inc'], wg['name'], tension, relaxation, lower_limit, upper_limit, waffles_gmt_reg_str(wg)))
     return(run_cmd(dem_surf_cmd, verbose = True, data_fun = waffles_dl_func(wg)))
 
 def waffles_gmt_triangulate(wg = _waffles_grid_info):
@@ -1866,7 +1868,8 @@ def waffles_gmt_triangulate(wg = _waffles_grid_info):
         echo_error_msg('GMT must be installed to use the TRIANGULATE module')
         return(None, -1)
     dem_tri_cmd = ('gmt blockmean {} -I{:.10f}{} -V {} | gmt triangulate {} -I{:.10f} -V -G{}.tif=gd+n-9999:GTiff {}\
-    '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', waffles_gmt_reg_str(wg), waffles_proc_str(wg), wg['inc'], wg['name'], waffles_gmt_reg_str(wg)))
+    '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', waffles_gmt_reg_str(wg), waffles_proc_str(wg), \
+             wg['inc'], wg['name'], waffles_gmt_reg_str(wg)))
     return(run_cmd(dem_tri_cmd, verbose = True, data_fun = waffles_dl_func(wg)))
 
 def waffles_nearneighbor(wg = _waffles_grid_info, radius = None, use_gdal = False):
@@ -1874,7 +1877,8 @@ def waffles_nearneighbor(wg = _waffles_grid_info, radius = None, use_gdal = Fals
     radius = wg['inc'] * 2 if radius is None else gmt_inc2inc(radius)
     if wg['gc']['GMT'] is not None and not use_gdal:
         dem_nn_cmd = ('gmt blockmean {} -I{:.10f}{} -V {} | gmt nearneighbor {} -I{:.10f} -S{} -V -G{}.tif=gd+n-9999:GTiff {}\
-        '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', waffles_gmt_reg_str(wg), waffles_proc_str(wg), wg['inc'], radius, wg['name'], waffles_gmt_reg_str(wg)))
+        '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', waffles_gmt_reg_str(wg), waffles_proc_str(wg), \
+                 wg['inc'], radius, wg['name'], waffles_gmt_reg_str(wg)))
         return(run_cmd(dem_nn_cmd, verbose = True, data_fun = waffles_dl_func(wg)))
     else: return(waffles_gdal_grid(wg, 'nearest:radius1={}:radius2={}:nodata=-9999'.format(radius, radius)))
 
@@ -1884,7 +1888,8 @@ def waffles_num(wg = _waffles_grid_info, mode = 'n'):
     mode of `m` generates a mean grid
     mode of `n` generates a num grid'''
     wg['region'] = region_buffer(wg['region'], wg['inc'] * .5) if wg['node'] == 'grid' else wg['region']
-    return(gdal_xyz2gdal(datalist_io(waffles_dl_func(wg)), '{}.tif'.format(wg['name']), waffles_dist_region(wg), wg['inc'], dst_format = wg['fmt'], mode = mode))
+    return(gdal_xyz2gdal(datalist_io(waffles_dl_func(wg)), '{}.tif'.format(wg['name']), waffles_dist_region(wg), wg['inc'], \
+                         dst_format = wg['fmt'], mode = mode))
                                 
 def waffles_spatial_metadata(wg):
     '''generate spatial-metadata for the top-level of the datalist
@@ -1981,7 +1986,8 @@ def waffles_gdal_grid(wg = _waffles_grid_info, alg_str = 'linear:radius=1'):
     gdal_set_nodata('{}.tif'.format(wg['name']), -9999)
     return(0, 0)
 
-def waffles_invdst(wg = _waffles_grid_info, power = 2.0, smoothing = 0.0, radius1 = None, radius2 = None, angle = 0.0, max_points = 0, min_points = 0, nodata = -9999):
+def waffles_invdst(wg = _waffles_grid_info, power = 2.0, smoothing = 0.0, radius1 = None, radius2 = None, angle = 0.0, \
+                   max_points = 0, min_points = 0, nodata = -9999):
     '''Generate an inverse distance grid with GDAL'''
     radius1 = wg['inc'] * 2 if radius1 is None else gmt_inc2inc(radius1)
     radius2 = wg['inc'] * 2 if radius2 is None else gmt_inc2inc(radius2)
@@ -2304,7 +2310,7 @@ def waffles_cli(argv = sys.argv):
         if want_config:
             this_wg = waffles_dict2wg(wg)
             if this_wg is not None:
-                print(this_wg)
+                echo_msg(json.dumps(this_wg, indent = 4, sort_keys = True))
                 with open('{}.json'.format(this_wg['name']), 'w') as wg_json:
                     echo_msg('generating waffles config file: {}.json'.format(this_wg['name']))
                     echo_msg('generating master datalist: {}_mstr.datalist'.format(this_wg['name']))
