@@ -1910,9 +1910,13 @@ def waffles_spatial_metadata(wg):
         [layer.SetFeature(feature) for feature in layer]
         defn = layer.GetLayerDefn()
         entry = datalist2py(wg['datalist'])[0]
+        print(entry)
         these_entries = datalist2py(entry[0])
-        
+        print(these_entries)
+        print(wg['datalist'])
         for this_entry in these_entries:
+            this_entry[0] = os.path.join(os.path.dirname(entry[0]), this_entry[0])
+            print(this_entry)
             wg['datalist'] = this_entry[0]
             wg['name'] = os.path.basename(this_entry[0]).split('.')[0]
             o_v_fields = [wg['name'], 'Unknown', '0', 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
