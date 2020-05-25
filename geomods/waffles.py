@@ -297,6 +297,7 @@ def region_format(region, t = 'gmt'):
     if t == 'str': return('/'.join([str(x) for x in region]))
     elif t == 'gmt': return('-R' + '/'.join([str(x) for x in region]))
     elif t == 'bbox': return(','.join([str(region[0]), str(region[2]), str(region[1]), str(region[3])]))
+    elif t == 'te': return(' '.join([str(region[0]), str(region[2]), str(region[1]), str(region[3])]))
     elif t == 'fn':
         if region[3] < 0: ns = 's'
         else: ns = 'n'
@@ -594,9 +595,16 @@ def gmt_sample_gnr(src_grd, verbose = False):
 def gmt_sample_inc(src_grd, inc = 1, verbose = False):
     '''resamele src_grd to toggle between grid-node and pixel-node
     grid registration.'''
-    out, status = run_cmd('gmt grdsample -I{:.10f} {} -Gtmp.tif=gd+n-9999:GTiff'.format(inc, src_grd), verbose = verbose)
+    out, status = run_cmd('gmt grdsample -I{:.10f} {} -R{} -Gtmp.tif=gd+n-9999:GTiff'.format(inc, src_grd, src_grd), verbose = verbose)
     if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
     return(status)
+
+# def gdal_sample_inc(src_grd, inc = 1, verbose = False):
+#     '''resamele src_grd to toggle between grid-node and pixel-node
+#     grid registration.'''
+#     out, status = run_cmd('gdalwarp -tr {:.10f} {:.10f} {} -r bilinear -te -R{} -r -Gtmp.tif=gd+n-9999:GTiff'.format(inc, inc, src_grd, src_grd), verbose = verbose)
+#     if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
+#     return(status)
 
 ## ==============================================
 ## MB-System Wrapper Functions - mbsfun.py
@@ -1007,7 +1015,7 @@ def _geo2pixel(geo_x, geo_y, geoTransform):
         pixel_x = (geo_x - geoTransform[0]) / geoTransform[1]
         pixel_y = (geo_y - geoTransform[3]) / geoTransform[5]
     else: pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt(geoTransform))
-    return(int(pixel_x), int(pixel_y))
+    return(int(pixel_x+.5), int(pixel_y+.5))
 
 def _pixel2geo(pixel_x, pixel_y, geoTransform):
     '''convert a pixel location to geographic coordinates given geoTransform'''
@@ -2058,17 +2066,8 @@ def waffles_run(wg = _waffles_grid_info):
     ## exit here if running one of those mods.
     ## ==============================================
     if wg['mod'] == 'spat-metadata' or wg['mod'] == 'archive': sys.exit(0)
+    gdal_set_epsg(dem, wg['epsg'])
     waffles_gdal_md(wg)
-    
-    ## ==============================================
-    ## cut dem to final size - region buffered by (inc * extend)
-    ## ==============================================
-    try:
-        out = gdal_cut(dem, waffles_dist_region(wg), 'tmp_cut.tif')
-        if out is not None: os.rename('tmp_cut.tif', dem)
-    except OSError as e:
-        remove_glob('tmp_cut.tif')
-        echo_error_msg('cut failed, is the dem open somewhere, {}'.format(e))
                 
     ## ==============================================
     ## optionally clip the DEM to polygon
@@ -2101,7 +2100,19 @@ def waffles_run(wg = _waffles_grid_info):
     if wg['sample'] is not None:
         if wg['gc']['GMT'] is not None:
             gmt_sample_inc(dem, inc = wg['sample'], verbose = True)
-        
+        else:
+            out, status = run_cmd('gdalwarp -tr {:.10f} {:.10f} {} -r bilinear -te {} tmp.tif'.format(inc, inc, src_grd, region_format(waffles_proc_region(wg)), verbose = verbose))
+            if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
+    ## ==============================================
+    ## cut dem to final size - region buffered by (inc * extend)
+    ## ==============================================
+    try:
+        out = gdal_cut(dem, waffles_dist_region(wg), 'tmp_cut.tif')
+        if out is not None: os.rename('tmp_cut.tif', dem)
+    except OSError as e:
+        remove_glob('tmp_cut.tif')
+        echo_error_msg('cut failed, is the dem open somewhere, {}'.format(e))
+            
     ## ==============================================
     ## convert to final format
     ## ==============================================
