@@ -2026,7 +2026,6 @@ def waffles_gdal_md(wg):
         
 def waffles_run(wg = _waffles_grid_info):
     '''generate a DEM using wg dict settings'''
-    dem = '{}.tif'.format(wg['name'])
 
     ## ==============================================
     ## validate and/or set the waffles_config
@@ -2046,6 +2045,7 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     ## gererate the DEM
     ## ==============================================
+    dem = '{}.tif'.format(wg['name'])
     try:
         out, status = _waffles_modules[wg['mod']][0](args_d)
     except TypeError as e: echo_error_msg('{}'.format(e))
