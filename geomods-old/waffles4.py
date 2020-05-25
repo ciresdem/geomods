@@ -3399,10 +3399,11 @@ _dem_mods = {
     \t\t\t< linear:radius=-1 >
     \t\t\t:radius=[value] - Linear interpolation search radius.'''],
     'vdatum': [lambda x: x.vdatum, '''VDATUM transformation grid
-    \t\t\t< vdatum:ivert=navd88:overt=mhw:region=3 >
+    \t\t\t< vdatum:ivert=navd88:overt=mhw:region=3jar=None >
     \t\t\t:ivert=[vdatum] - Input VDatum vertical datum.
     \t\t\t:overt=[vdatum] - Output VDatum vertical datum.
-    \t\t\t:region=[0-10] - VDatum region (3 is CONUS)'''],
+    \t\t\t:region=[0-10] - VDatum region (3 is CONUS)
+    \t\t\t:jar=[/path/to/vdatum.jar] - VDatum jar path - (auto-locates by default)'''],
     'uncertainty': [lambda x: x.uncertainty, '''DEM UNCERTAINTY grid <beta>
     \t\t\t< uncertainty:dem_mod=mbgrid:dem=None:msk=None:prox=None >
     \t\t\t:dem_mod=[mbgrid/surface/invdst/triangulate/...] - Waffles DEM interpolation module
