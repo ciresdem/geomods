@@ -1037,9 +1037,9 @@ def gdal_srcwin(src_ds, region):
     output the appropriate gdal srcwin.'''    
     ds_config = gdal_gather_infos(src_ds)
     this_origin = _geo2pixel(region[0], region[3], ds_config['geoT'])
+    this_origin = [0 if x < 0 else x for x in this_origin]
     this_end = _geo2pixel(region[1], region[2], ds_config['geoT'])
     this_size = (int(this_end[0] - this_origin[0]), int(this_end[1] - this_origin[1]))
-    this_origin = [0 if x < 0 else x for x in this_origin]
     this_size = [0 if x < 0 else x for x in this_size]
     if this_size[0] > ds_config['nx'] - this_origin[0]: this_size[0] = ds_config['nx'] - this_origin[0]
     if this_size[1] > ds_config['ny'] - this_origin[1]: this_size[1] = ds_config['ny'] - this_origin[1]
@@ -1151,7 +1151,6 @@ def gdal_blur(src_gdal, dst_gdal, sf = 1):
         msk_array[msk_array != ds_config['ndv']] = 1
         msk_array[msk_array == ds_config['ndv']] = np.nan
         ds_array[ds_array == ds_config['ndv']] = 0
-        print(float(sf))
         smooth_array = np_gaussian_blur(ds_array, int(sf))
         smooth_array = smooth_array * msk_array
         mask_array = ds_array = None
@@ -1286,14 +1285,12 @@ def gdal_parse(src_ds, dst_xyz = sys.stdout, weight = None, dump_nodata = False,
     nodata = ['{:g}'.format(-9999), 'nan']
     if band.GetNoDataValue() is not None: nodata.append('{:g}'.format(band.GetNoDataValue()))
     if dump_nodata: nodata = []
-    
     for y in range(srcwin[1], srcwin[1] + srcwin[3], 1):
         band_data = band.ReadAsArray(srcwin[0], y, srcwin[2], 1)
         if msk_band is not None:
             msk_data = msk_band.ReadAsArray(srcwin[0], y, srcwin[2], 1)
             band_data[msk_data==0]=-9999
         band_data = np.reshape(band_data, (srcwin[2], ))
-        
         for x_i in range(0, srcwin[2], 1):
             x = x_i + srcwin[0]
             geo_x, geo_y = _pixel2geo(x, y, gt)
@@ -1937,7 +1934,7 @@ def waffles_spatial_metadata(wg):
 def waffles_archive(wg = _waffles_grid_info, arch_dir = None):
     '''archive the datalist to `arch_dir`'''
     arch_dir = wg['name'] if arch_dir is None else arch_dir
-    return(datalist_archive(wg, arch_dir = arch_dir, region = wg['region'], verbose = True))
+    return(datalist_archive(wg, arch_dir = arch_dir, region = waffles_proc_region(wg), verbose = True))
 
 def waffles_vdatum(wg = _waffles_grid_info, ivert = 'navd88', overt = 'mhw', region = '3', jar = None):
     vc = _vd_config
@@ -2252,7 +2249,10 @@ def waffles_cli(argv = sys.argv):
             except ValueError as e:
                 wg = waffles_config()
                 echo_error_msg('could not parse json from {}, {}'.format(wg_user, e))
+            except RuntimeError or OSError as e:
+                echo_error_msg('Cannot access {}.tif, may be in use elsewhere, {}'.format(wg['name'], e))
         else: echo_error_msg('specified json file does not exist, {}'.format(wg_user))
+        sys.exit(0)
         
     ## ==============================================
     ## Otherwise run from cli options...
@@ -2314,7 +2314,7 @@ def waffles_cli(argv = sys.argv):
             try:
                 dem = waffles_run(wg)
             except RuntimeError or OSError as e:
-                echo_error_msg('Cannot write {}.tif, may be in use elsewhere, {}'.format(wg['name'], e))
+                echo_error_msg('Cannot access {}.tif, may be in use elsewhere, {}'.format(wg['name'], e))
 
 ## ==============================================
 ## datalists cli
