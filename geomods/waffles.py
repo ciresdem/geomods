@@ -333,11 +333,11 @@ def region_chunk(region, inc, n_chunk = 10):
             if geo_x_o < region[0]: geo_x_0 = region[0]
             o_chunks.append([geo_x_o, geo_x_t, geo_y_o, geo_y_t])
         
-            if y_chunk < ycount:
+            if y_chunk <= ycount:
                 y_chunk += n_chunk
                 i_chunk += 1
             else: break
-        if x_chunk < xcount:
+        if x_chunk <= xcount:
             x_chunk += n_chunk
             x_i_chunk += 1
         else: break
@@ -1704,14 +1704,13 @@ def datalist(dl, dlh = _datalist_hooks, fmt = -1, wt = None, verbose = False):
         this_entry_md = ' '.join(this_entry[3:]).split(',')
         this_entry = this_entry[:3] + [this_entry_md] + [os.path.basename(dl).split('.')[0]]
         if dlh['pass'][this_entry[1]](this_entry):
-            if verbose is True:
-                echo_msg('{} {}'.format('scanning datalist' if this_entry[1] == -1 else 'using datafile', this_entry[0]))
-            #try:
-            dlh['proc'][this_entry[1]](this_entry, dlh, fmt, wt, verbose)
-            #except KeyboardInterrupt as e:
-            #    echo_error_msg('user break, {}'.format(e))
-            #    sys.exit(-1)
-            #except: echo_error_msg('could not process entry {}'.format(this_entry[0]))
+            if verbose: echo_msg('{} {}'.format('scanning datalist' if this_entry[1] == -1 else 'using datafile', this_entry[0]))
+            try:
+                dlh['proc'][this_entry[1]](this_entry, dlh, fmt, wt, verbose)
+            except KeyboardInterrupt as e:
+                echo_error_msg('user break, {}'.format(e))
+                sys.exit(-1)
+            except: echo_error_msg('could not process entry {}'.format(this_entry[0]))
 
 ## ==============================================
 ## DEM module: generate a Digital Elevation Model using a variety of methods
@@ -1736,6 +1735,7 @@ _waffles_grid_info = {
     'epsg': 4326,
     'mod': 'surface',
     'mod_args': (),
+    'verbose': False,
     'gc': config_check()
 }
 waffles_config = lambda: copy.deepcopy(_waffles_grid_info)
@@ -1773,6 +1773,8 @@ def waffles_dict2wg(wg = _waffles_grid_info):
     else: wg['epsg'] = int_or(wg['epsg'], 4326)
     if 'mod' not in keys: wg['mod'] = 'surface'
     if 'mod_args' not in keys: wg['mod_args'] = ()
+    if 'verbose' not in keys: wg['verbose'] = False
+    else: wg['verbose'] = False if not wg['verbose'] or str(wg['verbose']).lower() == 'false' or wg['verbose'] is None else True
     wg['gc'] = config_check()
     ## ==============================================
     ## set the master datalist to the mentioned
@@ -1843,7 +1845,7 @@ waffles_module_short_desc = lambda x: ', '.join(['{}'.format(key) for key in x])
 waffles_proc_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * 20) + (wg['inc'] * wg['extend']))
 waffles_dist_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * wg['extend']))
 waffles_proc_str = lambda wg: region_format(waffles_proc_region(wg), 'gmt')
-waffles_dl_func = lambda wg: lambda p: datalist_dump(wg, dst_port = p, region = waffles_proc_region(wg), verbose = True)
+waffles_dl_func = lambda wg: lambda p: datalist_dump(wg, dst_port = p, region = waffles_proc_region(wg), verbose = wg['verbose'])
 waffles_gmt_reg_str = lambda wg: '-r' if wg['node'] == 'pixel' else ''
 waffles_append_fn = lambda bn, region, inc: '{}{}_{}_{}'.format(bn, inc2str_inc(inc), region_format(region, 'fn'), this_year())
     
@@ -1864,7 +1866,7 @@ def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, use_dat
     out, status = run_mbgrid(wg['datalist'], waffles_dist_region(wg), wg['inc'], wg['name'], dist = dist, tension = tension, verbose = True)
     remove_glob('*.cmd')
     gmt_grd2gdal('{}.grd'.format(wg['name']))
-    if wg['node'] == 'pixel': gmt_sample_gnr('{}.tif'.format(wg['name']), verbose = True)
+    if wg['node'] == 'pixel': gmt_sample_gnr('{}.tif'.format(wg['name']), verbose = wg['verbose'])
     remove_glob('{}.grd'.format(wg['name']))
     if use_datalists: shutil.rmtree('.mb_tmp_datalist')
     return(0, 0)
@@ -1877,7 +1879,7 @@ def waffles_gmt_surface(wg = _waffles_grid_info, tension = .35, relaxation = 1.2
     dem_surf_cmd = ('gmt blockmean {} -I{:.10f}{} -V {} | gmt surface -V {} -I{:.10f} -G{}.tif=gd+n-9999:GTiff -T{} -Z{} -Ll{} -Lu{} {}\
     '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', waffles_gmt_reg_str(wg), waffles_proc_str(wg), \
              wg['inc'], wg['name'], tension, relaxation, lower_limit, upper_limit, waffles_gmt_reg_str(wg)))
-    return(run_cmd(dem_surf_cmd, verbose = True, data_fun = waffles_dl_func(wg)))
+    return(run_cmd(dem_surf_cmd, verbose = wg['verbose'], data_fun = waffles_dl_func(wg)))
 
 def waffles_gmt_triangulate(wg = _waffles_grid_info):
     '''generate a DEM with GMT surface'''
@@ -1887,7 +1889,7 @@ def waffles_gmt_triangulate(wg = _waffles_grid_info):
     dem_tri_cmd = ('gmt blockmean {} -I{:.10f}{} -V {} | gmt triangulate {} -I{:.10f} -V -G{}.tif=gd+n-9999:GTiff {}\
     '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', waffles_gmt_reg_str(wg), waffles_proc_str(wg), \
              wg['inc'], wg['name'], waffles_gmt_reg_str(wg)))
-    return(run_cmd(dem_tri_cmd, verbose = True, data_fun = waffles_dl_func(wg)))
+    return(run_cmd(dem_tri_cmd, verbose = wg['verbose'], data_fun = waffles_dl_func(wg)))
 
 def waffles_nearneighbor(wg = _waffles_grid_info, radius = None, use_gdal = False):
     '''genearte a DEM with GMT nearneighbor'''
@@ -1896,7 +1898,7 @@ def waffles_nearneighbor(wg = _waffles_grid_info, radius = None, use_gdal = Fals
         dem_nn_cmd = ('gmt blockmean {} -I{:.10f}{} -V {} | gmt nearneighbor {} -I{:.10f} -S{} -V -G{}.tif=gd+n-9999:GTiff {}\
         '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', waffles_gmt_reg_str(wg), waffles_proc_str(wg), \
                  wg['inc'], radius, wg['name'], waffles_gmt_reg_str(wg)))
-        return(run_cmd(dem_nn_cmd, verbose = True, data_fun = waffles_dl_func(wg)))
+        return(run_cmd(dem_nn_cmd, verbose = wg['verbose'], data_fun = waffles_dl_func(wg)))
     else: return(waffles_gdal_grid(wg, 'nearest:radius1={}:radius2={}:nodata=-9999'.format(radius, radius)))
 
 def waffles_num(wg = _waffles_grid_info, mode = 'n'):
@@ -2040,7 +2042,9 @@ def waffles_gdal_md(wg):
         ds.SetMetadata(md)
         ds = None
     else: echo_error_msg('failed to set metadata')
-        
+
+## todo: split into waffles_run_module and waffles_post_process
+## threads?
 def waffles_run(wg = _waffles_grid_info):
     '''generate a DEM using wg dict settings'''
 
@@ -2058,12 +2062,38 @@ def waffles_run(wg = _waffles_grid_info):
         args_d[p_arg[0]] = p_arg[1]
     args_d['wg'] = wg
         
-    echo_msg(json.dumps(wg, indent = 4, sort_keys = True))
+    if wg['verbose']:
+        echo_msg(json.dumps(wg, indent = 4, sort_keys = True))
+        echo_msg('running module {}...'.format(wg['mod']))
+
     ## ==============================================
     ## gererate the DEM
     ## ==============================================
-    echo_msg('running module {}...'.format(wg['mod']))
     dem = '{}.tif'.format(wg['name'])
+
+    # import threading
+    # strt = time.time()
+    # t = threading.Thread(target = _waffles_modules[wg['mod']][0], args = (args_d,))
+    # elps = 0 
+    # try:
+    #     #sys.stderr.write('waffles: running module {}:'.format(wg['mod'].upper()))
+    #     t.start()
+    #     while True:
+    #         time.sleep(2)
+    #         elps = time.time() - strt
+    #         sys.stderr.write('\x1b[2K\r')
+    #         sys.stderr.flush()
+    #         sys.stderr.write('waffles: running module {} <{}>: {}'.format(wg['mod'].upper(), wg['name'], time.strftime("%H:%M:%S", time.gmtime(elps))))
+    #         if not t.is_alive():
+    #             break
+    # except (KeyboardInterrupt, SystemExit):
+    #     echo_msg('stopping all threads')
+    #     sys.exit(-1)
+
+    # t.join()
+    # elps = time.time() - strt
+    # echo_msg('ran module {} <{}>: {}'.format(wg['mod'].upper(), wg['name'], time.strftime("%H:%M:%S", time.gmtime(elps))))
+
     try:
         out, status = _waffles_modules[wg['mod']][0](args_d)
     except TypeError as e: echo_error_msg('{}'.format(e))
@@ -2074,6 +2104,7 @@ def waffles_run(wg = _waffles_grid_info):
     if not os.path.exists(dem): return(None)
     gdi = gdal_infos(dem, scan=True)
     if gdi is not None:
+        print(gdi)
         if np.isnan(gdi['zmin']):
             remove_glob(dem)
             return(None)
@@ -2090,7 +2121,7 @@ def waffles_run(wg = _waffles_grid_info):
     ## optionally clip the DEM to polygon
     ## ==============================================
     if wg['clip'] is not None:
-        echo_msg('clipping {}...'.format(dem))
+        if wg['verbose']: echo_msg('clipping {}...'.format(dem))
         clip_args = {}
         cp = wg['clip'].split(':')
         clip_args['src_ply'] = cp[0]
@@ -2101,7 +2132,7 @@ def waffles_run(wg = _waffles_grid_info):
     ## optionally filter the DEM 
     ## ==============================================
     if wg['fltr'] is not None:
-        echo_msg('filtering {}...'.format(dem))
+        if wg['verbose']: echo_msg('filtering {}...'.format(dem))
         fltr_args = {}
         fltr = wg['fltr'].split(':')
         fltr_args['fltr'] = gmt_inc2inc(fltr[0])
@@ -2117,9 +2148,9 @@ def waffles_run(wg = _waffles_grid_info):
     ## optionally resample the DEM 
     ## ==============================================
     if wg['sample'] is not None:
-        echo_msg('resampling {}...'.format(dem))
+        if wg['verbose']: echo_msg('resampling {}...'.format(dem))
         if wg['gc']['GMT'] is not None:
-            gmt_sample_inc(dem, inc = wg['sample'], verbose = True)
+            gmt_sample_inc(dem, inc = wg['sample'], verbose = wg['verbose'])
         else:
             out, status = run_cmd('gdalwarp -tr {:.10f} {:.10f} {} -r bilinear -te {} tmp.tif'.format(inc, inc, src_grd, region_format(waffles_proc_region(wg)), verbose = verbose))
             if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
@@ -2266,7 +2297,7 @@ def waffles_cli(argv = sys.argv):
         elif arg == '-w': wg['weights'] = True
         elif arg == '-p': want_prefix = True
         elif arg == '-r': wg['node'] = 'grid'
-        elif arg == '--verbose' or arg == '-V': want_verbose = True
+        elif arg == '--verbose' or arg == '-V': wg['verbose'] = True
         elif arg == '--config': want_config = True
         elif arg == '--modules' or arg == '-m':
             sys.stderr.write(waffles_module_long_desc(_waffles_modules))
@@ -2289,7 +2320,7 @@ def waffles_cli(argv = sys.argv):
                 with open(wg_user, 'r') as wgj:
                     wg = json.load(wgj)
                 dem = waffles_run(wg)
-                sys.exit(dem)
+                sys.exit(0)
             except ValueError as e:
                 wg = waffles_config()
                 echo_error_msg('could not parse json from {}, {}'.format(wg_user, e))
