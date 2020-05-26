@@ -851,6 +851,7 @@ def gdal_infos(src_gdal, scan = False):
             dsc = gdal_gather_infos(ds)
             if scan:
                 t = ds.ReadAsArray()
+                t[t == dsc['ndv']] = np.nan
                 dsc['zmin'] = np.min(t)
                 dsc['zmax'] = np.max(t)
             ds = None
@@ -2127,7 +2128,10 @@ def waffles_run(wg = _waffles_grid_info):
     ## set the projection and other metadata
     ## ==============================================
     gdal_set_epsg(dem, wg['epsg'])
-    waffles_gdal_md(wg)    
+    waffles_gdal_md(wg)
+    ## ==============================================
+    ## if dem has data, return
+    ## ==============================================
     return(dem)
         
 ## ==============================================
