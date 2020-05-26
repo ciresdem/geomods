@@ -2104,7 +2104,6 @@ def waffles_run(wg = _waffles_grid_info):
     if not os.path.exists(dem): return(None)
     gdi = gdal_infos(dem, scan=True)
     if gdi is not None:
-        print(gdi)
         if np.isnan(gdi['zmin']):
             remove_glob(dem)
             return(None)
