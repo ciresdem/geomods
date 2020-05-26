@@ -732,23 +732,23 @@ def gdal_query(src_xyz, src_grd, out_form):
         for xyz in src_xyz:
             x = xyz[0]
             y = xyz[1]
-            try: 
-                z = xyz[2]
-            except: z = dsnodata
+            #try: 
+            z = xyz[2]
+            #except: z = dsnodata
 
             if x > ds_gt[0] and y < float(ds_gt[3]):
                 xpos, ypos = _geo2pixel(x, y, ds_gt)
                 try: 
                     g = tgrid[ypos, xpos]
                 except: g = ds_nd
-
+                #print(g)
                 d = c = m = s = ds_nd
                 if g != ds_nd:
                     d = z - g
                     m = z + g
-                    c = con_dec(math.fabs(float(d / (g + 0.00000001) * 100)), 2)
-                    s = con_dec(math.fabs(d / (z + (g + 0.00000001))), 4)
-                    d = con_dec(d, 4)
+                    #c = con_dec(math.fabs(d / (g + 0.00000001) * 100), 2)
+                    #s = con_dec(math.fabs(d / (z + (g + 0.00000001))), 4)
+                    #d = con_dec(d, 4)
                     outs = []
                     for i in out_form:
                         outs.append(vars()[i])
@@ -851,6 +851,7 @@ def gdal_infos(src_gdal, scan = False):
             dsc = gdal_gather_infos(ds)
             if scan:
                 t = ds.ReadAsArray()
+                t = t.astype(float)
                 t[t == dsc['ndv']] = np.nan
                 t = t[~np.isnan(t)]
                 if len(t) > 0:
@@ -2070,9 +2071,13 @@ def waffles_run(wg = _waffles_grid_info):
         echo_error_msg('killed by user, {}'.format(e))
         sys.exit(-1)
 
-    if np.isnan(gdal_infos(dem, scan=True)['zmin']):
-        remove_glob(dem)
-        return(-1)
+    if not os.path.exists(dem): return(None)
+    gdi = gdal_infos(dem, scan=True)
+    if gdi is not None:
+        if np.isnan(gdi['zmin']):
+            remove_glob(dem)
+            return(None)
+    else: return(None)
     ## ==============================================
     ## spat-metadata and archive don't produce grids,
     ## exit here if running one of those mods.
