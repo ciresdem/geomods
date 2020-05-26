@@ -1530,9 +1530,9 @@ def datalist_inf(dl, inf_file = True):
     out_regions = []
     minmax = None
     dlh = datalist_hooks()
-    dlh['proc'][-1] = lambda e, d, f, w, v: out_regions.append(inf_entry(e))
-    dlh['proc'][168] = lambda e, d, f, w, v: out_regions.append(inf_entry(e))
-    dlh['proc'][200] = lambda e, d, f, w, v: out_regions.append(inf_entry(e))
+    dlh['proc'][-1] = lambda e, d, f, w, v: out_regions.append(inf_entry(e)[:4])
+    dlh['proc'][168] = lambda e, d, f, w, v: out_regions.append(inf_entry(e)[:4])
+    dlh['proc'][200] = lambda e, d, f, w, v: out_regions.append(inf_entry(e)[:4])
     datalist(dl, dlh = dlh, verbose = False)
     out_regions = [x for x in out_regions if x is not None]
     if len(out_regions) == 0:
@@ -1789,7 +1789,7 @@ def waffles_dict2wg(wg = _waffles_grid_info):
         ## the region was not specified.
         ## ==============================================
         if wg['region'] is None or not region_valid_p(wg['region']):
-                wg['region'] = datalist_inf(wg['datalist'])
+            wg['region'] = datalist_inf(wg['datalist'])
 
     if wg['region'] is None:
         echo_error_msg('invalid region and/or datalist/s entry')
