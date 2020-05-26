@@ -1669,7 +1669,7 @@ def datalist2py(dl):
             while True:
                 this_line = op.readline()#.rstrip()
                 if not this_line: break
-                if this_line[0] != '#' and this_line[0] != '\n' and this_line[0] != '':
+                if this_line[0] != '#' and this_line[0] != '\n' and this_line[0].rstrip() != '':
                     these_entries.append(entry2py(this_line.rstrip()))
     else: these_entries.append(this_entry)
     return(these_entries)
@@ -2061,6 +2061,7 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     ## gererate the DEM
     ## ==============================================
+    echo_msg('running module {}...'.format(wg['mod']))
     dem = '{}.tif'.format(wg['name'])
     try:
         out, status = _waffles_modules[wg['mod']][0](args_d)
@@ -2084,6 +2085,7 @@ def waffles_run(wg = _waffles_grid_info):
     ## optionally clip the DEM to polygon
     ## ==============================================
     if wg['clip'] is not None:
+        echo_msg('clipping {}...'.format(dem))
         clip_args = {}
         cp = wg['clip'].split(':')
         clip_args['src_ply'] = cp[0]
@@ -2094,6 +2096,7 @@ def waffles_run(wg = _waffles_grid_info):
     ## optionally filter the DEM 
     ## ==============================================
     if wg['fltr'] is not None:
+        echo_msg('filtering {}...'.format(dem))
         fltr_args = {}
         fltr = wg['fltr'].split(':')
         fltr_args['fltr'] = gmt_inc2inc(fltr[0])
@@ -2109,6 +2112,7 @@ def waffles_run(wg = _waffles_grid_info):
     ## optionally resample the DEM 
     ## ==============================================
     if wg['sample'] is not None:
+        echo_msg('resampling {}...'.format(dem))
         if wg['gc']['GMT'] is not None:
             gmt_sample_inc(dem, inc = wg['sample'], verbose = True)
         else:
