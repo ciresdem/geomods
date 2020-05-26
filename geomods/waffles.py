@@ -1755,10 +1755,6 @@ def waffles_dict2wg(wg = _waffles_grid_info):
             wg['datalists'] = [x[0] for x in datalist2py(wg['datalist'])]
         else: wg['datalists'] = None
     if 'region' not in keys: wg['region'] = None
-    else:
-        if len(wg['region']) == 4:
-            wg['region'] = [float(x) for x in wg['region']]
-        else: wg['region'] = [float(x) for x in wg['region'].split('/')]
     if 'inc' not in keys: wg['inc'] = None
     else: wg['inc'] = gmt_inc2inc(str(wg['inc']))
     if 'name' not in keys: wg['name'] = 'waffles_dem'
