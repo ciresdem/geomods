@@ -2003,7 +2003,6 @@ def waffles_gdal_grid(wg = _waffles_grid_info, alg_str = 'linear:radius=1'):
     gd_opts = gdal.GridOptions(outputType = gdal.GDT_Float32, noData = -9999, format = 'GTiff', \
                                width = xcount, height = ycount, algorithm = alg_str, callback = _gdal_progress if wg['verbose'] else None, \
                                outputBounds = [region[0], region[3], region[1], region[2]])
-    echo_msg('gridding src data')
     gdal.Grid('{}.tif'.format(wg['name']), ds, options = gd_opts)
     ds = None
     gdal_set_nodata('{}.tif'.format(wg['name']), -9999)
