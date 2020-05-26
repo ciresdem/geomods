@@ -852,8 +852,15 @@ def gdal_infos(src_gdal, scan = False):
             if scan:
                 t = ds.ReadAsArray()
                 t[t == dsc['ndv']] = np.nan
-                dsc['zmin'] = np.min(t)
-                dsc['zmax'] = np.max(t)
+                t = t[~np.isnan(t)]
+                if len(t) > 0:
+                    zmin = np.min(t[~np.isnan(t)])
+                    zmax = np.max(t[~np.isnan(t)])
+                else:
+                    zmin = np.nan
+                    zmax = np.nan
+                dsc['zmin'] = zmin
+                dsc['zmax'] = zmax
             ds = None
             return(dsc)
         else: return(None)
@@ -1748,6 +1755,10 @@ def waffles_dict2wg(wg = _waffles_grid_info):
             wg['datalists'] = [x[0] for x in datalist2py(wg['datalist'])]
         else: wg['datalists'] = None
     if 'region' not in keys: wg['region'] = None
+    else:
+        if len(wg['region']) == 4:
+            wg['region'] = [float(x) for x in wg['region']]
+        else: wg['region'] = [float(x) for x in wg['region'].split('/')]
     if 'inc' not in keys: wg['inc'] = None
     else: wg['inc'] = gmt_inc2inc(str(wg['inc']))
     if 'name' not in keys: wg['name'] = 'waffles_dem'
@@ -2062,11 +2073,14 @@ def waffles_run(wg = _waffles_grid_info):
         echo_error_msg('killed by user, {}'.format(e))
         sys.exit(-1)
 
+    if np.isnan(gdal_infos(dem, scan=True)['zmin']):
+        remove_glob(dem)
+        return(-1)
     ## ==============================================
     ## spat-metadata and archive don't produce grids,
     ## exit here if running one of those mods.
     ## ==============================================
-    if wg['mod'] == 'spat-metadata' or wg['mod'] == 'archive': sys.exit(0)
+    if wg['mod'] == 'spat-metadata' or wg['mod'] == 'archive': return(0)
     gdal_set_epsg(dem, wg['epsg'])
     waffles_gdal_md(wg)
                 
