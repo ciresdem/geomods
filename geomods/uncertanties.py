@@ -62,8 +62,9 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc'):
 
     serror, _ = np.histogram(distance, bins = nbins, weights = error)
     serror2, _ = np.histogram(distance, bins = nbins, weights = error**2)
-    mean2 = (serror / n)**2
-    std = np.sqrt(serror2 / n - mean2)
+    #mean2 = (serror / n)**2
+    mean = serror / n
+    std = np.sqrt(serror2 / n - mean * mean)
     ydata = np.insert(std, 0, 0)
     bins_orig=(_[1:] + _[:-1]) / 2
     xdata = np.insert(bins_orig, 0, 0)
@@ -160,9 +161,9 @@ def err_plot(err_arr, d_max):
 def waffles_interpolation_uncertainty(uc = _unc_config):
     '''calculate the interpolation uncertainty.'''
     dp = None
-    sims = 20
-    sim_loops = 2
-    chnk_lvl = 2
+    sims = 10
+    sim_loops = 1
+    chnk_lvl = 4
     echo_msg('running INTERPOLATION uncertainty module using {}...'.format(uc['wg']['mod']))
 
     ## ==============================================
@@ -194,6 +195,7 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
         gdal_cut(uc['dem'], sub_region, 'tmp_dem.tif')
         s_sum, s_g_max, s_perc = gdal_mask_analysis('tmp_msk.tif')
         s_dc = gdal_infos('tmp_dem.tif', True)
+        print(s_dc)
         zone = 'Bathy' if s_dc['zmax'] < 0 else 'Topo' if s_dc['zmin'] > 0 else 'BathyTopo'
         sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, s_dc['zmin'], s_dc['zmax'], zone]
         remove_glob('tmp_*.tif')
@@ -309,7 +311,7 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
                             sub_xyd = gdal_query(sub_xyz[sx_cnt:], sub_dem, 'xyd')
                             sub_dp = gdal_query(sub_xyd, sub_prox, 'zg')
                         else: sub_dp = None
-                        #print(sub_dp)
+                        print(sub_dp)
                         remove_glob(sub_xyz_head)
                         sub_xyz = None
 
@@ -356,6 +358,7 @@ if __name__ == '__main__':
     wg['region'] = [float(x) for x in sys.argv[2].split('/')]
     wg['inc'] = gmt_inc2inc(sys.argv[3])
     wg['mod'] = 'surface'
+    wg['verbose'] = True
     #dem = waffles_run(wg)
     dem = '{}.tif'.format(wg['name'])
 

@@ -131,6 +131,9 @@ def int_or(val, or_val = None):
         return(int(val))
     except: return(or_val)
 
+## ==============================================
+## haversine distance formula
+## ==============================================
 def hav_dst(pnt0, pnt1):
     '''return the distance between pnt0 and pnt1,
     using the haversine formula.'''
@@ -208,18 +211,32 @@ def config_check(chk_vdatum = False, verbose = False):
 ## stderr messaging
 ## ==============================================
 def echo_error_msg2(msg, prefix = 'waffles'):
-    '''echo error msg to stderr'''
+    '''echo error msg to stderr using `prefix`
+    >> echo_error_msg2('message', 'test')
+    test: error, message'''
     sys.stderr.write('\x1b[2K\r')
     sys.stderr.flush()
     sys.stderr.write('{}: error, {}\n'.format(prefix, msg))
 
 def echo_msg2(msg, prefix = 'waffles'):
-    '''echo msg to stderr'''
+    '''echo `msg` to stderr using `prefix`
+    >> echo_msg2('message', 'test')
+    test: message'''
     sys.stderr.write('\x1b[2K\r')
     sys.stderr.flush()
     sys.stderr.write('{}: {}\n'.format(prefix, msg))
 
+## ==============================================
+## echo message `m` to sys.stderr using
+## auto-generated prefix
+## lambda runs: echo_msg2(m, prefix = os.path.basename(sys.argv[0]))
+## ==============================================
 echo_msg = lambda m: echo_msg2(m, prefix = os.path.basename(sys.argv[0]))
+
+## ==============================================
+## echo error message `m` to sys.stderr using
+## auto-generated prefix
+## ==============================================
 echo_error_msg = lambda m: echo_error_msg2(m, prefix = os.path.basename(sys.argv[0]))
 
 ## ==============================================
@@ -235,14 +252,14 @@ _known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'csv', 'dat'], 20
 ## -- regions.py --
 ## ==============================================
 def region_valid_p(region):
-    '''return True if region appears valid'''
+    '''return True if `region` [xmin, xmax, ymin, ymax] appears to be valid'''
     if region is not None:
         if region[0] < region[1] and region[2] < region[3]: return(True)
         else: return(False)
     else: return(False)
 
 def region_center(region):
-    '''return the center point of the region'''
+    '''return the center point [xc, yc] of the `region` [xmin, xmax, ymin, ymax]'''
     xc = region[0] + (region[1] - region[0] / 2)
     yc = region[2] + (region[3] - region[2] / 2)
     return([xc, yc])
@@ -254,12 +271,13 @@ def region_pct(region, pctv):
     return((ewp + nsp) / 2)
 
 def region_buffer(region, bv = 0, pct = False):
-    '''return the region buffered by bv'''
+    '''return the region buffered by buffer-value `bv`
+    if `pct` is True, attain the buffer-value via: region_pct(region, bv)'''
     if pct: bv = region_pct(region, bv)
     return([region[0] - bv, region[1] + bv, region[2] - bv, region[3] + bv])
 
 def regions_reduce(region_a, region_b):
-    '''return the minimum region when combining region_a and region_b'''
+    '''return the minimum region when combining `region_a` and `region_b`'''
     region_c = [0, 0, 0, 0]
     region_c[0] = region_a[0] if region_a[0] > region_b[0] else region_b[0]
     region_c[1] = region_a[1] if region_a[1] < region_b[1] else region_b[1]
@@ -268,7 +286,7 @@ def regions_reduce(region_a, region_b):
     return(region_c)
 
 def regions_merge(region_a, region_b):
-    '''merge two regions into a single region'''
+    '''merge two regions (`region_a` and `region_b`) into a single region [xmin, xmax, ymin, ymax].'''
     region_c = [0, 0, 0, 0]
     region_c[0] = region_a[0] if region_a[0] < region_b[0] else region_b[0]
     region_c[1] = region_a[1] if region_a[1] > region_b[1] else region_b[1]
@@ -277,7 +295,8 @@ def regions_merge(region_a, region_b):
     return(region_c)
 
 def regions_intersect_p(region_a, region_b):
-    '''Return True if region_a and region_b intersect.'''
+    '''Return True if `region_a` and `region_b` intersect.
+    region_valid_p(regions_reduce(region_a, region_b))'''
     if region_a is not None and region_b is not None:
         return(region_valid_p(regions_reduce(region_a, region_b)))
     else: return(None)
@@ -293,7 +312,12 @@ def regions_intersect_ogr_p(region_a, region_b):
     else: return(False)
 
 def region_format(region, t = 'gmt'):
-    '''format region to string'''
+    '''format region to string, defined by `t`
+    t = 'str': xmin/xmax/ymin/ymax
+    t = 'gmt': -Rxmin/xmax/ymin/ymax
+    t = 'bbox': xmin,ymin,xmax,ymax
+    t = 'te': xmin ymin xmax ymax
+    t = 'fn': ymax_xmin'''
     if t == 'str': return('/'.join([str(x) for x in region]))
     elif t == 'gmt': return('-R' + '/'.join([str(x) for x in region]))
     elif t == 'bbox': return(','.join([str(region[0]), str(region[2]), str(region[1]), str(region[3])]))
@@ -732,9 +756,9 @@ def gdal_query(src_xyz, src_grd, out_form):
         for xyz in src_xyz:
             x = xyz[0]
             y = xyz[1]
-            #try: 
-            z = xyz[2]
-            #except: z = dsnodata
+            try: 
+                z = xyz[2]
+            except: z = ds_nd
 
             if x > ds_gt[0] and y < float(ds_gt[3]):
                 xpos, ypos = _geo2pixel(x, y, ds_gt)
@@ -921,7 +945,7 @@ def gdal_mask_analysis(mask = None):
     msk_sum = gdal_sum(mask)
     msk_gc = gdal_infos(mask)
     msk_max = float(msk_gc['nx'] * msk_gc['ny'])
-    msk_perc = (msk_sum /msk_max) * 100.
+    msk_perc = float((msk_sum / msk_max) * 100.)
     return(msk_sum, msk_max, msk_perc)
     
 def gdal_proximity(src_fn, dst_fn):
@@ -976,9 +1000,9 @@ def gdal_ogr_mask_union(src_layer, src_field, dst_defn = None):
             wkt = f.geometry().ExportToWkt()
             multi.AddGeometryDirectly(ogr.CreateGeometryFromWkt(wkt))
             src_layer.DeleteFeature(f.GetFID())
-    union = multi.UnionCascaded()
+    #union = multi.UnionCascaded() ## slow on large multi...
     out_feat = ogr.Feature(dst_defn)
-    out_feat.SetGeometry(union)
+    out_feat.SetGeometry(multi)
     union = multi = None
     return(out_feat)
 
@@ -1143,7 +1167,8 @@ def gdal_xyz_mask(src_xyz, dst_gdal, region, inc, dst_format='GTiff', epsg = 432
     return(gdal_write(ptArray, dst_gdal, ds_config))
 
 def np_gaussian_blur(in_array, size):
-    '''blur an array'''
+    '''blur an array using fftconvolve from scipy.signal
+    size is the blurring scale-factor.'''
     from scipy.signal import fftconvolve
     from scipy.signal import convolve
     import scipy.fftpack._fftpack as sff
@@ -1160,7 +1185,8 @@ def np_gaussian_blur(in_array, size):
     return(out_array)
 
 def gdal_blur(src_gdal, dst_gdal, sf = 1):
-    '''gaussian blur on src_gdal'''
+    '''gaussian blur on src_gdal using a smooth-factor of `sf`
+    runs np_gaussian_blur(ds.Array, sf)'''
     ds = gdal.Open(src_gdal)
     if ds is not None:
         ds_config = gdal_gather_infos(ds)
@@ -1524,10 +1550,35 @@ _datalist_hooks = {
         200: lambda e, d, f, w, v: gdal_dump_entry(e, verbose = v)
     },
 }
+
+## ==============================================
+## the datalist hooks : 'pass','inf','proc'
+## lambda returns dictionary of the default
+## datalist hooks:
+##
+## _datalist_hooks = {
+##     'pass': {
+##         -1: lambda e: os.path.exists(e[0]),
+##         168: lambda e: os.path.exists(e[0]),
+##         200: lambda e: os.path.exists(e[0])
+##     },
+##     'inf': {
+##         -1: lambda e: datalist_inf_entry(e),
+##         168: lambda e: xyz_inf_entry(e),
+##         200: lambda e: gdal_inf_entry(e)
+##     },
+##     'proc': {
+##         -1: lambda e, d, f, w, v: datalist(e[0], dlh = d, fmt = f, wt = w, verbose = v),
+##         168: lambda e, d, f, w, v: xyz_dump_entry(e, verbose = v),
+##         200: lambda e, d, f, w, v: gdal_dump_entry(e, verbose = v)
+##     },
+## }
+## ==============================================
 datalist_hooks = lambda: copy.deepcopy(_datalist_hooks)
 
 def datalist_inf(dl, inf_file = True):
-    '''return the region of the datalist.'''
+    '''return the region of the datalist and generate
+    an associate `.inf` file if `inf_file` is True.'''
     out_regions = []
     minmax = None
     dlh = datalist_hooks()
@@ -1553,11 +1604,12 @@ def datalist_inf(dl, inf_file = True):
     return(minmax)
     
 def datalist_inf_entry(e):
-    '''write an inf file for datalist entry e'''
+    '''write an inf file for datalist entry e
+    and return the region [xmin, xmax, ymin, ymax]'''
     return(datalist_inf(e[0]))
 
 def datalist_append_entry(entry, datalist):
-    '''append entry to datalist'''
+    '''append entry to datalist file `datalist`'''
     with open(datalist, 'a') as outfile:
         outfile.write('{}\n'.format(' '.join([str(x) for x in entry])))
 
@@ -1738,11 +1790,37 @@ _waffles_grid_info = {
     'verbose': False,
     'gc': config_check()
 }
+
+## ==============================================
+## the default waffles config dictionary.
+## lambda returns dictionary with default waffles
+## config data:
+## {
+##     'datalist': None,
+##     'datalists': [],
+##     'region': None,
+##     'inc': None,
+##     'name': 'waffles_dem',
+##     'name_prefix': None,
+##     'node': 'pixel',
+##     'fmt': 'GTiff',
+##     'extend': 0,
+##     'weights': None,
+##     'fltr': None,
+##     'sample': None,
+##     'clip': None,
+##     'epsg': 4326,
+##     'mod': 'surface',
+##     'mod_args': (),
+##     'verbose': False,
+##     'gc': config_check()
+## }
+## ==============================================
 waffles_config = lambda: copy.deepcopy(_waffles_grid_info)
     
 def waffles_dict2wg(wg = _waffles_grid_info):
     '''copy the `wg` dict and add any missing keys.
-    also validate the key values and return the fixed `wg`'''
+    also validate the key values and return the valid waffles_config'''
     wg = copy.deepcopy(wg)
     keys = wg.keys()
 
@@ -1840,8 +1918,13 @@ _waffles_modules = {
     \t\t\t  < archive:arch_dir=archive >
     \t\t\t  :arch_dir=[dirname] - archive data to dirname'''],
 }
+
 waffles_module_long_desc = lambda x: 'waffles modules:\n% waffles ... -M <mod>:key=val:key=val...\n\n  ' + '\n  '.join(['{:22}{}\n'.format(key, x[key][-1]) for key in x]) + '\n'
 waffles_module_short_desc = lambda x: ', '.join(['{}'.format(key) for key in x])
+
+## ==============================================
+## the "proc-region" region_buffer(wg['region'], (wg['inc'] * 20) + (wg['inc'] * wg['extend']))
+## ==============================================
 waffles_proc_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * 20) + (wg['inc'] * wg['extend']))
 waffles_dist_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * wg['extend']))
 waffles_proc_str = lambda wg: region_format(waffles_proc_region(wg), 'gmt')
@@ -2070,29 +2153,6 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     dem = '{}.tif'.format(wg['name'])
 
-    # import threading
-    # strt = time.time()
-    # t = threading.Thread(target = _waffles_modules[wg['mod']][0], args = (args_d,))
-    # elps = 0 
-    # try:
-    #     #sys.stderr.write('waffles: running module {}:'.format(wg['mod'].upper()))
-    #     t.start()
-    #     while True:
-    #         time.sleep(2)
-    #         elps = time.time() - strt
-    #         sys.stderr.write('\x1b[2K\r')
-    #         sys.stderr.flush()
-    #         sys.stderr.write('waffles: running module {} <{}>: {}'.format(wg['mod'].upper(), wg['name'], time.strftime("%H:%M:%S", time.gmtime(elps))))
-    #         if not t.is_alive():
-    #             break
-    # except (KeyboardInterrupt, SystemExit):
-    #     echo_msg('stopping all threads')
-    #     sys.exit(-1)
-
-    # t.join()
-    # elps = time.time() - strt
-    # echo_msg('ran module {} <{}>: {}'.format(wg['mod'].upper(), wg['name'], time.strftime("%H:%M:%S", time.gmtime(elps))))
-
     try:
         out, status = _waffles_modules[wg['mod']][0](args_d)
     except TypeError as e: echo_error_msg('{}'.format(e))
@@ -2317,16 +2377,15 @@ def waffles_cli(argv = sys.argv):
             try:
                 with open(wg_user, 'r') as wgj:
                     wg = json.load(wgj)
-                dem = waffles_run(wg)
-                sys.exit(0)
+                    dem = waffles_run(wg)
+                    sys.exit(0)
             except ValueError as e:
                 wg = waffles_config()
                 echo_error_msg('could not parse json from {}, {}'.format(wg_user, e))
-            except RuntimeError or OSError as e:
-                echo_error_msg('Cannot access {}.tif, may be in use elsewhere, {}'.format(wg['name'], e))
-        else: echo_error_msg('specified json file does not exist, {}'.format(wg_user))
-        sys.exit(0)
-        
+        else:
+            echo_error_msg('specified json file does not exist, {}'.format(wg_user))
+            sys.exit(0)
+    #else:
     ## ==============================================
     ## Otherwise run from cli options...
     ## set the dem module
