@@ -2163,7 +2163,10 @@ def waffles_num(wg = _waffles_grid_info, mode = 'n'):
     wg['region'] = region_buffer(wg['region'], wg['inc'] * .5) if wg['node'] == 'grid' else wg['region']
     region = waffles_dist_region(wg)
     dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
-    return(gdal_xyz2gdal(datalist_yield_xyz(wg['datalist'], pass_h = dlh, verbose = wg['verbose']), '{}.tif'.format(wg['name']), region, wg['inc'], dst_format = wg['fmt'], mode = mode))
+    if wg['weights']:
+        dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = wg['weights'], verbose = wg['verbose']), region, wg['inc'], weights = True if wg['weights'] else False)
+    else: dly = datalist_yield_xyz(wg['datalist'], pass_h = dlh, verbose = wg['verbose'])
+    return(gdal_xyz2gdal(dly, '{}.tif'.format(wg['name']), region, wg['inc'], dst_format = wg['fmt'], mode = mode))
                                 
 def waffles_spatial_metadata(wg):
     '''generate spatial-metadata for the top-level of the datalist
@@ -2263,7 +2266,7 @@ def waffles_gdal_grid(wg = _waffles_grid_info, alg_str = 'linear:radius=1'):
     wg['region'] = region_buffer(wg['region'], wg['inc'] * .5) if wg['node'] == 'grid' else wg['region']
     region = waffles_proc_region(wg)
     dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
-    ds = xyz2gdal_ds(xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, verbose = wg['verbose']), \
+    ds = xyz2gdal_ds(xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = wg['weights'], verbose = wg['verbose']), \
                                region, wg['inc'], weights = True if wg['weights'] else False), '{}'.format(wg['name']))
     xcount, ycount, dst_gt = gdal_region2gt(wg['region'], wg['inc'])
     gd_opts = gdal.GridOptions(outputType = gdal.GDT_Float32, noData = -9999, format = 'GTiff', \
