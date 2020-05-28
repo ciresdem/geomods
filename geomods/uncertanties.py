@@ -195,7 +195,6 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
         gdal_cut(uc['dem'], sub_region, 'tmp_dem.tif')
         s_sum, s_g_max, s_perc = gdal_mask_analysis('tmp_msk.tif')
         s_dc = gdal_infos('tmp_dem.tif', True)
-        print(s_dc)
         zone = 'Bathy' if s_dc['zmax'] < 0 else 'Topo' if s_dc['zmin'] > 0 else 'BathyTopo'
         sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, s_dc['zmin'], s_dc['zmax'], zone]
         remove_glob('tmp_*.tif')
@@ -366,7 +365,7 @@ if __name__ == '__main__':
     wg['mod'] = 'num'
     wg['mod_args'] = ('mode=k',)
     msk = '{}.tif'.format('test_num')
-    #msk = waffles_run(wg)
+    msk = waffles_run(wg)
     prox = '{}_prox.tif'.format(wg['name'])
     gdal_proximity(msk, prox)
 

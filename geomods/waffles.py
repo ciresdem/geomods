@@ -43,25 +43,21 @@
 ## Recurse through a datalist file and process the results.
 ##
 ## a datalist '*.datalist' file should be formatted as in MBSystem:
-## ~path ~format ~weight
-##
-## with the additional columns of ~"meta,data" ~etc
+## ~path ~format ~weight ~metadata,list ~etc
 ##
 ## a format of -1 represents a datalist
 ## a format of 168 represents XYZ data
 ## a format of 200 represents GDAL data
-## a format of 300 represents LAS/LAZ data
+## a format of 300 represents LAS/LAZ data <not implemented>
 ##
 ## each xyz file in a datalist should have an associated '*.inf' file 
 ## for faster processing
 ##
 ## 'inf' files can be generated using 'mbdatalist -O -V -I~datalist.datalist'
-## or via _datalist_inf_hooks
+## or via `datalists -i`
 ##
 ## if 'region' is specified, will only process data that falls within
 ## the given region
-##
-## Adjust the _datalist*hooks dictionary to add custom processing/testing
 ##
 ### TODO:
 ## Add uncertainty functions and modules
@@ -91,26 +87,34 @@ import osr
 ## ==============================================
 ## General utility functions - utils.py
 ## ==============================================
-_version = '0.5.1'
-
-def con_dec(x, dec):
-    '''Return a float string with n decimals
-    (used for ascii output).'''
-    if x is None: return(x)
-    return("%." + str(dec) + "f" % x)
+_version = '0.5.2'
 
 def inc2str_inc(inc):
-    '''convert a WGS84 geographic increment to a str_inc (e.g. 0.0000925 ==> `13`)'''
+    '''convert a WGS84 geographic increment to a str_inc (e.g. 0.0000925 ==> `13`)
+
+    returns a str representation of float(inc)'''
+    
     import fractions
     return(str(fractions.Fraction(str(inc * 3600)).limit_denominator(10)).replace('/', ''))
 
 def this_year():
     '''return the current year'''
+    
     import datetime
     return(datetime.datetime.now().strftime('%Y'))
 
+def rm_f(f_str):
+    '''os.remove f_str, pass if error'''
+    
+    try:
+        if os.path.exists(f_str):
+            os.remove(f_str)
+    except: pass
+    return(0)
+        
 def remove_glob(glob_str):
-    '''glob `glob_str` and os.remove results'''
+    '''glob `glob_str` and os.remove results, pass if error'''
+    
     globs = glob.glob(glob_str)
     for g in globs:
         try:
@@ -119,38 +123,38 @@ def remove_glob(glob_str):
     return(0)
 
 def args2dict(args, dict_args = {}):
-    '''args are a list of ['key=val'] pairs'''
+    '''convert list of arg strings to dict.
+    args are a list of ['key=val'] pairs
+
+    returns a dictionary of the key/values'''
+    
     for arg in args:
         p_arg = arg.split('=')
         dict_args[p_arg[0]] = False if p_arg[1].lower() == 'false' else True if p_arg[1].lower() == 'true' else None if p_arg[1].lower() == 'none' else p_arg[1]
     return(dict_args)
 
 def int_or(val, or_val = None):
-    '''return val as int otherwise return or_val'''
+    '''returns val as int otherwise returns or_val'''
+    
     try:
         return(int(val))
     except: return(or_val)
 
-## ==============================================
-## haversine distance formula
-## ==============================================
 def hav_dst(pnt0, pnt1):
     '''return the distance between pnt0 and pnt1,
-    using the haversine formula.'''
+    using the haversine formula.
+    `pnts` are geographic and result is in meters.'''
+    
     x0 = float(pnt0[0])
     y0 = float(pnt0[1])
     x1 = float(pnt1[0])
     y1 = float(pnt1[1])
-
-    ## ==============================================
-    ## radians in meters
-    ## ==============================================
-    rad = 637100
+    rad_m = 637100
     dx = math.radians(x1 - x0)
     dy = math.radians(y1 - y0)
     a = math.sin(dx / 2) * math.sin(dx / 2) + math.cos(math.radians(x0)) * math.cos(math.radians(x1)) * math.sin(dy / 2) * math.sin(dy / 2)
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-    return(rad * c)
+    return(rad_m * c)
 
 ## ==============================================
 ## system cmd verification and configs.
@@ -158,7 +162,12 @@ def hav_dst(pnt0, pnt1):
 cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ['PATH'].split(os.pathsep))
 
 def run_cmd(cmd, data_fun = None, verbose = False):
-    '''Run a command with or without a progress bar while passing data'''
+    '''Run a system command while optionally passing data.
+    `data_fun` should be a function to write to a file-port:
+    >> data_fun = lambda p: datalist_dump(wg, dst_port = p, ...)
+
+    returns [command-output, command-return-code]'''
+    
     if verbose: echo_msg('running cmd: {}...'.format(cmd.rstrip()))    
     if data_fun is not None:
         pipe_stdin = subprocess.PIPE
@@ -184,14 +193,23 @@ def run_cmd(cmd, data_fun = None, verbose = False):
     return(out, p.returncode)
 
 def cmd_check(cmd_str, cmd_vers_str):
-    '''check system for availability of 'cmd_str' and return it's version'''
+    '''check system for availability of 'cmd_str' 
+
+    returns the commands version or None'''
+    
     if cmd_exists(cmd_str): 
         cmd_vers, status = run_cmd('{}'.format(cmd_vers_str))
         return(cmd_vers.rstrip())
     else: return(None)
 
 def config_check(chk_vdatum = False, verbose = False):
-    '''check for needed geomods external software'''
+    '''check for needed waffles external software.
+    waffles external software: gdal, gmt, mbsystem
+    also checks python version and host OS and 
+    records waffles version
+
+    returns a dictionary of gathered results.'''
+    
     _waff_co = {}
     py_vers = str(sys.version_info[0]),
     host_os = sys.platform
@@ -203,7 +221,6 @@ def config_check(chk_vdatum = False, verbose = False):
     _waff_co['GDAL'] = cmd_check('gdal_grid{}'.format(ae), 'gdal_grid --version')
     _waff_co['GMT'] = cmd_check('gmt{}'.format(ae), 'gmt --version')
     _waff_co['MBGRID'] = cmd_check('mbgrid{}'.format(ae), 'mbgrid -version | grep Version')
-    _waff_co['BOUNDS'] = cmd_check('bounds{}'.format(ae), 'bounds --version')
     _waff_co['WAFFLES'] = str(_version)
     return(_waff_co)
     
@@ -214,6 +231,7 @@ def echo_error_msg2(msg, prefix = 'waffles'):
     '''echo error msg to stderr using `prefix`
     >> echo_error_msg2('message', 'test')
     test: error, message'''
+    
     sys.stderr.write('\x1b[2K\r')
     sys.stderr.flush()
     sys.stderr.write('{}: error, {}\n'.format(prefix, msg))
@@ -222,6 +240,7 @@ def echo_msg2(msg, prefix = 'waffles'):
     '''echo `msg` to stderr using `prefix`
     >> echo_msg2('message', 'test')
     test: message'''
+    
     sys.stderr.write('\x1b[2K\r')
     sys.stderr.flush()
     sys.stderr.write('{}: {}\n'.format(prefix, msg))
@@ -240,44 +259,52 @@ echo_msg = lambda m: echo_msg2(m, prefix = os.path.basename(sys.argv[0]))
 echo_error_msg = lambda m: echo_error_msg2(m, prefix = os.path.basename(sys.argv[0]))
 
 ## ==============================================
-## some known values to make guesses from
-## ==============================================
-_known_dl_delims = [' ', ':']
-_known_delims = [',', ' ', '\t', '/', ':']
-_known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'csv', 'dat'], 200: ['tif', 'img', 'grd', 'nc']}
-
-## ==============================================
 ## regions - regions are a bounding box list:
 ## [w, e, s, n]
 ## -- regions.py --
 ## ==============================================
 def region_valid_p(region):
     '''return True if `region` [xmin, xmax, ymin, ymax] appears to be valid'''
+    
     if region is not None:
         if region[0] < region[1] and region[2] < region[3]: return(True)
         else: return(False)
     else: return(False)
 
 def region_center(region):
-    '''return the center point [xc, yc] of the `region` [xmin, xmax, ymin, ymax]'''
+    '''find the center point [xc, yc] of the `region` [xmin, xmax, ymin, ymax]
+
+    returns the center point [xc, yc]'''
+    
     xc = region[0] + (region[1] - region[0] / 2)
     yc = region[2] + (region[3] - region[2] / 2)
     return([xc, yc])
 
 def region_pct(region, pctv):
-    '''return the pctv val of the region'''
+    '''calculate a percentage buffer for the `region` [xmin, xmax, ymin, ymax]
+
+    returns the pctv buffer val of the region'''
+    
     ewp = (region[1] - region[0]) * (pctv * .01)
     nsp = (region[3] - region[2]) * (pctv * .01)
     return((ewp + nsp) / 2)
 
 def region_buffer(region, bv = 0, pct = False):
     '''return the region buffered by buffer-value `bv`
-    if `pct` is True, attain the buffer-value via: region_pct(region, bv)'''
+    if `pct` is True, attain the buffer-value via: region_pct(region, bv)
+
+    returns the buffered region [xmin, xmax, ymin, ymax]'''
+    
     if pct: bv = region_pct(region, bv)
     return([region[0] - bv, region[1] + bv, region[2] - bv, region[3] + bv])
 
 def regions_reduce(region_a, region_b):
-    '''return the minimum region when combining `region_a` and `region_b`'''
+    '''combine two regions and find their minimum combined region.
+    if the regions don't overlap, will return an invalid region.
+    check the result with region_valid_p()
+    
+    return the minimum region [xmin, xmax, ymin, ymax] when combining `region_a` and `region_b`'''
+    
     region_c = [0, 0, 0, 0]
     region_c[0] = region_a[0] if region_a[0] > region_b[0] else region_b[0]
     region_c[1] = region_a[1] if region_a[1] < region_b[1] else region_b[1]
@@ -286,7 +313,10 @@ def regions_reduce(region_a, region_b):
     return(region_c)
 
 def regions_merge(region_a, region_b):
-    '''merge two regions (`region_a` and `region_b`) into a single region [xmin, xmax, ymin, ymax].'''
+    '''combine two regions and find their maximum combined region.
+
+    returns maximum region [xmin, xmax, ymin, ymax] when combining `region_a` `and region_b`'''
+    
     region_c = [0, 0, 0, 0]
     region_c[0] = region_a[0] if region_a[0] < region_b[0] else region_b[0]
     region_c[1] = region_a[1] if region_a[1] > region_b[1] else region_b[1]
@@ -295,14 +325,21 @@ def regions_merge(region_a, region_b):
     return(region_c)
 
 def regions_intersect_p(region_a, region_b):
-    '''Return True if `region_a` and `region_b` intersect.
-    region_valid_p(regions_reduce(region_a, region_b))'''
+    '''check if two regions intersect.
+    region_valid_p(regions_reduce(region_a, region_b))
+
+    return True if `region_a` and `region_b` intersect else False'''
+    
     if region_a is not None and region_b is not None:
         return(region_valid_p(regions_reduce(region_a, region_b)))
-    else: return(None)
+    else: return(False)
     
 def regions_intersect_ogr_p(region_a, region_b):
-    '''Return True if region_a and region_b intersect.'''
+    '''check if two regions intersect.
+    region_a_ogr_geom.Intersects(region_b_ogr_geom)
+    
+    return True if `region_a` and `region_b` intersect else False.'''
+    
     if region_a is not None and region_b is not None:
         geom_a = gdal_region2geom(region_a)
         geom_b = gdal_region2geom(region_b)
@@ -317,7 +354,10 @@ def region_format(region, t = 'gmt'):
     t = 'gmt': -Rxmin/xmax/ymin/ymax
     t = 'bbox': xmin,ymin,xmax,ymax
     t = 'te': xmin ymin xmax ymax
-    t = 'fn': ymax_xmin'''
+    t = 'fn': ymax_xmin
+
+    returns the formatted region as str'''
+    
     if t == 'str': return('/'.join([str(x) for x in region]))
     elif t == 'gmt': return('-R' + '/'.join([str(x) for x in region]))
     elif t == 'bbox': return(','.join([str(region[0]), str(region[2]), str(region[1]), str(region[3])]))
@@ -331,7 +371,11 @@ def region_format(region, t = 'gmt'):
                                                         ew, abs(int(region[0])), abs(int(region[0] * 100) % 100)))
 
 def region_chunk(region, inc, n_chunk = 10):
-    '''chunk the region into n_chunk by n_chunk cell regions, given inc.'''
+    '''chunk the region [xmin, xmax, ymin, ymax] into 
+    n_chunk by n_chunk cell regions, given inc.
+
+    returns a list of chunked regions.'''
+    
     i_chunk = 0
     x_i_chunk = 0
     x_chunk = n_chunk
@@ -368,7 +412,10 @@ def region_chunk(region, inc, n_chunk = 10):
     return(o_chunks)
 
 def regions_sort(trainers):
-    '''sort regions by distance; regions is a list of [w,e,s,n] regions.'''
+    '''sort regions by distance; regions is a list of regions [xmin, xmax, ymin, ymax].
+
+    returns the sorted region-list'''
+    
     train_sorted = []
     for z, train in enumerate(trainers):
         train_d = []
@@ -410,7 +457,10 @@ _vd_config = {
 }
 
 def vdatum_locate_jar():
-    '''Find the VDatum executable on the system and return a list of found vdatum.jar paths'''
+    '''Find the VDatum executable on the local system.
+
+    returns a list of found vdatum.jar system paths'''
+    
     results = []
     for root, dirs, files in os.walk('/'):
         if 'vdatum.jar' in files:
@@ -421,6 +471,10 @@ def vdatum_locate_jar():
     else: return(results)
 
 def vdatum_get_version(vd_config = _vd_config):
+    '''run vdatum and attempt to get it's version
+    
+    return the vdatum version or None'''
+    
     if vd_config['jar'] is None:
         vd_config['jar'] = vdatum_locate_jar()
     if vd_config['jar'] is not None:
@@ -431,9 +485,12 @@ def vdatum_get_version(vd_config = _vd_config):
     return(None)
     
 def run_vdatum(src_fn, vd_config = _vd_config):
-    '''Run vdatum on src_fn which is an XYZ file'''
-    if vd_config['jar'] is None:
-        vd_config['jar'] = vdatum_locate_jar()[0]
+    '''run vdatum on src_fn which is an XYZ file
+    use vd_config to set vdatum parameters.
+
+    returns [command-output, command-return-code]'''
+    
+    if vd_config['jar'] is None: vd_config['jar'] = vdatum_locate_jar()[0]
     if vd_config['jar'] is not None:
         vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},0,1,2:{}:{} region:{}\
         '.format(vd_config['ihorz'], vd_config['ivert'], vd_config['ohorz'], vd_config['overt'], \
@@ -450,16 +507,27 @@ def run_vdatum(src_fn, vd_config = _vd_config):
 ## functions and commands.
 ## ==============================================
 def gmt_inf(src_xyz):
-    '''generate an info (.inf) file from a src_xyz file using GMT.'''
+    '''generate an info (.inf) file from a src_xyz file using GMT.
+
+    returns [cmd-output, cmd-return-code]'''
+    
     return(run_cmd('gmt gmtinfo {} -C > {}.inf'.format(src_xyz, src_xyz), verbose = False))
 
 def gmt_grd_inf(src_grd):
-    '''generate an info (.inf) file from a src_gdal file using GMT.'''
+    '''generate an info (.inf) file from a src_gdal file using GMT.
+
+    returns [cmd-output, cmd-return-code]'''
+    
     return(run_cmd('gmt grdinfo {} -C > {}.inf'.format(src_grd, src_grd), verbose = False))
 
 def gmt_inc2inc(inc_str):
-    '''convert an GMT-style inc_str (6s) to native units'''
-    if inc_str is None or inc_str == 'None': return(None)
+    '''convert a GMT-style `inc_str` (6s) to geographic units
+    c/s - arc-seconds
+    m - arc-minutes
+
+    return float increment value.'''
+    
+    if inc_str is None or inc_str.lower() == 'none': return(None)
     units = inc_str[-1]
     if units == 'c': inc = float(inc_str[:-1]) / 3600
     elif units == 's': inc = float(inc_str[:-1]) / 3600
@@ -473,7 +541,10 @@ def gmt_inc2inc(inc_str):
     return(inc)
 
 def gmt_grd2gdal(src_grd, dst_fmt = 'GTiff', epsg = 4326, verbose = False):
-    '''Convert the grd file to tif using GMT'''
+    '''convert the grd file to tif using GMT
+
+    returns the gdal file name or None'''
+    
     dst_gdal = '{}.{}'.format(os.path.basename(src_grd).split('.')[0], gdal_fext(dst_fmt))
     grd2gdal_cmd = ('gmt grdconvert {} {}=gd+n-9999:{} -V\
     '.format(src_grd, dst_gdal, dst_fmt))
@@ -483,7 +554,10 @@ def gmt_grd2gdal(src_grd, dst_fmt = 'GTiff', epsg = 4326, verbose = False):
     else: return(None)
 
 def gmt_grdinfo(src_grd, verbose = False):
-    '''Return an info list of `src_grd`'''
+    '''gather infos about src_grd using GMT grdinfo.
+
+    return an info list of `src_grd`'''
+    
     out, status = run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = verbose)
     grdinfo_cmd = ('gmt grdinfo {} -C'.format(src_grd))
     out, status = run_cmd(grdinfo_cmd, verbose = verbose)
@@ -493,7 +567,10 @@ def gmt_grdinfo(src_grd, verbose = False):
     else: return(None)
 
 def gmt_gmtinfo(src_xyz, verbose = False):
-    '''Return an info list of `src_xyz`'''
+    '''gather infos about src_xyz using GMT gmtinfo
+
+    return an info list of `src_xyz`'''
+    
     out, status = run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = verbose)
     gmtinfo_cmd = ('gmt gmtinfo {} -C'.format(src_xyz))
     out, status = run_cmd(gmtinfo_cmd, verbose = verbose)
@@ -501,40 +578,12 @@ def gmt_gmtinfo(src_xyz, verbose = False):
     if status == 0:
         return(out.split())
     else: return(None)
-
-def gdal_ogr_csv_vrt(src_fn):
-    with open('{}.vrt'.format(src_fn), 'a') as o_vrt:
-        o_vrt.write('''<OGRVRTDataSource>
-  <OGRVRTLayer name="{}">
-    <SrcDataSource>CSV:{}</SrcDataSource>
-    <GeometryType>wkbPoint25D</GeometryType>
-    <GeometryField encoding="PointFromColumns" x="field_1" y="field_2" z="field_3"/>
-  </OGRVRTLayer>
-</OGRVRTDataSource>'''.format(os.path.basename(src_fn).split('.')[0], os.path.basename(src_fn)))
         
-def gmt_block(datalist, mode = 'blockmean', inc = '1s', o_name = None, delim = 'SPACE', weights = False, verbose = False):
-    '''run block/mean/median on src_xyz'''
-    if mode == 'blockmean' or mode == 'blockmean':
-        out, status = run_cmd('gmt gmtset IO_COL_SEPARATOR = {}'.format(delim.upper()), verbose = verbose)
-        if mode == 'blockmean' and weights:
-            mode = 'blockmean -Wi'
-            datalist.want_weights = True
-        if mode == 'blockmedian': mode = 'blockmedian -Q'
-        if o_name is None: o_name = datalist._name
-        if delim.lower() == 'comma':
-            out_ext = 'csv'
-            gdal_ogr_csv_vrt(o_name)
-        else: out_ext = 'xyz'
-        if os.path.exists(datalist._path):
-            blk_cmd1 = ('gmt {} -V {} -I{} > {}.{}'.format(mode, datalist.region.gmt, inc, o_name, out_ext))
-            out, status = run_cmd(blk_cmd1, verbose = True, data_fun = datalist._dump_data)
-        else: status = -1
-    else: status = -1
-    remove_glob('gmt.conf')
-    return(status)
-
 def gmt_select_split(o_xyz, sub_region, sub_bn, verbose = False):
-    '''split an xyz file into an inner and outer region.'''
+    '''split an xyz file into an inner and outer region.
+
+    returns [inner_region, outer_region]'''
+    
     out_inner = None
     out_outer = None
     gmt_s_inner = 'gmt gmtselect -V {} {} > {}_inner.xyz'.format(o_xyz, region_format(sub_region, 'gmt'), sub_bn)
@@ -546,42 +595,36 @@ def gmt_select_split(o_xyz, sub_region, sub_bn, verbose = False):
     return([out_inner, out_outer])
         
 def gmt_grdcut(src_grd, src_region, dst_grd, verbose = False):
-    '''Cut `src_grd` to `src_region` '''
+    '''cut `src_grd` to `src_region` using GMT grdcut
+    
+    returns [cmd-output, cmd-return-code]'''
+    
     cut_cmd1 = ('gmt grdcut -V {} -G{} {}'.format(src_grd, dst_grd, src_region.gmt))
     return(run_cmd(cut_cmd1, verbose = True))
 
 def gmt_grdfilter(src_grd, dst_grd, dist = '3s', verbose = False):
-    '''filter `src_grd` '''
+    '''filter `src_grd` using GMT grdfilter
+
+    returns [cmd-output, cmd-return-code]'''
+    
     ft_cmd1 = ('gmt grdfilter -V {} -G{} -R{} -Fc{} -D1'.format(src_grd, dst_grd, src_grd, dist))
     return(run_cmd(ft_cmd1, verbose = verbose))
 
-def gmt_grd2xyz(src_grd, dst_xyz, region = None, mask = None, verbose = False, want_datalist = False):
-    '''Convert `src_grd` to xyz possibly using a nodata mask and/or a region.
-    Optionally, generate a datalist and inf file for the resultant xyz data.'''
-    if mask:
-        grdmask_cmd = ('gmt grdmath -N -V {} {} OR = tmp.grd'.format(src_grd, mask))
-        out, status = run_cmd(grdmask_cmd, verbose = verbose)
-        if status == 0: src_grd = 'tmp.grd'
-
-    if region is not None and region_valid_p(region):
-        region_str = region_format(region, 'gmt')
-    else: region_str = ''
-
-    grd2xyz_cmd = ('gmt grd2xyz -V {} -s {} > {}'.format(src_grd, region_str, dst_xyz))
-    out, status = run_cmd(grd2xyz_cmd, verbose = verbose)
-
-    if mask: remove_glob('tmp.grd')
-    return(status)
-
 def gmt_nan2zero(src_grd, node = 'pixel', verbose = False):
-    '''convert nan values to zero'''
+    '''convert nan values in `src_grd` to zero
+
+    returns status code (0 == success) '''
+    
     num_msk_cmd = ('gmt grdmath -V {} 0 MUL 1 ADD 0 AND = tmp.tif=gd+n-9999:GTiff'.format(src_grd))
     out, status = run_cmd(num_msk_cmd, verbose = True)
     if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
     return(status)
 
 def gmt_grdcut(src_grd, region, verbose = False):
-    '''cut a grid to region'''
+    '''cut a grid to region using GMT grdcut
+
+    return status code (0 == success)'''
+    
     cut_cmd = ('gmt grdcut -V {} -Gtmp.grd {}\
     '.format(src_grd, region_format(region, 'gmt')))
     out, status = run_cmd(cut_cmd, verbose = True)
@@ -591,7 +634,10 @@ def gmt_grdcut(src_grd, region, verbose = False):
     return(status)
 
 def gmt_slope(src_dem, dst_slp, verbose = False):
-    '''Generate a Slope grid from a DEM with GMT'''
+    '''generate a Slope grid from a DEM with GMT
+
+    return status code (0 == success)'''
+    
     o_b_name = '{}'.format(src_dem.split('.')[0])
     slope_cmd0 = ('gmt grdgradient -V -fg {} -S{}_pslp.grd -D -R{}\
     '.format(src_dem, o_name, src_dem))
@@ -604,31 +650,32 @@ def gmt_slope(src_dem, dst_slp, verbose = False):
     return(status)
 
 def gmt_num_msk(num_grd, dst_msk, verbose = False):
-    '''Generate a num-msk from a NUM grid.'''
+    '''generate a num-msk from a NUM grid using GMT grdmath
+
+    returns [cmd-output, cmd-return-code]'''
+    
     num_msk_cmd = ('gmt grdmath -V {} 0 MUL 1 ADD 0 AND = {}\
     '.format(num_grd, dst_msk))
     return(run_cmd(num_msk_cmd, verbose = verbose))
 
 def gmt_sample_gnr(src_grd, verbose = False):
     '''resamele src_grd to toggle between grid-node and pixel-node
-    grid registration.'''
+    grid registration.
+
+    returns status code (0 == success)'''
+    
     out, status = run_cmd('gmt grdsample -T {} -Gtmp.tif=gd+n-9999:GTiff'.format(src_grd), verbose = verbose)
     if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
     return(status)
 
 def gmt_sample_inc(src_grd, inc = 1, verbose = False):
-    '''resamele src_grd to toggle between grid-node and pixel-node
-    grid registration.'''
+    '''resamele src_grd to increment `inc` using GMT grdsample
+
+    returns status code (0 == success)'''
+    
     out, status = run_cmd('gmt grdsample -I{:.10f} {} -R{} -Gtmp.tif=gd+n-9999:GTiff'.format(inc, src_grd, src_grd), verbose = verbose)
     if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
     return(status)
-
-# def gdal_sample_inc(src_grd, inc = 1, verbose = False):
-#     '''resamele src_grd to toggle between grid-node and pixel-node
-#     grid registration.'''
-#     out, status = run_cmd('gdalwarp -tr {:.10f} {:.10f} {} -r bilinear -te -R{} -r -Gtmp.tif=gd+n-9999:GTiff'.format(inc, inc, src_grd, src_grd), verbose = verbose)
-#     if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
-#     return(status)
 
 ## ==============================================
 ## MB-System Wrapper Functions - mbsfun.py
@@ -637,14 +684,20 @@ def gmt_sample_inc(src_grd, inc = 1, verbose = False):
 ## these functions and commands.
 ## ==============================================
 def mb_inf(src_xyz, src_fmt = 168):
-    '''generate an info (.inf) file from a src_xyz file using MBSystem.'''
+    '''generate an info (.inf) file from a src_xyz file using MBSystem.
+
+    return inf_parse(inf_file)'''
+    
     run_cmd('mbdatalist -O -F{} -I{}'.format(src_fmt, src_xyz))
     return(inf_parse('{}.inf'.format(src_xyz)))
 
 def run_mbgrid(datalist, region, inc, dst_name, dist = '10/3', tension = 35, extras = False, verbose = False):
-    '''Run the MBSystem command `mbgrid` given a datalist, region and increment.
-    The datalist should be an MBSystem-style datalist; if using a waffles datalist, 
-    it should be converted first (using datalist_archive()).'''
+    '''run the MBSystem command `mbgrid` given a datalist, region and increment.
+    the datalist should be an MBSystem-style datalist; if using a waffles datalist, 
+    it should be converted first (using datalist_archive()).
+
+    returns [mbgrid-output, mbgrid-return-code]'''
+    
     if extras:
         e_switch = '-M'
     else: e_switch = ''
@@ -655,7 +708,7 @@ def run_mbgrid(datalist, region, inc, dst_name, dist = '10/3', tension = 35, ext
     return(run_cmd(mbgrid_cmd, verbose = verbose))
 
 ## ==============================================
-## GDAL Wrapper Functions - gdalfun.py
+## GDAL Wrappers and Functions - gdalfun.py
 ## ==============================================
 gdal.PushErrorHandler('CPLQuietErrorHandler')
 gdal.UseExceptions()
@@ -663,7 +716,10 @@ _gdal_progress = gdal.TermProgress
 _gdal_progress_nocb = gdal.TermProgress_nocb
     
 def gdal_sr_wkt(epsg, esri = False):
-    '''convert an epsg code to wkt'''
+    '''convert an epsg code to wkt
+
+    returns the sr Wkt or None'''
+    
     try:
         int(epsg)
         sr = osr.SpatialReference()
@@ -673,7 +729,11 @@ def gdal_sr_wkt(epsg, esri = False):
     except: return(None)
 
 def gdal_fext(src_drv_name):
-    '''return the common file extention given a GDAL driver name'''
+    '''find the common file extention given a GDAL driver name
+    older versions of gdal can't do this, so fallback to known standards.
+
+    returns list of known file extentions or None'''
+    
     fexts = None
     try:
         drv = gdal.GetDriverByName(src_drv_name)
@@ -688,8 +748,106 @@ def gdal_fext(src_drv_name):
         else: fext = 'gdal'
         return(fext)
 
+def gdal_prj_file(dst_fn, epsg):
+    '''generate a .prj file given an epsg code
+
+    returns 0'''
+    
+    with open(dst_fn, 'w') as out:
+        out.write(gdal_sr_wkt(int(epsg), True))
+    return(0)
+    
+def gdal_set_epsg(src_gdal, epsg = 4326):
+    '''set the projection of src_gdal to epsg
+
+    returns status-code (0 == success)'''
+    
+    ds = gdal.Open(src_gdal, gdal.GA_Update)
+    if ds is not None:
+        ds.SetProjection(gdal_sr_wkt(int(epsg)))
+        ds = None
+        return(0)
+    else: return(None)
+
+def gdal_set_nodata(src_gdal, nodata = -9999):
+    '''set the nodata value of src_gdal
+
+    returns 0'''
+    
+    ds = gdal.Open(src_gdal, gdal.GA_Update)
+    band = ds.GetRasterBand(1)
+    band.SetNoDataValue(float(-9999))
+    ds = None
+    return(0)
+
+def gdal_infos(src_gdal, scan = False):
+    '''scan src_gdal and gather region info.
+
+    returns region dict.'''
+    
+    if os.path.exists(src_gdal):
+        ds = gdal.Open(src_gdal)
+        if ds is not None:
+            dsc = gdal_gather_infos(ds)
+            if scan:
+                t = ds.ReadAsArray()
+                t = t.astype(float)
+                t[t == dsc['ndv']] = np.nan
+                t = t[~np.isnan(t)]
+                if len(t) > 0:
+                    zmin = np.min(t[~np.isnan(t)])
+                    zmax = np.max(t[~np.isnan(t)])
+                else:
+                    zmin = np.nan
+                    zmax = np.nan
+                dsc['zmin'] = zmin
+                dsc['zmax'] = zmax
+            ds = None
+            return(dsc)
+        else: return(None)
+    else: return(None)
+
+def gdal_gather_infos(src_ds):
+    '''gather information from `src_ds` GDAL dataset
+
+    returns gdal_config dict.'''
+    
+    ds_config = {
+        'nx': src_ds.RasterXSize,
+        'ny': src_ds.RasterYSize,
+        'nb':src_ds.RasterCount,
+        'geoT': src_ds.GetGeoTransform(),
+        'proj': src_ds.GetProjectionRef(),
+        'dt': src_ds.GetRasterBand(1).DataType,
+        'dtn': gdal.GetDataTypeName(src_ds.GetRasterBand(1).DataType),
+        'ndv': src_ds.GetRasterBand(1).GetNoDataValue(),
+        'fmt': src_ds.GetDriver().ShortName,
+    }
+    if ds_config['ndv'] is None: ds_config['ndv'] = -9999
+    return(ds_config)
+
+def gdal_set_infos(nx, ny, nb, geoT, proj, dt, ndv, fmt):
+    '''set a datasource config dictionary
+
+    returns gdal_config dict.'''
+    
+    return({'nx': nx, 'ny': ny, 'nb': nb, 'geoT': geoT, 'proj': proj, 'dt': dt, 'ndv': ndv, 'fmt': fmt})
+
+def gdal_cpy_infos(src_config):
+    '''copy src_config
+
+    returns copied src_config dict.'''
+    
+    dst_config = {}
+    for dsc in src_config.keys():
+        dst_config[dsc] = src_config[dsc]
+    return(dst_config)
+
 def gdal_write (src_arr, dst_gdal, ds_config, dst_fmt = 'GTiff'):
-    '''write src_arr Array to gdal file dst_gdal using src_config'''
+    '''write src_arr to gdal file dst_gdal using src_config
+
+    returns [output-gdal, status-code]'''
+    
     driver = gdal.GetDriverByName(dst_fmt)
     if os.path.exists(dst_gdal): driver.Delete(dst_gdal)
     ds = driver.Create(dst_gdal, ds_config['nx'], ds_config['ny'], 1, ds_config['dt'])
@@ -703,7 +861,10 @@ def gdal_write (src_arr, dst_gdal, ds_config, dst_fmt = 'GTiff'):
     else: return(None, -1)
 
 def gdal_null(dst_fn, region, inc, nodata = -9999, outformat = 'GTiff'):
-    '''generate a `null` grid with gdal'''
+    '''generate a `null` grid with gdal
+
+    returns [output-gdal, status-code]'''
+    
     xcount, ycount, dst_gt = gdal_region2gt(region, inc)
     null_array = np.zeros((ycount, xcount))
     null_array[null_array == 0] = nodata
@@ -711,7 +872,10 @@ def gdal_null(dst_fn, region, inc, nodata = -9999, outformat = 'GTiff'):
     return(gdal_write(null_array, dst_fn, ds_config))
     
 def gdal_cut(src_gdal, region, dst_fn):
-    '''cut src_fn gdal file to srcwin and output dst_fn gdal file'''
+    '''cut src_fn gdal file to srcwin and output dst_fn gdal file
+
+    returns [output-gdal, status-code]'''
+    
     src_ds = gdal.Open(src_gdal)
     if src_ds is not None:
         ds_config = gdal_gather_infos(src_ds)
@@ -725,7 +889,10 @@ def gdal_cut(src_gdal, region, dst_fn):
     else: return(None, -1)
 
 def gdal_clip(src_gdal, src_ply = None, invert = False):
-    '''clip dem to either a src_ply polygon or the gsshg via GMT. use 'src_ply = None' to use gsshg.'''
+    '''clip dem to polygon `src_ply`, optionally invert the clip.
+
+    returns [gdal_raserize-output, gdal_rasterize-return-code]'''
+    
     gi = gdal_infos(src_gdal)
     if gi is not None and src_ply is not None:
         gr_inv = '-i' if invert else ''
@@ -735,7 +902,11 @@ def gdal_clip(src_gdal, src_ply = None, invert = False):
     else: return(None)
 
 def gdal_query(src_xyz, src_grd, out_form):
-    '''Query a gdal-compatible grid file with xyz data.'''
+    '''query a gdal-compatible grid file with xyz data.
+    out_form dictates return values
+
+    returns array of values'''
+    
     xyzl = []
     out_array = []
 
@@ -782,7 +953,10 @@ def gdal_query(src_xyz, src_grd, out_form):
     return(out_array)
     
 def np_split(src_arr, sv = 0, nd = -9999):
-    '''split numpy `src_arr` by `sv` (turn u/l into `nd`)'''
+    '''split numpy `src_arr` by `sv` (turn u/l into `nd`)
+
+    returns [upper_array, lower_array]'''
+    
     try:
         sv = int(sv)
     except: sv = 0
@@ -793,7 +967,10 @@ def np_split(src_arr, sv = 0, nd = -9999):
     return(u_arr, l_arr)
 
 def gdal_split(src_gdal, split_value = 0):
-    '''split raster file `src_gdal`into two files based on z value'''
+    '''split raster file `src_gdal`into two files based on z value
+
+    returns [upper_grid-fn, lower_grid-fn]'''
+    
     dst_upper = os.path.join(os.path.dirname(src_gdal), '{}_u.tif'.format(os.path.basename(src_gdal)[:-4]))
     dst_lower = os.path.join(os.path.dirname(src_gdal), '{}_l.tif'.format(os.path.basename(src_gdal)[:-4]))
     src_ds = gdal.Open(src_gdal)
@@ -809,8 +986,11 @@ def gdal_split(src_gdal, split_value = 0):
         return([dst_upper, dst_lower])
     else: return(None)
 
-def gdal_crop(src_fn):
-    '''Crop `src_fn` GDAL file by it's NoData value. Returns cropped array.'''
+def gdal_crop(src_ds):
+    '''crop `src_ds` GDAL datasource by it's NoData value. 
+
+    returns [cropped array, cropped_gdal_config].'''
+    
     ds_config = gdal_gather_infos(src_ds)
     ds_arr = src_ds.GetRasterBand(1).ReadAsArray()
 
@@ -834,31 +1014,12 @@ def gdal_crop(src_fn):
     dst_geoT = [dst_x_origin, GeoT[1], 0.0, dst_y_origin, 0.0, GeoT[5]]
     ds_config['geoT'] = dst_geoT
     return(dst_arr, ds_config)
-    
-def gdal_prj_file(dst_fn, epsg):
-    '''generate a .prj file given an epsg code'''
-    with open(dst_fn, 'w') as out:
-        out.write(gdal_sr_wkt(int(epsg), True))
-    return(0)
-    
-def gdal_set_epsg(src_gdal, epsg = 4326):
-    '''set the projection of src_gdal to epsg'''
-    ds = gdal.Open(src_gdal, gdal.GA_Update)
-    if ds is not None:
-        ds.SetProjection(gdal_sr_wkt(int(epsg)))
-        ds = None
-        return(0)
-    else: return(None)
-
-def gdal_set_nodata(src_gdal, nodata = -9999):
-    '''set the nodata value of src_gdal'''
-    ds = gdal.Open(src_gdal, gdal.GA_Update)
-    band = ds.GetRasterBand(1)
-    band.SetNoDataValue(float(-9999))
-    ds = None
-    
+        
 def gdal_gdal2gdal(src_grd, dst_fmt = 'GTiff', epsg = 4326):
-    '''Convert the gdal file to gdal using gdal'''
+    '''convert the gdal file to gdal using gdal
+
+    return output-gdal-fn'''
+    
     if os.path.exists(src_grd):
         dst_gdal = '{}.{}'.format(os.path.basename(src_grd).split('.')[0], gdal_fext(dst_fmt))
         gdal2gdal_cmd = ('gdal_translate {} {} -f {}\
@@ -868,57 +1029,11 @@ def gdal_gdal2gdal(src_grd, dst_fmt = 'GTiff', epsg = 4326):
         else: return(None)
     else: return(None)
 
-def gdal_infos(src_gdal, scan = False):
-    if os.path.exists(src_gdal):
-        ds = gdal.Open(src_gdal)
-        if ds is not None:
-            dsc = gdal_gather_infos(ds)
-            if scan:
-                t = ds.ReadAsArray()
-                t = t.astype(float)
-                t[t == dsc['ndv']] = np.nan
-                t = t[~np.isnan(t)]
-                if len(t) > 0:
-                    zmin = np.min(t[~np.isnan(t)])
-                    zmax = np.max(t[~np.isnan(t)])
-                else:
-                    zmin = np.nan
-                    zmax = np.nan
-                dsc['zmin'] = zmin
-                dsc['zmax'] = zmax
-            ds = None
-            return(dsc)
-        else: return(None)
-    else: return(None)
-
-def gdal_gather_infos(src_ds):
-    '''gather information from `src_ds` GDAL dataset'''
-    ds_config = {
-        'nx': src_ds.RasterXSize,
-        'ny': src_ds.RasterYSize,
-        'nb':src_ds.RasterCount,
-        'geoT': src_ds.GetGeoTransform(),
-        'proj': src_ds.GetProjectionRef(),
-        'dt': src_ds.GetRasterBand(1).DataType,
-        'dtn': gdal.GetDataTypeName(src_ds.GetRasterBand(1).DataType),
-        'ndv': src_ds.GetRasterBand(1).GetNoDataValue(),
-        'fmt': src_ds.GetDriver().ShortName,
-    }
-    if ds_config['ndv'] is None: ds_config['ndv'] = -9999
-    return(ds_config)
-
-def gdal_set_infos(nx, ny, nb, geoT, proj, dt, ndv, fmt):
-    '''Set a datasource config dictionary'''
-    return({'nx': nx, 'ny': ny, 'nb': nb, 'geoT': geoT, 'proj': proj, 'dt': dt, 'ndv': ndv, 'fmt': fmt})
-
-def gdal_cpy_infos(src_config):
-    dst_config = {}
-    for dsc in src_config.keys():
-        dst_config[dsc] = src_config[dsc]
-    return(dst_config)
-
 def gdal_sum(src_gdal):
-    '''sum the z vale of src_gdal'''    
+    '''sum the z vale of src_gdal
+
+    return the sum'''
+    
     ds = gdal.Open(src_gdal)
     if ds is not None:
         ds_array = ds.GetRasterBand(1).ReadAsArray() 
@@ -928,7 +1043,10 @@ def gdal_sum(src_gdal):
     else: return(None)
 
 def gdal_percentile(src_gdal, perc = 95):
-    '''calculate the `perc` percentile of src_fn gdal file.'''
+    '''calculate the `perc` percentile of src_fn gdal file.
+
+    return the calculated percentile'''
+    
     ds = gdal.Open(src_gdal)
     if ds is not None:
         ds_array = np.array(ds.GetRasterBand(1).ReadAsArray())
@@ -941,7 +1059,10 @@ def gdal_percentile(src_gdal, perc = 95):
     else: return(None)
 
 def gdal_mask_analysis(mask = None):
-    '''mask is a GDAL mask grid of 0/1'''
+    '''mask is a GDAL mask grid of 0/1
+
+    returns [sum, max, percentile]'''
+    
     msk_sum = gdal_sum(mask)
     msk_gc = gdal_infos(mask)
     msk_max = float(msk_gc['nx'] * msk_gc['ny'])
@@ -949,7 +1070,10 @@ def gdal_mask_analysis(mask = None):
     return(msk_sum, msk_max, msk_perc)
     
 def gdal_proximity(src_fn, dst_fn):
-    '''Compute a proximity grid via GDAL'''
+    '''compute a proximity grid via GDAL
+
+    return 0 if success else None'''
+    
     prog_func = None
     src_ds = gdal.Open(src_fn)
     dst_ds = None
@@ -969,13 +1093,15 @@ def gdal_proximity(src_fn, dst_fn):
     else: return(None)
     
 def gdal_gt2region(ds_config):
-    '''convert a gdal geo-tranform to an extent [w, e, s, n]'''
+    '''convert a gdal geo-tranform to a region [xmin, xmax, ymin, ymax]'''
+    
     geoT = ds_config['geoT']
     return([geoT[0], geoT[0] + geoT[1] * ds_config['nx'], geoT[3] + geoT[5] * ds_config['ny'], geoT[3]])
 
 def gdal_region2gt(region, inc):
     '''return a count info and a gdal geotransform based on extent and cellsize
     output is a list (xcount, ycount, geot)'''
+    
     ysize = region[3] - region[2]
     xsize = region[1] - region[0]
     xcount = int(round(xsize / inc)) + 1
@@ -987,6 +1113,7 @@ def gdal_ogr_mask_union(src_layer, src_field, dst_defn = None):
     '''`union` a `src_layer`'s features based on `src_field` where
     `src_field` holds a value of 0 or 1. optionally, specify
     an output layer defn for the unioned feature.'''
+    
     if dst_defn is None: dst_defn = src_layer.GetLayerDefn()
     multi = ogr.Geometry(ogr.wkbMultiPolygon)
     feats = len(src_layer)
@@ -1008,6 +1135,7 @@ def gdal_ogr_mask_union(src_layer, src_field, dst_defn = None):
 
 def gdal_ogr_regions(src_ds):
     '''return the region(s) of the ogr dataset'''
+    
     these_regions = []
     if os.path.exists(src_ds):
         poly = ogr.Open(src_ds)
@@ -1021,6 +1149,7 @@ def gdal_ogr_regions(src_ds):
 
 def gdal_create_polygon(coords):
     '''convert coords to Wkt'''
+    
     ring = ogr.Geometry(ogr.wkbLinearRing)
     for coord in coords: ring.AddPoint(coord[1], coord[0])
     poly = ogr.Geometry(ogr.wkbPolygon)
@@ -1031,6 +1160,7 @@ def gdal_create_polygon(coords):
 
 def gdal_region2geom(region):
     '''convert an extent [west, east, south, north] to an OGR geometry'''
+    
     eg = [[region[2], region[0]], [region[2], region[1]],
           [region[3], region[1]], [region[3], region[0]],
           [region[2], region[0]]]
@@ -1039,11 +1169,13 @@ def gdal_region2geom(region):
 
 def gdal_region(src_ds):
     '''return the extent of the src_fn gdal file.'''
+    
     ds_config = gdal_gather_infos(src_ds)
     return(gdal_gt2region(ds_config))
 
 def _geo2pixel(geo_x, geo_y, geoTransform):
     '''convert a geographic x,y value to a pixel location of geoTransform'''
+    
     if geoTransform[2] + geoTransform[4] == 0:
         pixel_x = (geo_x - geoTransform[0]) / geoTransform[1]
         pixel_y = (geo_y - geoTransform[3]) / geoTransform[5]
@@ -1052,17 +1184,20 @@ def _geo2pixel(geo_x, geo_y, geoTransform):
 
 def _pixel2geo(pixel_x, pixel_y, geoTransform):
     '''convert a pixel location to geographic coordinates given geoTransform'''
+    
     geo_x, geo_y = _apply_gt(pixel_x, pixel_y, geoTransform)
     return(geo_x, geo_y)
 
 def _apply_gt(in_x, in_y, geoTransform):
     '''apply geotransform to in_x,in_y'''
+    
     out_x = geoTransform[0] + in_x * geoTransform[1] + in_y * geoTransform[2]
     out_y = geoTransform[3] + in_x * geoTransform[4] + in_y * geoTransform[5]
     return(out_x, out_y)
 
 def _invert_gt(geoTransform):
     '''invert the geotransform'''
+    
     det = geoTransform[1] * geoTransform[5] - geoTransform[2] * geoTransform[4]
     if abs(det) < 0.000000000000001: return
     invDet = 1.0 / det
@@ -1077,7 +1212,8 @@ def _invert_gt(geoTransform):
 
 def gdal_srcwin(src_ds, region):
     '''given a gdal file src_fn and a region [w, e, s, n],
-    output the appropriate gdal srcwin.'''    
+    output the appropriate gdal srcwin.'''
+    
     ds_config = gdal_gather_infos(src_ds)
     this_origin = _geo2pixel(region[0], region[3], ds_config['geoT'])
     this_origin = [0 if x < 0 else x for x in this_origin]
@@ -1090,6 +1226,7 @@ def gdal_srcwin(src_ds, region):
 
 def xyz2gdal_ds(src_xyz, dst_ogr):
     '''Make a point vector OGR DataSet Object from src_xyz'''
+    
     ds = gdal.GetDriverByName('Memory').Create('', 0, 0, 0, gdal.GDT_Unknown)
     layer = ds.CreateLayer(dst_ogr, geom_type = ogr.wkbPoint25D)
     fd = ogr.FieldDefn('long', ogr.OFTReal)
@@ -1124,6 +1261,7 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format='GTiff', mode='n'):
     `mode` of `n` generates a num grid
     `mode` of `m` generates a mean grid
     `mode` of `k` generates a mask grid'''
+    
     xcount, ycount, dst_gt = gdal_region2gt(region, inc)
     if mode == 'm':
         sumArray = np.zeros((ycount, xcount))
@@ -1131,6 +1269,7 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format='GTiff', mode='n'):
     else: gdt = gdal.GDT_Int32
     ptArray = np.zeros((ycount, xcount))
     ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(4326), gdt, -9999, dst_format)
+    echo_msg('gridding data')
     for this_xyz in src_xyz:
         x = this_xyz[0]
         y = this_xyz[1]
@@ -1152,6 +1291,7 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format='GTiff', mode='n'):
 def gdal_xyz_mask(src_xyz, dst_gdal, region, inc, dst_format='GTiff', epsg = 4326):
     '''Create a num grid mask of xyz data. The output grid
     will contain 1 where data exists and 0 where no data exists.'''
+    
     xcount, ycount, dst_gt = gdal_region2gt(region, inc)
     ptArray = np.zeros((ycount, xcount))
     ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(epsg), gdal.GDT_Int32, -9999, 'GTiff')
@@ -1169,6 +1309,7 @@ def gdal_xyz_mask(src_xyz, dst_gdal, region, inc, dst_format='GTiff', epsg = 432
 def np_gaussian_blur(in_array, size):
     '''blur an array using fftconvolve from scipy.signal
     size is the blurring scale-factor.'''
+    
     from scipy.signal import fftconvolve
     from scipy.signal import convolve
     import scipy.fftpack._fftpack as sff
@@ -1187,6 +1328,7 @@ def np_gaussian_blur(in_array, size):
 def gdal_blur(src_gdal, dst_gdal, sf = 1):
     '''gaussian blur on src_gdal using a smooth-factor of `sf`
     runs np_gaussian_blur(ds.Array, sf)'''
+    
     ds = gdal.Open(src_gdal)
     if ds is not None:
         ds_config = gdal_gather_infos(ds)
@@ -1206,6 +1348,7 @@ def gdal_blur(src_gdal, dst_gdal, sf = 1):
 def gdal_smooth(src_gdal, dst_gdal, fltr = 10, split_value = None, use_gmt = False):
     '''smooth `src_gdal` using smoothing factor `fltr`; optionally
     only smooth bathymetry (sub-zero)'''
+    
     if os.path.exists(src_gdal):
         if split_value is not None:
             dem_u, dem_l = gdal_split(src_gdal, split_value)
@@ -1237,9 +1380,17 @@ def gdal_smooth(src_gdal, dst_gdal, fltr = 10, split_value = None, use_gmt = Fal
                 remove_glob(dem_u)
             os.rename('merged.tif', 'tmp_fltr.tif')
         os.rename('tmp_fltr.tif', dst_gdal)
+
+def gdal_sample_inc(src_grd, inc = 1, verbose = False):
+    '''resamele src_grd to toggle between grid-node and pixel-node grid registration.'''
     
+    out, status = run_cmd('gdalwarp -tr {:.10f} {:.10f} {} -r bilinear -te -R{} -r -Gtmp.tif=gd+n-9999:GTiff'.format(inc, inc, src_grd, src_grd), verbose = verbose)
+    if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
+    return(status)
+        
 def gdal_polygonize(src_gdal, dst_layer):
     '''run gdal.Polygonize on src_ds and add polygon to dst_layer'''
+    
     ds = gdal.Open('{}'.format(src_gdal))
     ds_arr = ds.GetRasterBand(1)
     echo_msg('polygonizing {}'.format(src_gdal))
@@ -1249,6 +1400,7 @@ def gdal_polygonize(src_gdal, dst_layer):
 
 def gdal_chunks(src_fn, n_chunk = 10):
     '''split `src_fn` GDAL file into chunks with `n_chunk` cells squared.'''
+    
     band_nums = []
     o_chunks = []
     if band_nums == []: band_nums = [1]
@@ -1314,11 +1466,60 @@ def gdal_chunks(src_fn, n_chunk = 10):
     else: return(None)
 
 ## ==============================================
+## inf files (data info) inf.py
+## mbsystem/gmt/waffles infos
+## ==============================================
+def inf_generate(data_path, data_fmt = 168):
+    '''generate an info (.inf) file from the data_path'''
+    
+    return(inf_entry([data_path, data_fmt]))
+
+def inf_parse(src_inf):
+    '''parse an inf file (mbsystem or gmt)
+    
+    returns region: [xmin, xmax, ymin, ymax]'''
+    
+    minmax = [0, 0, 0, 0]
+    with open(src_inf) as iob:
+        for il in iob:
+            til = il.split()
+            if len(til) > 1:
+                try: 
+                    minmax = [float(x) for x in til]
+                except:
+                    if til[0] == 'Minimum':
+                        if til[1] == 'Longitude:':
+                            minmax[0] = til[2]
+                            minmax[1] = til[5]
+                        elif til[1] == 'Latitude:':
+                            minmax[2] = til[2]
+                            minmax[3] = til[5]
+    return([float(x) for x in minmax])
+
+def inf_entry(src_entry):
+    '''Read .inf file and extract minmax info.
+    the .inf file can either be an MBSystem style inf file or the 
+    result of `gmt gmtinfo file.xyz -C`, which is a 6 column line 
+    with minmax info, etc.
+
+    returns the region of the inf file.'''
+    
+    minmax = None
+    if os.path.exists(src_entry[0]):
+        path_i = src_entry[0] + '.inf'
+        if not os.path.exists(path_i):
+            minmax = _dl_inf_h[src_entry[1]](src_entry)
+        else: minmax = inf_parse(path_i)
+    if not region_valid_p(minmax): minmax = None
+    return(minmax)
+
+## ==============================================
 ## gdal processing (datalist fmt:200)
 ## ==============================================
-def gdal_parse(src_ds, dst_xyz = sys.stdout, weight = None, dump_nodata = False, srcwin = None, mask = None):
+def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None):
     '''send the data from gdal file src_gdal to dst_xyz port (first band only)
     optionally mask the output with `mask`.'''
+    
     band = src_ds.GetRasterBand(1)
     ds_config = gdal_gather_infos(src_ds)
     gt = ds_config['geoT']
@@ -1342,10 +1543,11 @@ def gdal_parse(src_ds, dst_xyz = sys.stdout, weight = None, dump_nodata = False,
             z = band_data[x_i]
             line = [geo_x, geo_y, z]
             if '{:g}'.format(z) not in nodata:
-                xyz_line(line, dst_xyz, weight = weight)
-
+                yield(line)
+                
 def gdal_inf(src_ds):
     '''generate an info (.inf) file from a src_gdal file using gdal'''
+    
     minmax = gdal_region(src_ds)
     with open('{}.inf'.format(src_ds.GetDescription()), 'w') as inf:
         inf.write('{}\n'.format(' '.join([str(x) for x in minmax])))
@@ -1356,80 +1558,55 @@ def gdal_inf_entry(entry):
     minmax = gdal_inf(ds)
     ds = None
     return(minmax)
-                    
-def gdal_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
+
+def gdal_yield_entry(entry, region = None, verbose = False):
     ds = gdal.Open(entry[0])
     if region is not None:
         srcwin = gdal_srcwin(ds, region)
     else: srcwin = None
-    gdal_parse(ds, dst_xyz = dst_port, weight = entry[2], dump_nodata = False, srcwin = srcwin)
+    for xyz in gdal_parse(ds, dump_nodata = False, srcwin = srcwin):
+        yield(xyz + [entry[2]] if entry[2] is not None else xyz)
     ds = None
     
-## ==============================================
-## inf files (data info) inf.py
-## mbsystem/gmt/waffles infos
-## ==============================================
-def inf_generate(data_path, data_fmt = 168):
-    '''generate an info (.inf) file from the data_path'''
-    return(inf_entry([data_path, data_fmt]))
-
-def inf_parse(src_inf):
-    '''parse an inf file (mbsystem or gmt) and return minmax'''
-    minmax = [0, 0, 0, 0]
-    with open(src_inf) as iob:
-        for il in iob:
-            til = il.split()
-            if len(til) > 1:
-                try: 
-                    minmax = [float(x) for x in til]
-                except:
-                    if til[0] == 'Minimum':
-                        if til[1] == 'Longitude:':
-                            minmax[0] = til[2]
-                            minmax[1] = til[5]
-                        elif til[1] == 'Latitude:':
-                            minmax[2] = til[2]
-                            minmax[3] = til[5]
-    return([float(x) for x in minmax])
-
-def inf_entry(src_entry):
-    '''Read .inf file and extract minmax info.
-    the .inf file can either be an MBSystem style inf file
-    or the result of `gmt gmtinfo file.xyz -C`, which is
-    a 6 column line with minmax info, etc.
-    returns the region of the inf file.'''
-    minmax = None
-    if os.path.exists(src_entry[0]):
-        path_i = src_entry[0] + '.inf'
-        if not os.path.exists(path_i):
-            minmax = _datalist_hooks['inf'][src_entry[1]](src_entry)
-        else: minmax = inf_parse(path_i)#[:4]
-    if not region_valid_p(minmax): minmax = None
-    return(minmax)
-    
+def gdal_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
+    for xyz in gdal_yield_entry(entry, region, verbose):
+        xyz_line(xyz, dst_port)
+        
 ## ==============================================
 ## xyz processing (datalists fmt:168)
 ## ==============================================
 _xyz_config = {'delim':' ', 'xpos': 0, 'ypos': 1, 'zpos': 2}
+_known_delims = [',', ' ', '\t', '/', ':']
 
 def xyz_parse(src_xyz):
-    '''xyz file parsing generator'''
+    '''xyz file parsing generator
+    `src_xyz` is a file object or list of xyz data.
+
+    yields each xyz line as a list [x, y, z, ...]'''
+    
+    this_delim = None
     for xyz in src_xyz:
         this_line = xyz.strip()
-        for delim in _known_delims:
-            this_xyz = this_line.split(delim)
-            if len(this_xyz) > 1:
-                this_delim = delim
-                break
+        if this_delim is None:
+            for delim in _known_delims:
+                this_xyz = this_line.split(delim)
+                if len(this_xyz) > 1: #break
+                    this_delim = delim
+                    break
+        else: this_xyz = this_line.split(this_delim)
         yield([float(x) for x in this_xyz])
 
 def xyz2py(src_xyz):
     '''return src_xyz as a python list'''
+    
     xyzpy = []
     return([xyzpy.append(xyz) for xyz in xyz_parse(src_xyz)])
-    
+
 def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False):
-    '''block the src_xyz data to the mean block value'''
+    '''block the src_xyz data to the mean block value
+
+    yields the xyz value for each block with data'''
+    
     xcount, ycount, dst_gt = gdal_region2gt(region, inc)
     avg_arr = np.empty((ycount, xcount), object)
     avg_arr.fill([])
@@ -1453,44 +1630,19 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False):
                 if weights: z = np.average(avg_arr[y, x], weights = wt_arr[y, x])
                 else: z = np.average(avg_arr[y, x])
                 line = [geo_x, geo_y, z]
-                xyz_line(line, dst_xyz)
-
-def xyz_block_mean(src_xyz, region, inc, dst_xyz = sys.stdout):
-    '''block the src_xyz data to the mean block value'''
-    xcount, ycount, dst_gt = gdal_region2gt(region, inc)
-    sum_arr = np.zeros((ycount, xcount))
-    pt_arr = np.zeros((ycount, xcount))
-    for this_xyz in src_xyz:
-        x = this_xyz[0]
-        y = this_xyz[1]
-        z = this_xyz[2]
-        if x > region[0] and x < region[1]:
-            if y > region[2] and y < region[3]:
-                xpos, ypos = _geo2pixel(x, y, dst_gt)
-                sum_arr[ypos, xpos] += z
-                pt_arr[ypos, xpos] += 1
-    pt_arr[pt_arr == 0] = np.nan
-    block_arr = sum_arr / pt_arr
-    for y in range(0, ycount):
-        for x in range(0, xcount):
-            geo_x, geo_y = _pixel2geo(x, y, dst_gt)
-            x_i_data = [block_arr[y][x]]
-            z = x_i_data[0]
-            line = [geo_x, geo_y, z]
-            if not np.isnan(z):
-                xyz_line(line, dst_xyz)                    
+                yield(line)
     
-def xyz_line(line, dst_port = sys.stdout, weight = None):
-    '''write XYZ `line` to `dst_port` using `delimiter` and `weight`'''
-    if weight is None:
-        w_string = ''
-    else: w_string = '{}{}'.format(_xyz_config['delim'], weight)
-    l = '{}{}\n'.format(_xyz_config['delim'].join([str(x) for x in line]), w_string)#.encode(dst_port.encoding)
+def xyz_line(line, dst_port = sys.stdout):
+    '''write "xyz" `line` to `dst_port`
+    `line` should be a list of xyz values [x, y, z, ...].'''
+    
+    l = '{}\n'.format(_xyz_config['delim'].join([str(x) for x in line]))
     if dst_port != sys.stdout: l = l.encode('utf-8')
     dst_port.write(l)
 
 def xyz_in_region_p(src_xy, src_region):
     '''return True if point [x, y] is inside region [w, e, s, n], else False.'''
+    
     if src_xy[0] < src_region[0]: return(False)
     elif src_xy[0] > src_region[1]: return(False)
     elif src_xy[1] < src_region[2]: return(False)
@@ -1498,7 +1650,11 @@ def xyz_in_region_p(src_xy, src_region):
     else: return(True)
     
 def xyz_inf(src_xyz):
-    '''return minmax info from a src_xyz file.'''
+    '''scan an xyz file and find it's min/max values and
+    write an associated inf file for the src_xyz file.
+
+    returns region [xmin, xmax, ymin, ymax] of the src_xyz file.'''
+    
     minmax = []
     for i,l in enumerate(xyz_parse(src_xyz)):
         if i == 0:
@@ -1519,73 +1675,44 @@ def xyz_inf_entry(entry):
         try:
             minmax = mb_inf(infile)
         except: minmax = xyz_inf(infile)
-    return(minmax)
-        
-def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
-    '''dump ascii xyz data to dst_port'''
+    return(minmax)        
+
+def xyz_yield_entry(entry, region = None, verbose = False):
     with open(entry[0]) as infile:
         for line in xyz_parse(infile):
             if region is not None:
                 if xyz_in_region_p(line, region):
-                    xyz_line(line, dst_port, entry[2])
-            else: xyz_line(line, dst_port, entry[2])
+                    yield(line + [entry[2]] if entry[2] is not None else line)
+            else: yield(line + [entry[2]] if entry[2] is not None else line)
+
+def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
+    for xyz in xyz_yield_entry(entry, region, verbose):
+        xyz_line(xyz, dst_port)
 
 ## ==============================================
-## datalist processing (datalists fmt:-1)
-## ==============================================
-_datalist_hooks = {
-    'pass': {
-        -1: lambda e: os.path.exists(e[0]),
-        168: lambda e: os.path.exists(e[0]),
-        200: lambda e: os.path.exists(e[0])
-    },
-    'inf': {
-        -1: lambda e: datalist_inf_entry(e),
-        168: lambda e: xyz_inf_entry(e),
-        200: lambda e: gdal_inf_entry(e)
-    },
-    'proc': {
-        -1: lambda e, d, f, w, v: datalist(e[0], dlh = d, fmt = f, wt = w, verbose = v),
-        168: lambda e, d, f, w, v: xyz_dump_entry(e, verbose = v),
-        200: lambda e, d, f, w, v: gdal_dump_entry(e, verbose = v)
-    },
-}
-
-## ==============================================
-## the datalist hooks : 'pass','inf','proc'
-## lambda returns dictionary of the default
-## datalist hooks:
+## datalists and entries - datalists.py
 ##
-## _datalist_hooks = {
-##     'pass': {
-##         -1: lambda e: os.path.exists(e[0]),
-##         168: lambda e: os.path.exists(e[0]),
-##         200: lambda e: os.path.exists(e[0])
-##     },
-##     'inf': {
-##         -1: lambda e: datalist_inf_entry(e),
-##         168: lambda e: xyz_inf_entry(e),
-##         200: lambda e: gdal_inf_entry(e)
-##     },
-##     'proc': {
-##         -1: lambda e, d, f, w, v: datalist(e[0], dlh = d, fmt = f, wt = w, verbose = v),
-##         168: lambda e, d, f, w, v: xyz_dump_entry(e, verbose = v),
-##         200: lambda e, d, f, w, v: gdal_dump_entry(e, verbose = v)
-##     },
-## }
+## datalist processing (datalists fmt:-1)
+## entry processing fmt:*
 ## ==============================================
-datalist_hooks = lambda: copy.deepcopy(_datalist_hooks)
+_known_dl_delims = [' ', ':']
+_known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'csv', 'dat'], 200: ['tif', 'img', 'grd', 'nc']}
+_dl_inf_h = {
+    -1: lambda e: datalist_inf_entry(e),
+    168: lambda e: xyz_inf_entry(e),
+    200: lambda e: gdal_inf_entry(e)
+}
+_dl_pass_h = lambda e: os.path.exists(e[0])
 
 def datalist_inf(dl, inf_file = True):
     '''return the region of the datalist and generate
     an associate `.inf` file if `inf_file` is True.'''
+    
     out_regions = []
     minmax = None
-    dlh = datalist_hooks()
-    dlh['proc'][-1] = lambda e, d, f, w, v: out_regions.append(inf_entry(e)[:4])
-    dlh['proc'][168] = lambda e, d, f, w, v: out_regions.append(inf_entry(e)[:4])
-    dlh['proc'][200] = lambda e, d, f, w, v: out_regions.append(inf_entry(e)[:4])
-    datalist(dl, dlh = dlh, verbose = False)
+    for entry in datalist(dl):
+        out_regions.append(inf_entry(entry)[:4])
+    
     out_regions = [x for x in out_regions if x is not None]
     if len(out_regions) == 0:
         minmax = None
@@ -1602,20 +1729,24 @@ def datalist_inf(dl, inf_file = True):
         with open('{}.inf'.format(dl), 'w') as inf:
             inf.write('{}\n'.format(' '.join([str(x) for x in minmax])))
     return(minmax)
-    
+
 def datalist_inf_entry(e):
     '''write an inf file for datalist entry e
-    and return the region [xmin, xmax, ymin, ymax]'''
+    
+    returna the region [xmin, xmax, ymin, ymax]'''
+    
     return(datalist_inf(e[0]))
 
 def datalist_append_entry(entry, datalist):
     '''append entry to datalist file `datalist`'''
+    
     with open(datalist, 'a') as outfile:
         outfile.write('{}\n'.format(' '.join([str(x) for x in entry])))
 
 def archive_entry(entry, dirname = 'archive', region = None, inc = 1, weight = None, verbose = None):
     '''archive a datalist entry.
     a datalist entry is [path, format, weight, ...]'''
+    
     if region is None:
         a_name = entry[-1]
     else: a_name = '{}_{}_{}'.format(entry[-1], region_format(region, 'fn'), this_year())
@@ -1641,17 +1772,17 @@ def archive_entry(entry, dirname = 'archive', region = None, inc = 1, weight = N
     datalist_append_entry([i_xyz + '.xyz', 168, entry[2] if entry[2] is not None else 1], a_dl)
 
 def datalist_archive(wg, arch_dir = 'archive', region = None, verbose = False):
-    '''dump the data from datalist to dst_port'''
-    dlh = datalist_hooks()
+    '''archive the data from wg_config datalist to `arch_dir`'''
+    
     if region is not None:
-        dlh['pass'][-1] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
-        dlh['pass'][168] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
-        dlh['pass'][200] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
-    dlh['proc'][168] = lambda e, d, f, w, v: archive_entry(e, dirname = arch_dir, region = region, inc = wg['inc'], weight = w, verbose = v)
-    dlh['proc'][200] = lambda e, d, f, w, v: archive_entry(e, dirname = arch_dir, region = region, inc = wg['inc'], weight = w, verbose = v)
-    datalist(wg['datalist'], dlh = dlh, wt = 1 if wg['weights'] else None, verbose = verbose)
-    a_dl = os.path.join(arch_dir, '{}.datalist'.format(wg['name']))
+        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+    else: dl_p = _dl_pass_h
 
+    for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p, verbose = verbose):
+        if this_entry[1] == 168 or this_entry[1] == 200:
+            archive_entry(this_entry, dirname = arch_dir, region = region, inc = wg['inc'], weight = wg['weights'], verbose = verbose)
+    a_dl = os.path.join(arch_dir, '{}.datalist'.format(wg['name']))
+            
     for dir_, _, files in os.walk(arch_dir):
         for f in files:
             if '.datalist' in f:
@@ -1661,27 +1792,35 @@ def datalist_archive(wg, arch_dir = 'archive', region = None, verbose = False):
     return(a_dl, 0)
         
 def datalist_dump(wg, dst_port = sys.stdout, region = None, verbose = False):
-    '''dump the data from datalist to dst_port'''
-    dlh = datalist_hooks()
+    '''dump the xyz data from datalist to dst_port'''
+    
     if region is not None:
-        dlh['pass'][-1] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
-        dlh['pass'][168] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
-        dlh['pass'][200] = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
-    dlh['proc'][168] = lambda e, d, f, w, v: xyz_dump_entry(e, region = region, dst_port = dst_port, verbose = v)
-    dlh['proc'][200] = lambda e, d, f, w, v: gdal_dump_entry(e, region = region, dst_port = dst_port, verbose = v)
-    datalist(wg['datalist'], dlh = dlh, wt = 1 if wg['weights'] else None, verbose = verbose)
+        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+    else: dl_p = _dl_pass_h
+    
+    for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p, verbose = verbose):
+        if this_entry[1] == 168:
+            xyz_dump_entry(this_entry, region = region, dst_port = dst_port)
+        elif this_entry[1] == 200:
+            gdal_dump_entry(this_entry, region = region, dst_port = dst_port)
 
 def datalist_echo(entry):
-    '''echo datalist entry'''
+    '''echo datalist entry to stderr'''
+    
     sys.stderr.write('{}\n'.format([str(x) for x in entry]))
     datalist(entry[0])
 
 def datafile_echo(entry):
-    '''echo datafile entry'''
+    '''echo datafile entry to stderr'''
+    
     sys.stderr.write('{}\n'.format([str(x) for x in entry]))
 
 def datalist_master(dls, master = '.master.datalist'):
-    '''set the master datalist'''
+    '''set the master datalist
+    `dls` is a list of datalist entries, minimally: ['datafile.xyz']
+
+    returns the master datalist filename'''
+    
     with open(master, 'w') as md:        
         for dl in dls:
             if os.path.exists(dl):
@@ -1692,12 +1831,14 @@ def datalist_master(dls, master = '.master.datalist'):
     if os.stat(master).st_size == 0:
         remove_glob(master)
         echo_error_msg('bad datalist/entry, {}'.format(dls))
-        return(None)
-    
+        return(None)    
     return(master)
-    
+
 def entry2py(dle):
-    '''convert a datalist entry to python'''
+    '''convert a datalist entry to python
+
+    return the entry as a list [fn, fmt, wt, ...]'''
+    
     for delim in _known_dl_delims:
         this_entry = dle.rstrip().split(delim)
         if len(this_entry) > 1: break
@@ -1710,40 +1851,42 @@ def entry2py(dle):
                 entry.append(key)
     if len(entry) < 3: entry.append(1)
     return(entry)
-    
+
 def datalist2py(dl):
-    '''convert a datalist to python data'''
+    '''convert a datalist to python data
+    
+    returns a list of datalist entries.'''
+    
     these_entries = []
     this_entry = entry2py(dl)
-    if len(this_entry) < 2: this_entry.append(-1)
-    if len(this_entry) < 3: this_entry.append(1)
     if this_entry[1] == -1:
         with open(this_entry[0], 'r') as op:
-            while True:
-                this_line = op.readline()#.rstrip()
-                if not this_line: break
+            for this_line in op:
                 if this_line[0] != '#' and this_line[0] != '\n' and this_line[0].rstrip() != '':
                     these_entries.append(entry2py(this_line.rstrip()))
     else: these_entries.append(this_entry)
     return(these_entries)
 
-def datalist_io(dpipe):
-    '''`dpipe` is a function to write to `f` bytesio (e.g. `datalist_dump`); we then yield that data through `xyz_parse`
-    use as: 
-    for xyz in datalist_io(lambda p: datalist_dump('datalist.datalist', dst_port = p)):
-        x = xyz[0]
-        y = xyz[1]
-        z = xyz[2]
-        ...'''
-    f = io.BytesIO()
-    d = dpipe(f)
-    f.seek(0)
-    for this_xyz in xyz_parse(f):
-        yield(this_xyz)
-    f.seek(0)
+def datalist_yield_xyz(dl, fmt = -1, wt = None, pass_h = lambda e: os.path.exits(e), verbose = False):
+    '''parse out the xyz data from the datalist
+    for xyz in datalist_yield_xyz(dl): xyz_line(xyz)
 
-def datalist(dl, dlh = _datalist_hooks, fmt = -1, wt = None, verbose = False):
-    '''recurse a datalist/entry'''
+    yields xyz line data [x, y, z, ...]'''
+    
+    for this_entry in datalist(dl, fmt, wt, pass_h, verbose):
+        if this_entry[1] == 168:
+            for xyz in xyz_yield_entry(this_entry):
+                yield(xyz)
+        elif this_entry[1] == 200:
+            for xyz in gdal_yield_entry(this_entry):
+                yield(xyz)
+                
+def datalist(dl, fmt = -1, wt = None, pass_h = lambda e: os.path.exists(e[0]), verbose = False):
+    '''recurse a datalist/entry
+    for entry in datalist(dl): do_something_with entry
+
+    yields entry [path, fmt, wt, ...]'''
+    
     this_dir = os.path.dirname(dl)
     these_entries = datalist2py(dl)
     if len(these_entries) == 0: these_entries = [entry2py(dl)]
@@ -1751,24 +1894,21 @@ def datalist(dl, dlh = _datalist_hooks, fmt = -1, wt = None, verbose = False):
         this_entry[0] = os.path.join(this_dir, this_entry[0])
         if wt is not None:
             this_entry[2] = wt * this_entry[2]
-            wt = this_entry[2]
         else: this_entry[2] = wt
         this_entry_md = ' '.join(this_entry[3:]).split(',')
         this_entry = this_entry[:3] + [this_entry_md] + [os.path.basename(dl).split('.')[0]]
-        if dlh['pass'][this_entry[1]](this_entry):
-            if verbose: echo_msg('{} {}'.format('scanning datalist' if this_entry[1] == -1 else 'using datafile', this_entry[0]))
-            try:
-                dlh['proc'][this_entry[1]](this_entry, dlh, fmt, wt, verbose)
-            except KeyboardInterrupt as e:
-                echo_error_msg('user break, {}'.format(e))
-                sys.exit(-1)
-            except: echo_error_msg('could not process entry {}'.format(this_entry[0]))
-
+        if pass_h(this_entry):
+            if verbose: echo_msg('{} {}'.format('scanning datalist ({})'.format(this_entry[2]) if this_entry[1] == -1 else 'using datafile', this_entry[0]))
+            if this_entry[1] == -1:
+                for entry in datalist(this_entry[0], fmt, this_entry[2], pass_h, verbose):
+                    yield(entry)
+            else: yield(this_entry)
+            
 ## ==============================================
 ## DEM module: generate a Digital Elevation Model using a variety of methods
 ## dem modules include: 'mbgrid', 'surface', 'num', 'mean'
 ##
-## Requires MBSystem, GMT and GDAL
+## Requires MBSystem, GMT, GDAL and VDatum for full functionality
 ## ==============================================
 _waffles_grid_info = {
     'datalist': None,
@@ -1820,7 +1960,10 @@ waffles_config = lambda: copy.deepcopy(_waffles_grid_info)
     
 def waffles_dict2wg(wg = _waffles_grid_info):
     '''copy the `wg` dict and add any missing keys.
-    also validate the key values and return the valid waffles_config'''
+    also validate the key values and return the valid waffles_config
+    
+    returns a complete and validated waffles_config dict.'''
+    
     wg = copy.deepcopy(wg)
     keys = wg.keys()
 
@@ -1854,6 +1997,7 @@ def waffles_dict2wg(wg = _waffles_grid_info):
     if 'verbose' not in keys: wg['verbose'] = False
     else: wg['verbose'] = False if not wg['verbose'] or str(wg['verbose']).lower() == 'false' or wg['verbose'] is None else True
     wg['gc'] = config_check()
+    
     ## ==============================================
     ## set the master datalist to the mentioned
     ## datalists/datasets
@@ -1865,6 +2009,7 @@ def waffles_dict2wg(wg = _waffles_grid_info):
         if wg['datalist'] is None:
             echo_error_msg('invalid datalist/s entry')
             return(None)
+        
         ## ==============================================
         ## set the region to that of the datalist if
         ## the region was not specified.
@@ -1876,6 +2021,7 @@ def waffles_dict2wg(wg = _waffles_grid_info):
         echo_error_msg('invalid region and/or datalist/s entry')
         return(None)
     if wg['inc'] is None: wg['inc'] = (wg['region'][1] - wg['region'][0]) / 500
+    
     ## ==============================================
     ## if `name_prefix` is set; append region/inc/year
     ## to `prefix_name` and set `name` to that.
@@ -1919,6 +2065,9 @@ _waffles_modules = {
     \t\t\t  :arch_dir=[dirname] - archive data to dirname'''],
 }
 
+## ==============================================
+## module descriptors (used in cli help)
+## ==============================================
 waffles_module_long_desc = lambda x: 'waffles modules:\n% waffles ... -M <mod>:key=val:key=val...\n\n  ' + '\n  '.join(['{:22}{}\n'.format(key, x[key][-1]) for key in x]) + '\n'
 waffles_module_short_desc = lambda x: ', '.join(['{}'.format(key) for key in x])
 
@@ -1926,14 +2075,33 @@ waffles_module_short_desc = lambda x: ', '.join(['{}'.format(key) for key in x])
 ## the "proc-region" region_buffer(wg['region'], (wg['inc'] * 20) + (wg['inc'] * wg['extend']))
 ## ==============================================
 waffles_proc_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * 20) + (wg['inc'] * wg['extend']))
-waffles_dist_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * wg['extend']))
 waffles_proc_str = lambda wg: region_format(waffles_proc_region(wg), 'gmt')
+
+## ==============================================
+## the "dist-region" region_buffer(wg['region'], (wg['inc'] * wg['extend']))
+## ==============================================
+waffles_dist_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * wg['extend']))
+
+## ==============================================
+## the datalist dump function, to use in run_cmd()
+## ==============================================
 waffles_dl_func = lambda wg: lambda p: datalist_dump(wg, dst_port = p, region = waffles_proc_region(wg), verbose = wg['verbose'])
+
+## ==============================================
+## grid registration string for use in GTM programs
+## ==============================================
 waffles_gmt_reg_str = lambda wg: '-r' if wg['node'] == 'pixel' else ''
+
+## ==============================================
+## the 'long-name' used from prefix
+## ==============================================
 waffles_append_fn = lambda bn, region, inc: '{}{}_{}_{}'.format(bn, inc2str_inc(inc), region_format(region, 'fn'), this_year())
     
 def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, use_datalists = False):
-    '''Generate a DEM with MBSystem's mbgrid program.'''
+    '''Generate a DEM with MBSystem's mbgrid program.
+    if `use_datalists` is True, will parse the datalist through
+    waffles instead of mbsystem.'''
+    
     import shutil
     if wg['gc']['MBGRID'] is None:
         echo_error_msg('MBSystem must be installed to use the MBGRID module')
@@ -1941,7 +2109,6 @@ def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, use_dat
     if wg['gc']['GMT'] is None:
         echo_error_msg('GMT must be installed to use the MBGRID module')
         return(None, -1)
-
     if use_datalists:
         datalist_archive(wg, arch_dir = '.mb_tmp_datalist', verbose = True)
         wg['datalist'] = datalist_master(['.mb_tmp_datalist/{}.datalist'.format(wg['name'])])
@@ -1956,6 +2123,7 @@ def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, use_dat
 
 def waffles_gmt_surface(wg = _waffles_grid_info, tension = .35, relaxation = 1.2, lower_limit = 'd', upper_limit = 'd'):
     '''generate a DEM with GMT surface'''
+    
     if wg['gc']['GMT'] is None:
         echo_error_msg('GMT must be installed to use the SURFACE module')
         return(None, -1)
@@ -1966,6 +2134,7 @@ def waffles_gmt_surface(wg = _waffles_grid_info, tension = .35, relaxation = 1.2
 
 def waffles_gmt_triangulate(wg = _waffles_grid_info):
     '''generate a DEM with GMT surface'''
+    
     if wg['gc']['GMT'] is None:
         echo_error_msg('GMT must be installed to use the TRIANGULATE module')
         return(None, -1)
@@ -1976,6 +2145,7 @@ def waffles_gmt_triangulate(wg = _waffles_grid_info):
 
 def waffles_nearneighbor(wg = _waffles_grid_info, radius = None, use_gdal = False):
     '''genearte a DEM with GMT nearneighbor'''
+    
     radius = wg['inc'] * 2 if radius is None else gmt_inc2inc(radius)
     if wg['gc']['GMT'] is not None and not use_gdal:
         dem_nn_cmd = ('gmt blockmean {} -I{:.10f}{} -V {} | gmt nearneighbor {} -I{:.10f} -S{} -V -G{}.tif=gd+n-9999:GTiff {}\
@@ -1983,21 +2153,24 @@ def waffles_nearneighbor(wg = _waffles_grid_info, radius = None, use_gdal = Fals
                  wg['inc'], radius, wg['name'], waffles_gmt_reg_str(wg)))
         return(run_cmd(dem_nn_cmd, verbose = wg['verbose'], data_fun = waffles_dl_func(wg)))
     else: return(waffles_gdal_grid(wg, 'nearest:radius1={}:radius2={}:nodata=-9999'.format(radius, radius)))
-
+    
 def waffles_num(wg = _waffles_grid_info, mode = 'n'):
     '''Generate an uninterpolated num grid.
     mode of `k` generates a mask grid
     mode of `m` generates a mean grid
     mode of `n` generates a num grid'''
+    
     wg['region'] = region_buffer(wg['region'], wg['inc'] * .5) if wg['node'] == 'grid' else wg['region']
-    return(gdal_xyz2gdal(datalist_io(waffles_dl_func(wg)), '{}.tif'.format(wg['name']), waffles_dist_region(wg), wg['inc'], \
-                         dst_format = wg['fmt'], mode = mode))
+    region = waffles_dist_region(wg)
+    dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+    return(gdal_xyz2gdal(datalist_yield_xyz(wg['datalist'], pass_h = dlh, verbose = wg['verbose']), '{}.tif'.format(wg['name']), region, wg['inc'], dst_format = wg['fmt'], mode = mode))
                                 
 def waffles_spatial_metadata(wg):
     '''generate spatial-metadata for the top-level of the datalist
     top-level entries in the datalist should include a comma-separated list
     of field entries, (see `v_fields`). should be column 3 (from 0) in the 
     datalist entry (e.g."datalist.datalist -1 1 name,agency,date,type,resolution,hdatum,vdatum,url") '''
+    
     dst_vector = '{}_sm.shp'.format(wg['name'])
     dst_layer = '{}_sm'.format(wg['name'])
     v_fields = ['Name', 'Agency', 'Date', 'Type', 'Resolution', 'HDatum', 'VDatum', 'URL']
@@ -2043,11 +2216,17 @@ def waffles_spatial_metadata(wg):
     return(dst_vector, 0)
 
 def waffles_archive(wg = _waffles_grid_info, arch_dir = None):
-    '''archive the datalist to `arch_dir`'''
+    '''archive the datalist to `arch_dir`
+    converts all data to xyz'''
+    
     arch_dir = wg['name'] if arch_dir is None else arch_dir
     return(datalist_archive(wg, arch_dir = arch_dir, region = waffles_proc_region(wg), verbose = True))
 
 def waffles_vdatum(wg = _waffles_grid_info, ivert = 'navd88', overt = 'mhw', region = '3', jar = None):
+    '''generate a 'conversion-grid' with vdatum.
+    output will be the differences (surfaced) between 
+    `ivert` and `overt` for the region'''
+    
     vc = _vd_config
     vc['jar'] = jar
     vc['ivert'] = ivert
@@ -2077,11 +2256,15 @@ def waffles_vdatum(wg = _waffles_grid_info, ivert = 'navd88', overt = 'mhw', reg
     return(out, status)
 
 def waffles_gdal_grid(wg = _waffles_grid_info, alg_str = 'linear:radius=1'):
-    '''run gdal grid using alg_str'''
+    '''run gdal grid using alg_str
+    parse the data through xyz_block to get weighted mean before
+    building the GDAL dataset to pass into gdal_grid'''
+    
     wg['region'] = region_buffer(wg['region'], wg['inc'] * .5) if wg['node'] == 'grid' else wg['region']
     region = waffles_proc_region(wg)
-    block_xyz = lambda p: xyz_block(datalist_io(waffles_dl_func(wg)), region, wg['inc'], dst_xyz = p, weights = True if wg['weights'] else False)
-    ds = xyz2gdal_ds(datalist_io(block_xyz), '{}'.format(wg['name']))
+    dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+    ds = xyz2gdal_ds(xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, verbose = wg['verbose']), \
+                               region, wg['inc'], weights = True if wg['weights'] else False), '{}'.format(wg['name']))
     xcount, ycount, dst_gt = gdal_region2gt(wg['region'], wg['inc'])
     gd_opts = gdal.GridOptions(outputType = gdal.GDT_Float32, noData = -9999, format = 'GTiff', \
                                width = xcount, height = ycount, algorithm = alg_str, callback = _gdal_progress if wg['verbose'] else None, \
@@ -2094,6 +2277,7 @@ def waffles_gdal_grid(wg = _waffles_grid_info, alg_str = 'linear:radius=1'):
 def waffles_invdst(wg = _waffles_grid_info, power = 2.0, smoothing = 0.0, radius1 = None, radius2 = None, angle = 0.0, \
                    max_points = 0, min_points = 0, nodata = -9999):
     '''Generate an inverse distance grid with GDAL'''
+    
     radius1 = wg['inc'] * 2 if radius1 is None else gmt_inc2inc(radius1)
     radius2 = wg['inc'] * 2 if radius2 is None else gmt_inc2inc(radius2)
     gg_mod = 'invdist:power={}:smoothing={}:radius1={}:radius2={}:angle={}:max_points={}:min_points={}:nodata={}'\
@@ -2101,20 +2285,23 @@ def waffles_invdst(wg = _waffles_grid_info, power = 2.0, smoothing = 0.0, radius
     return(waffles_gdal_grid(wg, gg_mod))
 
 def waffles_moving_average(wg = _waffles_grid_info, radius1 = None, radius2 = None, angle = 0.0, min_points = 0, nodata = -9999):
-    '''Generate a moving average grid with GDAL'''
+    '''generate a moving average grid with GDAL'''
+    
     radius1 = wg['inc'] * 2 if radius1 is None else gmt_inc2inc(radius1)
     radius2 = wg['inc'] * 2 if radius2 is None else gmt_inc2inc(radius2)
     gg_mod = 'average:radius1={}:radius2={}:angle={}:min_points={}:nodata={}'.format(radius1, radius2, angle, min_points, nodata)
     return(waffles_gdal_grid(wg, gg_mod))
 
 def waffles_wg_valid_p(wg = _waffles_grid_info):
-    '''return True if wg appears valid'''
+    '''return True if wg_config appears valid'''
+    
     if wg['datalists'] is None: return(False)
     if wg['mod'] is None: return(False)
     else: return(True)
         
 def waffles_gdal_md(wg):
     '''add metadata to the waffles dem'''
+    
     ds = gdal.Open('{}.tif'.format(wg['name']), gdal.GA_Update)
     if ds is not None:
         md = ds.GetMetadata()
@@ -2125,10 +2312,19 @@ def waffles_gdal_md(wg):
         ds = None
     else: echo_error_msg('failed to set metadata')
 
-## todo: split into waffles_run_module and waffles_post_process
-## threads?
 def waffles_run(wg = _waffles_grid_info):
-    '''generate a DEM using wg dict settings'''
+    '''generate a DEM using wg dict settings
+    see waffles_dict2wg() to generate a wg config.
+
+    - runs the waffles module to generate the DEM
+    - optionally clips the output to shapefile
+    - optionally filters the output
+    - optionally resamples the output
+    - cuts the output to dist-size
+    - reformats the output to final format
+    - sets metadata in output
+
+    returns dem-fn'''
 
     ## ==============================================
     ## validate and/or set the waffles_config
@@ -2155,11 +2351,14 @@ def waffles_run(wg = _waffles_grid_info):
 
     try:
         out, status = _waffles_modules[wg['mod']][0](args_d)
-    except TypeError as e: echo_error_msg('{}'.format(e))
+    except Exception as e:
+        echo_error_msg('{}'.format(e))
+        status = -1
     except KeyboardInterrupt as e:
         echo_error_msg('killed by user, {}'.format(e))
         sys.exit(-1)
 
+    if status != 0: remove_glob(dem)
     if not os.path.exists(dem): return(None)
     gdi = gdal_infos(dem, scan=True)
     if gdi is not None:
@@ -2167,6 +2366,7 @@ def waffles_run(wg = _waffles_grid_info):
             remove_glob(dem)
             return(None)
     else: return(None)
+    
     ## ==============================================
     ## spat-metadata and archive don't produce grids,
     ## exit here if running one of those mods.
@@ -2289,6 +2489,14 @@ CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
 '''.format(waffles_module_short_desc(_waffles_modules))
 
 def waffles_cli(argv = sys.argv):
+    '''run waffles from command-line
+    e.g. `python waffles.py` 
+    generates a waffles_config from the command-line options
+    and either outputs the or runs the waffles_config
+    on each region supplied (multiple regions can be supplied
+    by using a vector file as the -R option.)
+    See `waffles_cli_usage` for full cli options.'''
+    
     wg = waffles_config()
     wg_user = None
     dls = []
@@ -2326,9 +2534,9 @@ def waffles_cli(argv = sys.argv):
             i += 1
         elif arg[:2] == '-F': wg['fmt'] = arg[2:]
         elif arg == '--filter' or arg == '-T':
-            wg['fltr'] = argv[i + 1]#gmt_inc2inc(argv[i + 1])
+            wg['fltr'] = argv[i + 1]
             i += 1
-        elif arg[:2] == '-T': wg['fltr'] = arg[2:]#gmt_inc2inc(arg[2:])
+        elif arg[:2] == '-T': wg['fltr'] = arg[2:]
         elif arg == '--extend' or arg == '-X':
             try:
                 wg['extend'] = int(argv[i + 1])
@@ -2385,7 +2593,7 @@ def waffles_cli(argv = sys.argv):
         else:
             echo_error_msg('specified json file does not exist, {}'.format(wg_user))
             sys.exit(0)
-    #else:
+
     ## ==============================================
     ## Otherwise run from cli options...
     ## set the dem module
@@ -2486,7 +2694,7 @@ def datalists_cli(argv = sys.argv):
         sys.stderr.write(datalists_cli_usage)
         echo_error_msg('''must specify a datalist/entry file''')
         sys.exit(-1)
-    dlh = datalist_hooks()
+    dl_p = lambda e: os.path.exists(e[0])
     if region is not None:
         try:
             region = [float(x) for x in region.split('/')]
@@ -2494,12 +2702,7 @@ def datalists_cli(argv = sys.argv):
             sys.stderr.write(datalists_cli_usage)
             echo_error_msg('bad region, {}'.format(e))
             sys.exit(-1)
-        dlh['pass'][-1] = lambda e: regions_intersect_p(region, inf_entry(e))
-        dlh['pass'][168] = lambda e: regions_intersect_p(region, inf_entry(e))
-        dlh['pass'][200] = lambda e: regions_intersect_p(region, inf_entry(e))
-        dlh['proc'][168] = lambda e, d, f, w, v: xyz_dump_entry(e, region = region, verbose = want_verbose)
-        dlh['proc'][200] = lambda e, d, f, w, v: gdal_dump_entry(e, region = region, verbose = want_verbose)
-
+        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
     wt = 1 if want_weight else None
             
     ## ==============================================
@@ -2507,19 +2710,15 @@ def datalists_cli(argv = sys.argv):
     ## ==============================================
     master = datalist_master(dls)
     if master is not None:
-        #try:
         #datalist_archive(master, arch_dir = 'archive', region = region, verbose = want_verbose)
         if want_infos: print(datalist_inf(master, inf_file = False))#sys.stdout.write(' '.format([str(x) for x in datalist_inf(master)]))
         elif rec_infos:
             inf_entry([master, -1, 1])
         else:
-            datalist(master, dlh = dlh, wt = wt, verbose = want_verbose)
-        #except IndexError:
-        #    echo_error_msg('bad datalist file...')
-        #except KeyboardInterrupt as e:
-        #    echo_error_msg('user killed process')
-        #    remove_glob(master)
-        #    sys.exit(-1)
+            ## ==============================================
+            ## dump to stdout
+            ## ==============================================
+            datalist_dump({'datalist':master, 'weights': want_weight})
         remove_glob(master)
 
 ## ==============================================
