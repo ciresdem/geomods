@@ -1775,7 +1775,8 @@ def datalist_archive(wg, arch_dir = 'archive', region = None, verbose = False):
     '''archive the data from wg_config datalist to `arch_dir`'''
     
     if region is not None:
-        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+        #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     else: dl_p = _dl_pass_h
 
     for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p, verbose = verbose):
@@ -1795,7 +1796,8 @@ def datalist_dump(wg, dst_port = sys.stdout, region = None, verbose = False):
     '''dump the xyz data from datalist to dst_port'''
     
     if region is not None:
-        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+        #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     else: dl_p = _dl_pass_h
     
     for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p, verbose = verbose):
@@ -2068,8 +2070,8 @@ _waffles_modules = {
 ## ==============================================
 ## module descriptors (used in cli help)
 ## ==============================================
-waffles_module_long_desc = lambda x: 'waffles modules:\n% waffles ... -M <mod>:key=val:key=val...\n\n  ' + '\n  '.join(['{:22}{}\n'.format(key, x[key][-1]) for key in x]) + '\n'
-waffles_module_short_desc = lambda x: ', '.join(['{}'.format(key) for key in x])
+_waffles_module_long_desc = lambda x: 'waffles modules:\n% waffles ... -M <mod>:key=val:key=val...\n\n  ' + '\n  '.join(['{:22}{}\n'.format(key, x[key][-1]) for key in x]) + '\n'
+_waffles_module_short_desc = lambda x: ', '.join(['{}'.format(key) for key in x])
 
 ## ==============================================
 ## the "proc-region" region_buffer(wg['region'], (wg['inc'] * 20) + (wg['inc'] * wg['extend']))
@@ -2162,7 +2164,8 @@ def waffles_num(wg = _waffles_grid_info, mode = 'n'):
     
     wg['region'] = region_buffer(wg['region'], wg['inc'] * .5) if wg['node'] == 'grid' else wg['region']
     region = waffles_dist_region(wg)
-    dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+    #dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+    dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     if wg['weights']:
         dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = wg['weights'], verbose = wg['verbose']), region, wg['inc'], weights = True if wg['weights'] else False)
     else: dly = datalist_yield_xyz(wg['datalist'], pass_h = dlh, verbose = wg['verbose'])
@@ -2265,7 +2268,8 @@ def waffles_gdal_grid(wg = _waffles_grid_info, alg_str = 'linear:radius=1'):
     
     wg['region'] = region_buffer(wg['region'], wg['inc'] * .5) if wg['node'] == 'grid' else wg['region']
     region = waffles_proc_region(wg)
-    dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+    #dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+    dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     ds = xyz2gdal_ds(xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = wg['weights'], verbose = wg['verbose']), \
                                region, wg['inc'], weights = True if wg['weights'] else False), '{}'.format(wg['name']))
     xcount, ycount, dst_gt = gdal_region2gt(wg['region'], wg['inc'])
@@ -2489,7 +2493,7 @@ Modules (see waffles --modules for more info):
   {}
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
-'''.format(waffles_module_short_desc(_waffles_modules))
+'''.format(_waffles_module_short_desc(_waffles_modules))
 
 def waffles_cli(argv = sys.argv):
     '''run waffles from command-line
@@ -2569,7 +2573,7 @@ def waffles_cli(argv = sys.argv):
         elif arg == '--verbose' or arg == '-V': wg['verbose'] = True
         elif arg == '--config': want_config = True
         elif arg == '--modules' or arg == '-m':
-            sys.stderr.write(waffles_module_long_desc(_waffles_modules))
+            sys.stderr.write(_waffles_module_long_desc(_waffles_modules))
             sys.exit(0)
         elif arg == '--help' or arg == '-h':
             sys.stderr.write(waffles_cli_usage)
