@@ -712,7 +712,7 @@ def run_mbgrid(datalist, region, inc, dst_name, dist = '10/3', tension = 35, ext
 ## ==============================================
 gdal.PushErrorHandler('CPLQuietErrorHandler')
 gdal.UseExceptions()
-_gdal_progress = gdal.TermProgress
+_gdal_progress = gdal.TermProgress #crashes on osgeo4w
 _gdal_progress_nocb = gdal.TermProgress_nocb
     
 def gdal_sr_wkt(epsg, esri = False):
@@ -2173,7 +2173,6 @@ def waffles_num(wg = _waffles_grid_info, mode = 'n'):
     dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     if wg['weights']:
         dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = 1 if wg['weights'] is not None else None, verbose = wg['verbose']), region, wg['inc'], weights = True if wg['weights'] else False)
-        #dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = 1, verbose = wg['verbose']), region, wg['inc'], weights = True)
     else: dly = datalist_yield_xyz(wg['datalist'], pass_h = dlh, verbose = wg['verbose'])
     return(gdal_xyz2gdal(dly, '{}.tif'.format(wg['name']), region, wg['inc'], dst_format = wg['fmt'], mode = mode))
                                 
@@ -2352,9 +2351,10 @@ def waffles_run(wg = _waffles_grid_info):
         p_arg = arg.split('=')
         args_d[p_arg[0]] = p_arg[1]
     args_d['wg'] = wg
-        
+
     if wg['verbose']:
-        echo_msg(json.dumps(wg, indent = 4, sort_keys = True))
+        #echo_msg(json.dumps(wg, indent = 4, sort_keys = True))
+        echo_msg(wg)
         echo_msg('running module {}...'.format(wg['mod']))
 
     ## ==============================================
@@ -2606,7 +2606,7 @@ def waffles_cli(argv = sys.argv):
         else:
             echo_error_msg('specified json file does not exist, {}'.format(wg_user))
             sys.exit(0)
-
+    #else:
     ## ==============================================
     ## Otherwise run from cli options...
     ## set the dem module
@@ -2664,6 +2664,24 @@ def waffles_cli(argv = sys.argv):
                     wg_json.write(json.dumps(this_wg, indent = 4, sort_keys = True))
             else: echo_error_msg('could not parse config.')
         else:
+            # import threading
+            # t = threading.Thread(target = waffles_run, args = (wg,))
+            # try:
+            #     t.start()
+            #     a = 0
+            #     while True:
+            #         time.sleep(2)
+            #         sys.stderr.write('\x1b[2K\r')
+            #         sys.stderr.flush()
+            #         sys.stderr.write('waffles: {}'.format(a))
+            #         a+=1
+            #         if not t.is_alive():
+            #             break
+            # except (KeyboardInterrupt, SystemExit):
+            #     echo_msg('stopping all threads')
+            #     stop_threads = True
+
+            # t.join()
             #try:
             dem = waffles_run(wg)
             #except RuntimeError or OSError as e:
