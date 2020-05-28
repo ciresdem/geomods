@@ -1238,12 +1238,14 @@ def xyz2gdal_ds(src_xyz, dst_ogr):
     fd.SetPrecision(8)
     layer.CreateField(fd)
     fd = ogr.FieldDefn('elev', ogr.OFTReal)
-    fd.SetWidth(10)
-    fd.SetPrecision(8)
+    fd.SetWidth(12)
+    fd.SetPrecision(12)
     layer.CreateField(fd)
     f = ogr.Feature(feature_def = layer.GetLayerDefn())
 
     for this_xyz in src_xyz:
+        #print(this_xyz)
+        #sys.exit()
         x = this_xyz[0]
         y = this_xyz[1]
         z = this_xyz[2]
@@ -1617,19 +1619,22 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False):
         x = this_xyz[0]
         y = this_xyz[1]
         z = this_xyz[2]
-        if weights: w = this_xyz[3]
+        if weights:
+            w = this_xyz[3]
         if x > region[0] and x < region[1]:
             if y > region[2] and y < region[3]:
                 xpos, ypos = _geo2pixel(x, y, dst_gt)
                 avg_arr[ypos, xpos] = avg_arr[ypos, xpos] + [z]
-                if weights: wt_arr[ypos, xpos] = wt_arr[ypos, xpos] + [w]
+                if weights:
+                    wt_arr[ypos, xpos] = wt_arr[ypos, xpos] + [w]
     for y in range(0, ycount):
         for x in range(0, xcount):
             if len(avg_arr[y, x]) > 0:
                 geo_x, geo_y = _pixel2geo(x, y, dst_gt)
-                if weights: z = np.average(avg_arr[y, x], weights = wt_arr[y, x])
+                if weights:
+                    z = np.average(avg_arr[y, x], weights = wt_arr[y, x])
                 else: z = np.average(avg_arr[y, x])
-                line = [geo_x, geo_y, z]
+                line = [geo_x, geo_y, float(z)]
                 yield(line)
     
 def xyz_line(line, dst_port = sys.stdout):
@@ -2167,7 +2172,8 @@ def waffles_num(wg = _waffles_grid_info, mode = 'n'):
     #dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
     dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     if wg['weights']:
-        dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = wg['weights'], verbose = wg['verbose']), region, wg['inc'], weights = True if wg['weights'] else False)
+        dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = 1 if wg['weights'] is not None else None, verbose = wg['verbose']), region, wg['inc'], weights = True if wg['weights'] else False)
+        #dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = 1, verbose = wg['verbose']), region, wg['inc'], weights = True)
     else: dly = datalist_yield_xyz(wg['datalist'], pass_h = dlh, verbose = wg['verbose'])
     return(gdal_xyz2gdal(dly, '{}.tif'.format(wg['name']), region, wg['inc'], dst_format = wg['fmt'], mode = mode))
                                 
@@ -2268,10 +2274,10 @@ def waffles_gdal_grid(wg = _waffles_grid_info, alg_str = 'linear:radius=1'):
     
     wg['region'] = region_buffer(wg['region'], wg['inc'] * .5) if wg['node'] == 'grid' else wg['region']
     region = waffles_proc_region(wg)
-    #dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
     dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
-    ds = xyz2gdal_ds(xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = wg['weights'], verbose = wg['verbose']), \
-                               region, wg['inc'], weights = True if wg['weights'] else False), '{}'.format(wg['name']))
+    wt = 1 if wg['weights'] is not None else None
+    dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = wt, verbose = wg['verbose']), region, wg['inc'], weights = False if wg['weights'] is None else True)
+    ds = xyz2gdal_ds(dly, '{}'.format(wg['name']))
     xcount, ycount, dst_gt = gdal_region2gt(wg['region'], wg['inc'])
     gd_opts = gdal.GridOptions(outputType = gdal.GDT_Float32, noData = -9999, format = 'GTiff', \
                                width = xcount, height = ycount, algorithm = alg_str, callback = _gdal_progress if wg['verbose'] else None, \
@@ -2356,14 +2362,14 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     dem = '{}.tif'.format(wg['name'])
 
-    try:
-        out, status = _waffles_modules[wg['mod']][0](args_d)
-    except Exception as e:
-        echo_error_msg('{}'.format(e))
-        status = -1
-    except KeyboardInterrupt as e:
-        echo_error_msg('killed by user, {}'.format(e))
-        sys.exit(-1)
+    #try:
+    out, status = _waffles_modules[wg['mod']][0](args_d)
+    #except Exception as e:
+    #    echo_error_msg('{}'.format(e))
+    #    status = -1
+    #except KeyboardInterrupt as e:
+    #    echo_error_msg('killed by user, {}'.format(e))
+    #    sys.exit(-1)
 
     if status != 0: remove_glob(dem)
     if not os.path.exists(dem): return(None)
@@ -2658,10 +2664,10 @@ def waffles_cli(argv = sys.argv):
                     wg_json.write(json.dumps(this_wg, indent = 4, sort_keys = True))
             else: echo_error_msg('could not parse config.')
         else:
-            try:
-                dem = waffles_run(wg)
-            except RuntimeError or OSError as e:
-                echo_error_msg('Cannot access {}.tif, may be in use elsewhere, {}'.format(wg['name'], e))
+            #try:
+            dem = waffles_run(wg)
+            #except RuntimeError or OSError as e:
+            #echo_error_msg('Cannot access {}.tif, may be in use elsewhere, {}'.format(wg['name'], e))
 
 ## ==============================================
 ## datalists cli
