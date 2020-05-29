@@ -1735,7 +1735,7 @@ _dl_inf_h = {
     168: lambda e: xyz_inf_entry(e),
     200: lambda e: gdal_inf_entry(e)
 }
-_dl_pass_h = lambda e: os.path.exists(e[0])
+_dl_pass_h = lambda e: path_exists_or_url(e[0])
 
 def datalist_inf(dl, inf_file = True):
     '''return the region of the datalist and generate
@@ -2768,8 +2768,7 @@ def datalists_cli(argv = sys.argv):
         sys.stderr.write(datalists_cli_usage)
         echo_error_msg('''must specify a datalist/entry file''')
         sys.exit(-1)
-    #dl_p = lambda e: os.path.exists(e[0])
-    dl_p = True
+    dl_p = lambda e: path_exists_or_url(e)
     if region is not None:
         try:
             region = [float(x) for x in region.split('/')]
