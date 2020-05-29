@@ -1731,7 +1731,7 @@ def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False)
 _known_dl_delims = [' ', ':']
 _known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'csv', 'dat'], 200: ['tif', 'img', 'grd', 'nc']}
 _dl_inf_h = {
-    #-1: lambda e: datalist_inf_entry(e),
+    -1: lambda e: datalist_inf_entry(e),
     168: lambda e: xyz_inf_entry(e),
     200: lambda e: gdal_inf_entry(e)
 }
@@ -1743,7 +1743,9 @@ def datalist_inf(dl, inf_file = True):
     
     out_regions = []
     minmax = None
-    for entry in datalist(dl):
+    dh_p = lambda e: region_valid_p(inf_entry(e, True)) if e[1] == -1 else region_valid_p(inf_entry(e))
+    for entry in datalist(dl, pass_h = dh_p):
+        #entry_inf = inf_entry(entry, True) if entry[1] == -1 else inf_entry(entry)
         entry_inf = inf_entry(entry)
         if entry_inf is not None:
             out_regions.append(inf_entry(entry)[:4])
@@ -1810,8 +1812,8 @@ def datalist_archive(wg, arch_dir = 'archive', region = None, verbose = False):
     '''archive the data from wg_config datalist to `arch_dir`'''
     
     if region is not None:
-        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
-        #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+        #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     else: dl_p = _dl_pass_h
 
     for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p, verbose = verbose):
@@ -1831,8 +1833,8 @@ def datalist_dump(wg, dst_port = sys.stdout, region = None, verbose = False):
     '''dump the xyz data from datalist to dst_port'''
     
     if region is not None:
-        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
-        #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+        #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     else: dl_p = _dl_pass_h
     for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p, verbose = verbose):
         try:
@@ -2203,8 +2205,8 @@ def waffles_num(wg = _waffles_grid_info, mode = 'n'):
     
     wg['region'] = region_buffer(wg['region'], wg['inc'] * .5) if wg['node'] == 'grid' else wg['region']
     region = waffles_dist_region(wg)
-    dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
-    #dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+    #dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+    dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     if wg['weights']:
         dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = 1 if wg['weights'] is not None else None, verbose = wg['verbose']), region, wg['inc'], weights = True if wg['weights'] else False)
     else: dly = datalist_yield_xyz(wg['datalist'], pass_h = dlh, verbose = wg['verbose'])
@@ -2775,7 +2777,8 @@ def datalists_cli(argv = sys.argv):
             sys.stderr.write(datalists_cli_usage)
             echo_error_msg('bad region, {}'.format(e))
             sys.exit(-1)
-        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+        #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     wt = 1 if want_weight else None
             
     ## ==============================================
