@@ -352,7 +352,7 @@ def regions_intersect_ogr_p(region_a, region_b):
         if geom_a.Intersects(geom_b):
             return(True)
         else: return(False)
-    else: return(False)
+    else: return(True)
 
 def region_format(region, t = 'gmt'):
     '''format region to string, defined by `t`
@@ -1926,7 +1926,7 @@ def datalist_yield_xyz(dl, fmt = -1, wt = None, pass_h = lambda e: os.path.exits
             for xyz in gdal_yield_entry(this_entry):
                 yield(xyz)
                 
-def datalist(dl, fmt = -1, wt = None, pass_h = lambda e: os.path.exists(e[0]), verbose = False):
+def datalist(dl, fmt = -1, wt = None, pass_h = lambda e: path_exists_or_url(e[0]), verbose = False):
     '''recurse a datalist/entry
     for entry in datalist(dl): do_something_with entry
 
