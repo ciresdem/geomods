@@ -1887,7 +1887,9 @@ def entry2py(dle):
         if len(this_entry) > 1: break
     try:
         entry = [x if n == 0 else float(x) if n < 3 else x for n, x in enumerate(this_entry)]
-    except ValueError as e: return(None)
+    except Exception as e:
+        echo_error_msg('could not parse entry {}'.format(dle))
+        return(None)
     if len(entry) < 2:
         for key in _known_datalist_fmts.keys():
             if entry[0].split('.')[-1] in _known_datalist_fmts[key]:
@@ -1934,18 +1936,19 @@ def datalist(dl, fmt = -1, wt = None, pass_h = lambda e: os.path.exists(e[0]), v
     these_entries = datalist2py(dl)
     if len(these_entries) == 0: these_entries = [entry2py(dl)]
     for this_entry in these_entries:
-        this_entry[0] = os.path.join(this_dir, this_entry[0])
-        if wt is not None:
-            this_entry[2] = wt * this_entry[2]
-        else: this_entry[2] = wt
-        this_entry_md = ' '.join(this_entry[3:]).split(',')
-        this_entry = this_entry[:3] + [this_entry_md] + [os.path.basename(dl).split('.')[0]]
-        if pass_h(this_entry):
-            if verbose: echo_msg('{} {}'.format('scanning datalist ({})'.format(this_entry[2]) if this_entry[1] == -1 else 'using datafile', this_entry[0]))
-            if this_entry[1] == -1:
-                for entry in datalist(this_entry[0], fmt, this_entry[2], pass_h, verbose):
-                    yield(entry)
-            else: yield(this_entry)
+        if this_entry is not None:
+            this_entry[0] = os.path.join(this_dir, this_entry[0])
+            if wt is not None:
+                this_entry[2] = wt * this_entry[2]
+            else: this_entry[2] = wt
+            this_entry_md = ' '.join(this_entry[3:]).split(',')
+            this_entry = this_entry[:3] + [this_entry_md] + [os.path.basename(dl).split('.')[0]]
+            if pass_h(this_entry):
+                if verbose: echo_msg('{} {}'.format('scanning datalist ({})'.format(this_entry[2]) if this_entry[1] == -1 else 'using datafile', this_entry[0]))
+                if this_entry[1] == -1:
+                    for entry in datalist(this_entry[0], fmt, this_entry[2], pass_h, verbose):
+                        yield(entry)
+                else: yield(this_entry)
             
 ## ==============================================
 ## DEM module: generate a Digital Elevation Model using a variety of methods
@@ -2632,14 +2635,14 @@ def waffles_cli(argv = sys.argv):
     ## ==============================================
     if wg_user is not None:
         if os.path.exists(wg_user):
-            try:
-                with open(wg_user, 'r') as wgj:
-                    wg = json.load(wgj)
-                    dem = waffles_run(wg)
-                    sys.exit(0)
-            except ValueError as e:
-                wg = waffles_config()
-                echo_error_msg('could not parse json from {}, {}'.format(wg_user, e))
+            #try:
+            with open(wg_user, 'r') as wgj:
+                wg = json.load(wgj)
+                dem = waffles_run(wg)
+                sys.exit(0)
+            #except ValueError as e:
+            #    wg = waffles_config()
+            #    echo_error_msg('could not parse json from {}, {}'.format(wg_user, e))
         else:
             echo_error_msg('specified json file does not exist, {}'.format(wg_user))
             sys.exit(0)
