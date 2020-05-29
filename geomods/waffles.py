@@ -373,6 +373,7 @@ def region_format(region, t = 'gmt'):
         ew = 'e' if region[0] > 0 else 'w'
         return('{}{:02d}x{:02d}_{}{:03d}x{:02d}'.format(ns, abs(int(region[3])), abs(int(region[3] * 100)) % 100, 
                                                         ew, abs(int(region[0])), abs(int(region[0] * 100)) % 100))
+    elif t == 'inf': return(' '.join([str(x) for x in region]))
 
 def region_chunk(region, inc, n_chunk = 10):
     '''chunk the region [xmin, xmax, ymin, ymax] into 
@@ -1502,7 +1503,7 @@ def inf_parse(src_inf):
                             minmax[3] = til[5]
     return([float(x) for x in minmax])
 
-def inf_entry(src_entry):
+def inf_entry(src_entry, overwrite = False):
     '''Read .inf file and extract minmax info.
     the .inf file can either be an MBSystem style inf file or the 
     result of `gmt gmtinfo file.xyz -C`, which is a 6 column line 
@@ -1513,7 +1514,7 @@ def inf_entry(src_entry):
     minmax = None
     if os.path.exists(src_entry[0]):
         path_i = src_entry[0] + '.inf'
-        if not os.path.exists(path_i):
+        if not os.path.exists(path_i) or overwrite:
             minmax = _dl_inf_h[src_entry[1]](src_entry)
         else: minmax = inf_parse(path_i)
     if not region_valid_p(minmax): minmax = None
@@ -1565,10 +1566,13 @@ def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = 4
                 yield(line)
                 
 def gdal_inf(src_ds):
-    '''generate an info (.inf) file from a src_gdal file using gdal'''
+    '''generate an info (.inf) file from a src_gdal file using gdal
+
+    returns the region of src_ds'''
     
     minmax = gdal_region(src_ds)
     with open('{}.inf'.format(src_ds.GetDescription()), 'w') as inf:
+        echo_msg('generating inf file for {}'.format(src_ds.GetDescription()))
         inf.write('{}\n'.format(' '.join([str(x) for x in minmax])))
     return(minmax)
                     
@@ -1695,6 +1699,7 @@ def xyz_inf(src_xyz):
             if l[2] < minmax[4]: minmax[4] = l[2]
             elif l[2] > minmax[5]: minmax[5] = l[2]
     with open('{}.inf'.format(src_xyz.name), 'w') as inf:
+        echo_msg('generating inf file for {}'.format(src_xyz.name))
         inf.write('{}\n'.format(' '.join([str(x) for x in minmax])))
     return(minmax)
 
@@ -1726,7 +1731,7 @@ def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False)
 _known_dl_delims = [' ', ':']
 _known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'csv', 'dat'], 200: ['tif', 'img', 'grd', 'nc']}
 _dl_inf_h = {
-    -1: lambda e: datalist_inf_entry(e),
+    #-1: lambda e: datalist_inf_entry(e),
     168: lambda e: xyz_inf_entry(e),
     200: lambda e: gdal_inf_entry(e)
 }
@@ -1757,7 +1762,7 @@ def datalist_inf(dl, inf_file = True):
     if minmax is not None and inf_file:
         echo_msg('generating inf for datalist {}'.format(dl))
         with open('{}.inf'.format(dl), 'w') as inf:
-            inf.write('{}\n'.format(' '.join([str(x) for x in minmax])))
+            inf.write('{}\n'.format(region_format(minmax, 'inf')))
     return(minmax)
 
 def datalist_inf_entry(e):
@@ -1805,8 +1810,8 @@ def datalist_archive(wg, arch_dir = 'archive', region = None, verbose = False):
     '''archive the data from wg_config datalist to `arch_dir`'''
     
     if region is not None:
-        #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
-        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+        #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     else: dl_p = _dl_pass_h
 
     for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p, verbose = verbose):
@@ -1826,18 +1831,18 @@ def datalist_dump(wg, dst_port = sys.stdout, region = None, verbose = False):
     '''dump the xyz data from datalist to dst_port'''
     
     if region is not None:
-        #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
-        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+        #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     else: dl_p = _dl_pass_h
-    try:
-        for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p, verbose = verbose):
+    for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p, verbose = verbose):
+        try:
             if this_entry[1] == 168:
                 xyz_dump_entry(this_entry, region = region, dst_port = dst_port)
             elif this_entry[1] == 200:
                 gdal_dump_entry(this_entry, region = region, dst_port = dst_port, epsg = wg['epsg'])
             elif this_entry[1] == 236:
                 gdal_h_dump_entry(this_entry, region = region, dst_port = dst_port)
-    except: echo_error_msg('could not parse {}'.format(entry[0]))
+        except: echo_error_msg('could not parse {}'.format(this_entry[0]))
     
 def datalist_echo(entry):
     '''echo datalist entry to stderr'''
@@ -2198,8 +2203,8 @@ def waffles_num(wg = _waffles_grid_info, mode = 'n'):
     
     wg['region'] = region_buffer(wg['region'], wg['inc'] * .5) if wg['node'] == 'grid' else wg['region']
     region = waffles_dist_region(wg)
-    #dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
-    dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+    dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
+    #dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     if wg['weights']:
         dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = 1 if wg['weights'] is not None else None, verbose = wg['verbose']), region, wg['inc'], weights = True if wg['weights'] else False)
     else: dly = datalist_yield_xyz(wg['datalist'], pass_h = dlh, verbose = wg['verbose'])
@@ -2779,7 +2784,7 @@ def datalists_cli(argv = sys.argv):
     master = datalist_master(dls)
     if master is not None:
         #datalist_archive(master, arch_dir = 'archive', region = region, verbose = want_verbose)
-        if want_infos: print(datalist_inf(master, inf_file = False))#sys.stdout.write(' '.format([str(x) for x in datalist_inf(master)]))
+        if want_infos: print(datalist_inf(master, inf_file = True))#sys.stdout.write(' '.format([str(x) for x in datalist_inf(master)]))
         elif rec_infos:
             inf_entry([master, -1, 1])
         else:
