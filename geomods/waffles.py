@@ -159,7 +159,7 @@ def hav_dst(pnt0, pnt1):
 
 def path_exists_or_url(src_str):
     if os.path.exists(src_str): return(True)
-    if src_str[4:] == 'http': return(True)
+    if src_str[:4] == 'http': return(True)
     return(False)
 
 ## ==============================================
