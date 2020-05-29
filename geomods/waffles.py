@@ -65,6 +65,7 @@
 ## Add source uncertainty to uncertainty module
 ## Add LAS/LAZ support to datalits
 ## Merge with fetch and allow for http datatype in datalists?
+## possible json conflict with python3 and encoding
 ##
 ### Code:
 import sys
@@ -87,7 +88,7 @@ import osr
 ## ==============================================
 ## General utility functions - utils.py
 ## ==============================================
-_version = '0.5.2'
+_version = '0.5.3'
 
 def inc2str_inc(inc):
     '''convert a WGS84 geographic increment to a str_inc (e.g. 0.0000925 ==> `13`)
@@ -155,6 +156,11 @@ def hav_dst(pnt0, pnt1):
     a = math.sin(dx / 2) * math.sin(dx / 2) + math.cos(math.radians(x0)) * math.cos(math.radians(x1)) * math.sin(dy / 2) * math.sin(dy / 2)
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     return(rad_m * c)
+
+def path_exists_or_url(src_str):
+    if os.path.exists(src_str): return(True)
+    if src_str[4:] == 'http': return(True)
+    return(False)
 
 ## ==============================================
 ## system cmd verification and configs.
@@ -357,18 +363,16 @@ def region_format(region, t = 'gmt'):
     t = 'fn': ymax_xmin
 
     returns the formatted region as str'''
-    
+
     if t == 'str': return('/'.join([str(x) for x in region]))
     elif t == 'gmt': return('-R' + '/'.join([str(x) for x in region]))
     elif t == 'bbox': return(','.join([str(region[0]), str(region[2]), str(region[1]), str(region[3])]))
     elif t == 'te': return(' '.join([str(region[0]), str(region[2]), str(region[1]), str(region[3])]))
     elif t == 'fn':
-        if region[3] < 0: ns = 's'
-        else: ns = 'n'
-        if region[0] > 0: ew = 'e'
-        else: ew = 'w'
-        return('{}{:02d}x{:02d}_{}{:03d}x{:02d}'.format(ns, abs(int(region[3])), abs(int(region[3] * 100) % 100), 
-                                                        ew, abs(int(region[0])), abs(int(region[0] * 100) % 100)))
+        ns = 's' if region[3] < 0 else 'n'
+        ew = 'e' if region[0] > 0 else 'w'
+        return('{}{:02d}x{:02d}_{}{:03d}x{:02d}'.format(ns, abs(int(region[3])), abs(int(region[3] * 100)) % 100, 
+                                                        ew, abs(int(region[0])), abs(int(region[0] * 100)) % 100))
 
 def region_chunk(region, inc, n_chunk = 10):
     '''chunk the region [xmin, xmax, ymin, ymax] into 
@@ -1518,12 +1522,20 @@ def inf_entry(src_entry):
 ## ==============================================
 ## gdal processing (datalist fmt:200)
 ## ==============================================
-def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None):
+def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = 4326):
     '''send the data from gdal file src_gdal to dst_xyz port (first band only)
-    optionally mask the output with `mask`.'''
+    optionally mask the output with `mask` or transform the coordinates to wgs84.'''
     
     band = src_ds.GetRasterBand(1)
     ds_config = gdal_gather_infos(src_ds)
+
+    if warp is not None:
+        src_srs = osr.SpatialReference()
+        src_srs.ImportFromWkt(ds_config['proj'])
+        dst_srs = osr.SpatialReference()
+        dst_srs.ImportFromEPSG(int(warp))
+        dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
+    
     gt = ds_config['geoT']
     msk_band = None
     if mask is not None:
@@ -1543,7 +1555,12 @@ def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None):
             x = x_i + srcwin[0]
             geo_x, geo_y = _pixel2geo(x, y, gt)
             z = band_data[x_i]
-            line = [geo_x, geo_y, z]
+            if warp is not None:
+                point = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(geo_x, geo_y))
+                point.Transform(dst_trans)
+                pnt = point.GetPoint()
+                line = [pnt[0], pnt[1], z]
+            else: line = [geo_x, geo_y, z]
             if '{:g}'.format(z) not in nodata:
                 yield(line)
                 
@@ -1561,18 +1578,24 @@ def gdal_inf_entry(entry):
     ds = None
     return(minmax)
 
-def gdal_yield_entry(entry, region = None, verbose = False):
+def gdal_yield_entry(entry, region = None, verbose = False, epsg = None):
     ds = gdal.Open(entry[0])
     if region is not None:
         srcwin = gdal_srcwin(ds, region)
     else: srcwin = None
-    for xyz in gdal_parse(ds, dump_nodata = False, srcwin = srcwin):
+    for xyz in gdal_parse(ds, dump_nodata = False, srcwin = srcwin, warp = epsg):
         yield(xyz + [entry[2]] if entry[2] is not None else xyz)
     ds = None
     
-def gdal_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
-    for xyz in gdal_yield_entry(entry, region, verbose):
+def gdal_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, epsg = None):
+    for xyz in gdal_yield_entry(entry, region, verbose, epsg):
         xyz_line(xyz, dst_port)
+        
+def gdal_h_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
+    import fetches
+    fetches.fetch_file(entry[0], 'tmp.tif', callback = lambda: False)
+    gdal_dump_entry(['tmp.tif', 200, entry[2]])
+    remove_glob('tmp.tif')
         
 ## ==============================================
 ## xyz processing (datalists fmt:168)
@@ -1716,7 +1739,9 @@ def datalist_inf(dl, inf_file = True):
     out_regions = []
     minmax = None
     for entry in datalist(dl):
-        out_regions.append(inf_entry(entry)[:4])
+        entry_inf = inf_entry(entry)
+        if entry_inf is not None:
+            out_regions.append(inf_entry(entry)[:4])
     
     out_regions = [x for x in out_regions if x is not None]
     if len(out_regions) == 0:
@@ -1804,13 +1829,16 @@ def datalist_dump(wg, dst_port = sys.stdout, region = None, verbose = False):
         #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
         dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     else: dl_p = _dl_pass_h
+    try:
+        for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p, verbose = verbose):
+            if this_entry[1] == 168:
+                xyz_dump_entry(this_entry, region = region, dst_port = dst_port)
+            elif this_entry[1] == 200:
+                gdal_dump_entry(this_entry, region = region, dst_port = dst_port, epsg = wg['epsg'])
+            elif this_entry[1] == 236:
+                gdal_h_dump_entry(this_entry, region = region, dst_port = dst_port)
+    except: echo_error_msg('could not parse {}'.format(entry[0]))
     
-    for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p, verbose = verbose):
-        if this_entry[1] == 168:
-            xyz_dump_entry(this_entry, region = region, dst_port = dst_port)
-        elif this_entry[1] == 200:
-            gdal_dump_entry(this_entry, region = region, dst_port = dst_port)
-
 def datalist_echo(entry):
     '''echo datalist entry to stderr'''
     
@@ -1830,11 +1858,12 @@ def datalist_master(dls, master = '.master.datalist'):
     
     with open(master, 'w') as md:        
         for dl in dls:
-            if os.path.exists(dl):
-                if len(dl.split(':')) == 1:
-                    for key in _known_datalist_fmts.keys():
-                        if dl.split(':')[0].split('.')[-1] in _known_datalist_fmts[key]:
-                            md.write('{} {} 1\n'.format(dl, key))
+            #if os.path.exists(dl):
+            if len(dl.split(':')) == 1 or dl.split(':')[0] == 'https':
+                for key in _known_datalist_fmts.keys():
+                    #if dl.split(':')[0].split('.')[-1] in _known_datalist_fmts[key]:
+                    if dl.split('.')[-1] in _known_datalist_fmts[key]:
+                        md.write('{} {} 1\n'.format(dl, key))
     if os.stat(master).st_size == 0:
         remove_glob(master)
         echo_error_msg('bad datalist/entry, {}'.format(dls))
@@ -2343,7 +2372,8 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     wg = waffles_dict2wg(wg)
     if wg is None:
-        echo_error_msg('invalid configuration, {}'.format(json.dumps(wg, indent=4, sort_keys=True)))
+        #echo_error_msg('invalid configuration, {}'.format(json.dumps(wg, indent=4, sort_keys=True)))
+        echo_error_msg('invalid configuration, {}'.format(wg))
         sys.exit(-1)
     
     args_d = {}
@@ -2657,7 +2687,8 @@ def waffles_cli(argv = sys.argv):
         if want_config:
             this_wg = waffles_dict2wg(wg)
             if this_wg is not None:
-                echo_msg(json.dumps(this_wg, indent = 4, sort_keys = True))
+                #echo_msg(json.dumps(this_wg, indent = 4, sort_keys = True))
+                echo_msg(this_wg)
                 with open('{}.json'.format(this_wg['name']), 'w') as wg_json:
                     echo_msg('generating waffles config file: {}.json'.format(this_wg['name']))
                     echo_msg('generating master datalist: {}_mstr.datalist'.format(this_wg['name']))
@@ -2702,6 +2733,7 @@ def datalists_cli(argv = sys.argv):
     want_infos = False
     rec_infos = False
     want_verbose = False
+    epsg = None
     i = 1
     while i < len(argv):
         arg = argv[i]
@@ -2709,6 +2741,10 @@ def datalists_cli(argv = sys.argv):
             region = str(argv[i + 1])
             i += 1
         elif arg[:2] == '-R': region = str(arg[2:])
+        elif arg == '--epsg' or arg == '-P':
+            epsg = argv[i + 1]
+            i = i + 1
+        elif arg[:2] == '-P': epsg = arg[2:]
         elif arg == '-w': want_weight = True
         elif arg == '-i': want_infos = True
         elif arg == '-c': rec_infos = True
@@ -2725,7 +2761,8 @@ def datalists_cli(argv = sys.argv):
         sys.stderr.write(datalists_cli_usage)
         echo_error_msg('''must specify a datalist/entry file''')
         sys.exit(-1)
-    dl_p = lambda e: os.path.exists(e[0])
+    #dl_p = lambda e: os.path.exists(e[0])
+    dl_p = True
     if region is not None:
         try:
             region = [float(x) for x in region.split('/')]
@@ -2749,7 +2786,7 @@ def datalists_cli(argv = sys.argv):
             ## ==============================================
             ## dump to stdout
             ## ==============================================
-            datalist_dump({'datalist':master, 'weights': want_weight})
+            datalist_dump({'datalist':master, 'weights': want_weight, 'epsg': epsg})
         remove_glob(master)
 
 ## ==============================================

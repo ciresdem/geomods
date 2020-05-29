@@ -214,7 +214,7 @@ def fetch_ftp_file(src_url, dst_fn, params = None, callback = None, datatype = N
     echo_msg('fetched remote ftp file: {}.'.format(os.path.basename(src_url)))
     return(status)
 
-def fetch_file(src_url, dst_fn, params = None, callback = None, datatype = None):
+def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatype = None, overwrite = False):
     '''fetch src_url and save to dst_fn'''
     status = 0
     req = None
@@ -225,7 +225,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = None, datatype = None)
             os.makedirs(os.path.dirname(dst_fn))
         except: pass 
 
-    if not os.path.exists(dst_fn):
+    if not os.path.exists(dst_fn) or overwrite:
         try:
             req = requests.get(src_url, stream = True, params = params, headers = r_headers)
         except requests.ConnectionError as e:
@@ -242,6 +242,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = None, datatype = None)
                         local_file.write(chunk)
     else: status = -1
     echo_msg('fetched remote file: {}.'.format(os.path.basename(src_url)))
+
     return(status)
 
 def fetch_req(src_url, params = None, tries = 5, timeout = 2):
