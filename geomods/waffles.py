@@ -1523,19 +1523,25 @@ def inf_entry(src_entry, overwrite = False):
 ## ==============================================
 ## gdal processing (datalist fmt:200)
 ## ==============================================
-def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = 4326):
+def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = None):
     '''send the data from gdal file src_gdal to dst_xyz port (first band only)
     optionally mask the output with `mask` or transform the coordinates to wgs84.'''
     
     band = src_ds.GetRasterBand(1)
     ds_config = gdal_gather_infos(src_ds)
 
+    if ds_config['proj'] == '' or ds_config is None: warp = None
+    
     if warp is not None:
+        #try:
         src_srs = osr.SpatialReference()
         src_srs.ImportFromWkt(ds_config['proj'])
         dst_srs = osr.SpatialReference()
         dst_srs.ImportFromEPSG(int(warp))
         dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
+        #except Exception as e:
+        #echo_error_msg('could not initiate coordinate transformation, {}'.format(e))
+        #warp = None
     
     gt = ds_config['geoT']
     msk_band = None
@@ -1844,7 +1850,7 @@ def datalist_dump(wg, dst_port = sys.stdout, region = None, verbose = False):
                 gdal_dump_entry(this_entry, region = region, dst_port = dst_port, epsg = wg['epsg'])
             elif this_entry[1] == 236:
                 gdal_h_dump_entry(this_entry, region = region, dst_port = dst_port)
-        except: echo_error_msg('could not parse {}'.format(this_entry[0]))
+        except Exception as e: echo_error_msg('could not parse {}, {}'.format(this_entry[0], e))
     
 def datalist_echo(entry):
     '''echo datalist entry to stderr'''
@@ -2266,6 +2272,7 @@ def waffles_spatial_metadata(wg):
                     tmp_ds = tmp_layer = out_feat = None
                     remove_glob('{}_poly.*'.format(wg['name']))
                 remove_glob('{}'.format(ng))
+                remove_glob('waffles_dem_mstr.datalist')
         ds = None
     return(dst_vector, 0)
 
@@ -2494,6 +2501,8 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     gdal_set_epsg(dem, wg['epsg'])
     waffles_gdal_md(wg)
+    remove_glob('waffles_dem_mstr.datalist')
+    
     ## ==============================================
     ## if dem has data, return
     ## ==============================================
