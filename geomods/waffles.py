@@ -1728,7 +1728,7 @@ def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False)
 ## datalist processing (datalists fmt:-1)
 ## entry processing fmt:*
 ## ==============================================
-_known_dl_delims = [' ', ':']
+_known_dl_delims = [' ']
 _known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'csv', 'dat'], 200: ['tif', 'img', 'grd', 'nc']}
 _dl_inf_h = {
     -1: lambda e: datalist_inf_entry(e),
@@ -1881,10 +1881,9 @@ def entry2py(dle):
     '''convert a datalist entry to python
 
     return the entry as a list [fn, fmt, wt, ...]'''
-    
-    for delim in _known_dl_delims:
-        this_entry = dle.rstrip().split(delim)
-        if len(this_entry) > 1: break
+    #for delim in _known_dl_delims:
+    this_entry = dle.rstrip().split()
+    #    if len(this_entry) > 1: break
     try:
         entry = [x if n == 0 else float(x) if n < 3 else x for n, x in enumerate(this_entry)]
     except Exception as e:
@@ -1904,6 +1903,7 @@ def datalist2py(dl):
     
     these_entries = []
     this_entry = entry2py(dl)
+    #if this_entry is not None:
     if this_entry[1] == -1:
         with open(this_entry[0], 'r') as op:
             for this_line in op:
@@ -1918,7 +1918,7 @@ def datalist_yield_xyz(dl, fmt = -1, wt = None, pass_h = lambda e: os.path.exits
 
     yields xyz line data [x, y, z, ...]'''
     
-    for this_entry in datalist(dl, fmt, wt, pass_h, verbose):
+    for this_entry in datalist(dl, fmt = fmt, wt = wt, pass_h = pass_h, verbose = verbose):
         if this_entry[1] == 168:
             for xyz in xyz_yield_entry(this_entry):
                 yield(xyz)
@@ -1926,7 +1926,7 @@ def datalist_yield_xyz(dl, fmt = -1, wt = None, pass_h = lambda e: os.path.exits
             for xyz in gdal_yield_entry(this_entry):
                 yield(xyz)
                 
-def datalist(dl, fmt = -1, wt = None, pass_h = lambda e: path_exists_or_url(e[0]), verbose = False):
+def datalist(dl, fmt = -1, wt = None, pass_h = lambda e: path_exists_or_url(e[0]), dl_proc_h = lambda e: None, verbose = False):
     '''recurse a datalist/entry
     for entry in datalist(dl): do_something_with entry
 
@@ -1946,7 +1946,8 @@ def datalist(dl, fmt = -1, wt = None, pass_h = lambda e: path_exists_or_url(e[0]
             if pass_h(this_entry):
                 if verbose: echo_msg('{} {}'.format('scanning datalist ({})'.format(this_entry[2]) if this_entry[1] == -1 else 'using datafile', this_entry[0]))
                 if this_entry[1] == -1:
-                    for entry in datalist(this_entry[0], fmt, this_entry[2], pass_h, verbose):
+                    dl_proc_h(this_entry)
+                    for entry in datalist(this_entry[0], fmt, this_entry[2], pass_h, dl_proc_h, verbose):
                         yield(entry)
                 else: yield(this_entry)
             
@@ -2214,7 +2215,8 @@ def waffles_num(wg = _waffles_grid_info, mode = 'n'):
         dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = 1 if wg['weights'] is not None else None, verbose = wg['verbose']), region, wg['inc'], weights = True if wg['weights'] else False)
     else: dly = datalist_yield_xyz(wg['datalist'], pass_h = dlh, verbose = wg['verbose'])
     return(gdal_xyz2gdal(dly, '{}.tif'.format(wg['name']), region, wg['inc'], dst_format = wg['fmt'], mode = mode))
-                                
+
+
 def waffles_spatial_metadata(wg):
     '''generate spatial-metadata for the top-level of the datalist
     top-level entries in the datalist should include a comma-separated list
@@ -2234,34 +2236,36 @@ def waffles_spatial_metadata(wg):
         [layer.CreateField(ogr.FieldDefn('{}'.format(f), t_fields[i])) for i, f in enumerate(v_fields)]
         [layer.SetFeature(feature) for feature in layer]
         defn = layer.GetLayerDefn()
-        entry = datalist2py(wg['datalist'])[0]
-        print(entry)
-        these_entries = datalist2py(entry[0])
-        print(these_entries)
-        print(wg['datalist'])
-        for this_entry in these_entries:
-            this_entry[0] = os.path.join(os.path.dirname(entry[0]), this_entry[0])
-            print(this_entry)
-            wg['datalist'] = this_entry[0]
-            wg['name'] = os.path.basename(this_entry[0]).split('.')[0]
-            o_v_fields = [wg['name'], 'Unknown', '0', 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
-            echo_msg('scanning datalist {}...'.format(wg['datalist']))
-            ng, s = waffles_num(wg, mode = 'k')
+        dlh = lambda e: False if e[1] != -1 else regions_intersect_ogr_p(waffles_dist_region(wg), inf_entry(e))
+        dls = []
+        dlph = lambda e: dls.append(e)
+        for d in datalist(wg['datalist'], pass_h = dlh, dl_proc_h = dlph, verbose = wg['verbose']): print(d)
+        #print(dls)
+        for this_entry in dls:
+            if this_entry[-1] != 'waffles_dem_mstr':
+                print(this_entry)
+                twg = waffles_config()
+                twg['datalist'] = this_entry[0]
+                twg['name'] = os.path.basename(this_entry[0]).split('.')[0]
+                o_v_fields = [twg['name'], 'Unknown', '0', 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
+                twg = waffles_dict2wg(wg)
+                echo_msg('scanning datalist {}...'.format(twg['datalist']))
+                ng, s = waffles_num(twg, mode = 'k')
             
-            if gdal_infos(ng, True)['zmax'] == 1:
-                tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(wg['name']))
-                tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(wg['name']), None, ogr.wkbMultiPolygon)
-                tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
-                gdal_polygonize(ng, tmp_layer)
-                
-                if len(tmp_layer) > 1:
-                    out_feat = gdal_ogr_mask_union(tmp_layer, 'DN', defn)
-                    [out_feat.SetField(f, o_v_fields[i]) for i, f in enumerate(v_fields)]
-                    layer.CreateFeature(out_feat)
-                    
-                tmp_ds = tmp_layer = out_feat = None
-                remove_glob('{}_poly.*'.format(wg['name']))
-            remove_glob('{}'.format(ng))
+                if gdal_infos(ng, True)['zmax'] == 1:
+                    tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(wg['name']))
+                    tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(wg['name']), None, ogr.wkbMultiPolygon)
+                    tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
+                    gdal_polygonize(ng, tmp_layer)
+
+                    if len(tmp_layer) > 1:
+                        out_feat = gdal_ogr_mask_union(tmp_layer, 'DN', defn)
+                        [out_feat.SetField(f, o_v_fields[i]) for i, f in enumerate(v_fields)]
+                        layer.CreateFeature(out_feat)
+
+                    tmp_ds = tmp_layer = out_feat = None
+                    remove_glob('{}_poly.*'.format(wg['name']))
+                remove_glob('{}'.format(ng))
         ds = None
     return(dst_vector, 0)
 
@@ -2404,13 +2408,13 @@ def waffles_run(wg = _waffles_grid_info):
 
     #try:
     out, status = _waffles_modules[wg['mod']][0](args_d)
-    #except Exception as e:
-    #    echo_error_msg('{}'.format(e))
-    #    status = -1
     #except KeyboardInterrupt as e:
     #    echo_error_msg('killed by user, {}'.format(e))
     #    sys.exit(-1)
-
+    #except Exception as e:
+    #    echo_error_msg('{}'.format(e))
+    #    status = -1
+        
     if status != 0: remove_glob(dem)
     if not os.path.exists(dem): return(None)
     gdi = gdal_infos(dem, scan=True)
