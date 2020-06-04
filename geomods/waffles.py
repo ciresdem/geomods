@@ -1525,24 +1525,22 @@ def inf_entry(src_entry, overwrite = False):
 ## ==============================================
 def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = None):
     '''send the data from gdal file src_gdal to dst_xyz port (first band only)
-    optionally mask the output with `mask` or transform the coordinates to wgs84.'''
+    optionally mask the output with `mask` or transform the coordinates to `warp` (epsg-code)'''
     
     band = src_ds.GetRasterBand(1)
     ds_config = gdal_gather_infos(src_ds)
 
-    if ds_config['proj'] == '' or ds_config is None: warp = None
+    src_srs = osr.SpatialReference()
+    src_srs.ImportFromWkt(ds_config['proj'])
+    srs_auth = src_srs.GetAttrValue('AUTHORITY',1)
+
+    if srs_auth is None or srs_auth == warp: warp = None
     
     if warp is not None:
-        #try:
-        src_srs = osr.SpatialReference()
-        src_srs.ImportFromWkt(ds_config['proj'])
         dst_srs = osr.SpatialReference()
         dst_srs.ImportFromEPSG(int(warp))
         dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
-        #except Exception as e:
-        #echo_error_msg('could not initiate coordinate transformation, {}'.format(e))
-        #warp = None
-    
+        
     gt = ds_config['geoT']
     msk_band = None
     if mask is not None:
@@ -1973,6 +1971,7 @@ _waffles_grid_info = {
     'node': 'pixel',
     'fmt': 'GTiff',
     'extend': 0,
+    'extend_proc': 20,
     'weights': None,
     'fltr': None,
     'sample': None,
@@ -2038,6 +2037,8 @@ def waffles_dict2wg(wg = _waffles_grid_info):
     if 'fmt' not in keys: wg['fmt'] = 'GTiff'
     if 'extend' not in keys: wg['extend'] = 0
     else: wg['extend'] = int_or(wg['extend'], 0)
+    if 'extend_proc' not in keys: wg['extend_proc'] = 10
+    else: wg['extend_proc'] = int_or(wg['extend_proc'], 10)
     if 'weights' not in keys: wg['weights'] = None
     if 'fltr' not in keys: wg['fltr'] = None
     if 'sample' not in keys: wg['sample'] = None
@@ -2127,7 +2128,7 @@ _waffles_module_short_desc = lambda x: ', '.join(['{}'.format(key) for key in x]
 ## ==============================================
 ## the "proc-region" region_buffer(wg['region'], (wg['inc'] * 20) + (wg['inc'] * wg['extend']))
 ## ==============================================
-waffles_proc_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * 20) + (wg['inc'] * wg['extend']))
+waffles_proc_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * wg['extend_proc']) + (wg['inc'] * wg['extend']))
 waffles_proc_str = lambda wg: region_format(waffles_proc_region(wg), 'gmt')
 
 ## ==============================================
@@ -2476,6 +2477,7 @@ def waffles_run(wg = _waffles_grid_info):
         else:
             out, status = run_cmd('gdalwarp -tr {:.10f} {:.10f} {} -r bilinear -te {} tmp.tif'.format(inc, inc, src_grd, region_format(waffles_proc_region(wg)), verbose = verbose))
             if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
+            
     ## ==============================================
     ## cut dem to final size - region buffered by (inc * extend)
     ## ==============================================
@@ -2648,14 +2650,14 @@ def waffles_cli(argv = sys.argv):
     ## ==============================================
     if wg_user is not None:
         if os.path.exists(wg_user):
-            #try:
-            with open(wg_user, 'r') as wgj:
-                wg = json.load(wgj)
-                dem = waffles_run(wg)
-                sys.exit(0)
-            #except ValueError as e:
-            #    wg = waffles_config()
-            #    echo_error_msg('could not parse json from {}, {}'.format(wg_user, e))
+            try:
+                with open(wg_user, 'r') as wgj:
+                    wg = json.load(wgj)
+                    dem = waffles_run(wg)
+                    sys.exit(0)
+            except Exception as e:
+                wg = waffles_config()
+                echo_error_msg('could not parse json from {}, {}'.format(wg_user, e))
         else:
             echo_error_msg('specified json file does not exist, {}'.format(wg_user))
             sys.exit(0)
@@ -2736,10 +2738,10 @@ def waffles_cli(argv = sys.argv):
             #     stop_threads = True
 
             # t.join()
-            #try:
-            dem = waffles_run(wg)
-            #except RuntimeError or OSError as e:
-            #echo_error_msg('Cannot access {}.tif, may be in use elsewhere, {}'.format(wg['name'], e))
+            try:
+                dem = waffles_run(wg)
+            except RuntimeError or OSError as e:
+                echo_error_msg('Cannot access {}.tif, may be in use elsewhere, {}'.format(wg['name'], e))
 
 ## ==============================================
 ## datalists cli
@@ -2810,7 +2812,7 @@ def datalists_cli(argv = sys.argv):
             ## dump to stdout
             ## ==============================================
             datalist_dump({'datalist':master, 'weights': want_weight, 'epsg': epsg})
-        remove_glob(master)
+        remove_glob('{}*'.format(master))
 
 ## ==============================================
 ## mainline -- run waffles directly...

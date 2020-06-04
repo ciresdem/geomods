@@ -928,9 +928,8 @@ class tnm:
 
         if self._status == 0:
             if index:
-                if index.lower() != 'false':
-                    self.print_dataset_index()
-                    sys.exit()
+                self.print_dataset_index()
+                sys.exit()
 
             this_ds = [int(ds)]
             if sub_ds is not None: this_ds.append(int(sub_ds))
