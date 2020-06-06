@@ -1284,7 +1284,8 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format='GTiff', mode='n'):
         if x > region[0] and x < region[1]:
             if y > region[2] and y < region[3]:
                 xpos, ypos = _geo2pixel(x, y, dst_gt)
-                if mode == 'm': sumArray[ypos, xpos] += z
+                if mode == 'm':
+                    sumArray[ypos, xpos] += z
                 if mode == 'n' or mode == 'm': ptArray[ypos, xpos] += 1
                 else: ptArray[ypos, xpos] = 1
     if mode == 'm':
@@ -1639,34 +1640,38 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False):
     '''block the src_xyz data to the mean block value
 
     yields the xyz value for each block with data'''
-    
+
     xcount, ycount, dst_gt = gdal_region2gt(region, inc)
-    avg_arr = np.empty((ycount, xcount), object)
-    avg_arr.fill([])
-    if weights:
-        wt_arr = np.empty((ycount, xcount), object)
-        wt_arr.fill([])
+    sumArray = np.zeros((ycount, xcount))
+    gdt = gdal.GDT_Float32
+    ptArray = np.zeros((ycount, xcount))
+    if weights: wtArray = np.zeros((ycount, xcount))
+    echo_msg('blocking data')
     for this_xyz in src_xyz:
         x = this_xyz[0]
         y = this_xyz[1]
         z = this_xyz[2]
         if weights:
             w = this_xyz[3]
+            z = z * w
         if x > region[0] and x < region[1]:
             if y > region[2] and y < region[3]:
                 xpos, ypos = _geo2pixel(x, y, dst_gt)
-                avg_arr[ypos, xpos] = avg_arr[ypos, xpos] + [z]
-                if weights:
-                    wt_arr[ypos, xpos] = wt_arr[ypos, xpos] + [w]
+                sumArray[ypos, xpos] += z
+                ptArray[ypos, xpos] += 1
+                if weights: wtArray[ypos, xpos] += w
+    ptArray[ptArray == 0] = np.nan
+    if weights:
+        wtArray[wtArray == 0] = 1
+        outarray = (sumArray / wtArray) / ptArray
+    else: outarray = sumArray / ptArray
+
     for y in range(0, ycount):
         for x in range(0, xcount):
-            if len(avg_arr[y, x]) > 0:
-                geo_x, geo_y = _pixel2geo(x, y, dst_gt)
-                if weights:
-                    z = np.average(avg_arr[y, x], weights = wt_arr[y, x])
-                else: z = np.average(avg_arr[y, x])
-                line = [geo_x, geo_y, float(z)]
-                yield(line)
+            geo_x, geo_y = _pixel2geo(x, y, dst_gt)
+            z = outarray[y,x]
+            if z != -9999:
+                yield([geo_x, geo_y, z])
     
 def xyz_line(line, dst_port = sys.stdout):
     '''write "xyz" `line` to `dst_port`
@@ -2220,9 +2225,8 @@ def waffles_num(wg = _waffles_grid_info, mode = 'n'):
     dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     if wg['weights']:
         dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = 1 if wg['weights'] is not None else None, verbose = wg['verbose']), region, wg['inc'], weights = True if wg['weights'] else False)
-    else: dly = datalist_yield_xyz(wg['datalist'], pass_h = dlh, verbose = wg['verbose'])
+    else: dly = datalist_yield_xyz(wg['datalist'], pass_h = dlh, verbose = wg['verbose'])    
     return(gdal_xyz2gdal(dly, '{}.tif'.format(wg['name']), region, wg['inc'], dst_format = wg['fmt'], mode = mode))
-
 
 def waffles_spatial_metadata(wg):
     '''generate spatial-metadata for the top-level of the datalist

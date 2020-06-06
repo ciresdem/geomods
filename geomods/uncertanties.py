@@ -365,7 +365,7 @@ if __name__ == '__main__':
     wg['mod'] = 'num'
     wg['mod_args'] = ('mode=k',)
     msk = '{}.tif'.format('test_num')
-    msk = waffles_run(wg)
+    #msk = waffles_run(wg)
     prox = '{}_prox.tif'.format(wg['name'])
     gdal_proximity(msk, prox)
 
