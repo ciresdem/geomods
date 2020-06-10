@@ -44,14 +44,12 @@ Update:
 Python Modules:
 
  - fetches - Data fetching
- - procs - elevation data processing
  - waffles - DEM generation, raster, datalist, region processing
 
 Console Scripts:
  
  - waffles - Generate a Digital Elevation Model.
  - fetches - Fetch elevation data from various sources.
- - procs - Process elevation data to XYZ datalist.
  - datalists - process and analyze datalists.
  - gdal_chunk.py - Split a gdal grid into chunks.
  - gdal_crop.py - Crop a gdal grid by it's nodata value.
@@ -69,13 +67,13 @@ Examples:
    % waffles -M surface -R tiles.shp -E .00000925925 input_data.datalist --verbose
 
  - generate spatial-metadata from the datalist input_data.datalist
-   % waffles -R tiles.shp -E .00000925925 input_data.datalist --verbose -M spatial-metadata
+   % waffles -R tiles.shp -E .00000925925 input_data.datalist --verbose -s
 
  - generate a vertical datum conversion grid:
    % waffles -R -90/-89/29/30 -E 0.00083333 -M vdatum:ivert=navd88:o_vert=mhw
 
  - generate a 'bathymetry surface' DEM:
-   % waffles -R region.shp -E 1s -M surface:upper_limit=0 -C coast_ply.shp
+   % waffles -R region.shp -E 1s -M surface:upper_limit=0 -C coast_ply.shp:invert=True
 
  - generate a nearest-neighbor DEM using all the .tif grid files in the current directory:
    % waffles -R region.shp -E1s -Mnearneighbor:radius=3s *.tif
@@ -85,3 +83,50 @@ Examples:
 
  - transform the vertical datum of an xyz data file:
    % vdatum_cmd.py elev_data.xyz -i lmsl:ft:sounding -o navd88:ft:height
+
+
+Waffles Usage:
+waffles [OPTIONS] <datalist/entry>
+
+Generate DEMs and derivatives and process datalists.
+
+General Options:
+  -R, --region		Specifies the desired REGION;
+			This can either be a GMT-style region ( -R xmin/xmax/ymin/ymax )
+			or an OGR-compatible vector file with regional polygons. 
+			If a vector file is supplied it will search each region found therein.
+			If omitted, use the region gathered from the data in DATALIST.
+  -E, --increment	Gridding CELL-SIZE in native units or GMT-style increments.
+			append :<inc> to resample the output to the given <inc>: -E.3333333s:.1111111s
+  -F, --format		Output grid FORMAT. [GTiff]
+  -M, --module		Desired DEM MODULE and options. (see available Modules below)
+			syntax is -M module:mod_opt=mod_val:mod_opt1=mod_val1:...
+  -O, --output-name	BASENAME for all outputs.
+  -P, --epsg		Horizontal projection of data as EPSG code [4326]
+  -X, --extend		Number of cells with which to EXTEND the REGION.
+			append :<num> to extend the processing region: -X6:12
+  -T, --filter		FILTER the output using a Cosine Arch Filter at -T<dist(km)> search distance.
+			If GMT is not available, or if :use_gmt=False, perform a Gaussian filter at -T<factor>. 
+			Append :split_value=<num> to only filter values below <num>.
+			e.g. -T10:split_value=0:use_gmt=False to smooth bathymetry using Gaussian filter
+  -C, --clip		CLIP the output to the clip polygon -C<clip_ply.shp:invert=False>
+  -K, --chunk		Process the region in CHUNKs. -K<chunk-level>
+  -W, --wg-config	A waffles config JSON file. If supplied, will overwrite all other options.
+			generate a waffles_config JSON file using the --config flag.
+
+  -p, --prefix		Set BASENAME to PREFIX (append inc/region/year info to output BASENAME).
+  -r, --grid-node	use grid-node registration, default is pixel-node
+
+  -a, --archive		Archive the datalist to the given region.
+  -s, --spat-meta	Generate spatial-metadata.
+
+  --help		Print the usage text
+  --config		Save the waffles config JSON and master datalist
+  --modules		Disply the module descriptions and usage
+  --version		Print the version information
+  --verbose		Increase the verbosity
+
+Modules (see waffles --modules for more info):
+  nearest, num, mbgrid, invdst, average, triangulate, surface, vdatum
+
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
