@@ -255,7 +255,8 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
                     ## ==============================================
                     ds = gdal.Open(uc['dem'])
                     with open(o_xyz, 'w') as o_fh:
-                        gdal_parse(ds, dst_xyz = o_fh, srcwin = gdal_srcwin(ds, region_buffer(this_region, (20 * uc['wg']['inc']))), mask = uc['msk'])
+                        for xyz in gdal_parse(ds, srcwin = gdal_srcwin(ds, region_buffer(this_region, (20 * uc['wg']['inc']))), mask = uc['msk']):
+                            xyz_line(xyz, o_fh)
                     ds = None
 
                     if os.stat(o_xyz).st_size != 0:

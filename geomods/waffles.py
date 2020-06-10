@@ -360,6 +360,7 @@ def region_format(region, t = 'gmt'):
     t = 'gmt': -Rxmin/xmax/ymin/ymax
     t = 'bbox': xmin,ymin,xmax,ymax
     t = 'te': xmin ymin xmax ymax
+    t = 'ul_lr': xmin ymax xmax ymin
     t = 'fn': ymax_xmin
 
     returns the formatted region as str'''
@@ -368,6 +369,7 @@ def region_format(region, t = 'gmt'):
     elif t == 'gmt': return('-R' + '/'.join([str(x) for x in region]))
     elif t == 'bbox': return(','.join([str(region[0]), str(region[2]), str(region[1]), str(region[3])]))
     elif t == 'te': return(' '.join([str(region[0]), str(region[2]), str(region[1]), str(region[3])]))
+    elif t == 'ul_lr': return(' '.join([str(region[0]), str(region[3]), str(region[1]), str(region[2])]))
     elif t == 'fn':
         ns = 's' if region[3] < 0 else 'n'
         ew = 'e' if region[0] > 0 else 'w'
@@ -403,14 +405,14 @@ def region_chunk(region, inc, n_chunk = 10):
             if geo_y_t > region[3]: geo_y_t = region[3]
             if geo_y_o < region[2]: geo_y_o = region[2]
             if geo_x_t > region[1]: geo_x_t = region[1]
-            if geo_x_o < region[0]: geo_x_0 = region[0]
+            if geo_x_o < region[0]: geo_x_o = region[0]
             o_chunks.append([geo_x_o, geo_x_t, geo_y_o, geo_y_t])
         
-            if y_chunk <= ycount:
+            if y_chunk < ycount:
                 y_chunk += n_chunk
                 i_chunk += 1
             else: break
-        if x_chunk <= xcount:
+        if x_chunk < xcount:
             x_chunk += n_chunk
             x_i_chunk += 1
         else: break
@@ -1981,37 +1983,19 @@ _waffles_grid_info = {
     'fltr': None,
     'sample': None,
     'clip': None,
+    'chunk': None,
     'epsg': 4326,
     'mod': 'surface',
     'mod_args': (),
     'verbose': False,
+    'archive': False,
+    'spat': False,
     'gc': config_check()
 }
 
 ## ==============================================
 ## the default waffles config dictionary.
 ## lambda returns dictionary with default waffles
-## config data:
-## {
-##     'datalist': None,
-##     'datalists': [],
-##     'region': None,
-##     'inc': None,
-##     'name': 'waffles_dem',
-##     'name_prefix': None,
-##     'node': 'pixel',
-##     'fmt': 'GTiff',
-##     'extend': 0,
-##     'weights': None,
-##     'fltr': None,
-##     'sample': None,
-##     'clip': None,
-##     'epsg': 4326,
-##     'mod': 'surface',
-##     'mod_args': (),
-##     'verbose': False,
-##     'gc': config_check()
-## }
 ## ==============================================
 waffles_config = lambda: copy.deepcopy(_waffles_grid_info)
     
@@ -2049,12 +2033,18 @@ def waffles_dict2wg(wg = _waffles_grid_info):
     if 'sample' not in keys: wg['sample'] = None
     else: wg['sample'] = gmt_inc2inc(str(wg['sample']))
     if 'clip' not in keys: wg['clip'] = None
+    if 'chunk' not in keys: wg['chunk'] = None
+    else: wg['chunk'] = int_or(wg['chunk'], None)
     if 'epsg' not in keys: wg['epsg'] = 4326
     else: wg['epsg'] = int_or(wg['epsg'], 4326)
     if 'mod' not in keys: wg['mod'] = 'surface'
     if 'mod_args' not in keys: wg['mod_args'] = ()
     if 'verbose' not in keys: wg['verbose'] = False
     else: wg['verbose'] = False if not wg['verbose'] or str(wg['verbose']).lower() == 'false' or wg['verbose'] is None else True
+    if 'archive' not in keys: wg['archive'] = False
+    else: wg['archive'] = False if not wg['archive'] or str(wg['archive']).lower() == 'false' or wg['archive'] is None else True
+    if 'spati' not in keys: wg['spat'] = False
+    else: wg['spat'] = False if not wg['spat'] or str(wg['spat']).lower() == 'false' or wg['spat'] is None else True
     wg['gc'] = config_check()
     
     ## ==============================================
@@ -2101,9 +2091,9 @@ _waffles_modules = {
     'num': [lambda args: waffles_num(**args), '''Uninterpolated DEM populated by <mode>.
     \t\t\t  < num:mode=n >
     \t\t\t  :mode=[key] - specify mode of grid population: k (mask), m (mean) or n (num)'''],
-    'spat-metadata': [lambda args: waffles_spatial_metadata(**args), '''Datalist SPATIAL METADATA <beta>
-    \t\t\t  < spatial-metadata:inc=None >
-    \t\t\t  :inc=[increment] - Spatial metadata resolution [default uses -E value]'''],
+    #'spat-metadata': [lambda args: waffles_spatial_metadata(**args), '''Datalist SPATIAL METADATA <beta>
+    #\t\t\t  < spatial-metadata:inc=None >
+    #\t\t\t  :inc=[increment] - Spatial metadata resolution [default uses -E value]'''],
     'vdatum': [lambda args: waffles_vdatum(**args), '''VDATUM transformation grid
     \t\t\t  < vdatum:ivert=navd88:overt=mhw:region=3:jar=None >
     \t\t\t  :ivert=[vdatum] - Input VDatum vertical datum.
@@ -2119,9 +2109,9 @@ _waffles_modules = {
     \t\t\t  < invdst:power=2.0:smoothing=0.0:radus1=0.1:radius2:0.1 >'''],
     'average': [lambda args: waffles_moving_average(**args), '''Moving AVERAGE DEM via GDAL GRID
     \t\t\t  < average:radius1=0.01:radius2=0.01 >'''],
-    'archive': [lambda args: waffles_archive(**args), '''archive the datalist
-    \t\t\t  < archive:arch_dir=archive >
-    \t\t\t  :arch_dir=[dirname] - archive data to dirname'''],
+    #'archive': [lambda args: waffles_archive(**args), '''archive the datalist
+    #\t\t\t  < archive:arch_dir=archive >
+    #\t\t\t  :arch_dir=[dirname] - archive data to dirname'''],
 }
 
 ## ==============================================
@@ -2135,11 +2125,14 @@ _waffles_module_short_desc = lambda x: ', '.join(['{}'.format(key) for key in x]
 ## ==============================================
 waffles_proc_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * wg['extend_proc']) + (wg['inc'] * wg['extend']))
 waffles_proc_str = lambda wg: region_format(waffles_proc_region(wg), 'gmt')
+waffles_proc_bbox = lambda wg: region_format(waffles_proc_region(wg), 'bbox')
+waffles_proc_ul_lr = lambda wg: region_format(waffles_proc_region(wg), 'ul_lr')
 
 ## ==============================================
 ## the "dist-region" region_buffer(wg['region'], (wg['inc'] * wg['extend']))
 ## ==============================================
 waffles_dist_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * wg['extend']))
+waffles_dist_ul_lr = lambda wg: region_format(waffles_dist_region(wg), 'ul_lr')
 
 ## ==============================================
 ## the datalist dump function, to use in run_cmd()
@@ -2203,7 +2196,8 @@ def waffles_gmt_triangulate(wg = _waffles_grid_info):
     return(run_cmd(dem_tri_cmd, verbose = wg['verbose'], data_fun = waffles_dl_func(wg)))
 
 def waffles_nearneighbor(wg = _waffles_grid_info, radius = None, use_gdal = False):
-    '''genearte a DEM with GMT nearneighbor'''
+    '''genearte a DEM with GMT nearneighbor or gdal_grid nearest'''
+
     
     radius = wg['inc'] * 2 if radius is None else gmt_inc2inc(radius)
     if wg['gc']['GMT'] is not None and not use_gdal:
@@ -2401,97 +2395,129 @@ def waffles_run(wg = _waffles_grid_info):
         #echo_error_msg('invalid configuration, {}'.format(json.dumps(wg, indent=4, sort_keys=True)))
         echo_error_msg('invalid configuration, {}'.format(wg))
         sys.exit(-1)
-    
+        
     args_d = {}
     for arg in wg['mod_args']:
         p_arg = arg.split('=')
         args_d[p_arg[0]] = p_arg[1]
-    args_d['wg'] = wg
-
+        
     if wg['verbose']:
         #echo_msg(json.dumps(wg, indent = 4, sort_keys = True))
         echo_msg(wg)
         echo_msg('running module {}...'.format(wg['mod']))
 
-    ## ==============================================
-    ## gererate the DEM
-    ## ==============================================
     dem = '{}.tif'.format(wg['name'])
 
-    #try:
-    out, status = _waffles_modules[wg['mod']][0](args_d)
-    #except KeyboardInterrupt as e:
-    #    echo_error_msg('killed by user, {}'.format(e))
-    #    sys.exit(-1)
-    #except Exception as e:
-    #    echo_error_msg('{}'.format(e))
-    #    status = -1
-        
-    if status != 0: remove_glob(dem)
-    if not os.path.exists(dem): return(None)
-    gdi = gdal_infos(dem, scan=True)
-    if gdi is not None:
-        if np.isnan(gdi['zmin']):
-            remove_glob(dem)
-            return(None)
-    else: return(None)
-    
     ## ==============================================
-    ## spat-metadata and archive don't produce grids,
-    ## exit here if running one of those mods.
+    ## optionally generate the DEM in chunks
     ## ==============================================
-    if wg['mod'] == 'spat-metadata' or wg['mod'] == 'archive': return(0)
-    gdal_set_epsg(dem, wg['epsg'])
-    waffles_gdal_md(wg)
+    if wg['chunk'] is not None:
+        xcount, ycount, dst_gt = gdal_region2gt(wg['region'], wg['inc'])
+        s_regions = region_chunk(wg['region'], wg['inc'], (xcount/wg['chunk'])+1)
+    else: s_regions = [wg['region']]
+
+    chunks = []
+    for region in s_regions:
+        this_wg = waffles_dict2wg(wg)
+        this_wg['region'] = region
+        this_wg['name'] = 'chunk_{}'.format(region_format(region, 'fn'))
+        this_dem = this_wg['name'] + '.tif'
+        chunks.append(this_dem)
+        args_d['wg'] = this_wg
+
+        ## ==============================================
+        ## gererate the DEM (run the module)
+        ## ==============================================
+        try:
+            out, status = _waffles_modules[this_wg['mod']][0](args_d)
+        except KeyboardInterrupt as e:
+            echo_error_msg('killed by user, {}'.format(e))
+            sys.exit(-1)
+        except Exception as e:
+            echo_error_msg('{}'.format(e))
+            status = -1
+
+        if status != 0: remove_glob(this_dem)
+        if not os.path.exists(this_dem): continue
+        gdi = gdal_infos(this_dem, scan = True)
+        if gdi is not None:
+            if np.isnan(gdi['zmin']):
+                remove_glob(this_dem)
+                continue
+        else: continue
+
+        gdal_set_epsg(this_dem, this_wg['epsg'])
+        waffles_gdal_md(this_wg)
+
+        ## ==============================================
+        ## optionally clip the DEM to polygon
+        ## ==============================================
+        if this_wg['clip'] is not None:
+            if this_wg['verbose']: echo_msg('clipping {}...'.format(this_dem))
+            clip_args = {}
+            cp = this_wg['clip'].split(':')
+            clip_args['src_ply'] = cp[0]
+            clip_args = args2dict(cp[1:], clip_args)
+            gdal_clip(this_dem, **clip_args)
+
+        ## ==============================================
+        ## optionally filter the DEM 
+        ## ==============================================
+        if this_wg['fltr'] is not None:
+            if this_wg['verbose']: echo_msg('filtering {}...'.format(this_dem))
+            fltr_args = {}
+            fltr = this_wg['fltr'].split(':')
+            fltr_args['fltr'] = gmt_inc2inc(fltr[0])
+            fltr_args['use_gmt'] = True
+            fltr_args = args2dict(fltr[1:], fltr_args)        
+            if fltr_args['use_gmt']: fltr_args['use_gmt'] = True if this_wg['gc']['GMT'] is not None else False
+            try:
+                gdal_smooth(this_dem, 'tmp_s.tif', **fltr_args)
+                os.rename('tmp_s.tif', this_dem)
+            except TypeError as e: echo_error_msg('{}'.format(e))
+
+        ## ==============================================
+        ## optionally resample the DEM 
+        ## ==============================================
+        if this_wg['sample'] is not None:
+            if this_wg['verbose']: echo_msg('resampling {}...'.format(this_dem))
+            if this_wg['gc']['GMT'] is not None:
+                gmt_sample_inc(this_dem, inc = this_wg['sample'], verbose = this_wg['verbose'])
+            else:
+                out, status = run_cmd('gdalwarp -tr {:.10f} {:.10f} {} -r bilinear -te {} tmp.tif\
+                '.format(inc, inc, src_grd, region_format(waffles_proc_region(this_wg)), verbose = verbose))
+                if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
+
+        ## ==============================================
+        ## cut dem to final size - region buffered by (inc * extend)
+        ## ==============================================
+        try:
+            out = gdal_cut(this_dem, waffles_dist_region(this_wg), 'tmp_cut.tif')
+            if out is not None: os.rename('tmp_cut.tif', this_dem)
+        except OSError as e:
+            remove_glob('tmp_cut.tif')
+            echo_error_msg('cut failed, is the dem open somewhere, {}'.format(e))                
                 
     ## ==============================================
-    ## optionally clip the DEM to polygon
+    ## merge the chunks and remove
     ## ==============================================
-    if wg['clip'] is not None:
-        if wg['verbose']: echo_msg('clipping {}...'.format(dem))
-        clip_args = {}
-        cp = wg['clip'].split(':')
-        clip_args['src_ply'] = cp[0]
-        clip_args = args2dict(cp[1:], clip_args)
-        gdal_clip(dem, **clip_args)
-        
-    ## ==============================================
-    ## optionally filter the DEM 
-    ## ==============================================
-    if wg['fltr'] is not None:
-        if wg['verbose']: echo_msg('filtering {}...'.format(dem))
-        fltr_args = {}
-        fltr = wg['fltr'].split(':')
-        fltr_args['fltr'] = gmt_inc2inc(fltr[0])
-        fltr_args['use_gmt'] = True
-        fltr_args = args2dict(fltr[1:], fltr_args)        
-        if fltr_args['use_gmt']: fltr_args['use_gmt'] = True if wg['gc']['GMT'] is not None else False
+    if len(chunks) > 1:
+        out, status = run_cmd('gdal_merge.py -n -9999 -a_nodata -9999 -ps {} -{} -ul_lr {} -o {} {}\
+        '.format(wg['inc'], wg['inc'], waffles_dist_ul_lr(wg), dem, ' '.join(chunks)), verbose = True)
+        ## add option to keep chunks.
+        [remove_glob(x) for x in chunks]
+    else:
+        os.rename(chunks[0], dem)
+        ## ==============================================
+        ## cut dem to final size - region buffered by (inc * extend)
+        ## ==============================================
         try:
-            gdal_smooth(dem, 'tmp_s.tif', **fltr_args)
-            os.rename('tmp_s.tif', dem)
-        except TypeError as e: echo_error_msg('{}'.format(e))
-
-    ## ==============================================
-    ## optionally resample the DEM 
-    ## ==============================================
-    if wg['sample'] is not None:
-        if wg['verbose']: echo_msg('resampling {}...'.format(dem))
-        if wg['gc']['GMT'] is not None:
-            gmt_sample_inc(dem, inc = wg['sample'], verbose = wg['verbose'])
-        else:
-            out, status = run_cmd('gdalwarp -tr {:.10f} {:.10f} {} -r bilinear -te {} tmp.tif'.format(inc, inc, src_grd, region_format(waffles_proc_region(wg)), verbose = verbose))
-            if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
-            
-    ## ==============================================
-    ## cut dem to final size - region buffered by (inc * extend)
-    ## ==============================================
-    try:
-        out = gdal_cut(dem, waffles_dist_region(wg), 'tmp_cut.tif')
-        if out is not None: os.rename('tmp_cut.tif', dem)
-    except OSError as e:
-        remove_glob('tmp_cut.tif')
-        echo_error_msg('cut failed, is the dem open somewhere, {}'.format(e))
-            
+            out = gdal_cut(dem, waffles_dist_region(wg), 'tmp_cut.tif')
+            if out is not None: os.rename('tmp_cut.tif', dem)
+        except OSError as e:
+            remove_glob('tmp_cut.tif')
+            echo_error_msg('cut failed, is the dem open somewhere, {}'.format(e))
+                        
     ## ==============================================
     ## convert to final format
     ## ==============================================
@@ -2508,6 +2534,16 @@ def waffles_run(wg = _waffles_grid_info):
     gdal_set_epsg(dem, wg['epsg'])
     waffles_gdal_md(wg)
     remove_glob('waffles_dem_mstr.datalist')
+
+    ## ==============================================
+    ## optionally generate spatial-metadata
+    ## ==============================================
+    if wg['spat']: waffles_spatial_metadata(wg)
+
+    ## ==============================================
+    ## optionally archive the datalist
+    ## ==============================================
+    if wg['archive']: a_dl, status = datalist_archive(wg, arch_dir = wg['name'], region = waffles_proc_region(wg), verbose = True)
     
     ## ==============================================
     ## if dem has data, return
@@ -2541,12 +2577,15 @@ General Options:
 \t\t\tAppend :split_value=<num> to only filter values below <num>.
 \t\t\te.g. -T10:split_value=0:use_gmt=False to smooth bathymetry using Gaussian filter
   -C, --clip\t\tCLIP the output to the clip polygon -C<clip_ply.shp:invert=False>
+  -K, --chunk\t\tProcess the region in CHUNKs. -K<chunk-level>
   -W, --wg-config\tA waffles config JSON file. If supplied, will overwrite all other options.
 \t\t\tgenerate a waffles_config JSON file using the --config flag.
 
-  -a, --archive\t\tArchive the datalist to the given region.
   -p, --prefix\t\tSet BASENAME to PREFIX (append inc/region/year info to output BASENAME).
   -r, --grid-node\tuse grid-node registration, default is pixel-node
+
+  -a, --archive\t\tArchive the datalist to the given region.
+  -s, --spat-meta\tGenerate spatial-metadata.
 
   --help\t\tPrint the usage text
   --config\t\tSave the waffles config JSON and master datalist
@@ -2577,6 +2616,8 @@ def waffles_cli(argv = sys.argv):
     want_prefix = False
     want_verbose = False
     want_config = False
+    want_archive = False
+    want_spat = False
     i = 1
     while i < len(argv):
         arg = argv[i]
@@ -2610,16 +2651,14 @@ def waffles_cli(argv = sys.argv):
             i += 1
         elif arg[:2] == '-T': wg['fltr'] = arg[2:]
         elif arg == '--extend' or arg == '-X':
-            try:
-                wg['extend'] = int(argv[i + 1])
-            except ValueError as e:
-                echo_error_msg('invalid -X option, {}'.format(e))
+            exts = argv[i + 1].split(':')
+            wg['extend'] = exts[0]
+            if len(exts) > 1: wg['extend_proc'] = exts[1]
             i += 1
         elif arg[:2] == '-X':
-            try:
-                wg['extend'] = int(arg[2:])
-            except ValueError as e:
-                echo_error_msg('invalid -X option, {}'.format(e))
+            exts = arg[2:].split(':')
+            wg['extend'] = exts[0]
+            if len(exts) > 1: wg['extend_proc'] = exts[1]
         elif arg == '--wg-config' or arg == '-W':
             wg_user = argv[i + 1]
             i += 1
@@ -2628,12 +2667,18 @@ def waffles_cli(argv = sys.argv):
             wg['clip'] = argv[i + 1]
             i = i + 1
         elif arg[:2] == '-C': wg['clip'] = arg[2:]
+        elif arg == '--chunk' or arg == '-K':
+            wg['chunk'] = argv[i + 1]
+            i = i + 1
+        elif arg[:2] == '-K': wg['chunk'] = arg[2:]
         elif arg == '--epsg' or arg == '-P':
             wg['epsg'] = argv[i + 1]
             i = i + 1
         elif arg[:2] == '-P': wg['epsg'] = arg[2:]
         elif arg == '-w': wg['weights'] = True
         elif arg == '-p': want_prefix = True
+        elif arg == '-a': want_archive = True
+        elif arg == '-s': want_spat = True
         elif arg == '-r': wg['node'] = 'grid'
         elif arg == '--verbose' or arg == '-V': wg['verbose'] = True
         elif arg == '--config': want_config = True
@@ -2661,11 +2706,11 @@ def waffles_cli(argv = sys.argv):
                     sys.exit(0)
             except Exception as e:
                 wg = waffles_config()
-                echo_error_msg('could not parse json from {}, {}'.format(wg_user, e))
+                echo_error_msg(e)
         else:
             echo_error_msg('specified json file does not exist, {}'.format(wg_user))
             sys.exit(0)
-    #else:
+
     ## ==============================================
     ## Otherwise run from cli options...
     ## set the dem module
@@ -2723,29 +2768,32 @@ def waffles_cli(argv = sys.argv):
                     echo_msg('generating master datalist: {}_mstr.datalist'.format(this_wg['name']))
                     wg_json.write(json.dumps(this_wg, indent = 4, sort_keys = True))
             else: echo_error_msg('could not parse config.')
-        else:
-            # import threading
-            # t = threading.Thread(target = waffles_run, args = (wg,))
-            # try:
-            #     t.start()
-            #     a = 0
-            #     while True:
-            #         time.sleep(2)
-            #         sys.stderr.write('\x1b[2K\r')
-            #         sys.stderr.flush()
-            #         sys.stderr.write('waffles: {}'.format(a))
-            #         a+=1
-            #         if not t.is_alive():
-            #             break
-            # except (KeyboardInterrupt, SystemExit):
-            #     echo_msg('stopping all threads')
-            #     stop_threads = True
 
-            # t.join()
-            try:
-                dem = waffles_run(wg)
-            except RuntimeError or OSError as e:
-                echo_error_msg('Cannot access {}.tif, may be in use elsewhere, {}'.format(wg['name'], e))
+        ## ==============================================
+        ## generate the DEM
+        ## ==============================================
+        # import threading
+        # t = threading.Thread(target = waffles_run, args = (wg,))
+        # try:
+        #     t.start()
+        #     a = 0
+        #     while True:
+        #         time.sleep(2)
+        #         sys.stderr.write('\x1b[2K\r')
+        #         sys.stderr.flush()
+        #         sys.stderr.write('waffles: {}'.format(a))
+        #         a+=1
+        #         if not t.is_alive():
+        #             break
+        # except (KeyboardInterrupt, SystemExit):
+        #     echo_msg('stopping all threads')
+        #     stop_threads = True
+
+        # t.join()
+        try:
+            dem = waffles_run(wg)
+        except RuntimeError or OSError as e:
+            echo_error_msg('Cannot access {}.tif, may be in use elsewhere, {}'.format(wg['name'], e))
 
 ## ==============================================
 ## datalists cli
