@@ -45,6 +45,7 @@ setup(
     scripts = [
         'scripts/gdal_chunk.py',
         'scripts/gdal_crop.py',
+        'scripts/gdal_clip.py',
         'scripts/gdal_null.py',
         'scripts/gdal_mask.py',
         'scripts/gdal_split.py',

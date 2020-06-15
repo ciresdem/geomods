@@ -2506,17 +2506,7 @@ def waffles_run(wg = _waffles_grid_info):
         '.format(wg['inc'], wg['inc'], waffles_dist_ul_lr(wg), dem, ' '.join(chunks)), verbose = True)
         ## add option to keep chunks.
         [remove_glob(x) for x in chunks]
-    else:
-        os.rename(chunks[0], dem)
-        ## ==============================================
-        ## cut dem to final size - region buffered by (inc * extend)
-        ## ==============================================
-        try:
-            out = gdal_cut(dem, waffles_dist_region(wg), 'tmp_cut.tif')
-            if out is not None: os.rename('tmp_cut.tif', dem)
-        except OSError as e:
-            remove_glob('tmp_cut.tif')
-            echo_error_msg('cut failed, is the dem open somewhere, {}'.format(e))
+    else: os.rename(chunks[0], dem)
                         
     ## ==============================================
     ## convert to final format
@@ -2768,32 +2758,32 @@ def waffles_cli(argv = sys.argv):
                     echo_msg('generating master datalist: {}_mstr.datalist'.format(this_wg['name']))
                     wg_json.write(json.dumps(this_wg, indent = 4, sort_keys = True))
             else: echo_error_msg('could not parse config.')
+        else:
+            ## ==============================================
+            ## generate the DEM
+            ## ==============================================
+            # import threading
+            # t = threading.Thread(target = waffles_run, args = (wg,))
+            # try:
+            #     t.start()
+            #     a = 0
+            #     while True:
+            #         time.sleep(2)
+            #         sys.stderr.write('\x1b[2K\r')
+            #         sys.stderr.flush()
+            #         sys.stderr.write('waffles: {}'.format(a))
+            #         a+=1
+            #         if not t.is_alive():
+            #             break
+            # except (KeyboardInterrupt, SystemExit):
+            #     echo_msg('stopping all threads')
+            #     stop_threads = True
 
-        ## ==============================================
-        ## generate the DEM
-        ## ==============================================
-        # import threading
-        # t = threading.Thread(target = waffles_run, args = (wg,))
-        # try:
-        #     t.start()
-        #     a = 0
-        #     while True:
-        #         time.sleep(2)
-        #         sys.stderr.write('\x1b[2K\r')
-        #         sys.stderr.flush()
-        #         sys.stderr.write('waffles: {}'.format(a))
-        #         a+=1
-        #         if not t.is_alive():
-        #             break
-        # except (KeyboardInterrupt, SystemExit):
-        #     echo_msg('stopping all threads')
-        #     stop_threads = True
-
-        # t.join()
-        try:
-            dem = waffles_run(wg)
-        except RuntimeError or OSError as e:
-            echo_error_msg('Cannot access {}.tif, may be in use elsewhere, {}'.format(wg['name'], e))
+            # t.join()
+            try:
+                dem = waffles_run(wg)
+            except RuntimeError or OSError as e:
+                echo_error_msg('Cannot access {}.tif, may be in use elsewhere, {}'.format(wg['name'], e))
 
 ## ==============================================
 ## datalists cli
