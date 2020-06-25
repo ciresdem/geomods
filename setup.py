@@ -49,6 +49,7 @@ setup(
         'scripts/gdal_null.py',
         'scripts/gdal_mask.py',
         'scripts/gdal_split.py',
+        'scripts/gdal_query.py',
         'scripts/vdatum_cmd.py',
         'scripts/smooth_dem_bathy.py',
         'scripts/xyz_clip.py',
