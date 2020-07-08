@@ -147,13 +147,13 @@ def query_gdal(inxyz,ingrd,delim,xloc,yloc,zloc,nodata,out_form,addit,return_all
                 d = z - g
                 m = z + g
                 # FIXME ## as d/g*100 woudl fail if g was zero
-                if g == 0:
-                    g += 0.0000001
+                #if g == 0:
+                #    g += 0.0000001
                 # /FIXME ##
                 # c is the percent difference
-                c = con_dec(math.fabs(float(d/g*100)), 2)
+                c = con_dec(math.fabs(float(d/(g+0.00000001)*100)), 2)
                 # s is the 'scaled' difference
-                s = con_dec(math.fabs(d / (z + g)), 4)
+                s = con_dec(math.fabs(d / (z + (g+0.00000001))), 4)
 
             # Print out the results
             d = con_dec(d, 4)

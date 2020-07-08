@@ -175,13 +175,12 @@ def proc_elev(elev, smooth_factor):
         smoothed_array = None
         print "created Smoothed Geotiff"
 
-def smooth_bathy(src_gdal, smooth_factor):
+#def smooth_bathy(src_gdal, smooth_factor):
     # gdal-split by 0
     # smooth lower
     # merge back with upper
         
-if __name__ == '__main__':
-    
+if __name__ == '__main__':    
     elev = None
     smooth_factor = 10
     in_list = None
@@ -222,6 +221,8 @@ if __name__ == '__main__':
     if in_list:
         for lf in yield_file_list(in_list):
             proc_elev(lf, smooth_factor)
-    else: proc_elev(elev, smooth_factor)
+    else:
+        #proc_elev(elev, smooth_factor)
+        waffles.gdal_smooth(elev, elev[:-4] + '_smooth.tif')
 
 ### End

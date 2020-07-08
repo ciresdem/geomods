@@ -1703,16 +1703,20 @@ def xyz_inf(src_xyz):
         if i == 0:
             minmax = [l[0], l[0], l[1], l[1], l[2], l[2]]
         else:
-            if l[0] < minmax[0]: minmax[0] = l[0]
-            elif l[0] > minmax[1]: minmax[1] = l[0]
-            if l[1] < minmax[2]: minmax[2] = l[1]
-            elif l[1] > minmax[3]: minmax[3] = l[1]
-            if l[2] < minmax[4]: minmax[4] = l[2]
-            elif l[2] > minmax[5]: minmax[5] = l[2]
-    with open('{}.inf'.format(src_xyz.name), 'w') as inf:
-        echo_msg('generating inf file for {}'.format(src_xyz.name))
-        inf.write('{}\n'.format(' '.join([str(x) for x in minmax])))
-    return(minmax)
+            try:
+                if l[0] < minmax[0]: minmax[0] = l[0]
+                elif l[0] > minmax[1]: minmax[1] = l[0]
+                if l[1] < minmax[2]: minmax[2] = l[1]
+                elif l[1] > minmax[3]: minmax[3] = l[1]
+                if l[2] < minmax[4]: minmax[4] = l[2]
+                elif l[2] > minmax[5]: minmax[5] = l[2]
+            except: pass
+    if len(minmax) == 6:
+        with open('{}.inf'.format(src_xyz.name), 'w') as inf:
+            echo_msg('generating inf file for {}'.format(src_xyz.name))
+            inf.write('{}\n'.format(' '.join([str(x) for x in minmax])))
+        return(minmax)
+    else: return(0,0,0,0,0,0)
 
 def xyz_inf_entry(entry):
     with open(entry[0]) as infile:
@@ -1839,7 +1843,15 @@ def datalist_archive(wg, arch_dir = 'archive', region = None, verbose = False):
                 rel_file = os.path.join(rel_dir, f)
                 datalist_append_entry([rel_file, -1, 1], a_dl)
     return(a_dl, 0)
-        
+
+def datalist_list(wg, region = None):
+    '''list the datalist entries in the given region'''
+    if region is not None:
+        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+    else: dl_p = _dl_pass_h
+    for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p):
+        print(this_entry)
+    
 def datalist_dump(wg, dst_port = sys.stdout, region = None, verbose = False):
     '''dump the xyz data from datalist to dst_port'''
     
@@ -1985,7 +1997,7 @@ _waffles_grid_info = {
     'clip': None,
     'chunk': None,
     'epsg': 4326,
-    'mod': 'surface',
+    'mod': 'help',
     'mod_args': (),
     'verbose': False,
     'archive': False,
@@ -2004,10 +2016,9 @@ def waffles_dict2wg(wg = _waffles_grid_info):
     also validate the key values and return the valid waffles_config
     
     returns a complete and validated waffles_config dict.'''
-    
+
     wg = copy.deepcopy(wg)
     keys = wg.keys()
-
     ## ==============================================
     ## check the waffles config dict and set
     ## missing values and their defaults.
@@ -2037,13 +2048,13 @@ def waffles_dict2wg(wg = _waffles_grid_info):
     else: wg['chunk'] = int_or(wg['chunk'], None)
     if 'epsg' not in keys: wg['epsg'] = 4326
     else: wg['epsg'] = int_or(wg['epsg'], 4326)
-    if 'mod' not in keys: wg['mod'] = 'surface'
+    if 'mod' not in keys: wg['mod'] = 'help'
     if 'mod_args' not in keys: wg['mod_args'] = ()
     if 'verbose' not in keys: wg['verbose'] = False
     else: wg['verbose'] = False if not wg['verbose'] or str(wg['verbose']).lower() == 'false' or wg['verbose'] is None else True
     if 'archive' not in keys: wg['archive'] = False
     else: wg['archive'] = False if not wg['archive'] or str(wg['archive']).lower() == 'false' or wg['archive'] is None else True
-    if 'spati' not in keys: wg['spat'] = False
+    if 'spat' not in keys: wg['spat'] = False
     else: wg['spat'] = False if not wg['spat'] or str(wg['spat']).lower() == 'false' or wg['spat'] is None else True
     wg['gc'] = config_check()
     
@@ -2109,6 +2120,7 @@ _waffles_modules = {
     \t\t\t  < invdst:power=2.0:smoothing=0.0:radus1=0.1:radius2:0.1 >'''],
     'average': [lambda args: waffles_moving_average(**args), '''Moving AVERAGE DEM via GDAL GRID
     \t\t\t  < average:radius1=0.01:radius2=0.01 >'''],
+    'help': [lambda args: waffles_help(**args), '''display module info'''],
     #'archive': [lambda args: waffles_archive(**args), '''archive the datalist
     #\t\t\t  < archive:arch_dir=archive >
     #\t\t\t  :arch_dir=[dirname] - archive data to dirname'''],
@@ -2148,7 +2160,11 @@ waffles_gmt_reg_str = lambda wg: '-r' if wg['node'] == 'pixel' else ''
 ## the 'long-name' used from prefix
 ## ==============================================
 waffles_append_fn = lambda bn, region, inc: '{}{}_{}_{}'.format(bn, inc2str_inc(inc), region_format(region, 'fn'), this_year())
-    
+
+def waffles_help(wg = _waffles_grid_info):
+    print(_waffles_module_long_desc(_waffles_modules))
+    return(0, 0)
+
 def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, use_datalists = False):
     '''Generate a DEM with MBSystem's mbgrid program.
     if `use_datalists` is True, will parse the datalist through
@@ -2197,7 +2213,6 @@ def waffles_gmt_triangulate(wg = _waffles_grid_info):
 
 def waffles_nearneighbor(wg = _waffles_grid_info, radius = None, use_gdal = False):
     '''genearte a DEM with GMT nearneighbor or gdal_grid nearest'''
-
     
     radius = wg['inc'] * 2 if radius is None else gmt_inc2inc(radius)
     if wg['gc']['GMT'] is not None and not use_gdal:
@@ -2242,13 +2257,14 @@ def waffles_spatial_metadata(wg):
         [layer.SetFeature(feature) for feature in layer]
         defn = layer.GetLayerDefn()
         dlh = lambda e: False if e[1] != -1 else regions_intersect_ogr_p(waffles_dist_region(wg), inf_entry(e))
-        dls = []
+        dls = [wg['datalist']]
         dlph = lambda e: dls.append(e)
         for d in datalist(wg['datalist'], pass_h = dlh, dl_proc_h = dlph, verbose = wg['verbose']): print(d)
-        #print(dls)
+        if len(dls) == 0: dls = wg['datalists']
         for this_entry in dls:
+            #print(this_entry)
             if this_entry[-1] != 'waffles_dem_mstr':
-                print(this_entry)
+                #print(this_entry)
                 twg = waffles_config()
                 twg['datalist'] = this_entry[0]
                 twg['name'] = os.path.basename(this_entry[0]).split('.')[0]
@@ -2403,7 +2419,7 @@ def waffles_run(wg = _waffles_grid_info):
         
     if wg['verbose']:
         #echo_msg(json.dumps(wg, indent = 4, sort_keys = True))
-        echo_msg(wg)
+        echo_msg(wg['datalist'])
         echo_msg('running module {}...'.format(wg['mod']))
 
     dem = '{}.tif'.format(wg['name'])
@@ -2506,29 +2522,33 @@ def waffles_run(wg = _waffles_grid_info):
         '.format(wg['inc'], wg['inc'], waffles_dist_ul_lr(wg), dem, ' '.join(chunks)), verbose = True)
         ## add option to keep chunks.
         [remove_glob(x) for x in chunks]
-    else: os.rename(chunks[0], dem)
-                        
-    ## ==============================================
-    ## convert to final format
-    ## ==============================================
-    if wg['fmt'] != 'GTiff':
-        orig_dem = dem
-        if wg['gc']['GMT'] is not None:
-            dem = gmt_grd2gdal(dem, wg['fmt'])
-        else: dem = gdal_gdal2gdal(dem, wg['fmt'])
-        remove_glob(orig_dem)
+    else:
+        if os.path.exists(chunks[0]):
+            os.rename(chunks[0], dem)
 
-    ## ==============================================
-    ## set the projection and other metadata
-    ## ==============================================
-    gdal_set_epsg(dem, wg['epsg'])
-    waffles_gdal_md(wg)
-    remove_glob('waffles_dem_mstr.datalist')
+    if os.path.exists(dem):
+        ## ==============================================
+        ## convert to final format
+        ## ==============================================
+        if wg['fmt'] != 'GTiff':
+            orig_dem = dem
+            if wg['gc']['GMT'] is not None:
+                dem = gmt_grd2gdal(dem, wg['fmt'])
+            else: dem = gdal_gdal2gdal(dem, wg['fmt'])
+            remove_glob(orig_dem)
+
+        ## ==============================================
+        ## set the projection and other metadata
+        ## ==============================================
+        gdal_set_epsg(dem, wg['epsg'])
+        waffles_gdal_md(wg)
 
     ## ==============================================
     ## optionally generate spatial-metadata
     ## ==============================================
-    if wg['spat']: waffles_spatial_metadata(wg)
+    if wg['spat']:
+        echo_msg('generating spatial-metadata')
+        waffles_spatial_metadata(wg)
 
     ## ==============================================
     ## optionally archive the datalist
@@ -2538,6 +2558,7 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     ## if dem has data, return
     ## ==============================================
+    remove_glob('waffles_dem_mstr.datalist')
     return(dem)
         
 ## ==============================================
@@ -2667,8 +2688,12 @@ def waffles_cli(argv = sys.argv):
         elif arg[:2] == '-P': wg['epsg'] = arg[2:]
         elif arg == '-w': wg['weights'] = True
         elif arg == '-p': want_prefix = True
-        elif arg == '-a': want_archive = True
-        elif arg == '-s': want_spat = True
+        elif arg == '-a':
+            want_archive = True
+            wg['archive'] = True
+        elif arg == '-s':
+            want_spat = True
+            wg['spat'] = True
         elif arg == '-r': wg['node'] = 'grid'
         elif arg == '--verbose' or arg == '-V': wg['verbose'] = True
         elif arg == '--config': want_config = True
@@ -2798,6 +2823,7 @@ def datalists_cli(argv = sys.argv):
     region = None
     want_weight = False
     want_infos = False
+    want_list = False
     rec_infos = False
     want_verbose = False
     epsg = None
@@ -2814,6 +2840,7 @@ def datalists_cli(argv = sys.argv):
         elif arg[:2] == '-P': epsg = arg[2:]
         elif arg == '-w': want_weight = True
         elif arg == '-i': want_infos = True
+        elif arg == '-l': want_list = True
         elif arg == '-c': rec_infos = True
         elif arg == '--verbose' or arg == '-V': want_verbose = True
         elif arg == '--help' or arg == '-h':
@@ -2849,6 +2876,8 @@ def datalists_cli(argv = sys.argv):
         if want_infos: print(datalist_inf(master, inf_file = True))#sys.stdout.write(' '.format([str(x) for x in datalist_inf(master)]))
         elif rec_infos:
             inf_entry([master, -1, 1])
+        elif want_list:
+            datalist_list({'datalist':master, 'weights': want_weight}, region)
         else:
             ## ==============================================
             ## dump to stdout
