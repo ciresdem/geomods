@@ -2095,7 +2095,7 @@ _waffles_modules = {
     \t\t\t  < surface:tension=.35:relaxation=1.2:lower_limit=d:upper_limit=d >
     \t\t\t  :tension=[0-1] - Spline tension.'''],
     'triangulate': [lambda args: waffles_gmt_triangulate(**args), '''TRIANGULATION DEM via GMT triangulate'''],
-    'nearest': [lambda args: waffles_nearneighbor(**args), '''NEAREST NEIGHBOR DEM via GMT or GDAL
+    'nearest': [lambda args: waffles_nearneighbor(**args), '''NEAREST NEIGHBOR DEM via GMT or gdal_grid
     \t\t\t  < nearest:radius=6s:use_gdal=False >
     \t\t\t  :radius=[value] - Nearest Neighbor search radius
     \t\t\t  :use_gdal=[True/False] - use gdal grid nearest algorithm'''],
@@ -2116,9 +2116,9 @@ _waffles_modules = {
     \t\t\t  :tension=[0-100] - Spline tension.
     \t\t\t  :dist=[value] - MBgrid -C switch (distance to fill nodata with spline)
     \t\t\t  :use_datalists=[True/False] - use waffles built-in datalists'''],
-    'invdst': [lambda args: waffles_invdst(**args), '''INVERSE DISTANCE DEM via GDAL GRID
+    'invdst': [lambda args: waffles_invdst(**args), '''INVERSE DISTANCE DEM via gdal_grid
     \t\t\t  < invdst:power=2.0:smoothing=0.0:radus1=0.1:radius2:0.1 >'''],
-    'average': [lambda args: waffles_moving_average(**args), '''Moving AVERAGE DEM via GDAL GRID
+    'average': [lambda args: waffles_moving_average(**args), '''Moving AVERAGE DEM via gdal_grid
     \t\t\t  < average:radius1=0.01:radius2=0.01 >'''],
     'help': [lambda args: waffles_help(**args), '''display module info'''],
     #'archive': [lambda args: waffles_archive(**args), '''archive the datalist
@@ -2593,10 +2593,11 @@ General Options:
 \t\t\tgenerate a waffles_config JSON file using the --config flag.
 
   -p, --prefix\t\tSet BASENAME to PREFIX (append inc/region/year info to output BASENAME).
-  -r, --grid-node\tuse grid-node registration, default is pixel-node
+  -r, --grid-node\tUse grid-node registration, default is pixel-node
+  -w, --weights\t\tUse weights provided in the datalist.
 
   -a, --archive\t\tArchive the datalist to the given region.
-  -s, --spat-meta\tGenerate spatial-metadata.
+  -s, --spat-meta\tGenerate spatial-metadata of the datalist.
 
   --help\t\tPrint the usage text
   --config\t\tSave the waffles config JSON and master datalist
@@ -2627,8 +2628,6 @@ def waffles_cli(argv = sys.argv):
     want_prefix = False
     want_verbose = False
     want_config = False
-    want_archive = False
-    want_spat = False
     i = 1
     while i < len(argv):
         arg = argv[i]
@@ -2686,15 +2685,11 @@ def waffles_cli(argv = sys.argv):
             wg['epsg'] = argv[i + 1]
             i = i + 1
         elif arg[:2] == '-P': wg['epsg'] = arg[2:]
-        elif arg == '-w': wg['weights'] = True
-        elif arg == '-p': want_prefix = True
-        elif arg == '-a':
-            want_archive = True
-            wg['archive'] = True
-        elif arg == '-s':
-            want_spat = True
-            wg['spat'] = True
-        elif arg == '-r': wg['node'] = 'grid'
+        elif arg == '-w' or arg == '--weights': wg['weights'] = True
+        elif arg == '-p' or arg == '--prefix': want_prefix = True
+        elif arg == '-a' or arg == '--archive': wg['archive'] = True
+        elif arg == '-s' or arg == 'spat-meta': wg['spat'] = True
+        elif arg == '-r' or arg == '--grid-node': wg['node'] = 'grid'
         elif arg == '--verbose' or arg == '-V': wg['verbose'] = True
         elif arg == '--config': want_config = True
         elif arg == '--modules' or arg == '-m':
@@ -2813,7 +2808,9 @@ def waffles_cli(argv = sys.argv):
 ## ==============================================
 ## datalists cli
 ## ==============================================
-datalists_cli_usage = '''datalists [-ciwR] <datalist/entry>
+datalists_cli_usage = '''datalists [-cilwPR] <datalist/entry ...>
+
+Process and analyze geographic datalists.
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
 '''
@@ -2873,7 +2870,7 @@ def datalists_cli(argv = sys.argv):
     master = datalist_master(dls)
     if master is not None:
         #datalist_archive(master, arch_dir = 'archive', region = region, verbose = want_verbose)
-        if want_infos: print(datalist_inf(master, inf_file = True))#sys.stdout.write(' '.format([str(x) for x in datalist_inf(master)]))
+        if want_infos: print(datalist_inf(master, inf_file = True))
         elif rec_infos:
             inf_entry([master, -1, 1])
         elif want_list:
