@@ -1,4 +1,4 @@
-#!/usr/bin/env python2
+#!/usr/bin/env python
 ### gdal_query.py
 ##
 ## Copyright (c) 2011 - 2019 Matthew Love <matthew.love@colorado.edu>
@@ -112,7 +112,7 @@ def query_gdal(inxyz,ingrd,delim,xloc,yloc,zloc,nodata,out_form,addit,return_all
     for i in in_plot:
         n+=1
         if verbose:
-            print >> sys.stderr, "gdal_query: " + str(n), "\r",
+            sys.stderr.write('gdal_query:' + str(n) + '\r')
         try:
             x = float(i.split(delim)[int(xloc)].strip())
             y = float(i.split(delim)[int(yloc)].strip())
@@ -122,7 +122,7 @@ def query_gdal(inxyz,ingrd,delim,xloc,yloc,zloc,nodata,out_form,addit,return_all
                 z = float(i.split(delim)[int(zloc)].strip())
     
         except:
-            print >> sys.stderr, "gdal_query: Failed to read line: %s" %(i),
+            sys.stderr.write("gdal_query: Failed to read line: {}".format(i))
             x=xextent - 10
             y=yextent + 10
         
@@ -174,7 +174,7 @@ def query_gdal(inxyz,ingrd,delim,xloc,yloc,zloc,nodata,out_form,addit,return_all
                     outs.append(vars()[i])
                 print(delim.join(map(str, outs)))
     if verbose:
-        print >> sys.stderr, "\n",
+        sys.stderr.write('\n')
 
 def Usage():
     print('Usage: gdal_query.py [-delimiter char] [-s_format "0,1,2"] ')
@@ -301,7 +301,7 @@ if __name__ == "__main__":
         outs = []
         for i in out_form:
             outs.append(i)
-        print delim.join(outs)
+        print(delim.join(outs))
 
     query_gdal(inxyz,ingrd,delim,xloc,yloc,zloc,out_nodata,out_form,addit,return_all,verbose)
 #--END
