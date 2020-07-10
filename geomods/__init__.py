@@ -19,8 +19,10 @@
 
 ## Modules
 
-from waffles import *
-from fetches import *
+import geomods.waffles
+import geomods.fetches
+#from waffles import *
+#from fetches import *
 
 #from archook import locate_arcgis, get_arcpy
 

@@ -18,17 +18,27 @@
 ## ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ##
 ### Code:
-from setuptools import setup
+import setuptools
 
-setup(
+with open('README', 'r') as fh:
+    long_description = fh.read()
+
+setuptools.setup(
     name = 'geomods',
     version = '0.2.0',
     description = 'Modules and scripts for utilizing geographic data Digital Elevation Models',
+    long_description = long_description,
+    long_description_content_type = 'text/markdown',
     license = 'MIT',
     author = 'CIRES Coastal DEM Team',
     url = 'http://ciresgroups.colorado.edu/coastalDEM',
-    packages = ['geomods'],  #same as name
+    packages = setuptools.find_packages(),#['geomods'],  #same as name
     package_data = {'geomods': ['data/*.gmt']},
+    classifiers = [
+        'Programming Language :: Python :: 3',
+        'License :: OSI APPROVED :: MIT License',
+        'Operating System :: OS Independent',
+    ],
     install_requires = [
         'GDAL',
         'numpy',
