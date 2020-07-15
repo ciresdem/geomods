@@ -1793,7 +1793,7 @@ def datalist_append_entry(entry, datalist):
     '''append entry to datalist file `datalist`'''
     
     with open(datalist, 'a') as outfile:
-        outfile.write('{}\n'.format(' '.join([str(x) for x in entry])))
+        outfile.write('{}\n'.format(' '.join([x.decode('utf-8') for x in entry])))
 
 def archive_entry(entry, dirname = 'archive', region = None, inc = 1, weight = None, verbose = None):
     '''archive a datalist entry.
