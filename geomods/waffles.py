@@ -958,6 +958,55 @@ def gdal_query(src_xyz, src_grd, out_form):
         dsband = ds = None
         out_array = np.array(xyzl, dtype = ds_config['dtn'])
     return(out_array)
+
+def gdal_query2(src_xyz, src_grd, out_form):
+    '''query a gdal-compatible grid file with xyz data.
+    out_form dictates return values
+
+    yields out_form results'''
+    
+    xyzl = []
+    out_array = []
+
+    ## ==============================================
+    ## Process the src grid file
+    ## ==============================================
+    ds = gdal.Open(src_grd)
+    if ds is not None:
+        ds_config = gdal_gather_infos(ds)
+        ds_band = ds.GetRasterBand(1)
+        ds_gt = ds_config['geoT']
+        ds_nd = ds_config['ndv']
+        tgrid = ds_band.ReadAsArray()
+
+        ## ==============================================   
+        ## Process the src xyz data
+        ## ==============================================
+        for xyz in src_xyz:
+            x = xyz[0]
+            y = xyz[1]
+            try: 
+                z = xyz[2]
+            except: z = ds_nd
+
+            if x > ds_gt[0] and y < float(ds_gt[3]):
+                xpos, ypos = _geo2pixel(x, y, ds_gt)
+                try: 
+                    g = tgrid[ypos, xpos]
+                except: g = ds_nd
+                #print(g)
+                d = c = m = s = ds_nd
+                if g != ds_nd:
+                    d = z - g
+                    m = z + g
+                    #c = con_dec(math.fabs(d / (g + 0.00000001) * 100), 2)
+                    #s = con_dec(math.fabs(d / (z + (g + 0.00000001))), 4)
+                    #d = con_dec(d, 4)
+                    outs = []
+                    for i in out_form:
+                        outs.append(vars()[i])
+                    yield(outs)
+        dsband = ds = None
     
 def np_split(src_arr, sv = 0, nd = -9999):
     '''split numpy `src_arr` by `sv` (turn u/l into `nd`)
@@ -1278,7 +1327,9 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format='GTiff', mode='n'):
     else: gdt = gdal.GDT_Int32
     ptArray = np.zeros((ycount, xcount))
     ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(4326), gdt, -9999, dst_format)
+    echo_msg(ds_config)
     echo_msg('gridding data')
+    ehco_msg('gridding mode: {}'.format(mode))
     for this_xyz in src_xyz:
         x = this_xyz[0]
         y = this_xyz[1]
