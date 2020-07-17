@@ -1160,8 +1160,8 @@ def gdal_region2gt(region, inc):
     
     ysize = region[3] - region[2]
     xsize = region[1] - region[0]
-    xcount = int(round(xsize / inc)) + 1
-    ycount = int(round(ysize / inc)) + 1
+    xcount = int(round(xsize / inc)) #+ 1
+    ycount = int(round(ysize / inc)) #+ 1
     dst_gt = (region[0], inc, 0, region[3], 0, (inc * -1.))
     return(xcount, ycount, dst_gt)
 
@@ -1329,7 +1329,7 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format='GTiff', mode='n'):
     ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(4326), gdt, -9999, dst_format)
     echo_msg(ds_config)
     echo_msg('gridding data')
-    ehco_msg('gridding mode: {}'.format(mode))
+    echo_msg('gridding mode: {}'.format(mode))
     for this_xyz in src_xyz:
         x = this_xyz[0]
         y = this_xyz[1]
