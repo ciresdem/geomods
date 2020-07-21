@@ -502,8 +502,8 @@ def run_vdatum(src_fn, vd_config = _vd_config):
         vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},0,1,2:{}:{} region:{}\
         '.format(vd_config['ihorz'], vd_config['ivert'], vd_config['ohorz'], vd_config['overt'], \
                  vd_config['delim'], src_fn, vd_config['result_dir'], vd_config['region'])
-        #out, status = run_cmd('java -Djava.awt.headless=true -jar {} {}'.format(self.vdatum_path, vdc), self.verbose, True)
-        return(run_cmd('java -jar {} {}'.format(vd_config['jar'], vdc), verbose = True))
+        #return(run_cmd('java -jar {} {}'.format(vd_config['jar'], vdc), verbose = True))
+        return(run_cmd('java -Djava.awt.headless=true -jar {} {}'.format(vd_config['jar'], vdc), verbose = True))
     else: return([], -1)
     
 ## ==============================================
@@ -1160,8 +1160,8 @@ def gdal_region2gt(region, inc):
     
     ysize = region[3] - region[2]
     xsize = region[1] - region[0]
-    xcount = int(round(xsize / inc)) #+ 1
-    ycount = int(round(ysize / inc)) #+ 1
+    xcount = int((xsize / inc) + .5) #+ 1
+    ycount = int((ysize / inc) + .5) #+ 1
     dst_gt = (region[0], inc, 0, region[3], 0, (inc * -1.))
     return(xcount, ycount, dst_gt)
 
@@ -1236,7 +1236,7 @@ def _geo2pixel(geo_x, geo_y, geoTransform):
         pixel_x = (geo_x - geoTransform[0]) / geoTransform[1]
         pixel_y = (geo_y - geoTransform[3]) / geoTransform[5]
     else: pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt(geoTransform))
-    return(int(pixel_x+.5), int(pixel_y+.5))
+    return(int(pixel_x + .5), int(pixel_y + .5))
 
 def _pixel2geo(pixel_x, pixel_y, geoTransform):
     '''convert a pixel location to geographic coordinates given geoTransform'''
@@ -1314,7 +1314,7 @@ def xyz2gdal_ds(src_xyz, dst_ogr):
         layer.CreateFeature(f)
     return(ds)
 
-def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format='GTiff', mode='n'):
+def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format='GTiff', mode='n', epsg=4326):
     '''Create a GDAL supported grid from xyz data 
     `mode` of `n` generates a num grid
     `mode` of `m` generates a mean grid
@@ -1326,10 +1326,9 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format='GTiff', mode='n'):
         gdt = gdal.GDT_Float32
     else: gdt = gdal.GDT_Int32
     ptArray = np.zeros((ycount, xcount))
-    ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(4326), gdt, -9999, dst_format)
-    echo_msg(ds_config)
-    echo_msg('gridding data')
-    echo_msg('gridding mode: {}'.format(mode))
+    ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(epsg), gdt, -9999, dst_format)
+    echo_msg('gridding data with mode: {} to {}'.format(mode, dst_gdal))
+    echo_msg('grid size: {}/{}'.format(ycount, xcount))
     for this_xyz in src_xyz:
         x = this_xyz[0]
         y = this_xyz[1]
@@ -1795,7 +1794,7 @@ def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False)
 ## entry processing fmt:*
 ## ==============================================
 _known_dl_delims = [' ']
-_known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'csv', 'dat'], 200: ['tif', 'img', 'grd', 'nc']}
+_known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'csv', 'dat'], 200: ['tif', 'img', 'grd', 'nc', 'vrt']}
 _dl_inf_h = {
     -1: lambda e: datalist_inf_entry(e),
     168: lambda e: xyz_inf_entry(e),

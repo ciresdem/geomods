@@ -62,6 +62,7 @@ def main():
     ivert = 'navd88:m:height'
     overt = 'mhw:m:height'
     region = '3'
+    delim = 'space'
     verbose = False
 
     i = 1
@@ -71,53 +72,35 @@ def main():
         arg = argv[i]
 
         if arg == '-i' or arg == '--ivert':
-            try:
-                ivert = argv[i + 1]
-            except: pass
+            ivert = argv[i + 1]
             i = i + 1
-
         elif arg == '-o' or arg == '--overt':
-            try:
-                overt = argv[i + 1]
-            except: pass
+            overt = argv[i + 1]
             i = i + 1
-
         elif arg == '-r' or arg == '--ihorz':
-            try:
-                ihorz = argv[i + 1]
-            except: pass
+            ihorz = argv[i + 1]
             i = i + 1
-
         elif arg == '-z' or arg == '--ohorz':
-            try:
-                ohorz = argv[i + 1]
-            except: pass
+            ohorz = argv[i + 1]
             i = i + 1
-
         elif arg == '-e' or arg == '--region':
-            try:
-                region = argv[i + 1]
-            except: pass
+            region = argv[i + 1]
             i = i + 1
-
-        elif arg == '-V' or arg == '--verbose':
-            verbose = True
-
+        elif arg == '-d' or arg == '--delimiter':
+            delim = argv[i + 1]
+            i = i + 1
+        elif arg == '-V' or arg == '--verbose': verbose = True
         elif arg == '-help' or arg == '--help' or arg == '-h':
             print(_usage)
             sys.exit(1)
-
         elif arg == '-version' or arg == '--version':
             print('vdatum_cmd.py, version {}\nVDatum, version {}\n{}'.format(_version, geomods.utils.vdatum()._version, geomods._license))
             sys.exit(1)
-
         elif src_fn is None:
             src_fn = arg
-
         else:
             print(_usage)
             sys.exit(1)
-
         i = i + 1
 
     if src_fn is None:
@@ -127,12 +110,13 @@ def main():
     if not os.path.exists(src_fn):
         print('Error: {} is not a valid file'.format(src_fn))
     else: 
-        vd = geomods.vdatum.vdatum()
-        vd.ivert = ivert
-        vd.overt = overt
-        vd.ihorz = ihorz
-        vd.ohorz = ohorz
-        vd.run_vdatum(src_fn)
+        vd = geomods.waffles._vd_config
+        vd['ivert'] = ivert
+        vd['overt'] = overt
+        vd['ihorz'] = ihorz
+        vd['ohorz'] = ohorz
+        vd['delim'] = delim
+        geomods.waffles.run_vdatum(src_fn, vd)
         
 if __name__ == '__main__':
     main()

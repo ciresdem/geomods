@@ -71,6 +71,8 @@ setuptools.setup(
         'scripts/spatial-meta.sh',
         'scripts/clip_xyz.sh',
         'scripts/coastline2xyz.sh',
+        'scripts/gdal_vrt_avg.py',
+        'scripts/create_datalist.sh',
     ],
     #python_requires = '>=2.7, <3',
     #project_urls = {
