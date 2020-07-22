@@ -1160,8 +1160,9 @@ def gdal_region2gt(region, inc):
     
     ysize = region[3] - region[2]
     xsize = region[1] - region[0]
-    xcount = int((xsize / inc) + .5) #+ 1
-    ycount = int((ysize / inc) + .5) #+ 1
+    ## add one to sizes
+    xcount = int((xsize / inc)) + 1
+    ycount = int((ysize / inc)) + 1
     dst_gt = (region[0], inc, 0, region[3], 0, (inc * -1.))
     return(xcount, ycount, dst_gt)
 
@@ -1236,7 +1237,7 @@ def _geo2pixel(geo_x, geo_y, geoTransform):
         pixel_x = (geo_x - geoTransform[0]) / geoTransform[1]
         pixel_y = (geo_y - geoTransform[3]) / geoTransform[5]
     else: pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt(geoTransform))
-    return(int(pixel_x + .5), int(pixel_y + .5))
+    return(int(pixel_x+.5), int(pixel_y+.5))
 
 def _pixel2geo(pixel_x, pixel_y, geoTransform):
     '''convert a pixel location to geographic coordinates given geoTransform'''
@@ -2494,14 +2495,14 @@ def waffles_run(wg = _waffles_grid_info):
         ## ==============================================
         ## gererate the DEM (run the module)
         ## ==============================================
-        try:
-            out, status = _waffles_modules[this_wg['mod']][0](args_d)
-        except KeyboardInterrupt as e:
-            echo_error_msg('killed by user, {}'.format(e))
-            sys.exit(-1)
-        except Exception as e:
-            echo_error_msg('{}'.format(e))
-            status = -1
+        #try:
+        out, status = _waffles_modules[this_wg['mod']][0](args_d)
+        #except KeyboardInterrupt as e:
+        #    echo_error_msg('killed by user, {}'.format(e))
+        #    sys.exit(-1)
+        #except Exception as e:
+        #    echo_error_msg('{}'.format(e))
+        #    status = -1
 
         if status != 0: remove_glob(this_dem)
         if not os.path.exists(this_dem): continue
