@@ -1161,8 +1161,8 @@ def gdal_region2gt(region, inc):
     ysize = region[3] - region[2]
     xsize = region[1] - region[0]
     ## add one to sizes
-    xcount = int((xsize / inc)) + 1
-    ycount = int((ysize / inc)) + 1
+    xcount = int((xsize / inc) + 0.5)
+    ycount = int((ysize / inc) + 0.5)
     dst_gt = (region[0], inc, 0, region[3], 0, (inc * -1.))
     return(xcount, ycount, dst_gt)
 
@@ -1237,7 +1237,7 @@ def _geo2pixel(geo_x, geo_y, geoTransform):
         pixel_x = (geo_x - geoTransform[0]) / geoTransform[1]
         pixel_y = (geo_y - geoTransform[3]) / geoTransform[5]
     else: pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt(geoTransform))
-    return(int(pixel_x+.5), int(pixel_y+.5))
+    return(int(pixel_x), int(pixel_y))
 
 def _pixel2geo(pixel_x, pixel_y, geoTransform):
     '''convert a pixel location to geographic coordinates given geoTransform'''
@@ -1248,8 +1248,8 @@ def _pixel2geo(pixel_x, pixel_y, geoTransform):
 def _apply_gt(in_x, in_y, geoTransform):
     '''apply geotransform to in_x,in_y'''
     
-    out_x = geoTransform[0] + in_x * geoTransform[1] + in_y * geoTransform[2]
-    out_y = geoTransform[3] + in_x * geoTransform[4] + in_y * geoTransform[5]
+    out_x = geoTransform[0] + (in_x + 0.5) * geoTransform[1] + (in_y + 0.5) * geoTransform[2]
+    out_y = geoTransform[3] + (in_x + 0.5) * geoTransform[4] + (in_y + 0.5) * geoTransform[5]
     return(out_x, out_y)
 
 def _invert_gt(geoTransform):
