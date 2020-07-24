@@ -28,7 +28,7 @@ import threading
 import ogr
 import json
 
-import waffles
+from geomods import waffles
 
 try:
     import Queue as queue
@@ -114,7 +114,8 @@ class procs:
         self.xyz_dir = os.path.join(self.proc_dir, 'xyz')
                                     
         ## Initialize VDatum
-        self.this_vd = vdatum.vdatum()
+        #self.this_vd = vdatum.vdatum()
+        self.this_vd = waffles._vd_config
 
         ## make the output xyz directory
         if not os.path.exists(self.xyz_dir):
@@ -132,18 +133,16 @@ class procs:
         Process data to WGS84/NAVD88 XYZ and append
         to a DATALIST.'''
 
-        pb = utils._progress('processing local file: \033[1m{}\033[m...'.format(self.src_bn))
+        #pb = utils._progress('processing local file: \033[1m{}\033[m...'.format(self.src_bn))
+        waffles.echo_msg('processing local file: \033[1m{}\033[m...'.format(self.src_bn))
         if self.proc_mod in proc_infos.keys():
             #try:
             proc_infos[self.proc_mod][0](self, args)
             #except: self.status = -1
         else: self.status = -1
+        if self.status == 0: self.add_to_datalist()
 
-        if self.status == 0:
-            self.add_to_datalist()
-
-        pb.opm = 'processed local file: \033[1m{}\033[m.'.format(self.src_bn)
-        pb.end(self.status)
+        waffles.echo_msg('processed local file: \033[1m{}\033[m.'.format(self.src_bn))
 
     def _clean_zips(self, zip_files):
         '''remove all files in `zip_files`'''
@@ -192,6 +191,8 @@ class procs:
         for o_xyz in self.xyzs:
             if os.stat(o_xyz).st_size != 0:
                 dl_f = '{}.datalist'.format(os.path.abspath(self.src_dir).split('/')[-1])
+                with open(dl_f, 'a') as dl:
+                    dl.write('{}'.format(o_xyz))
                 s_datalist = datalists.datalist(os.path.join(self.xyz_dir, dl_f))
                 s_datalist._append_datafile(['{}'.format(os.path.basename(o_xyz)), 168, 1])
                 s_datalist._reset()
@@ -293,7 +294,7 @@ class procs:
                 for zf in zips:
                     if ext in zf:
                         src_ascii = os.path.join(self.proc_dir, zf)
-                        print src_ascii
+                        print(src_ascii)
                         break
         elif self.src_file.split('.')[-1] == 'gz':
             tmp_ascii = self.gunzip(self.src_file)

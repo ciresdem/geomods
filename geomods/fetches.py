@@ -37,7 +37,7 @@ import threading
 import numpy as np
 import ogr
 import gdal
-#import procs
+#from geomods import procs
 try:
     import Queue as queue
 except: import queue as queue
@@ -607,7 +607,7 @@ class nos:
     def run(self, datatype = None, update = False):
         '''Run the NOS fetching module.'''
         if update:
-            if update.lower() == 'false':
+            if str(update).lower() == 'false':
                 update = False
         
         self._want_update = update                
