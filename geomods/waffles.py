@@ -162,6 +162,25 @@ def path_exists_or_url(src_str):
     if src_str[:4] == 'http': return(True)
     return(False)
 
+def _clean_zips(self, zip_files):
+    '''remove all files in `zip_files`'''
+
+    ## files
+    for i in zip_files:
+        i_file = os.path.join(self.s_dir, self.s_t, i)
+        if os.path.isfile(i_file):
+            os.remove(i_file)
+            zip_files = [x for x in zip_files if x != i]
+            
+    ## dirs
+    if len(zip_files) > 0:
+        for i in zip_files:
+            i_file = os.path.join(self.s_dir, self.s_t, i)
+            if os.path.isdir(i_file):
+                try:
+                    os.removedirs(i_file)
+                except: pass
+
 ## ==============================================
 ## system cmd verification and configs.
 ## ==============================================
@@ -1224,11 +1243,32 @@ def gdal_region2geom(region):
     geom = ogr.CreateGeometryFromWkt(gdal_create_polygon(eg))
     return(geom)
 
-def gdal_region(src_ds):
+def gdal_region(src_ds, warp = None):
     '''return the extent of the src_fn gdal file.'''
     
     ds_config = gdal_gather_infos(src_ds)
-    return(gdal_gt2region(ds_config))
+    ds_region = gdal_gt2region(ds_config)
+    #if warp is not None:
+    src_srs = osr.SpatialReference()
+    src_srs.ImportFromWkt(ds_config['proj'])
+    src_srs.AutoIdentifyEPSG()
+    srs_auth = src_srs.GetAuthorityCode(None)
+    
+    if srs_auth is None or srs_auth == warp: warp = None
+
+    if warp is not None:
+        dst_srs = osr.SpatialReference()
+        dst_srs.ImportFromEPSG(int(warp))
+        dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+        dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
+
+        pointA = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(ds_region[0], ds_region[2]))
+        pointB = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(ds_region[1], ds_region[3]))
+        pointA.Transform(dst_trans)
+        pointB.Transform(dst_trans)
+        ds_region = [pointA.GetX(), pointB.GetX(), pointA.GetY(), pointB.GetY()]
+        
+    return(ds_region)
 
 def _geo2pixel(geo_x, geo_y, geoTransform):
     '''convert a geographic x,y value to a pixel location of geoTransform'''
@@ -1468,8 +1508,10 @@ def gdal_chunks(src_fn, n_chunk = 10):
     i_chunk = 0
     x_i_chunk = 0
     x_chunk = n_chunk
-    
-    src_ds = gdal.Open(src_fn)
+
+    try:
+        src_ds = gdal.Open(src_fn)
+    except: src_ds = None
     if src_ds is not None:
         ds_config = gdal_gather_infos(src_ds)
         band = src_ds.GetRasterBand(1)
@@ -1583,16 +1625,17 @@ def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = N
     
     band = src_ds.GetRasterBand(1)
     ds_config = gdal_gather_infos(src_ds)
-
     src_srs = osr.SpatialReference()
     src_srs.ImportFromWkt(ds_config['proj'])
-    srs_auth = src_srs.GetAttrValue('AUTHORITY',1)
-
+    src_srs.AutoIdentifyEPSG()
+    srs_auth = src_srs.GetAuthorityCode(None)
+    
     if srs_auth is None or srs_auth == warp: warp = None
     
     if warp is not None:
         dst_srs = osr.SpatialReference()
         dst_srs.ImportFromEPSG(int(warp))
+        dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
         dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
         
     gt = ds_config['geoT']
@@ -1623,20 +1666,20 @@ def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = N
             if '{:g}'.format(z) not in nodata:
                 yield(line)
                 
-def gdal_inf(src_ds):
+def gdal_inf(src_ds, warp = None):
     '''generate an info (.inf) file from a src_gdal file using gdal
 
     returns the region of src_ds'''
     
-    minmax = gdal_region(src_ds)
+    minmax = gdal_region(src_ds, warp)
     with open('{}.inf'.format(src_ds.GetDescription()), 'w') as inf:
         echo_msg('generating inf file for {}'.format(src_ds.GetDescription()))
         inf.write('{}\n'.format(' '.join([str(x) for x in minmax])))
     return(minmax)
                     
-def gdal_inf_entry(entry):
+def gdal_inf_entry(entry, warp = None):
     ds = gdal.Open(entry[0])
-    minmax = gdal_inf(ds)
+    minmax = gdal_inf(ds, warp)
     ds = None
     return(minmax)
 
@@ -1652,26 +1695,87 @@ def gdal_yield_entry(entry, region = None, verbose = False, epsg = None):
 def gdal_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, epsg = None):
     for xyz in gdal_yield_entry(entry, region, verbose, epsg):
         xyz_line(xyz, dst_port)
+
+
+def fetch_and_dump(entry = 'nos:datatype=nos', dst_port = sys.stdout, region = None, verbose = False):
+    from geomods import fetches
+
+    fetch_mod = entry[0].split(':')[0]
+    fetch_args = entry[0].split(':')[1:]
+    
+    fl = fetches.fetch_infos[fetch_mod][0](region_buffer(region, 5, pct = True), [], lambda: False)
+    args_d = args2dict(fetch_args)
+    r = fl.run(**args_d)
+
+    for df in r:
+        this_dt = df[2].lower()
+        print(this_dt)
+        if this_dt == 'tnm':
+            proc_mod = 'gdal'
+            proc_opts = [0, True, None]
+        elif  this_dt == 'grid_bag':
+            proc_mod = 'gdal'
+            proc_opts = [None, True, 'mllw']
+        elif this_dt == 'gmrt' or this_dt == 'raster' or this_dt == 'srtm':
+            proc_mod = 'gdal'
+            proc_opts = [None, None, None]
+        elif this_dt == 'geodas_xyz':
+            proc_mod = 'ascii'
+            proc_opts = [',', '2,1,3', 1, 0.000080642, 'mllw', True]
+        elif this_dt == 'lidar':
+            proc_mod = 'lidar'
+            proc_opts = [None, None]
+        elif this_dt == 'enc':
+            proc_mod = 'ogr'
+            proc_opts = ['SOUNDG', 'Depth', 'mllw']
+        elif this_dt == 'mb':
+            proc_mod = 'mb'
+            proc_opts = []
+        elif this_dt == 'ngs':
+            proc_mod = 'ngs'
+            proc_opts = []
+        else:
+            proc_mod = None
+            proc_opts = []
+
+        try:
+            fetches.fetch_file(df[0], df[1], callback = lambda: False)
+            fp = fetches.procs(df[1], proc_mod, [region], lambda: False)
+            fp.run(proc_opts, dst_port)
+            remove_glob(df[1])
+        except: pass
         
-def gdal_h_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
-    import fetches
-    fetches.fetch_file(entry[0], 'tmp.tif', callback = lambda: False)
-    gdal_dump_entry(['tmp.tif', 200, entry[2]])
-    remove_glob('tmp.tif')
+    #import shutil
+    #shutil.rmtree(proc_mod)
         
+def nos_ascii_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
+    from geomods import fetches
+
+    fetches.fetch_file(entry[0], os.path.basename(entry[0]), callback = lambda: False)
+    fp = fetches.procs(os.path.basename(entry[0]), 'ascii', [region], lambda: False)
+    fp.run([',', '2,1,3', 1, 0.000080642, 'mllw', True], dst_port)
+    remove_glob(os.path.basename(entry[0]))
+
+def nos_bag_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
+    from geomods import fetches
+    fetches.fetch_file(entry[0], os.path.basename(entry[0]), callback = lambda: False)
+    fp = fetches.procs(os.path.basename(entry[0]), 'gdal', [region], lambda: False)
+    fp.run([None, True, 'mllw'], dst_port)
+    remove_glob(os.path.basename(entry[0]))
+
+    
 ## ==============================================
 ## xyz processing (datalists fmt:168)
 ## ==============================================
 _xyz_config = {'delim':' ', 'xpos': 0, 'ypos': 1, 'zpos': 2}
 _known_delims = [',', ' ', '\t', '/', ':']
 
-def xyz_parse(src_xyz):
+def xyz_parse(src_xyz, this_delim = None):
     '''xyz file parsing generator
     `src_xyz` is a file object or list of xyz data.
 
     yields each xyz line as a list [x, y, z, ...]'''
     
-    this_delim = None
     for xyz in src_xyz:
         this_line = xyz.strip()
         if this_delim is None:
@@ -1731,7 +1835,7 @@ def xyz_line(line, dst_port = sys.stdout):
     `line` should be a list of xyz values [x, y, z, ...].'''
     
     l = '{}\n'.format(_xyz_config['delim'].join([str(x) for x in line]))
-    if dst_port != sys.stdout: l = l.encode('utf-8')
+    #if dst_port != sys.stdout: l = l.encode('utf-8')
     dst_port.write(l)
 
 def xyz_in_region_p(src_xy, src_region):
@@ -1795,7 +1899,7 @@ def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False)
 ## entry processing fmt:*
 ## ==============================================
 _known_dl_delims = [' ']
-_known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'csv', 'dat'], 200: ['tif', 'img', 'grd', 'nc', 'vrt']}
+_known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'csv', 'dat', 'ascii'], 200: ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'], 400: ['fetch']}
 _dl_inf_h = {
     -1: lambda e: datalist_inf_entry(e),
     168: lambda e: xyz_inf_entry(e),
@@ -1805,7 +1909,7 @@ _dl_pass_h = lambda e: path_exists_or_url(e[0])
 
 def datalist_inf(dl, inf_file = True):
     '''return the region of the datalist and generate
-    an associate `.inf` file if `inf_file` is True.'''
+    an associated `.inf` file if `inf_file` is True.'''
     
     out_regions = []
     minmax = None
@@ -1836,7 +1940,7 @@ def datalist_inf(dl, inf_file = True):
 def datalist_inf_entry(e):
     '''write an inf file for datalist entry e
     
-    returna the region [xmin, xmax, ymin, ymax]'''
+    return the region [xmin, xmax, ymin, ymax]'''
     
     return(datalist_inf(e[0]))
 
@@ -1844,7 +1948,7 @@ def datalist_append_entry(entry, datalist):
     '''append entry to datalist file `datalist`'''
     
     with open(datalist, 'a') as outfile:
-        outfile.write('{}\n'.format(' '.join([x.decode('utf-8') for x in entry])))
+        outfile.write('{}\n'.format(' '.join([str(x) for x in entry])))
 
 def archive_entry(entry, dirname = 'archive', region = None, inc = 1, weight = None, verbose = None):
     '''archive a datalist entry.
@@ -1918,6 +2022,12 @@ def datalist_dump(wg, dst_port = sys.stdout, region = None, verbose = False):
                 gdal_dump_entry(this_entry, region = region, dst_port = dst_port, epsg = wg['epsg'])
             elif this_entry[1] == 236:
                 gdal_h_dump_entry(this_entry, region = region, dst_port = dst_port)
+            elif this_entry[1] == 400: # fetch
+                fetch_and_dump(this_entry, region = region, dst_port = dst_port)
+            elif this_entry[1] == 401: # nos ascii fetch
+                nos_ascii_dump_entry(this_entry, region = region, dst_port = dst_port)
+            elif this_entry[1] == 402: # nos bag fetch
+                nos_bag_dump_entry(this_entry, region = region, dst_port = dst_port)
         except Exception as e: echo_error_msg('could not parse {}, {}'.format(this_entry[0], e))
     
 def datalist_echo(entry):
@@ -1940,11 +2050,14 @@ def datalist_master(dls, master = '.master.datalist'):
     with open(master, 'w') as md:        
         for dl in dls:
             #if os.path.exists(dl):
-            if len(dl.split(':')) == 1 or dl.split(':')[0] == 'https':
-                for key in _known_datalist_fmts.keys():
-                    #if dl.split(':')[0].split('.')[-1] in _known_datalist_fmts[key]:
-                    if dl.split('.')[-1] in _known_datalist_fmts[key]:
-                        md.write('{} {} 1\n'.format(dl, key))
+            #if len(dl.split(':')) == 1 or dl.split(':')[0] == 'https':
+            for key in _known_datalist_fmts.keys():
+                #if dl.split(':')[0].split('.')[-1] in _known_datalist_fmts[key]:
+                se = dl.split('.')
+                if len(se) == 1: see = 'fetch'
+                else: see = se[-1]
+                if see in _known_datalist_fmts[key]:
+                    md.write('{} {} 1\n'.format(dl, key))
     if os.stat(master).st_size == 0:
         remove_glob(master)
         echo_error_msg('bad datalist/entry, {}'.format(dls))
@@ -1965,7 +2078,10 @@ def entry2py(dle):
         return(None)
     if len(entry) < 2:
         for key in _known_datalist_fmts.keys():
-            if entry[0].split('.')[-1] in _known_datalist_fmts[key]:
+            se = entry[0].split('.')
+            if len(se) == 1: see = 'fetch'
+            else: see = se[-1]
+            if see in _known_datalist_fmts[key]:
                 entry.append(key)
     if len(entry) < 3: entry.append(1)
     return(entry)
@@ -2228,6 +2344,7 @@ def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, use_dat
     if wg['gc']['GMT'] is None:
         echo_error_msg('GMT must be installed to use the MBGRID module')
         return(None, -1)
+
     if use_datalists:
         datalist_archive(wg, arch_dir = '.mb_tmp_datalist', verbose = True)
         wg['datalist'] = datalist_master(['.mb_tmp_datalist/{}.datalist'.format(wg['name'])])
@@ -2464,9 +2581,10 @@ def waffles_run(wg = _waffles_grid_info):
         sys.exit(-1)
         
     args_d = {}
-    for arg in wg['mod_args']:
-        p_arg = arg.split('=')
-        args_d[p_arg[0]] = p_arg[1]
+    args_d = args2dict(wg['mod_args'])
+    #for arg in wg['mod_args']:
+    #    p_arg = arg.split('=')
+    #    args_d[p_arg[0]] = p_arg[1]
         
     if wg['verbose']:
         #echo_msg(json.dumps(wg, indent = 4, sort_keys = True))
