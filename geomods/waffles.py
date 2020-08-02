@@ -76,6 +76,7 @@ import glob
 import math
 import subprocess
 import copy
+import shutil
 ## ==============================================
 ## import gdal, etc.
 ## ==============================================
@@ -1248,6 +1249,8 @@ def gdal_region(src_ds, warp = None):
     
     ds_config = gdal_gather_infos(src_ds)
     ds_region = gdal_gt2region(ds_config)
+    print(float(ds_config['geoT'][1]))
+    print(ds_config)
     #if warp is not None:
     src_srs = osr.SpatialReference()
     src_srs.ImportFromWkt(ds_config['proj'])
@@ -1538,7 +1541,7 @@ def gdal_chunks(src_fn, n_chunk = 10):
                 
                 srcwin = (this_x_origin, this_y_origin, this_x_size, this_y_size)
                 this_geo_x_origin, this_geo_y_origin = _pixel2geo(this_x_origin, this_y_origin, gt)
-                dst_gt = [this_geo_x_origin, gt[1], 0.0, this_geo_y_origin, 0.0, gt[5]]
+                dst_gt = [this_geo_x_origin, float(gt[1]), 0.0, this_geo_y_origin, 0.0, float(gt[5])]
                 
                 band_data = band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
                 if not np.all(band_data == band_data[0,:]):
@@ -1695,8 +1698,8 @@ def gdal_yield_entry(entry, region = None, verbose = False, epsg = None):
 def gdal_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, epsg = None):
     for xyz in gdal_yield_entry(entry, region, verbose, epsg):
         xyz_line(xyz, dst_port)
-
-
+        
+        
 def fetch_and_dump(entry = 'nos:datatype=nos', dst_port = sys.stdout, region = None, verbose = False):
     from geomods import fetches
 
@@ -1704,49 +1707,17 @@ def fetch_and_dump(entry = 'nos:datatype=nos', dst_port = sys.stdout, region = N
     fetch_args = entry[0].split(':')[1:]
     
     fl = fetches.fetch_infos[fetch_mod][0](region_buffer(region, 5, pct = True), [], lambda: False)
-    args_d = args2dict(fetch_args)
+    args_d = args2dict(fetch_args, {})
     r = fl.run(**args_d)
 
     for df in r:
-        this_dt = df[2].lower()
-        print(this_dt)
-        if this_dt == 'tnm':
-            proc_mod = 'gdal'
-            proc_opts = [0, True, None]
-        elif  this_dt == 'grid_bag':
-            proc_mod = 'gdal'
-            proc_opts = [None, True, 'mllw']
-        elif this_dt == 'gmrt' or this_dt == 'raster' or this_dt == 'srtm':
-            proc_mod = 'gdal'
-            proc_opts = [None, None, None]
-        elif this_dt == 'geodas_xyz':
-            proc_mod = 'ascii'
-            proc_opts = [',', '2,1,3', 1, 0.000080642, 'mllw', True]
-        elif this_dt == 'lidar':
-            proc_mod = 'lidar'
-            proc_opts = [None, None]
-        elif this_dt == 'enc':
-            proc_mod = 'ogr'
-            proc_opts = ['SOUNDG', 'Depth', 'mllw']
-        elif this_dt == 'mb':
-            proc_mod = 'mb'
-            proc_opts = []
-        elif this_dt == 'ngs':
-            proc_mod = 'ngs'
-            proc_opts = []
-        else:
-            proc_mod = None
-            proc_opts = []
-
-        try:
-            fetches.fetch_file(df[0], df[1], callback = lambda: False)
-            fp = fetches.procs(df[1], proc_mod, [region], lambda: False)
-            fp.run(proc_opts, dst_port)
-            remove_glob(df[1])
-        except: pass
-        
-    #import shutil
-    #shutil.rmtree(proc_mod)
+        proc_mod, proc_opts = fetches.fetch_entry2procmod(df[2].lower())
+        #try:
+        fetches.fetch_file(df[0], df[1], callback = lambda: False)
+        fp = fetches.procs(df[1], proc_mod, [region], lambda: False)
+        fp.run(proc_opts, dst_port)
+        remove_glob(df[1])
+        #except: pass
         
 def nos_ascii_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
     from geomods import fetches
@@ -1797,13 +1768,13 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False):
     '''block the src_xyz data to the mean block value
 
     yields the xyz value for each block with data'''
-
+    print(region)
     xcount, ycount, dst_gt = gdal_region2gt(region, inc)
     sumArray = np.zeros((ycount, xcount))
     gdt = gdal.GDT_Float32
     ptArray = np.zeros((ycount, xcount))
     if weights: wtArray = np.zeros((ycount, xcount))
-    echo_msg('blocking data')
+    echo_msg('blocking data to {}/{} grid'.format(ycount, xcount))
     for this_xyz in src_xyz:
         x = this_xyz[0]
         y = this_xyz[1]
@@ -1835,7 +1806,7 @@ def xyz_line(line, dst_port = sys.stdout):
     `line` should be a list of xyz values [x, y, z, ...].'''
     
     l = '{}\n'.format(_xyz_config['delim'].join([str(x) for x in line]))
-    #if dst_port != sys.stdout: l = l.encode('utf-8')
+    if dst_port != sys.stdout: l = l.encode('utf-8')
     dst_port.write(l)
 
 def xyz_in_region_p(src_xy, src_region):
@@ -2015,20 +1986,20 @@ def datalist_dump(wg, dst_port = sys.stdout, region = None, verbose = False):
         dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     else: dl_p = _dl_pass_h
     for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p, verbose = verbose):
-        try:
-            if this_entry[1] == 168:
-                xyz_dump_entry(this_entry, region = region, dst_port = dst_port)
-            elif this_entry[1] == 200:
-                gdal_dump_entry(this_entry, region = region, dst_port = dst_port, epsg = wg['epsg'])
-            elif this_entry[1] == 236:
-                gdal_h_dump_entry(this_entry, region = region, dst_port = dst_port)
-            elif this_entry[1] == 400: # fetch
-                fetch_and_dump(this_entry, region = region, dst_port = dst_port)
-            elif this_entry[1] == 401: # nos ascii fetch
-                nos_ascii_dump_entry(this_entry, region = region, dst_port = dst_port)
-            elif this_entry[1] == 402: # nos bag fetch
-                nos_bag_dump_entry(this_entry, region = region, dst_port = dst_port)
-        except Exception as e: echo_error_msg('could not parse {}, {}'.format(this_entry[0], e))
+        #try:
+        if this_entry[1] == 168:
+            xyz_dump_entry(this_entry, region = region, dst_port = dst_port)
+        elif this_entry[1] == 200:
+            gdal_dump_entry(this_entry, region = region, dst_port = dst_port, epsg = wg['epsg'])
+        elif this_entry[1] == 236:
+            gdal_h_dump_entry(this_entry, region = region, dst_port = dst_port)
+        elif this_entry[1] == 400: # fetch
+            fetch_and_dump(this_entry, region = region, dst_port = dst_port)
+        elif this_entry[1] == 401: # nos ascii fetch
+            nos_ascii_dump_entry(this_entry, region = region, dst_port = dst_port)
+        elif this_entry[1] == 402: # nos bag fetch
+            nos_bag_dump_entry(this_entry, region = region, dst_port = dst_port)
+        #except Exception as e: echo_error_msg('could not parse {}, {}'.format(this_entry[0], e))
     
 def datalist_echo(entry):
     '''echo datalist entry to stderr'''
@@ -2337,7 +2308,6 @@ def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, use_dat
     if `use_datalists` is True, will parse the datalist through
     waffles instead of mbsystem.'''
     
-    import shutil
     if wg['gc']['MBGRID'] is None:
         echo_error_msg('MBSystem must be installed to use the MBGRID module')
         return(None, -1)

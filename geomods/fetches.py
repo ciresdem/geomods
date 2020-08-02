@@ -35,16 +35,16 @@ import gzip
 import csv
 import json
 import threading
+import shutil
 import numpy as np
 import ogr
 import gdal
-#from geomods import procs
-from geomods import waffles
 try:
     import Queue as queue
 except: import queue as queue
+from geomods import waffles
 
-_version = '0.3.3'
+_version = '0.4.1'
 
 ## =============================================================================
 ## functions from waffles:
@@ -132,10 +132,6 @@ echo_msg = lambda m: echo_msg2(m, prefix = os.path.basename(sys.argv[0]))
 echo_error_msg = lambda m: echo_error_msg2(m, prefix = os.path.basename(sys.argv[0]))
 
 ## =============================================================================
-## Fetched data processing
-## =============================================================================
-
-## =============================================================================
 ##
 ## Data Processing Classes and functions.
 ## 
@@ -153,21 +149,21 @@ def _proc_queue(q):
     '''process queue `q` of fetched data'''
 
     while True:
+        #for work in iter(q.get, None):
         work = q.get()
         if not work[0][-1]():
             proc_args = tuple(work[0])
             proc_mod_args = tuple(work[1])
             if proc_args[1] is not None:
-                #print proc_args
                 proc_d = procs(*proc_args)
                 #try:
                 proc_d.run(proc_mod_args)
                 #except:
-                #   sys.stderr.write('\x1b[2K\r')
-                #  sys.stderr.write('procs: error, unknown error processing {}\n'.format(work[0][0]))
-                # sys.stderr.flush()
-       
+                #    sys.stderr.write('\x1b[2K\r')
+                #    sys.stderr.write('procs: error, unknown error processing {}\n'.format(work[0][0]))
+                #    sys.stderr.flush()
         q.task_done()
+        #print(q)
 
 class procs_from_queue(threading.Thread):
     
@@ -196,8 +192,7 @@ class procs:
 
     def __init__(self, src_file, proc_mod, regions = [], callback = lambda: False):
 
-        if callback is None:
-            self.stop = lambda: False
+        if callback is None: self.stop = lambda: False
         else: self.stop = callback
         self.status = 0
         self.xyzs = []
@@ -211,8 +206,6 @@ class procs:
         self.dst_regions = regions
         self.proc_dir = os.path.join(self.src_dir, self.proc_mod)
         self.xyz_dir = os.path.join(self.proc_dir, 'xyz')
-                                    
-        ## Initialize VDatum
         self.this_vd = waffles._vd_config
 
         ## make the output xyz directory
@@ -235,42 +228,54 @@ class procs:
         waffles.echo_msg('processing local file: \033[1m{}\033[m...'.format(self.src_bn))
         if self.proc_mod in proc_infos.keys():
             #try:
+            #pass
             proc_infos[self.proc_mod][0](self, args)
-            #except: self.status = -1
+            #except Exception as e:
+            #    echo_error_msg(e)
+            #    self.status = -1
         else: self.status = -1
         if self.status == 0:
             if dst_port is None:
                 self.add_to_datalist()
-            #else:
-                #import shutil
-                #shutil.rmtree(self.proc_dir)
+            else:
+                try:
+                    waffles.remove_glob(self.proc_dir + '/*')
+                    waffles.remove_glob(self.proc_dir + '/xyz/*')
+                    waffles.remove_glob(self.proc_dir + '/xyz/result/*')
+                    os.removedirs(self.proc_dir + '/xyz/result')
+                except: pass
         waffles.echo_msg('processed local file: \033[1m{}\033[m.'.format(self.src_bn))
 
     def unzip(self, zip_file):
-        '''unzip `zip_file` and return a list of extracted file names.'''
+        '''unzip (extract) `zip_file` and return a list of extracted file names.'''
 
         zip_ref = zipfile.ZipFile(zip_file)
         zip_files = zip_ref.namelist()
         zip_ref.extractall(self.proc_dir)
         zip_ref.close()
-
         return(zip_files)
 
     def gunzip(self, gz_file):
         '''gunzip `gz_file` and return the extracted file name.'''
-        
-        gz_split = gz_file.split('.')[:-1]
-        guz_file = '{}.{}'.format(gz_split[0], gz_split[1])
-        with gzip.open(self.src_file, 'rb') as in_gz, \
-             open(guz_file, 'wb') as f:
-            while True:
-                block = in_gz.read(65536)
-                if not block:
-                    break
-                else: f.write(block)
+
+        if os.path.exists(gz_file):
+            gz_split = gz_file.split('.')[:-1]
+            guz_file = '{}.{}'.format(gz_split[0], gz_split[1])
+            with gzip.open(self.src_file, 'rb') as in_gz, \
+                 open(guz_file, 'wb') as f:
+                while True:
+                    block = in_gz.read(65536)
+                    if not block:
+                        break
+                    else: f.write(block)
+        else:
+            echo_error_msg('{} does not exist'.format(gz_file))
+            guz_file = None
         return(guz_file)
 
     def procs_unzip(self, exts):
+        '''unzip/gunzip self.src_file and return the file associated with `exts`'''
+        
         if self.src_file.split('.')[-1] == 'zip':
             zips = self.unzip(self.src_file)
             for ext in exts:
@@ -280,8 +285,10 @@ class procs:
                         break
         elif self.src_file.split('.')[-1] == 'gz':
             tmp_proc = self.gunzip(self.src_file)
-            src_proc = os.path.join(self.proc_dir, os.path.basename(tmp_proc))
-            os.rename(tmp_proc, src_proc)
+            if tmp_proc is not None:
+                src_proc = os.path.join(self.proc_dir, os.path.basename(tmp_proc))
+                os.rename(tmp_proc, src_proc)
+            else: src_proc = None
         else: src_proc = self.src_file
         return(src_proc)
     
@@ -316,10 +323,9 @@ class procs:
         
         if os.stat(src_xyz).st_size != 0:
             data_region = self.xyz_region(src_xyz)
+            print(self.dst_regions)
             for rn, this_region in enumerate(self.dst_regions):
                 if waffles.regions_intersect_ogr_p(this_region, data_region):
-                #if self.staus == 0:
- 
                     tmp_xyz = os.path.join(self.xyz_dir, '{}_tmp.xyz'.format(os.path.basename(src_xyz).split('.')[0]))
                     dst_xyz = os.path.join(self.xyz_dir, '{}_{}.xyz'.format(os.path.basename(src_xyz).split('.')[0], region_format(this_region, 'fn')))
 
@@ -347,16 +353,14 @@ class procs:
                     elif os.stat(dst_xyz).st_size == 0:
                         self.status = -1
                         os.remove(dst_xyz)
-                        #else: self.xyzs.append(dst_xyz)
                     else:
-                        waffles.xyz_dump_entry([dst_xyz, 168, 1], self.dst_port)
+                        if self.dst_port is None: self.xyzs.append(dst_xyz)
+                        else: waffles.xyz_dump_entry([dst_xyz, 168, 1], self.dst_port)
 
     def proc_ngs(self):
         '''process ngs monuments'''
         
-        with open(self.src_file, 'r') as json_file:
-            r = json.load(json_file)
-        
+        with open(self.src_file, 'r') as json_file: r = json.load(json_file)
         if len(r) > 0:
             for rn, this_region in enumerate(self.dst_regions):
                 outfile = open(os.path.join(self.src_dir, 'ngs_results_{}.csv'.format(this_region.fn)), 'w')
@@ -369,7 +373,6 @@ class procs:
         '''process las/laz lidar data to XYZ.'''
 
         out, self.status = waffles.run_cmd('las2txt -verbose -parse xyz -keep_class {} -i {}'.format(classes, self.src_file), verbose = True)
-
         if self.status == 0:
             o_fn_txt = os.path.join(self.src_dir, '{}.txt'.format(self.src_file.split('.')[0]))
             self.proc_xyz(o_fn_txt, block, i_vert)
@@ -377,32 +380,32 @@ class procs:
             
     def proc_ascii(self, delim = ' ', xyz_cols = '0,1,2', skip = 0, block = None, i_vert = None, depth = False):
         '''process ascii data'''
-        
-        src_ascii = self.procs_unzip(self.ascii_exts)
-        
-        xyz_loc = [int(x) for x in xyz_cols.split(',')]#map(int, xyz_cols.split(','))
-        tmp_ascii = os.path.join(self.proc_dir, '{}_tmp.ascii'.format(os.path.basename(src_ascii).split('.')[0]))
-        
-        with open(src_ascii, 'r') as in_ascii,\
-             open(tmp_ascii, 'w') as out_ascii:
-            l_n = 1
-            for line in in_ascii:
-                if l_n > int(skip):
-                    row = line.rstrip().split(delim)
-                    if len(row) > 2:
-                        out_row = '{} {} {}\n'.format(row[xyz_loc[0]], row[xyz_loc[1]], row[xyz_loc[2]] if not depth else str(float(row[xyz_loc[2]]) * -1))
-                        out_ascii.write(out_row)
-                l_n += 1
 
-        self.proc_xyz(tmp_ascii, block, i_vert)
-        os.remove(tmp_ascii)
+        src_ascii = self.procs_unzip(self.ascii_exts)
+        if src_ascii is not None:
+            xyz_loc = [int(x) for x in xyz_cols.split(',')]#map(int, xyz_cols.split(','))
+            tmp_ascii = os.path.join(self.proc_dir, '{}_tmp.ascii'.format(os.path.basename(src_ascii).split('.')[0]))
+
+            with open(src_ascii, 'r') as in_ascii,\
+                 open(tmp_ascii, 'w') as out_ascii:
+
+                l_n = 1
+                for line in in_ascii:
+                    if l_n > int(skip):
+                        row = line.rstrip().split(delim)
+                        if len(row) > 2:
+                            out_row = '{} {} {}\n'.format(row[xyz_loc[0]], row[xyz_loc[1]], row[xyz_loc[2]] if not depth else str(float(row[xyz_loc[2]]) * -1))
+                            out_ascii.write(out_row)
+                    l_n += 1
+
+            self.proc_xyz(tmp_ascii, block, i_vert)
+            os.remove(tmp_ascii)
 
     def proc_mb(self, region = None):
         '''process mb data'''
 
         ## maybe grid instead/...
         ## mblist to xyz
-        #print self.dst_regions[0].gmt
         src_xyz = os.path.basename(self.src_file).split('.')[0] + '.xyz'
         mbl_cmd = 'mblist -MX20 -OXYZ -I{}  > {}'.format(self.src_file, src_xyz)
         out, self.status = waffles.run_cmd(mbl_cmd, verbose = True)
@@ -439,32 +442,65 @@ class procs:
     def proc_gdal(self, split = None, block = None, i_vert = None):
         '''process gdal grid data to XYZ.'''
         
-        src_gdal = self.procs_unzip(self.gdal_exts)        
-        out_chunks = waffles.gdal_chunks(src_gdal, 500)
-        if out_chunks is None: out_chunks = []
-        for chunk in out_chunks:
-            if not self.stop():
-                if split is not None:
-                    split_chunk = waffles.gdal_split(chunk, int(split))
-                    chunk_gdal = split_chunk[0]
-                else: chunk_gdal = chunk
+        src_gdal = self.procs_unzip(self.gdal_exts)
+        if src_gdal is not None:
+            out_chunks = waffles.gdal_chunks(src_gdal, 200)
+            if out_chunks is None: out_chunks = []
+            for chunk in out_chunks:
+                if not self.stop():
+                    if split is not None:
+                        split_chunk = waffles.gdal_split(chunk, int(split))
+                        chunk_gdal = split_chunk[0]
+                    else: chunk_gdal = chunk
 
-                chunk_ds = gdal.Open(chunk_gdal)
-                #chunk_region = waffles.gdal_region(chunk_ds, warp = 4326)
-                tmp_xyz = os.path.join(self.xyz_dir, '{}.tmp'.format(os.path.basename(chunk_gdal).split('.')[0]))
-                with open(tmp_xyz, 'wb') as cx:
-                    #for xyz in waffles.xyz_block(waffles.gdal_parse(chunk_ds, warp = 4326), chunk_region, 0.000080642):
-                    for xyz in waffles.gdal_parse(chunk_ds, warp = 4326):
-                        waffles.xyz_line(xyz, cx)
-                chunk_ds = None
-                
-                self.proc_xyz(tmp_xyz, block = None, i_vert = i_vert)
+                    chunk_ds = gdal.Open(chunk_gdal)
+                    chunk_region = waffles.gdal_region(chunk_ds, warp = 4326)
+                    print(chunk_region)
+                    if waffles.regions_intersect_ogr_p(chunk_region, self.dst_regions[0]):
+                        tmp_xyz = os.path.join(self.xyz_dir, '{}.tmp'.format(os.path.basename(chunk_gdal).split('.')[0]))
+                        with open(tmp_xyz, 'wb') as cx:
+                            for xyz in waffles.xyz_block(waffles.gdal_parse(chunk_ds, warp = 4326), chunk_region, 0.000080642):
+                                #for xyz in waffles.gdal_parse(chunk_ds, warp = 4326):
+                                waffles.xyz_line(xyz, cx)
+                        chunk_ds = None
+                        self.proc_xyz(tmp_xyz, block = None, i_vert = i_vert)
+                        os.remove(tmp_xyz)
+                    chunk_ds = None
+                    os.remove(chunk)
+                    if split is not None:
+                        os.remove(split_chunk[0])
+                        os.remove(split_chunk[1])
 
-                os.remove(tmp_xyz)
-                os.remove(chunk)
-                if split is not None:
-                    os.remove(split_chunk[0])
-                    os.remove(split_chunk[1])
+def fetch_entry2procmod(this_dt):
+    this_dt = this_dt.lower()
+    if this_dt == 'tnm':
+        proc_mod = 'gdal'
+        proc_opts = [0, True, None]
+    elif  this_dt == 'grid_bag':
+        proc_mod = 'gdal'
+        proc_opts = [None, True, 'mllw']
+    elif this_dt == 'gmrt' or this_dt == 'raster' or this_dt == 'srtm':
+        proc_mod = 'gdal'
+        proc_opts = [None, None, None]
+    elif this_dt == 'geodas_xyz':
+        proc_mod = 'ascii'
+        proc_opts = [',', '2,1,3', 1, 0.000080642, 'mllw', True]
+    elif this_dt == 'lidar':
+        proc_mod = 'lidar'
+        proc_opts = [None, None]
+    elif this_dt == 'enc':
+        proc_mod = 'ogr'
+        proc_opts = ['SOUNDG', 'Depth', 'mllw']
+    elif this_dt == 'mb':
+        proc_mod = 'mb'
+        proc_opts = []
+    elif this_dt == 'ngs':
+        proc_mod = 'ngs'
+        proc_opts = []
+    else:
+        proc_mod = None
+        proc_opts = []
+    return(proc_mod, proc_opts)
 
 ## =============================================================================
 ##
@@ -481,53 +517,23 @@ namespaces = {
     'gml': 'http://www.isotc211.org/2005/gml',
 }
 
-def fetch_queue(q, p = None):
+def fetch_queue(q, p = False):
     '''fetch queue `q` of fetch results'''
     while True:
         fetch_args = q.get()
         this_region = fetch_args[2]
         this_dt = fetch_args[4].lower()
         fetch_args[2] = None
+        print(fetch_args)
 
         if not fetch_args[3]():
             if fetch_args[0].split(':')[0] == 'ftp':
                 fetch_ftp_file(*tuple(fetch_args))
             else: fetch_file(*tuple(fetch_args))
-            
-            ## ==============================================
-            ## initiate the processing module if desired
-            ## ==============================================
-            if p is not None:
-                if this_dt == 'tnm':
-                    proc_mod = 'gdal'
-                    proc_opts = [0, True, None]
-                elif  this_dt == 'grid_bag':
-                    proc_mod = 'gdal'
-                    proc_opts = [None, True, 'mllw']
-                elif this_dt == 'gmrt' or this_dt == 'raster' or this_dt == 'srtm':
-                    proc_mod = 'gdal'
-                    proc_opts = [None, None, None]
-                elif this_dt == 'geodas_xyz':
-                    proc_mod = 'ascii'
-                    proc_opts = [',', '2,1,3', 1, 0.000080642, 'mllw', True]
-                elif this_dt == 'lidar':
-                    proc_mod = 'lidar'
-                    proc_opts = [None, None]
-                elif this_dt == 'enc':
-                    proc_mod = 'ogr'
-                    proc_opts = ['SOUNDG', 'Depth', 'mllw']
-                elif this_dt == 'mb':
-                    proc_mod = 'mb'
-                    proc_opts = []
-                elif this_dt == 'ngs':
-                    proc_mod = 'ngs'
-                    proc_opts = []
-                else:
-                    proc_mod = None
-                    proc_opts = []
-                
-                if os.path.exists(fetch_args[1]):
-                    p.put([[fetch_args[1], proc_mod, [this_region], fetch_args[3]], proc_opts])
+            if p:
+                proc_mod, proc_opts = fetch_entry2procmod(this_dt)
+                fp = procs(fetch_args[1], proc_mod, [this_region], lambda: False)
+                fp.run(proc_opts, None)
         q.task_done()
 
 def fetch_ftp_file(src_url, dst_fn, params = None, callback = None, datatype = None):
@@ -620,26 +626,17 @@ class fetch_results(threading.Thread):
         self.results = results
         self.region = region
         self._outdir = out_dir
-        self.want_proc = want_proc
         self.stop_threads = callback
+        self.want_proc = want_proc
         
     def run(self):
-        if self.want_proc:
-            proc_q = queue.Queue()
-            for _ in range(3):
-                p = threading.Thread(target = _proc_queue, args = (proc_q,))
-                p.daemon = True
-                p.start()
-        else: proc_q = None
-
         for _ in range(3):
-            t = threading.Thread(target = fetch_queue, args = (self.fetch_q, proc_q))
+            t = threading.Thread(target = fetch_queue, args = (self.fetch_q, self.want_proc))
             t.daemon = True
             t.start()
 
         [self.fetch_q.put([row[0], os.path.join(self._outdir, row[1]), self.region, self.stop_threads, row[2]]) for row in self.results]
         self.fetch_q.join()
-        if self.want_proc: proc_q.join()
     
 ## =============================================================================
 ##
@@ -1667,15 +1664,18 @@ def main():
                     print(result[0])
             else:
                 fr = fetch_results(r, this_region, fl._outdir, want_proc, lambda: stop_threads)
+                fr.daemon = True
                 try:
                     fr.start()
                     while True:
-                        time.sleep(5)
-                        sys.stderr.write('.')
+                        time.sleep(2)
+                        sys.stderr.write('\x1b[2K\r')
+                        sys.stderr.write('fetches: [{}/{}]'.format(len(r) - fr.fetch_q.qsize(), len(r)))
+                        sys.stderr.flush()
                         if not fr.is_alive():
                             break
                 except (KeyboardInterrupt, SystemExit):
-                    echo_error_msg('user breakage')
+                    echo_error_msg('user breakage...please wait for clean kill, ctl-c to force.')
                     fl._status = -1
                     stop_threads = True
                 fr.join()
