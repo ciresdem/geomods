@@ -850,7 +850,12 @@ def gdal_gather_infos(src_ds):
         'ndv': src_ds.GetRasterBand(1).GetNoDataValue(),
         'fmt': src_ds.GetDriver().ShortName,
     }
+    print(ds_config)e
     if ds_config['ndv'] is None: ds_config['ndv'] = -9999
+    if ds_config['geoT'][1] == 0:
+        print(ds_config['geoT'][0] / ds_config['nx'])
+    if ds_config['geoT'][5] == 0:
+        print(ds_config['geoT'][3] / ds_config['ny'])
     return(ds_config)
 
 def gdal_set_infos(nx, ny, nb, geoT, proj, dt, ndv, fmt):
@@ -1249,9 +1254,6 @@ def gdal_region(src_ds, warp = None):
     
     ds_config = gdal_gather_infos(src_ds)
     ds_region = gdal_gt2region(ds_config)
-    print(float(ds_config['geoT'][1]))
-    print(ds_config)
-    #if warp is not None:
     src_srs = osr.SpatialReference()
     src_srs.ImportFromWkt(ds_config['proj'])
     src_srs.AutoIdentifyEPSG()
