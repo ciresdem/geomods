@@ -86,10 +86,12 @@ import gdal
 import ogr
 import osr
 
+from geomods import fetches
+
 ## ==============================================
 ## General utility functions - utils.py
 ## ==============================================
-_version = '0.5.3'
+_version = '0.5.4'
 
 def inc2str_inc(inc):
     '''convert a WGS84 geographic increment to a str_inc (e.g. 0.0000925 ==> `13`)
@@ -163,24 +165,68 @@ def path_exists_or_url(src_str):
     if src_str[:4] == 'http': return(True)
     return(False)
 
-def _clean_zips(self, zip_files):
-    '''remove all files in `zip_files`'''
+def _clean_zips(zip_files):
+    '''remove all files\directories in `zip_files`'''
 
-    ## files
     for i in zip_files:
-        i_file = os.path.join(self.s_dir, self.s_t, i)
-        if os.path.isfile(i_file):
-            os.remove(i_file)
+        if os.path.isfile(i):
+            os.remove(i)
             zip_files = [x for x in zip_files if x != i]
-            
-    ## dirs
     if len(zip_files) > 0:
         for i in zip_files:
-            i_file = os.path.join(self.s_dir, self.s_t, i)
-            if os.path.isdir(i_file):
+            if os.path.isdir(i):
                 try:
-                    os.removedirs(i_file)
+                    os.removedirs(i)
                 except: pass
+    return(0)
+
+def unzip(zip_file):
+    '''unzip (extract) `zip_file` and return a list of extracted file names.'''
+    import zipfile
+    zip_ref = zipfile.ZipFile(zip_file)
+    zip_files = zip_ref.namelist()
+    zip_ref.extractall()
+    zip_ref.close()
+    return(zip_files)
+
+def gunzip(gz_file):
+    '''gunzip `gz_file` and return the extracted file name.'''
+    import gzip
+    if os.path.exists(gz_file):
+        gz_split = gz_file.split('.')[:-1]
+        guz_file = '{}.{}'.format(gz_split[0], gz_split[1])
+        with gzip.open(gz_file, 'rb') as in_gz, \
+             open(guz_file, 'w') as f:
+            while True:
+                block = in_gz.read(65536)
+                if not block:
+                    break
+                else: f.write(block)
+    else:
+        echo_error_msg('{} does not exist'.format(gz_file))
+        guz_file = None
+    return(guz_file)
+
+def procs_unzip(src_file, exts):
+    '''unzip/gunzip self.src_file and return the file associated with `exts`'''
+
+    zips = []
+    if src_file.split('.')[-1] == 'zip':
+        zips = unzip(src_file)
+        for ext in exts:
+            for zf in zips:
+                if ext in zf:
+                    src_proc = zf
+                    break
+                #else: remove_glob(zf)
+    elif src_file.split('.')[-1] == 'gz':
+        tmp_proc = gunzip(src_file)
+        if tmp_proc is not None:
+            src_proc = os.path.basename(tmp_proc)
+            os.rename(tmp_proc, src_proc)
+        else: src_proc = None
+    else: src_proc = src_file
+    return([src_proc, zips])
 
 ## ==============================================
 ## system cmd verification and configs.
@@ -462,6 +508,21 @@ def regions_sort(trainers):
         train_sorted.append(train_d)
     return(train_sorted)
 
+def region_warp(region, s_warp = 4326, t_warp = 4326):
+    src_srs = osr.SpatialReference()
+    src_srs.ImportFromEPSG(int(s_warp))
+
+    if t_warp is not None:
+        dst_srs = osr.SpatialReference()
+        dst_srs.ImportFromEPSG(int(t_warp))
+        dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)        
+        pointA = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(region[0], region[2]))
+        pointB = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(region[1], region[3]))
+        pointA.Transform(dst_trans)
+        pointB.Transform(dst_trans)
+        region = [pointA.GetX(), pointB.GetX(), pointA.GetY(), pointB.GetY()]
+    return(region)
+
 ## =============================================================================
 ##
 ## VDatum - vdatumfun.py
@@ -479,8 +540,11 @@ _vd_config = {
     'ohorz': 'NAD83_2011',
     'region': '3',
     'fmt': 'txt',
+    'xyzl': '0,1,2',
+    'skip': '0',
     'delim': 'space',
     'result_dir': 'result',
+    'verbose': False,
 }
 
 def vdatum_locate_jar():
@@ -510,6 +574,26 @@ def vdatum_get_version(vd_config = _vd_config):
             if '- v' in i.strip():
                 return(i.strip().split('v')[-1])
     return(None)
+
+def vdatum_xyz(xyz, vd_config = _vd_config):
+    if vd_config['jar'] is None: vd_config['jar'] = vdatum_locate_jar()[0]
+    if vd_config['jar'] is not None:
+        vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -pt:{},{},{} region:{}\
+        '.format(vd_config['ihorz'], vd_config['ivert'], vd_config['ohorz'], vd_config['overt'], \
+                 xyz[0], xyz[1], xyz[2], vd_config['region'])
+        out, status = run_cmd('java -Djava.awt.headless=false -jar {} {}'.format(vd_config['jar'], vdc), verbose = False)
+        for i in out.split('\n'):
+            if 'Height/Z' in i:
+                z = float(i.split()[2])
+                break
+        return([xyz[0], xyz[1], z])
+    else: return(xyz)
+
+def vdatum_clean_result(result_f = 'result'):
+    remove_glob('{}/*'.format(result_f))
+    try:
+        os.removedirs(result_f)
+    except: pass
     
 def run_vdatum(src_fn, vd_config = _vd_config):
     '''run vdatum on src_fn which is an XYZ file
@@ -519,11 +603,11 @@ def run_vdatum(src_fn, vd_config = _vd_config):
     
     if vd_config['jar'] is None: vd_config['jar'] = vdatum_locate_jar()[0]
     if vd_config['jar'] is not None:
-        vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},0,1,2:{}:{} region:{}\
+        vdc = 'ihorz:{} ivert:{} ohorz:{} overt:{} -nodata -file:txt:{},{},skip{}:{}:{} region:{}\
         '.format(vd_config['ihorz'], vd_config['ivert'], vd_config['ohorz'], vd_config['overt'], \
-                 vd_config['delim'], src_fn, vd_config['result_dir'], vd_config['region'])
+                 vd_config['delim'], vd_config['xyzl'], vd_config['skip'], src_fn, vd_config['result_dir'], vd_config['region'])
         #return(run_cmd('java -jar {} {}'.format(vd_config['jar'], vdc), verbose = True))
-        return(run_cmd('java -Djava.awt.headless=true -jar {} {}'.format(vd_config['jar'], vdc), verbose = True))
+        return(run_cmd('java -Djava.awt.headless=false -jar {} {}'.format(vd_config['jar'], vdc), verbose = vd_config['verbose']))
     else: return([], -1)
     
 ## ==============================================
@@ -724,14 +808,12 @@ def run_mbgrid(datalist, region, inc, dst_name, dist = '10/3', tension = 35, ext
     it should be converted first (using datalist_archive()).
 
     returns [mbgrid-output, mbgrid-return-code]'''
-    
-    if extras:
-        e_switch = '-M'
-    else: e_switch = ''
+
+    e_switch = '-M' if extras else ''
 
     if len(dist.split('/')) == 1: dist = dist + '/2'
     mbgrid_cmd = ('mbgrid -I{} {} -E{:.10f}/{:.10f}/degrees! -O{} -A2 -G100 -F1 -N -C{} -S0 -X0.1 -T{} {} > mb_proc.txt \
-    '.format(datalist, region_format(region, 'gmt'), inc, inc, dst_name, dist, tension, e_switch))
+    '.format(datalist, regio2n_format(region, 'gmt'), inc, inc, dst_name, dist, tension, e_switch))
     return(run_cmd(mbgrid_cmd, verbose = verbose))
 
 ## ==============================================
@@ -850,12 +932,7 @@ def gdal_gather_infos(src_ds):
         'ndv': src_ds.GetRasterBand(1).GetNoDataValue(),
         'fmt': src_ds.GetDriver().ShortName,
     }
-    print(ds_config)e
     if ds_config['ndv'] is None: ds_config['ndv'] = -9999
-    if ds_config['geoT'][1] == 0:
-        print(ds_config['geoT'][0] / ds_config['nx'])
-    if ds_config['geoT'][5] == 0:
-        print(ds_config['geoT'][3] / ds_config['ny'])
     return(ds_config)
 
 def gdal_set_infos(nx, ny, nb, geoT, proj, dt, ndv, fmt):
@@ -1249,6 +1326,16 @@ def gdal_region2geom(region):
     geom = ogr.CreateGeometryFromWkt(gdal_create_polygon(eg))
     return(geom)
 
+def gdal_getEPSG(src_ds):
+    ds_config = gdal_gather_infos(src_ds)
+    ds_region = gdal_gt2region(ds_config)
+    src_srs = osr.SpatialReference()
+    src_srs.ImportFromWkt(ds_config['proj'])
+    src_srs.AutoIdentifyEPSG()
+    srs_auth = src_srs.GetAuthorityCode(None)
+
+    return(srs_auth)
+
 def gdal_region(src_ds, warp = None):
     '''return the extent of the src_fn gdal file.'''
     
@@ -1264,7 +1351,7 @@ def gdal_region(src_ds, warp = None):
     if warp is not None:
         dst_srs = osr.SpatialReference()
         dst_srs.ImportFromEPSG(int(warp))
-        dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+        #dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
         dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
 
         pointA = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(ds_region[0], ds_region[2]))
@@ -1320,7 +1407,7 @@ def gdal_srcwin(src_ds, region):
     this_origin = _geo2pixel(region[0], region[3], ds_config['geoT'])
     this_origin = [0 if x < 0 else x for x in this_origin]
     this_end = _geo2pixel(region[1], region[2], ds_config['geoT'])
-    this_size = (int(this_end[0] - this_origin[0]), int(this_end[1] - this_origin[1]))
+    this_size = (int((this_end[0] - this_origin[0]) + .5), int((this_end[1] - this_origin[1]) + .5))
     this_size = [0 if x < 0 else x for x in this_size]
     if this_size[0] > ds_config['nx'] - this_origin[0]: this_size[0] = ds_config['nx'] - this_origin[0]
     if this_size[1] > ds_config['ny'] - this_origin[1]: this_size[1] = ds_config['ny'] - this_origin[1]
@@ -1640,7 +1727,7 @@ def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = N
     if warp is not None:
         dst_srs = osr.SpatialReference()
         dst_srs.ImportFromEPSG(int(warp))
-        dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+        #dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
         dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
         
     gt = ds_config['geoT']
@@ -1649,7 +1736,7 @@ def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = N
         src_mask = gdal.Open(mask)
         msk_band = src_mask.GetRasterBand(1)
     if srcwin is None: srcwin = (0, 0, ds_config['nx'], ds_config['ny'])
-    nodata = ['{:g}'.format(-9999), 'nan']
+    nodata = ['{:g}'.format(-9999), 'nan', float('nan')]
     if band.GetNoDataValue() is not None: nodata.append('{:g}'.format(band.GetNoDataValue()))
     if dump_nodata: nodata = []
     for y in range(srcwin[1], srcwin[1] + srcwin[3], 1):
@@ -1701,64 +1788,68 @@ def gdal_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False
     for xyz in gdal_yield_entry(entry, region, verbose, epsg):
         xyz_line(xyz, dst_port)
         
+def fetch_dump_entry(entry = ['nos:datatype=nos'], dst_port = sys.stdout, region = None, verbose = False):
+    for xyz in fetch_yield_entry(entry, region, verbose):
+        xyz_line(xyz, dst_port)
         
-def fetch_and_dump(entry = 'nos:datatype=nos', dst_port = sys.stdout, region = None, verbose = False):
-    from geomods import fetches
+def fetch_yield_entry(entry = ['nos:datatype=nos'], region = None, verbose = False):
 
     fetch_mod = entry[0].split(':')[0]
     fetch_args = entry[0].split(':')[1:]
     
     fl = fetches.fetch_infos[fetch_mod][0](region_buffer(region, 5, pct = True), [], lambda: False)
     args_d = args2dict(fetch_args, {})
-    r = fl.run(**args_d)
 
-    for df in r:
-        proc_mod, proc_opts = fetches.fetch_entry2procmod(df[2].lower())
-        #try:
-        fetches.fetch_file(df[0], df[1], callback = lambda: False)
-        fp = fetches.procs(df[1], proc_mod, [region], lambda: False)
-        fp.run(proc_opts, dst_port)
-        remove_glob(df[1])
-        #except: pass
-        
-def nos_ascii_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
-    from geomods import fetches
-
-    fetches.fetch_file(entry[0], os.path.basename(entry[0]), callback = lambda: False)
-    fp = fetches.procs(os.path.basename(entry[0]), 'ascii', [region], lambda: False)
-    fp.run([',', '2,1,3', 1, 0.000080642, 'mllw', True], dst_port)
-    remove_glob(os.path.basename(entry[0]))
-
-def nos_bag_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
-    from geomods import fetches
-    fetches.fetch_file(entry[0], os.path.basename(entry[0]), callback = lambda: False)
-    fp = fetches.procs(os.path.basename(entry[0]), 'gdal', [region], lambda: False)
-    fp.run([None, True, 'mllw'], dst_port)
-    remove_glob(os.path.basename(entry[0]))
-
+    for xyz in fl._yield_results_to_xyz(**args_d):
+        yield(xyz)
     
 ## ==============================================
 ## xyz processing (datalists fmt:168)
 ## ==============================================
-_xyz_config = {'delim':' ', 'xpos': 0, 'ypos': 1, 'zpos': 2}
+_xyz_config = {'delim': None, 'xpos': 0, 'ypos': 1, 'zpos': 2, 'skip': 0}
 _known_delims = [',', ' ', '\t', '/', ':']
 
-def xyz_parse(src_xyz, this_delim = None):
+def xyz_parse(src_xyz, xyz_c = _xyz_config):
     '''xyz file parsing generator
     `src_xyz` is a file object or list of xyz data.
 
     yields each xyz line as a list [x, y, z, ...]'''
-    
+    ln = 1
     for xyz in src_xyz:
-        this_line = xyz.strip()
-        if this_delim is None:
-            for delim in _known_delims:
-                this_xyz = this_line.split(delim)
-                if len(this_xyz) > 1: #break
-                    this_delim = delim
-                    break
-        else: this_xyz = this_line.split(this_delim)
-        yield([float(x) for x in this_xyz])
+        if ln > int(xyz_c['skip']):
+            this_line = xyz.strip()
+            if xyz_c['delim'] is None:
+                for delim in _known_delims:
+                    this_xyz = this_line.split(delim)
+                    if len(this_xyz) > 1: 
+                        xyz_c['delim'] = delim
+                        break
+            else: this_xyz = this_line.split(xyz_c['delim'])
+            out_xyz = [this_xyz[xyz_c['xpos']], this_xyz[xyz_c['ypos']], this_xyz[xyz_c['zpos']]]
+            yield([float(x) for x in out_xyz])
+        ln += 1
+    echo_msg('processed {} points from {}'.format(ln, src_xyz.name))
+
+# def xyz_parse(src_xyz, this_delim = None, skip = 0, xyzc = '0,1,2'):
+#     '''xyz file parsing generator
+#     `src_xyz` is a file object or list of xyz data.
+
+#     yields each xyz line as a list [x, y, z, ...]'''
+#     ln = 1
+#     xyzl = [int(x) for x in xyzc.split(',')]
+#     for xyz in src_xyz:
+#         if ln > int(skip):
+#             this_line = xyz.strip()
+#             if this_delim is None:
+#                 for delim in _known_delims:
+#                     this_xyz = this_line.split(delim)
+#                     if len(this_xyz) > 1: #break
+#                         this_delim = delim
+#                         break
+#             else: this_xyz = this_line.split(this_delim)
+#             out_xyz = [this_xyz[xyzl[0]], this_xyz[xyzl[1]], this_xyz[xyzl[2]]]
+#             yield([float(x) for x in out_xyz])
+#         ln += 1
 
 def xyz2py(src_xyz):
     '''return src_xyz as a python list'''
@@ -1770,7 +1861,6 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False):
     '''block the src_xyz data to the mean block value
 
     yields the xyz value for each block with data'''
-    print(region)
     xcount, ycount, dst_gt = gdal_region2gt(region, inc)
     sumArray = np.zeros((ycount, xcount))
     gdt = gdal.GDT_Float32
@@ -1806,8 +1896,9 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False):
 def xyz_line(line, dst_port = sys.stdout):
     '''write "xyz" `line` to `dst_port`
     `line` should be a list of xyz values [x, y, z, ...].'''
+    delim = _xyz_config['delim'] if _xyz_config['delim'] is not None else ' '
     
-    l = '{}\n'.format(_xyz_config['delim'].join([str(x) for x in line]))
+    l = '{}\n'.format(delim.join([str(x) for x in line]))
     if dst_port != sys.stdout: l = l.encode('utf-8')
     dst_port.write(l)
 
@@ -1985,7 +2076,7 @@ def datalist_dump(wg, dst_port = sys.stdout, region = None, verbose = False):
     
     if region is not None:
         #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
-        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != 400 else True
     else: dl_p = _dl_pass_h
     for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p, verbose = verbose):
         #try:
@@ -1996,11 +2087,9 @@ def datalist_dump(wg, dst_port = sys.stdout, region = None, verbose = False):
         elif this_entry[1] == 236:
             gdal_h_dump_entry(this_entry, region = region, dst_port = dst_port)
         elif this_entry[1] == 400: # fetch
-            fetch_and_dump(this_entry, region = region, dst_port = dst_port)
-        elif this_entry[1] == 401: # nos ascii fetch
-            nos_ascii_dump_entry(this_entry, region = region, dst_port = dst_port)
-        elif this_entry[1] == 402: # nos bag fetch
-            nos_bag_dump_entry(this_entry, region = region, dst_port = dst_port)
+            fetch_dump_entry(this_entry, region = region, dst_port = dst_port)
+        elif this_entry[1] == 401: # nos fetch
+            remote_nos_dump_entry(this_entry, region = region, dst_port = dst_port)
         #except Exception as e: echo_error_msg('could not parse {}, {}'.format(this_entry[0], e))
     
 def datalist_echo(entry):
@@ -2075,7 +2164,7 @@ def datalist2py(dl):
     else: these_entries.append(this_entry)
     return(these_entries)
 
-def datalist_yield_xyz(dl, fmt = -1, wt = None, pass_h = lambda e: os.path.exits(e), verbose = False):
+def datalist_yield_xyz(dl, fmt = -1, wt = None, pass_h = lambda e: os.path.exits(e), region = None, verbose = False):
     '''parse out the xyz data from the datalist
     for xyz in datalist_yield_xyz(dl): xyz_line(xyz)
 
@@ -2087,6 +2176,12 @@ def datalist_yield_xyz(dl, fmt = -1, wt = None, pass_h = lambda e: os.path.exits
                 yield(xyz)
         elif this_entry[1] == 200:
             for xyz in gdal_yield_entry(this_entry):
+                yield(xyz)
+        elif this_entry[1] == 400:
+            for xyz in fetch_yield_entry(this_entry, region):
+                yield(xyz)
+        elif this_entry[1] == 401:
+            for xyz in remote_nos_yield_entry(this_entry, region):
                 yield(xyz)
                 
 def datalist(dl, fmt = -1, wt = None, pass_h = lambda e: path_exists_or_url(e[0]), dl_proc_h = lambda e: None, verbose = False):
@@ -2373,8 +2468,8 @@ def waffles_num(wg = _waffles_grid_info, mode = 'n'):
     #dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
     dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     if wg['weights']:
-        dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = 1 if wg['weights'] is not None else None, verbose = wg['verbose']), region, wg['inc'], weights = True if wg['weights'] else False)
-    else: dly = datalist_yield_xyz(wg['datalist'], pass_h = dlh, verbose = wg['verbose'])    
+        dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = 1 if wg['weights'] is not None else None, region = region, verbose = wg['verbose']), region, wg['inc'], weights = True if wg['weights'] else False)
+    else: dly = datalist_yield_xyz(wg['datalist'], pass_h = dlh, region = region, verbose = wg['verbose'])    
     return(gdal_xyz2gdal(dly, '{}.tif'.format(wg['name']), region, wg['inc'], dst_format = wg['fmt'], mode = mode))
 
 def waffles_spatial_metadata(wg):
@@ -2480,7 +2575,7 @@ def waffles_gdal_grid(wg = _waffles_grid_info, alg_str = 'linear:radius=1'):
     region = waffles_proc_region(wg)
     dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     wt = 1 if wg['weights'] is not None else None
-    dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = wt, verbose = wg['verbose']), region, wg['inc'], weights = False if wg['weights'] is None else True)
+    dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = wt, region = region, verbose = wg['verbose']), region, wg['inc'], weights = False if wg['weights'] is None else True)
     ds = xyz2gdal_ds(dly, '{}'.format(wg['name']))
     xcount, ycount, dst_gt = gdal_region2gt(wg['region'], wg['inc'])
     gd_opts = gdal.GridOptions(outputType = gdal.GDT_Float32, noData = -9999, format = 'GTiff', \
@@ -2554,9 +2649,6 @@ def waffles_run(wg = _waffles_grid_info):
         
     args_d = {}
     args_d = args2dict(wg['mod_args'])
-    #for arg in wg['mod_args']:
-    #    p_arg = arg.split('=')
-    #    args_d[p_arg[0]] = p_arg[1]
         
     if wg['verbose']:
         #echo_msg(json.dumps(wg, indent = 4, sort_keys = True))
@@ -3002,7 +3094,7 @@ def datalists_cli(argv = sys.argv):
             echo_error_msg('bad region, {}'.format(e))
             sys.exit(-1)
         #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
-        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != 400 else True
     wt = 1 if want_weight else None
             
     ## ==============================================
@@ -3020,7 +3112,7 @@ def datalists_cli(argv = sys.argv):
             ## ==============================================
             ## dump to stdout
             ## ==============================================
-            datalist_dump({'datalist':master, 'weights': want_weight, 'epsg': epsg})
+            datalist_dump({'datalist':master, 'weights': want_weight, 'epsg': epsg}, region = region)
         remove_glob('{}*'.format(master))
 
 ## ==============================================
