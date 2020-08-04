@@ -1408,6 +1408,7 @@ def gdal_srcwin(src_ds, region):
     this_origin = [0 if x < 0 else x for x in this_origin]
     this_end = _geo2pixel(region[1], region[2], ds_config['geoT'])
     this_size = (int((this_end[0] - this_origin[0]) + .5), int((this_end[1] - this_origin[1]) + .5))
+    #this_size = (int((this_end[0] - this_origin[0]) + 1), int((this_end[1] - this_origin[1]) + 1))
     this_size = [0 if x < 0 else x for x in this_size]
     if this_size[0] > ds_config['nx'] - this_origin[0]: this_size[0] = ds_config['nx'] - this_origin[0]
     if this_size[1] > ds_config['ny'] - this_origin[1]: this_size[1] = ds_config['ny'] - this_origin[1]

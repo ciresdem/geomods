@@ -1362,15 +1362,17 @@ class gmrt:
     def _yield_xyz(self, entry, res = 'max', fmt = 'geotiff'):
         src_gmrt = entry[1]
         fetch_file(entry[0], src_gmrt, callback = lambda: False)
-        try:
-            src_ds = gdal.Open(src_gmrt)
-            if src_ds is not None:
-                srcwin = waffles.gdal_srcwin(src_ds, self.region)
-                for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin):
-                    yield(xyz)
+        #try:
+        src_ds = gdal.Open(src_gmrt)
+        if src_ds is not None:
+            srcwin = waffles.gdal_srcwin(src_ds, self.region)
+            print(srcwin)
+            print(waffles.gdal_gather_infos(src_ds))
+            for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin):
+                yield(xyz)
             src_ds = None
-        except:
-            waffles.echo_error_msg('could not read gmrt data: {}'.format(src_gmrt))
+        #except:
+        #    waffles.echo_error_msg('could not read gmrt data: {}'.format(src_gmrt))
         waffles.remove_glob(src_gmrt)
     
     def _dump_results_to_xyz(self, res = 'max', fmt = 'geotiff', dst_port = sys.stdout):
