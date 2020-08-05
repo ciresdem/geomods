@@ -31,7 +31,7 @@
 ## see/set `_waffles_grid_info` dictionary to run a grid.
 ##
 ## Current DEM modules:
-## surface (GMT), triangulate (GMT), nearneighbor (GMT)
+## surface (GMT), triangulate (GMT/GDAL), nearneighbor (GMT/GDAL), mbgrid (MBSYSTEM), num (waffles), average (GDAL)
 ##
 ## optionally, clip, filter, buffer the resulting DEM.
 ##
@@ -49,12 +49,15 @@
 ## a format of 168 represents XYZ data
 ## a format of 200 represents GDAL data
 ## a format of 300 represents LAS/LAZ data <not implemented>
+## a format of 400 represents a FETCHES module - e.g. `nos:datatype=bag`
 ##
 ## each xyz file in a datalist should have an associated '*.inf' file 
 ## for faster processing
 ##
 ## 'inf' files can be generated using 'mbdatalist -O -V -I~datalist.datalist'
 ## or via `datalists -i`
+##
+## GDAL/LIDAR/FETCHES data don't need inf files.
 ##
 ## if 'region' is specified, will only process data that falls within
 ## the given region
@@ -64,8 +67,6 @@
 ## Add remove/replace module
 ## Add source uncertainty to uncertainty module
 ## Add LAS/LAZ support to datalits
-## Merge with fetch and allow for http datatype in datalists?
-## possible json conflict with python3 and encoding
 ##
 ### Code:
 import sys
@@ -2668,14 +2669,14 @@ def waffles_run(wg = _waffles_grid_info):
         ## ==============================================
         ## gererate the DEM (run the module)
         ## ==============================================
-        #try:
-        out, status = _waffles_modules[this_wg['mod']][0](args_d)
-        #except KeyboardInterrupt as e:
-        #    echo_error_msg('killed by user, {}'.format(e))
-        #    sys.exit(-1)
-        #except Exception as e:
-        #    echo_error_msg('{}'.format(e))
-        #    status = -1
+        try:
+            out, status = _waffles_modules[this_wg['mod']][0](args_d)
+        except KeyboardInterrupt as e:
+            echo_error_msg('killed by user, {}'.format(e))
+            sys.exit(-1)
+        except Exception as e:
+            echo_error_msg('{}'.format(e))
+            status = -1
 
         if status != 0: remove_glob(this_dem)
         if not os.path.exists(this_dem): continue
@@ -2829,11 +2830,18 @@ General Options:
   --version\t\tPrint the version information
   --verbose\t\tIncrease the verbosity
 
+Datalists and data formats:
+  A datalist is a file that contains a number of datalist entries, while an entry is a space-delineated line:
+  `/path/to/data format weight data,meta,data`
+
+Supported datalist formats: 
+  {}
+
 Modules (see waffles --modules for more info):
   {}
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
-'''.format(_waffles_module_short_desc(_waffles_modules))
+'''.format(_known_datalist_fmts, _waffles_module_short_desc(_waffles_modules))
 
 def waffles_cli(argv = sys.argv):
     '''run waffles from command-line
@@ -3111,7 +3119,7 @@ def datalists_cli(argv = sys.argv):
 ##
 ## run waffles:
 ## % python waffles.py dem <args>
-## % python waffles.p <args>
+## % python waffles.py <args>
 ##
 ## run datalists:
 ## % python waffles.py datalists <args>

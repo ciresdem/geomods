@@ -21,6 +21,8 @@
 ##
 ## current fetch modules: dc, nos, mb, charts, usace, srtm, tnm, gmrt
 ##
+## Possible BAG errors with GDAL >= 3
+##
 ### Code:
 
 import os
@@ -183,12 +185,12 @@ def fetch_ftp_file(src_url, dst_fn, params = None, callback = None, datatype = N
     #echo_msg('fetched remote ftp file: {}.'.format(os.path.basename(src_url)))
     return(status)
 
-def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatype = None, overwrite = False):
+def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatype = None, overwrite = False, verbose = False):
     '''fetch src_url and save to dst_fn'''
     status = 0
     req = None
     halt = callback
-    echo_msg('fetching remote file: {}...'.format(os.path.basename(src_url)))
+    if verbose: echo_msg('fetching remote file: {}...'.format(os.path.basename(src_url)))
     if not os.path.exists(os.path.dirname(dst_fn)):
         try:
             os.makedirs(os.path.dirname(dst_fn))
@@ -212,7 +214,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
             except Exception as e: echo_error_msg(e)
     else: status = -1
     if not os.path.exists(dst_fn) or os.stat(dst_fn).st_size ==  0: status = -1
-    #echo_msg('fetched remote file: {}.'.format(os.path.basename(src_url)))
+    if verbose: echo_msg('fetched remote file: {}.'.format(os.path.basename(src_url)))
     return(status)
 
 def fetch_req(src_url, params = None, tries = 5, timeout = 2):
@@ -533,27 +535,18 @@ class dc:
 
     ## ==============================================
     ## Process results to xyz
-    ## ==============================================
+    ## ==============================================    
+    def _yield_xyz(self):
+        pass
 
     def _dump_xyz(self, dst_port = sys.stdout):
         pass
-    
-    def _yield_xyz(self):
-        pass
-    
-    def _dump_results_to_xyz(self, datatype = None, dst_port = sys.stdout):
-        for xyz in self._yield_to_xyz(datatype):
-            waffles.xyz_line(xyz, dst_port)
             
     def _yield_results_to_xyz(self, datatype = None):
-
-        self.run(datatype)
-        
+        if len(self._results) == 0: self.run(datatype)
         for entry in self._results:
             src_dc = os.path.basename(entry[1])
-            status = fetch_file(entry[0], src_dc, callback = lambda: False)
-
-            if status == 0:
+            if fetch_file(entry[0], src_dc, callback = lambda: False) == 0:
                 if entry[-1].lower() == 'lidar':
                     out, status = waffles.run_cmd('las2txt -verbose -parse xyz -keep_xy {} -keep_class {} -i {}'.format(waffles.region_format(self.region, 'te'), '2 29', src_dc), verbose = True)
                     src_txt = src_dc.split('.')[0] + '.txt'                
@@ -576,7 +569,11 @@ class dc:
                             yield(xyz)
                     src_ds = None
             waffles.remove_glob(src_dc)
-        
+
+    def _dump_results_to_xyz(self, datatype = None, dst_port = sys.stdout):
+        for xyz in self._yield_to_xyz(datatype):
+            waffles.xyz_line(xyz, dst_port)
+            
 ## =============================================================================
 ##
 ## NOS Fetch
@@ -739,7 +736,6 @@ class nos:
     ## ==============================================
     ## Process results to xyz
     ## ==============================================
-
     def _dump_xyz(self, entry, dst_port = sys.stdout):
         for xyz in self._yield_xyz(entry):
             waffles.xyz_line(xyz, dst_port)
@@ -748,9 +744,7 @@ class nos:
         if vdc is None: vdc = waffles._vd_config
         if xyzc is None: xyzc = waffles._xyz_config
         src_nos = os.path.basename(entry[1])
-        status = fetch_file(entry[0], src_nos, callback = lambda: False)
-        
-        if status == 0:
+        if fetch_file(entry[0], src_nos, callback = lambda: False) == 0:
             if entry[-1].lower() == 'geodas_xyz':
                 nos_f, nos_zips = waffles.procs_unzip(src_nos, waffles._known_datalist_fmts[168])
                 vdc['ivert'] = 'mllw:m:sounding'
@@ -793,12 +787,9 @@ class nos:
                             with open(src_r_bag, 'r') as in_b:
                                 for xyz in waffles.xyz_parse(in_b):
                                     yield(xyz)
-                except:
-                    waffles.echo_error_msg('could not read bag file: {}'.format(src_bag))
-                    waffles.remove_glob(src_bag)
+                except: waffles.echo_error_msg('could not read bag file: {}'.format(src_bag))
                 waffles.remove_glob(src_bag)
-            waffles.remove_glob(nos_f)
-            
+            waffles.remove_glob(nos_f)            
         waffles.remove_glob(src_nos)
         waffles.vdatum_clean_result()
     
@@ -931,7 +922,6 @@ class charts():
     ## ==============================================
     ## Process results to xyz
     ## ==============================================
-
     def _dump_xyz(self, dst_port = sys.stdout):
         pass
     
@@ -950,8 +940,7 @@ class charts():
         
         for entry in self._results:
             src_zip = os.path.basename(entry[1])
-            status = fetch_file(entry[0], src_zip, callback = lambda: False)
-            if status == 0:
+            if fetch_file(entry[0], src_zip, callback = lambda: False) == 0:
                 if entry[-1].lower() == 'enc':
                     src_ch, src_zips = waffles.procs_unzip(src_zip, ['.000'])
                     dst_xyz = src_ch.split('.')[0] + '.xyz'
@@ -1034,39 +1023,38 @@ class srtm_cgiar:
     ## ==============================================
     ## Process results to xyz
     ## ==============================================
-
-    def _dump_xyz(self, dst_port = sys.stdout):
-        pass
-    
     def _yield_xyz(self):
         pass
     
+    def _dump_xyz(self, dst_port = sys.stdout):
+        pass
+                    
+    def _yield_results_to_xyz(self):
+        if len(self._results) == 0: self.run()
+        for entry in self._results:
+            if fetch_file(entry[0], os.path.basename(entry[1]), callback = lambda: False) == 0:
+                src_srtm, src_zips = waffles.procs_unzip(os.path.basename(entry[1]), waffles._known_datalist_fmts[200])
+                try:
+                    src_ds = gdal.Open(src_srtm)
+                except:
+                    waffles.echo_error_msg('could not read srtm data: {}'.format(src_srtm))
+                    waffles.remove_glob(src_srtm)
+                    continue
+
+                if src_ds is not None:
+                    srcwin = waffles.gdal_srcwin(src_ds, self.region)
+                    for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin):
+                        yield(xyz)
+                    src_ds = None
+
+                waffles.remove_glob(src_srtm)
+                waffles._clean_zips(src_zips)
+            waffles.remove_glob(entry[1])
+
     def _dump_results_to_xyz(self, dst_port = sys.stdout):
         for xyz in self._yield_to_xyz():
             waffles.xyz_line(xyz, dst_port)
             
-    def _yield_results_to_xyz(self):
-        self.run()        
-        for entry in self._results:
-            fetch_file(entry[0], entry[1], callback = lambda: False)
-            src_srtm, src_zips = waffles.procs_unzip(entry[1], waffles._known_datalist_fmts[200])
-            try:
-                src_ds = gdal.Open(src_srtm)
-            except:
-                waffles.echo_error_msg('could not read srtm data: {}'.format(src_srtm))
-                waffles.remove_glob(src_srtm)
-                continue
-
-            if src_ds is not None:
-                srcwin = waffles.gdal_srcwin(src_ds, self.region)
-                for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin):
-                    yield(xyz)
-                src_ds = None
-                
-            waffles.remove_glob(src_srtm)
-            waffles.remove_glob(entry[1])
-            waffles._clean_zips(src_zips)
-        
 ## =============================================================================
 ##
 ## The National Map (TNM) - USGS
@@ -1222,14 +1210,13 @@ class mb:
 
     ## ==============================================
     ## Process results to xyz
-    ## ==============================================
+    ## ==============================================    
+    def _yield_xyz(self):
+        pass
 
     def _dump_xyz(self, dst_port = sys.stdout):
         pass
     
-    def _yield_xyz(self):
-        pass
-                
     def _yield_results_to_xyz(self):
         self.run()
         vdc = copy.deepcopy(waffles._vd_config)
@@ -1239,26 +1226,23 @@ class mb:
         
         for entry in self._results:
             src_mb = os.path.basename(entry[1])
-            fetch_file(entry[0], src_mb, callback = lambda: False)
-            src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
-            out, status = waffles.run_cmd('mblist -MX20 -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
+            if fetch_file(entry[0], src_mb, callback = lambda: False) == 0:
+                src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
+                out, status = waffles.run_cmd('mblist -MX20 -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
+                vdc['ivert'] = 'lmsl:m:height'
+                vdc['overt'] = 'navd88:m:height'
+                vdc['delim'] = 'space'
+                vdc['xyzl'] = '0,1,2'
+                vdc['skip'] = '0'
+                out, status = waffles.run_vdatum(src_xyz, vdc)
+                mb_r = os.path.join('result', os.path.basename(src_xyz))
 
-            vdc['ivert'] = 'lmsl:m:height'
-            vdc['overt'] = 'navd88:m:height'
-            vdc['delim'] = 'space'
-            vdc['xyzl'] = '0,1,2'
-            vdc['skip'] = '0'
-                
-            out, status = waffles.run_vdatum(src_xyz, vdc)
-            mb_r = os.path.join('result', os.path.basename(src_xyz))
-                
-            with open(mb_r, 'r') as in_m:
-                for xyz in waffles.xyz_parse(in_m):
-                    yield(xyz)
-                    
+                with open(mb_r, 'r') as in_m:
+                    for xyz in waffles.xyz_parse(in_m):
+                        yield(xyz)
+                waffles.remove_glob(src_xyz)
+                waffles.vdatum_clean_result()
             waffles.remove_glob(src_mb)
-            waffles.remove_glob(src_xyz)
-            waffles.vdatum_clean_result()
 
     def _dump_results_to_xyz(self, dst_port = sys.stdout):
         for xyz in self._yield_to_xyz():
@@ -1350,29 +1334,24 @@ class gmrt:
 
     ## ==============================================
     ## Process results to xyz
-    ## ==============================================
+    ## ==============================================    
+    def _yield_xyz(self, entry, res = 'max', fmt = 'geotiff'):
+        src_gmrt = entry[1]
+        if fetch_file(entry[0], src_gmrt, callback = lambda: False) == 0:
+            try:
+                src_ds = gdal.Open(src_gmrt)
+                if src_ds is not None:
+                    srcwin = waffles.gdal_srcwin(src_ds, self.region)
+                    print(srcwin)
+                    print(waffles.gdal_gather_infos(src_ds))
+                    for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin):
+                        yield(xyz)
+                src_ds = None
+            except: waffles.echo_error_msg('could not read gmrt data: {}'.format(src_gmrt))
+        waffles.remove_glob(src_gmrt)
 
     def _dump_xyz(self, src_gmrt, res = 'max', fmt = 'geotiff', dst_port = sys.stdout):
         for xyz in self._yield_xyz(src_gmrt, res, fmt):
-            waffles.xyz_line(xyz, dst_port)
-    
-    def _yield_xyz(self, entry, res = 'max', fmt = 'geotiff'):
-        src_gmrt = entry[1]
-        fetch_file(entry[0], src_gmrt, callback = lambda: False)
-        try:
-            src_ds = gdal.Open(src_gmrt)
-            if src_ds is not None:
-                srcwin = waffles.gdal_srcwin(src_ds, self.region)
-                print(srcwin)
-                print(waffles.gdal_gather_infos(src_ds))
-                for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin):
-                    yield(xyz)
-            src_ds = None
-        except: waffles.echo_error_msg('could not read gmrt data: {}'.format(src_gmrt))
-        waffles.remove_glob(src_gmrt)
-    
-    def _dump_results_to_xyz(self, res = 'max', fmt = 'geotiff', dst_port = sys.stdout):
-        for xyz in self._yield_to_xyz(res, fmt):
             waffles.xyz_line(xyz, dst_port)
             
     def _yield_results_to_xyz(self, res = 'max', fmt = 'geotiff'):
@@ -1380,6 +1359,10 @@ class gmrt:
         for entry in self._results:
             for xyz in self._yield_xyz(entry, res, fmt):
                 yield(xyz)
+                
+    def _dump_results_to_xyz(self, res = 'max', fmt = 'geotiff', dst_port = sys.stdout):
+        for xyz in self._yield_to_xyz(res, fmt):
+            waffles.xyz_line(xyz, dst_port)
     
 ## =============================================================================
 ##
@@ -1423,7 +1406,6 @@ class ngs:
                 [outcsv.writerow(row.values()) for row in r]
                 outfile.close()
 
-    
 ## =============================================================================
 ##
 ## Run fetches from command-line
