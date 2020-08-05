@@ -1271,7 +1271,9 @@ def gdal_region2gt(region, inc):
 def gdal_ogr_mask_union(src_layer, src_field, dst_defn = None):
     '''`union` a `src_layer`'s features based on `src_field` where
     `src_field` holds a value of 0 or 1. optionally, specify
-    an output layer defn for the unioned feature.'''
+    an output layer defn for the unioned feature.
+
+    returns the output feature class'''
     
     if dst_defn is None: dst_defn = src_layer.GetLayerDefn()
     multi = ogr.Geometry(ogr.wkbMultiPolygon)
@@ -1788,10 +1790,10 @@ def gdal_yield_entry(entry, region = None, verbose = False, epsg = None):
 def gdal_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, epsg = None):
     for xyz in gdal_yield_entry(entry, region, verbose, epsg):
         xyz_line(xyz, dst_port)
-        
-def fetch_dump_entry(entry = ['nos:datatype=nos'], dst_port = sys.stdout, region = None, verbose = False):
-    for xyz in fetch_yield_entry(entry, region, verbose):
-        xyz_line(xyz, dst_port)
+
+## ==============================================
+## fetches processing (datalists fmt:400)
+## ==============================================
         
 def fetch_yield_entry(entry = ['nos:datatype=nos'], region = None, verbose = False):
 
@@ -1802,8 +1804,16 @@ def fetch_yield_entry(entry = ['nos:datatype=nos'], region = None, verbose = Fal
     args_d = args2dict(fetch_args, {})
 
     for xyz in fl._yield_results_to_xyz(**args_d):
-        yield(xyz)
-    
+        # if region is not None:
+        #     if xyz_in_region_p(line, region):
+        #         yield(line + [entry[2]] if entry[2] is not None else line)
+        #     else: yield(line + [entry[2]] if entry[2] is not None else line)
+        yield(xyz + [entry[2]] if entry[2] is not None else xyz)
+
+def fetch_dump_entry(entry = ['nos:datatype=nos'], dst_port = sys.stdout, region = None, verbose = False):
+    for xyz in fetch_yield_entry(entry, region, verbose):
+        xyz_line(xyz, dst_port)
+        
 ## ==============================================
 ## xyz processing (datalists fmt:168)
 ## ==============================================
@@ -1826,31 +1836,11 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config):
                         xyz_c['delim'] = delim
                         break
             else: this_xyz = this_line.split(xyz_c['delim'])
-            out_xyz = [this_xyz[xyz_c['xpos']], this_xyz[xyz_c['ypos']], this_xyz[xyz_c['zpos']]]
-            yield([float(x) for x in out_xyz])
+            yield([float(this_xyz[xyz_c['xpos']]), \
+                   float(this_xyz[xyz_c['ypos']]), \
+                   float(this_xyz[xyz_c['zpos']])])
         ln += 1
-    echo_msg('processed {} points from {}'.format(ln, src_xyz.name))
-
-# def xyz_parse(src_xyz, this_delim = None, skip = 0, xyzc = '0,1,2'):
-#     '''xyz file parsing generator
-#     `src_xyz` is a file object or list of xyz data.
-
-#     yields each xyz line as a list [x, y, z, ...]'''
-#     ln = 1
-#     xyzl = [int(x) for x in xyzc.split(',')]
-#     for xyz in src_xyz:
-#         if ln > int(skip):
-#             this_line = xyz.strip()
-#             if this_delim is None:
-#                 for delim in _known_delims:
-#                     this_xyz = this_line.split(delim)
-#                     if len(this_xyz) > 1: #break
-#                         this_delim = delim
-#                         break
-#             else: this_xyz = this_line.split(this_delim)
-#             out_xyz = [this_xyz[xyzl[0]], this_xyz[xyzl[1]], this_xyz[xyzl[2]]]
-#             yield([float(x) for x in out_xyz])
-#         ln += 1
+    echo_msg('parsed {} xyz points from {}'.format(ln, src_xyz.name))
 
 def xyz2py(src_xyz):
     '''return src_xyz as a python list'''
@@ -2104,13 +2094,13 @@ def datafile_echo(entry):
     
     sys.stderr.write('{}\n'.format([str(x) for x in entry]))
 
-def datalist_master(dls, master = '.master.datalist'):
-    '''set the master datalist
+def datalist_major(dls, major = '.major.datalist'):
+    '''set the major datalist
     `dls` is a list of datalist entries, minimally: ['datafile.xyz']
 
-    returns the master datalist filename'''
+    returns the major datalist filename'''
     
-    with open(master, 'w') as md:        
+    with open(major, 'w') as md:        
         for dl in dls:
             #if os.path.exists(dl):
             #if len(dl.split(':')) == 1 or dl.split(':')[0] == 'https':
@@ -2121,11 +2111,11 @@ def datalist_master(dls, master = '.master.datalist'):
                 else: see = se[-1]
                 if see in _known_datalist_fmts[key]:
                     md.write('{} {} 1\n'.format(dl, key))
-    if os.stat(master).st_size == 0:
-        remove_glob(master)
+    if os.stat(major).st_size == 0:
+        remove_glob(major)
         echo_error_msg('bad datalist/entry, {}'.format(dls))
         return(None)    
-    return(master)
+    return(major)
 
 def entry2py(dle):
     '''convert a datalist entry to python
@@ -2295,12 +2285,12 @@ def waffles_dict2wg(wg = _waffles_grid_info):
     wg['gc'] = config_check()
     
     ## ==============================================
-    ## set the master datalist to the mentioned
+    ## set the major datalist to the mentioned
     ## datalists/datasets
     ## note: the vdatum module doesn't need a datalist
     ## ==============================================
     if wg['datalist'] is None and len(wg['datalists']) > 0:
-        wg['datalist'] = datalist_master(wg['datalists'], '{}_mstr.datalist'.format(wg['name']))
+        wg['datalist'] = datalist_major(wg['datalists'], '{}_mstr.datalist'.format(wg['name']))
     if wg['mod'].lower() != 'vdatum':
         if wg['datalist'] is None:
             echo_error_msg('invalid datalist/s entry')
@@ -2415,7 +2405,7 @@ def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, use_dat
 
     if use_datalists:
         datalist_archive(wg, arch_dir = '.mb_tmp_datalist', verbose = True)
-        wg['datalist'] = datalist_master(['.mb_tmp_datalist/{}.datalist'.format(wg['name'])])
+        wg['datalist'] = datalist_major(['.mb_tmp_datalist/{}.datalist'.format(wg['name'])])
 
     out, status = run_mbgrid(wg['datalist'], waffles_dist_region(wg), wg['inc'], wg['name'], dist = dist, tension = tension, verbose = True)
     remove_glob('*.cmd')
@@ -2558,12 +2548,12 @@ def waffles_vdatum(wg = _waffles_grid_info, ivert = 'navd88', overt = 'mhw', reg
 
         ll = 'd' if empty_infos[4] < 0 else '0'
         lu = 'd' if empty_infos[5] > 0 else '0'
-        wg['datalist'] = datalist_master(['result/empty.xyz'])
+        wg['datalist'] = datalist_major(['result/empty.xyz'])
         out, status = waffles_gmt_surface(wg, tension = 0, upper_limit = lu, lower_limit = ll)
         
     remove_glob('empty.*')
     remove_glob('result/*')
-    remove_glob('.master.datalist')
+    remove_glob('.major.datalist')
     os.removedirs('result')
     return(out, status)
 
@@ -2834,7 +2824,7 @@ General Options:
   -s, --spat-meta\tGenerate spatial-metadata of the datalist.
 
   --help\t\tPrint the usage text
-  --config\t\tSave the waffles config JSON and master datalist
+  --config\t\tSave the waffles config JSON and major datalist
   --modules\t\tDisply the module descriptions and usage
   --version\t\tPrint the version information
   --verbose\t\tIncrease the verbosity
@@ -3009,7 +2999,7 @@ def waffles_cli(argv = sys.argv):
                 echo_msg(this_wg)
                 with open('{}.json'.format(this_wg['name']), 'w') as wg_json:
                     echo_msg('generating waffles config file: {}.json'.format(this_wg['name']))
-                    echo_msg('generating master datalist: {}_mstr.datalist'.format(this_wg['name']))
+                    echo_msg('generating major datalist: {}_mstr.datalist'.format(this_wg['name']))
                     wg_json.write(json.dumps(this_wg, indent = 4, sort_keys = True))
             else: echo_error_msg('could not parse config.')
         else:
@@ -3101,20 +3091,20 @@ def datalists_cli(argv = sys.argv):
     ## ==============================================
     ## recurse the datalist
     ## ==============================================
-    master = datalist_master(dls)
-    if master is not None:
-        #datalist_archive(master, arch_dir = 'archive', region = region, verbose = want_verbose)
-        if want_infos: print(datalist_inf(master, inf_file = True))
+    major = datalist_major(dls)
+    if major is not None:
+        #datalist_archive(major, arch_dir = 'archive', region = region, verbose = want_verbose)
+        if want_infos: print(datalist_inf(major, inf_file = True))
         elif rec_infos:
-            inf_entry([master, -1, 1])
+            inf_entry([major, -1, 1])
         elif want_list:
-            datalist_list({'datalist':master, 'weights': want_weight}, region)
+            datalist_list({'datalist':major, 'weights': want_weight}, region)
         else:
             ## ==============================================
             ## dump to stdout
             ## ==============================================
-            datalist_dump({'datalist':master, 'weights': want_weight, 'epsg': epsg}, region = region)
-        remove_glob('{}*'.format(master))
+            datalist_dump({'datalist':major, 'weights': want_weight, 'epsg': epsg}, region = region)
+        remove_glob('{}*'.format(major))
 
 ## ==============================================
 ## mainline -- run waffles directly...

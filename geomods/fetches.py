@@ -551,33 +551,31 @@ class dc:
         
         for entry in self._results:
             src_dc = os.path.basename(entry[1])
-            fetch_file(entry[0], os.path.basename(entry[1]), callback = lambda: False)
+            status = fetch_file(entry[0], src_dc, callback = lambda: False)
 
-            if entry[-1].lower() == 'lidar':
-                out, status = waffles.run_cmd('las2txt -verbose -parse xyz -keep_class {} -i {}'.format('2 29', src_dc), verbose = True)
-                src_txt = src_dc.split('.')[0] + '.txt'
-                
-                with open(src_txt, 'r') as in_l:
-                    for xyz in waffles.xyz_parse(in_l):
-                        yield(xyz)
-                        
-            elif entry[-1].lower() == 'raster':
+            if status == 0:
+                if entry[-1].lower() == 'lidar':
+                    out, status = waffles.run_cmd('las2txt -verbose -parse xyz -keep_xy {} -keep_class {} -i {}'.format(waffles.region_format(self.region, 'te'), '2 29', src_dc), verbose = True)
+                    src_txt = src_dc.split('.')[0] + '.txt'                
+                    with open(src_txt, 'r') as in_l:
+                        for xyz in waffles.xyz_parse(in_l):
+                            yield(xyz)
+                    waffles.remove_glob(src_txt)
 
-                try:
-                    src_ds = gdal.Open(src_dc)
-                except:
-                    waffles.echo_error_msg('could not read dc raster file: {}'.format(src_dc))
-                    waffles.remove_glob(src_dc)
-                    continue
+                elif entry[-1].lower() == 'raster':
+                    try:
+                        src_ds = gdal.Open(src_dc)
+                    except:
+                        waffles.echo_error_msg('could not read dc raster file: {}'.format(src_dc))
+                        waffles.remove_glob(src_dc)
+                        continue
 
-                if src_ds is not None:
-                    srcwin = waffles.gdal_srcwin(src_ds, self.region)
-                    for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, warp = 4326):
-                        yield(xyz)
-                src_ds = None
-                
+                    if src_ds is not None:
+                        srcwin = waffles.gdal_srcwin(src_ds, self.region)
+                        for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, warp = 4326):
+                            yield(xyz)
+                    src_ds = None
             waffles.remove_glob(src_dc)
-            waffles.remove_glob(src_txt)
         
 ## =============================================================================
 ##
@@ -1231,13 +1229,8 @@ class mb:
     
     def _yield_xyz(self):
         pass
-    
-    def _dump_results_to_xyz(self, dst_port = sys.stdout):
-        for xyz in self._yield_to_xyz():
-            waffles.xyz_line(xyz, dst_port)
-            
+                
     def _yield_results_to_xyz(self):
-
         self.run()
         vdc = copy.deepcopy(waffles._vd_config)
         xyzc = copy.deepcopy(waffles._xyz_config)
@@ -1266,6 +1259,10 @@ class mb:
             waffles.remove_glob(src_mb)
             waffles.remove_glob(src_xyz)
             waffles.vdatum_clean_result()
+
+    def _dump_results_to_xyz(self, dst_port = sys.stdout):
+        for xyz in self._yield_to_xyz():
+            waffles.xyz_line(xyz, dst_port)
             
 ## =============================================================================
 ##
@@ -1362,17 +1359,16 @@ class gmrt:
     def _yield_xyz(self, entry, res = 'max', fmt = 'geotiff'):
         src_gmrt = entry[1]
         fetch_file(entry[0], src_gmrt, callback = lambda: False)
-        #try:
-        src_ds = gdal.Open(src_gmrt)
-        if src_ds is not None:
-            srcwin = waffles.gdal_srcwin(src_ds, self.region)
-            print(srcwin)
-            print(waffles.gdal_gather_infos(src_ds))
-            for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin):
-                yield(xyz)
+        try:
+            src_ds = gdal.Open(src_gmrt)
+            if src_ds is not None:
+                srcwin = waffles.gdal_srcwin(src_ds, self.region)
+                print(srcwin)
+                print(waffles.gdal_gather_infos(src_ds))
+                for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin):
+                    yield(xyz)
             src_ds = None
-        #except:
-        #    waffles.echo_error_msg('could not read gmrt data: {}'.format(src_gmrt))
+        except: waffles.echo_error_msg('could not read gmrt data: {}'.format(src_gmrt))
         waffles.remove_glob(src_gmrt)
     
     def _dump_results_to_xyz(self, res = 'max', fmt = 'geotiff', dst_port = sys.stdout):
@@ -1507,7 +1503,7 @@ CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
            os.path.basename(sys.argv[0]),
            os.path.basename(sys.argv[0]))
 
-def main():
+def fetches_cli():
     status = 0
     extent = None
     want_list = False
@@ -1630,5 +1626,5 @@ def main():
             echo_msg('ran fetch module {} on region {} ({}/{})...\
             '.format(fetch_mod, region_format(this_region, 'str'), rn+1, len(these_regions)))
 
-if __name__ == '__main__':  main()
+if __name__ == '__main__':  fetches_cli()
 ### End
