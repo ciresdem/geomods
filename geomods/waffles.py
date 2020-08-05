@@ -2974,7 +2974,7 @@ def waffles_cli(argv = sys.argv):
     if wg['mod'] != 'vdatum':
         if len(dls) == 0:
             sys.stderr.write(waffles_cli_usage)
-            echo_error_msg('''must specify a datalist/entry file''')
+            echo_error_msg('''must specify a datalist/entry, try gmrt or srtm for global data.''')
             sys.exit(-1)
             
     ## ==============================================
