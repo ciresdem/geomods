@@ -49,7 +49,7 @@ setuptools.setup(
         'console_scripts': [
             'waffles = geomods.waffles:waffles_cli',
             'datalists = geomods.waffles:datalists_cli',
-            'fetches = geomods.fetches:main',
+            'fetches = geomods.fetches:fetches_cli',
         ],
     },
     scripts = [

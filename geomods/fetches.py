@@ -191,6 +191,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
     req = None
     halt = callback
     if verbose: echo_msg('fetching remote file: {}...'.format(os.path.basename(src_url)))
+    #if verbose: sys.stderr.write('fetches: fetching remote file: {}...'.format(os.path.basename(src_url)))
     if not os.path.exists(os.path.dirname(dst_fn)):
         try:
             os.makedirs(os.path.dirname(dst_fn))
@@ -206,6 +207,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
             try:
                 with open(dst_fn, 'wb') as local_file:
                     for chunk in req.iter_content(chunk_size = 8196):
+                        #if verbose: sys.stderr.write('.')
                         if chunk:
                             if halt(): 
                                 status = -1
@@ -214,7 +216,8 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
             except Exception as e: echo_error_msg(e)
     else: status = -1
     if not os.path.exists(dst_fn) or os.stat(dst_fn).st_size ==  0: status = -1
-    if verbose: echo_msg('fetched remote file: {}.'.format(os.path.basename(src_url)))
+    if verbose: echo_msg('fetched remote file: {}.'.format(os.path.basename(dst_fn)))
+    #if verbose: sys.stderr.write('.ok')
     return(status)
 
 def fetch_req(src_url, params = None, tries = 5, timeout = 2):
@@ -261,7 +264,7 @@ class fetch_results(threading.Thread):
         
     def run(self):
         for _ in range(3):
-            t = threading.Thread(target = fetch_queue, args = (self.fetch_q, self.want_proc))
+            t = threading.Thread(target = fetch_queue, args = (self.fetch_q,))
             t.daemon = True
             t.start()
 
@@ -280,7 +283,9 @@ this_dir, this_filename = os.path.split(__file__)
 fetchdata = os.path.join(this_dir, 'data')
 
 def _ogr_create_polygon(coords):
-    '''convert coords to Wkt'''
+    '''convert coords to Wkt
+
+    returns WKT polygon'''
     ring = ogr.Geometry(ogr.wkbLinearRing)
     for coord in coords: ring.AddPoint(coord[1], coord[0])
     poly = ogr.Geometry(ogr.wkbPolygon)
@@ -291,7 +296,9 @@ def _ogr_create_polygon(coords):
 
 def bounds2geom(bounds):
     '''convert a bounds [west, east, south, north] to an 
-    OGR geometry'''
+    OGR geometry
+    
+    returns OGR geometry'''
     b1 = [[bounds[2], bounds[0]],
           [bounds[2], bounds[1]],
           [bounds[3], bounds[1]],
@@ -316,6 +323,7 @@ def addf_ref_vector(ogr_layer, survey):
 def update_ref_vector(src_vec, surveys, update=True):
     '''update or create a reference vector'''
     layer = None
+    print(update)
     if update:
         ds = ogr.GetDriverByName('GMT').Open(src_vec, 1)
         if ds is not None: layer = ds.GetLayer()
@@ -369,6 +377,7 @@ class dc:
         if self.region is not None: 
             self._boundsGeom = bounds2geom(self.region)
         else: self._status = -1
+        self._verbose = False
         
     def run(self, datatype = None, index = False, update = False):
         '''Run the Digital Coast fetching module'''
@@ -545,31 +554,38 @@ class dc:
     def _yield_results_to_xyz(self, datatype = None):
         if len(self._results) == 0: self.run(datatype)
         for entry in self._results:
-            src_dc = os.path.basename(entry[1])
-            if fetch_file(entry[0], src_dc, callback = lambda: False) == 0:
-                if entry[-1].lower() == 'lidar':
-                    out, status = waffles.run_cmd('las2txt -verbose -parse xyz -keep_xy {} -keep_class {} -i {}'.format(waffles.region_format(self.region, 'te'), '2 29', src_dc), verbose = True)
-                    src_txt = src_dc.split('.')[0] + '.txt'                
-                    with open(src_txt, 'r') as in_l:
-                        for xyz in waffles.xyz_parse(in_l):
-                            yield(xyz)
-                    waffles.remove_glob(src_txt)
+            if entry[-1].lower() == 'lidar':
+                src_dc = os.path.basename(entry[1])
+                if fetch_file(entry[0], src_dc, callback = lambda: False, verbose = self._verbose) == 0:
+                    xyz_dat = waffles.yield_cmd('las2txt -verbose -stdout -parse xyz -keep_xy {} -keep_class {} -i {}'.format(waffles.region_format(self.region, 'te'), '2 29', src_dc), verbose = False)
+                    xyzc = copy.deepcopy(waffles._xyz_config)
+                    xyzc['name'] = src_dc
+                    for xyz in waffles.xyz_parse(xyz_dat, xyz_c = xyzc, verbose = self._verbose):
+                        yield(xyz)
+                    # out, status = waffles.run_cmd('las2txt -verbose -parse xyz -keep_xy {} -keep_class {} -i {}'.format(waffles.region_format(self.region, 'te'), '2 29', src_dc), verbose = True)
+                    # src_txt = src_dc.split('.')[0] + '.txt'                
+                    # with open(src_txt, 'r') as in_l:
+                    #     for xyz in waffles.xyz_parse(in_l):
+                    #         yield(xyz)
+                    # waffles.remove_glob(src_txt)
+                
+            elif entry[-1].lower() == 'raster':
+                #try:
+                src_ds = gdal.Open(entry[0])
+                #except:
+                #    fetch_file(entry[0], src_dc, callback = lambda: False, verbose = self._verbose)
+                #    src_ds = gdal.Open(src_dc)
+                #except Exception as e:
+                #    waffles.echo_error_msg('could not read dc raster file: {}, {}'.format(entry[0], e))
+                #    continue
 
-                elif entry[-1].lower() == 'raster':
-                    try:
-                        src_ds = gdal.Open(src_dc)
-                    except:
-                        waffles.echo_error_msg('could not read dc raster file: {}'.format(src_dc))
-                        waffles.remove_glob(src_dc)
-                        continue
-
-                    if src_ds is not None:
-                        srcwin = waffles.gdal_srcwin(src_ds, self.region)
-                        for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, warp = 4326):
-                            yield(xyz)
-                    src_ds = None
+                if src_ds is not None:
+                    srcwin = waffles.gdal_srcwin(src_ds, self.region)
+                    for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, warp = 4326, verbose = self._verbose):
+                        yield(xyz)
+                src_ds = None
+                
             waffles.remove_glob(src_dc)
-
     def _dump_results_to_xyz(self, datatype = None, dst_port = sys.stdout):
         for xyz in self._yield_to_xyz(datatype):
             waffles.xyz_line(xyz, dst_port)
@@ -608,6 +624,8 @@ class nos:
         self.region = extent
         self._bounds = None
         self._datalists_code = 401
+        self._verbose = False
+        echo_msg(self._has_vector)
 
     def run(self, datatype = None, update = False):
         '''Run the NOS fetching module.'''
@@ -675,10 +693,11 @@ class nos:
 
     def _scan_directory(self, nosdir):
         '''Scan an NOS directory and parse the XML for each survey.'''
-        if self._has_vector:
-            gmt1 = ogr.GetDriverByName('GMT').Open(self._local_ref_vector, 0)
-            layer = gmt1.GetLayer()
-        else: layer = []
+        #if self._has_vector:
+        #    gmt1 = ogr.GetDriverByName('GMT').Open(self._local_ref_vector, 0)
+        #    layer = gmt1.GetLayer()
+        #else:
+        layer = []
         xml_catalog = self._nos_xml_url(nosdir)
         page = fetch_html(xml_catalog)
         rows = page.xpath('//a[contains(@href, ".xml")]/@href')
@@ -690,7 +709,7 @@ class nos:
         for survey in rows:
             if self.stop(): break
             sid = survey[:-4]
-            if self._has_vector: layer.SetAttributeFilter('ID = "{}"'.format(sid))
+            #if self._has_vector: layer.SetAttributeFilter('ID = "{}"'.format(sid))
             if len(layer) == 0:
                 xml_url = xml_catalog + survey
                 s_entry = self._parse_nos_xml(xml_url, sid)
@@ -744,7 +763,7 @@ class nos:
         if vdc is None: vdc = waffles._vd_config
         if xyzc is None: xyzc = waffles._xyz_config
         src_nos = os.path.basename(entry[1])
-        if fetch_file(entry[0], src_nos, callback = lambda: False) == 0:
+        if fetch_file(entry[0], src_nos, callback = lambda: False, verbose = self._verbose) == 0:
             if entry[-1].lower() == 'geodas_xyz':
                 nos_f, nos_zips = waffles.procs_unzip(src_nos, waffles._known_datalist_fmts[168])
                 vdc['ivert'] = 'mllw:m:sounding'
@@ -785,7 +804,8 @@ class nos:
                             out, status = waffles.run_vdatum(nos_f, vdc)
                             src_r_bag = os.path.join('result', os.path.basename(nos_f))
                             with open(src_r_bag, 'r') as in_b:
-                                for xyz in waffles.xyz_parse(in_b):
+                                for xyz in waffles.xyz_parse(in_b, verbose = self._verbose):
+                                    #for xyz in waffles.xyz_block(waffles.xyz_parse(in_b), self.region, ):
                                     yield(xyz)
                 except: waffles.echo_error_msg('could not read bag file: {}'.format(src_bag))
                 waffles.remove_glob(src_bag)
@@ -833,6 +853,7 @@ class charts():
         self._filters = filters
         self.region = extent
         self._boundsGeom = None
+        self._verbose = False
 
     def run(self, datatype = None, update = False):
         '''Run the charts fetching module.'''
@@ -964,7 +985,7 @@ class charts():
                     ch_f_r = os.path.join('result', os.path.basename(dst_xyz))
 
                     with open(ch_f_r, 'r') as in_c:
-                        for xyz in waffles.xyz_parse(in_c):
+                        for xyz in waffles.xyz_parse(in_c, verbose = self._verbose):
                             yield(xyz)
 
                     waffles.remove_glob(src_ch)
@@ -994,6 +1015,7 @@ class srtm_cgiar:
         self._filters = filters
         self._boundsGeom = None
         self.region = extent
+        self._verbose = False
 
     def run(self):
         '''Run the SRTM fetching module.'''
@@ -1032,7 +1054,7 @@ class srtm_cgiar:
     def _yield_results_to_xyz(self):
         if len(self._results) == 0: self.run()
         for entry in self._results:
-            if fetch_file(entry[0], os.path.basename(entry[1]), callback = lambda: False) == 0:
+            if fetch_file(entry[0], os.path.basename(entry[1]), callback = lambda: False, verbose = self._verbose) == 0:
                 src_srtm, src_zips = waffles.procs_unzip(os.path.basename(entry[1]), waffles._known_datalist_fmts[200])
                 try:
                     src_ds = gdal.Open(src_srtm)
@@ -1043,7 +1065,7 @@ class srtm_cgiar:
 
                 if src_ds is not None:
                     srcwin = waffles.gdal_srcwin(src_ds, self.region)
-                    for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin):
+                    for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose):
                         yield(xyz)
                     src_ds = None
 
@@ -1081,6 +1103,7 @@ class tnm:
         self._tnm_df = []
         self._req = None        
         self.region = extent
+        self._verbose = False
 
     def run(self, index = False, ds = 3, sub_ds = None, formats = None, extent = None):
         '''Run the TNM (National Map) fetching module.'''
@@ -1191,6 +1214,7 @@ class mb:
         self._req = None
         self._results = []
         self.region = extent
+        self._verbose = False
 
     def run(self):
         '''Run the MB (multibeam) fetching module.'''
@@ -1226,7 +1250,7 @@ class mb:
         
         for entry in self._results:
             src_mb = os.path.basename(entry[1])
-            if fetch_file(entry[0], src_mb, callback = lambda: False) == 0:
+            if fetch_file(entry[0], src_mb, callback = lambda: False, verbose = self._verbose) == 0:
                 src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
                 out, status = waffles.run_cmd('mblist -MX20 -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
                 vdc['ivert'] = 'lmsl:m:height'
@@ -1238,10 +1262,11 @@ class mb:
                 mb_r = os.path.join('result', os.path.basename(src_xyz))
 
                 with open(mb_r, 'r') as in_m:
-                    for xyz in waffles.xyz_parse(in_m):
+                    for xyz in waffles.xyz_parse(in_m, verbose = self._verbose):
                         yield(xyz)
                 waffles.remove_glob(src_xyz)
                 waffles.vdatum_clean_result()
+            else: waffles.echo_error_msg('failed to fetch remote file, {}...', src_mb)
             waffles.remove_glob(src_mb)
 
     def _dump_results_to_xyz(self, dst_port = sys.stdout):
@@ -1266,6 +1291,7 @@ class usace:
         self._req = None
         self._results = []
         self.region = extent
+        self._verbose = False
 
     def run(self, stype = None):
         '''Run the USACE fetching module'''
@@ -1306,6 +1332,7 @@ class gmrt:
         self._status = 0
         self._results = []
         self.region = extent
+        self._verbose = False
 
     def run(self, res = 'max', fmt = 'geotiff'):
         '''Run the GMRT fetching module'''
@@ -1337,17 +1364,18 @@ class gmrt:
     ## ==============================================    
     def _yield_xyz(self, entry, res = 'max', fmt = 'geotiff'):
         src_gmrt = entry[1]
-        if fetch_file(entry[0], src_gmrt, callback = lambda: False) == 0:
+        if fetch_file(entry[0], src_gmrt, callback = lambda: False, verbose = self._verbose) == 0:
             try:
                 src_ds = gdal.Open(src_gmrt)
                 if src_ds is not None:
                     srcwin = waffles.gdal_srcwin(src_ds, self.region)
-                    print(srcwin)
-                    print(waffles.gdal_gather_infos(src_ds))
-                    for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin):
+                    #print(srcwin)
+                    #print(waffles.gdal_gather_infos(src_ds))
+                    for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose):
                         yield(xyz)
                 src_ds = None
             except: waffles.echo_error_msg('could not read gmrt data: {}'.format(src_gmrt))
+        else: waffles.echo_error_msg('failed to fetch remote file, {}...', src_gmrt)
         waffles.remove_glob(src_gmrt)
 
     def _dump_xyz(self, src_gmrt, res = 'max', fmt = 'geotiff', dst_port = sys.stdout):
@@ -1355,6 +1383,7 @@ class gmrt:
             waffles.xyz_line(xyz, dst_port)
             
     def _yield_results_to_xyz(self, res = 'max', fmt = 'geotiff'):
+        #print(self._verbose)
         self.run(res, fmt)
         for entry in self._results:
             for xyz in self._yield_xyz(entry, res, fmt):
@@ -1381,6 +1410,7 @@ class ngs:
         self._req = None
         self._results = []
         self.region = extent
+        self._verbose = False
 
     def run(self, csv = False):
         '''Run the NGS (monuments) fetching module.'''
@@ -1485,7 +1515,7 @@ CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
            os.path.basename(sys.argv[0]),
            os.path.basename(sys.argv[0]))
 
-def fetches_cli():
+def fetches_cli(argv = sys.argv):
     status = 0
     extent = None
     want_list = False
@@ -1501,18 +1531,18 @@ def fetches_cli():
     ## process Command-Line
     ## ==============================================
     i = 1
-    while i < len(sys.argv):
-        arg = sys.argv[i]
+    while i < len(argv):
+        arg = argv[i]
 
         if arg == '--region' or arg == '-R':
-            extent = str(sys.argv[i + 1])
+            extent = str(argv[i + 1])
             i = i + 1
         elif arg[:2] == '-R':
             extent = str(arg[2:])
         elif arg == '--list-only' or arg == '-l':
             want_list = True
         elif arg == '--filter' or arg == '-f':
-            f.append(sys.argv[i + 1])
+            f.append(argv[i + 1])
             i = i + 1
         elif arg == '--process' or arg == '-p':
             want_proc = True
@@ -1568,9 +1598,6 @@ def fetches_cli():
             '.format(fetch_mod, region_format(this_region, 'str'), rn+1, len(these_regions)))
             fl = fetch_infos[fetch_mod][0](region_buffer(this_region, 5, pct = True), f, lambda: stop_threads)
             args_d = args2dict(args)
-            for xyz in fl._yield_to_xyz():
-                print(xyz)
-            sys.exit()
             try:
                 r = fl.run(**args_d)
             except ValueError as e:
@@ -1608,5 +1635,5 @@ def fetches_cli():
             echo_msg('ran fetch module {} on region {} ({}/{})...\
             '.format(fetch_mod, region_format(this_region, 'str'), rn+1, len(these_regions)))
 
-if __name__ == '__main__':  fetches_cli()
+if __name__ == '__main__':  fetches_cli(sys.argv)
 ### End

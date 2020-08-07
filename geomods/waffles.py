@@ -102,6 +102,11 @@ def inc2str_inc(inc):
     import fractions
     return(str(fractions.Fraction(str(inc * 3600)).limit_denominator(10)).replace('/', ''))
 
+def this_date():
+    '''return the current date'''
+    import datetime
+    return(datetime.datetime.now().strftime('%Y%m%d%H%M%S'))
+
 def this_year():
     '''return the current year'''
     
@@ -265,6 +270,31 @@ def run_cmd(cmd, data_fun = None, verbose = False):
     if verbose: echo_msg('ran cmd: {} and returned {}.'.format(cmd.rstrip(), p.returncode))
     return(out, p.returncode)
 
+def yield_cmd(cmd, data_fun = None, verbose = False):
+    '''Run a system command while optionally passing data.
+    `data_fun` should be a function to write to a file-port:
+    >> data_fun = lambda p: datalist_dump(wg, dst_port = p, ...)
+
+    returns [command-output, command-return-code]'''
+    
+    if verbose: echo_msg('running cmd: {}...'.format(cmd.rstrip()))    
+    if data_fun is not None:
+        pipe_stdin = subprocess.PIPE
+    else: pipe_stdin = None
+    p = subprocess.Popen(cmd, shell = True, stdin = pipe_stdin, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)    
+
+    if data_fun is not None:
+        if verbose: echo_msg('piping data to cmd subprocess...')
+        data_fun(p.stdin)
+        p.stdin.close()
+
+    while True:
+        line = p.stdout.readline()
+        if not line: break
+        else: yield(line)
+    p.stdout.close()
+    if verbose: echo_msg('ran cmd: {} and returned {}.'.format(cmd.rstrip(), p.returncode))
+
 def cmd_check(cmd_str, cmd_vers_str):
     '''check system for availability of 'cmd_str' 
 
@@ -330,6 +360,60 @@ echo_msg = lambda m: echo_msg2(m, prefix = os.path.basename(sys.argv[0]))
 ## auto-generated prefix
 ## ==============================================
 echo_error_msg = lambda m: echo_error_msg2(m, prefix = os.path.basename(sys.argv[0]))
+
+class _progress:
+    '''geomods minimal progress indicator'''
+
+    def __init__(self, message = None):
+        self.tw = 7
+        self.count = 0
+        self.pc = self.count % self.tw
+        self.opm = message
+        self.spinner = ['*     ', '**    ', '***   ', ' ***  ', '  *** ', '   ***', '    **', '     *']
+        self.add_one = lambda x: x + 1
+        self.sub_one = lambda x: x - 1
+        self.spin_way = self.add_one
+
+        if self.opm is not None:
+            self._clear_stderr()
+            sys.stderr.write('\r {}  {:40}\n'.format(" " * (self.tw - 1), self.opm))
+        
+    def _switch_way(self):
+        if self.spin_way == self.add_one:
+            self.spin_way = self.sub_one
+        else: self.spin_way = self.add_one
+
+    def _clear_stderr(self, slen = 79):
+        sys.stderr.write('\x1b[2K\r')
+        sys.stderr.flush()
+
+    def err_msg(self, msg):
+        self._clear_stderr()
+        sys.stderr.write('geomods: error, {}\n'.format(msg))
+
+    def msg(self, msg):
+        self._clear_stderr()
+        sys.stderr.write('geomods: {}\n'.format(msg))
+
+    def update(self):
+        self.pc = (self.count % self.tw)
+        self.sc = (self.count % (self.tw+1))
+        self._clear_stderr()
+
+        sys.stderr.write('\r[\033[36m{:6}\033[m] {:40}\r'.format(self.spinner[self.sc], self.opm))
+
+        if self.count == self.tw: self.spin_way = self.sub_one
+        if self.count == 0: self.spin_way = self.add_one
+
+        self.count = self.spin_way(self.count)
+
+    def end(self, status, end_msg = None):
+        self._clear_stderr()
+        if end_msg is None:
+            end_msg = self.opm
+        if status != 0:
+            sys.stderr.write('\r[\033[31m\033[1m{:^6}\033[m] {:40}\n'.format('fail', end_msg))
+        else: sys.stderr.write('\r[\033[32m\033[1m{:^6}\033[m] {:40}\n'.format('ok', end_msg))
 
 ## ==============================================
 ## regions - regions are a bounding box list:
@@ -1362,7 +1446,6 @@ def gdal_region(src_ds, warp = None):
         pointA.Transform(dst_trans)
         pointB.Transform(dst_trans)
         ds_region = [pointA.GetX(), pointB.GetX(), pointA.GetY(), pointB.GetY()]
-        
     return(ds_region)
 
 def _geo2pixel(geo_x, geo_y, geoTransform):
@@ -1410,8 +1493,8 @@ def gdal_srcwin(src_ds, region):
     this_origin = _geo2pixel(region[0], region[3], ds_config['geoT'])
     this_origin = [0 if x < 0 else x for x in this_origin]
     this_end = _geo2pixel(region[1], region[2], ds_config['geoT'])
-    this_size = (int((this_end[0] - this_origin[0]) + .5), int((this_end[1] - this_origin[1]) + .5))
-    #this_size = (int((this_end[0] - this_origin[0]) + 1), int((this_end[1] - this_origin[1]) + 1))
+    #this_size = (int((this_end[0] - this_origin[0]) + .5), int((this_end[1] - this_origin[1]) + .5))
+    this_size = (int((this_end[0] - this_origin[0]) + 1), int((this_end[1] - this_origin[1]) + 1))
     this_size = [0 if x < 0 else x for x in this_size]
     if this_size[0] > ds_config['nx'] - this_origin[0]: this_size[0] = ds_config['nx'] - this_origin[0]
     if this_size[1] > ds_config['ny'] - this_origin[1]: this_size[1] = ds_config['ny'] - this_origin[1]
@@ -1715,10 +1798,12 @@ def inf_entry(src_entry, overwrite = False):
 ## ==============================================
 ## gdal processing (datalist fmt:200)
 ## ==============================================
-def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = None):
+def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = None, verbose = False):
     '''send the data from gdal file src_gdal to dst_xyz port (first band only)
     optionally mask the output with `mask` or transform the coordinates to `warp` (epsg-code)'''
-    
+
+    #if verbose: sys.stderr.write('waffles: parsing gdal file {}...'.format(src_ds.GetDescription()))
+    ln = 1
     band = src_ds.GetRasterBand(1)
     ds_config = gdal_gather_infos(src_ds)
     src_srs = osr.SpatialReference()
@@ -1751,21 +1836,25 @@ def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = N
         band_data = np.reshape(band_data, (srcwin[2], ))
         for x_i in range(0, srcwin[2], 1):
             x = x_i + srcwin[0]
-            geo_x, geo_y = _pixel2geo(x, y, gt)
             z = band_data[x_i]
-            if warp is not None:
-                point = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(geo_x, geo_y))
-                point.Transform(dst_trans)
-                pnt = point.GetPoint()
-                line = [pnt[0], pnt[1], z]
-            else: line = [geo_x, geo_y, z]
             if '{:g}'.format(z) not in nodata:
+                ln += 1
+                geo_x,geo_y = _pixel2geo(x, y, gt)
+                if warp is not None:
+                    point = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(geo_x, geo_y))
+                    point.Transform(dst_trans)
+                    pnt = point.GetPoint()
+                    line = [pnt[0], pnt[1], z]
+                else: line = [geo_x, geo_y, z]
+                #if verbose and ln % 25000 == 0: sys.stderr.write('.')
                 yield(line)
+    #if verbose: sys.stderr.write('{} data points read.\n'.format(ln))
+    if verbose: echo_msg('parsed {} data records from {}'.format(ln, src_ds.GetDescription()))
                 
 def gdal_inf(src_ds, warp = None):
     '''generate an info (.inf) file from a src_gdal file using gdal
 
-    returns the region of src_ds'''
+    returns the region [xmin, xmax, ymin, ymax] of src_ds'''
     
     minmax = gdal_region(src_ds, warp)
     with open('{}.inf'.format(src_ds.GetDescription()), 'w') as inf:
@@ -1774,74 +1863,105 @@ def gdal_inf(src_ds, warp = None):
     return(minmax)
                     
 def gdal_inf_entry(entry, warp = None):
+    ''' scan a gdal entry and find it's region
+
+    returns the region [xmin, xmax, ymin, ymax] of the gdal entry'''
+    
     ds = gdal.Open(entry[0])
     minmax = gdal_inf(ds, warp)
     ds = None
     return(minmax)
 
 def gdal_yield_entry(entry, region = None, verbose = False, epsg = None):
+    '''yield the xyz data from the datalist entry.
+
+    yields [x, y, z, <w, ...>]'''
+    
     ds = gdal.Open(entry[0])
     if region is not None:
         srcwin = gdal_srcwin(ds, region)
     else: srcwin = None
-    for xyz in gdal_parse(ds, dump_nodata = False, srcwin = srcwin, warp = epsg):
+    for xyz in gdal_parse(ds, dump_nodata = False, srcwin = srcwin, warp = epsg, verbose = verbose):
         yield(xyz + [entry[2]] if entry[2] is not None else xyz)
     ds = None
     
 def gdal_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, epsg = None):
+    '''dump the xyz data from the gdal entry to dst_port'''
+    
     for xyz in gdal_yield_entry(entry, region, verbose, epsg):
         xyz_line(xyz, dst_port)
 
 ## ==============================================
 ## fetches processing (datalists fmt:400)
 ## ==============================================
-        
 def fetch_yield_entry(entry = ['nos:datatype=nos'], region = None, verbose = False):
+    '''yield the xyz data from the fetch module datalist entry
 
+    yields [x, y, z, <w, ...>]'''
+    
     fetch_mod = entry[0].split(':')[0]
     fetch_args = entry[0].split(':')[1:]
     
     fl = fetches.fetch_infos[fetch_mod][0](region_buffer(region, 5, pct = True), [], lambda: False)
     args_d = args2dict(fetch_args, {})
+    fl._verbose = verbose
 
     for xyz in fl._yield_results_to_xyz(**args_d):
-        # if region is not None:
-        #     if xyz_in_region_p(line, region):
-        #         yield(line + [entry[2]] if entry[2] is not None else line)
-        #     else: yield(line + [entry[2]] if entry[2] is not None else line)
         yield(xyz + [entry[2]] if entry[2] is not None else xyz)
 
 def fetch_dump_entry(entry = ['nos:datatype=nos'], dst_port = sys.stdout, region = None, verbose = False):
+    '''dump the xyz data from the fetch module datalist entry to dst_port'''
+    
     for xyz in fetch_yield_entry(entry, region, verbose):
         xyz_line(xyz, dst_port)
         
 ## ==============================================
 ## xyz processing (datalists fmt:168)
 ## ==============================================
-_xyz_config = {'delim': None, 'xpos': 0, 'ypos': 1, 'zpos': 2, 'skip': 0}
+_xyz_config = {'delim': None, 'xpos': 0, 'ypos': 1, 'zpos': 2, 'skip': 0, 'name': '<xyz-data-stream>'}
 _known_delims = [',', ' ', '\t', '/', ':']
 
-def xyz_parse(src_xyz, xyz_c = _xyz_config):
+def xyz_parse_line(xyz, xyz_c = _xyz_config):
+    '''parse an xyz line-string, using _xyz_config
+
+    returns [x, y, z]'''
+    
+    this_line = xyz.strip()
+    if xyz_c['delim'] is None:
+        for delim in _known_delims:
+            this_xyz = this_line.split(delim)
+            if len(this_xyz) > 1: 
+                xyz_c['delim'] = delim
+                break
+    else: this_xyz = this_line.split(xyz_c['delim'])
+    return([float(this_xyz[xyz_c['xpos']]), float(this_xyz[xyz_c['ypos']]), float(this_xyz[xyz_c['zpos']])])
+    
+def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
     '''xyz file parsing generator
     `src_xyz` is a file object or list of xyz data.
 
     yields each xyz line as a list [x, y, z, ...]'''
-    ln = 1
+    
+    ln = 0
+    skip = int(xyz_c['skip'])
+    xpos = xyz_c['xpos']
+    ypos = xyz_c['ypos']
+    zpos = xyz_c['zpos']
+    pass_d = False
+    #if verbose: sys.stderr.write('waffles: parsing xyz data from {}...'.format(xyz_c['name']))
     for xyz in src_xyz:
-        if ln > int(xyz_c['skip']):
-            this_line = xyz.strip()
-            if xyz_c['delim'] is None:
-                for delim in _known_delims:
-                    this_xyz = this_line.split(delim)
-                    if len(this_xyz) > 1: 
-                        xyz_c['delim'] = delim
-                        break
-            else: this_xyz = this_line.split(xyz_c['delim'])
-            yield([float(this_xyz[xyz_c['xpos']]), \
-                   float(this_xyz[xyz_c['ypos']]), \
-                   float(this_xyz[xyz_c['zpos']])])
-        ln += 1
-    echo_msg('parsed {} xyz points from {}'.format(ln, src_xyz.name))
+        if ln >= skip:
+            pass_d = False
+            this_xyz = xyz_parse_line(xyz)
+            if region is not None:
+                if xyz_in_region_p(this_xyz, region): pass_d = True
+            else: pass_d = True
+            if pass_d:
+                #if verbose and ln % 25000 == 0: sys.stderr.write('.')
+                ln += 1
+                yield(this_xyz)
+        else: skip -= 1
+    if verbose: echo_msg('parsed {} data records from {}'.format(ln, xyz_c['name']))
 
 def xyz2py(src_xyz):
     '''return src_xyz as a python list'''
@@ -1930,6 +2050,10 @@ def xyz_inf(src_xyz):
     else: return(0,0,0,0,0,0)
 
 def xyz_inf_entry(entry):
+    '''find the region of the xyz datalist entry
+    
+    returns the region [xmin, xmax, ymin, ymax] of the xyz entry'''
+    
     with open(entry[0]) as infile:
         try:
             minmax = mb_inf(infile)
@@ -1937,14 +2061,27 @@ def xyz_inf_entry(entry):
     return(minmax)        
 
 def xyz_yield_entry(entry, region = None, verbose = False):
-    with open(entry[0]) as infile:
-        for line in xyz_parse(infile):
-            if region is not None:
-                if xyz_in_region_p(line, region):
-                    yield(line + [entry[2]] if entry[2] is not None else line)
-            else: yield(line + [entry[2]] if entry[2] is not None else line)
+    '''yield the xyz data from the xyz datalist entry
 
+    yields [x, y, z, <w, ...>]'''
+    
+    with open(entry[0]) as infile:
+        xyzc = copy.deepcopy(_xyz_config)
+        xyzc['name'] = entry[0]
+        for line in xyz_parse(infile, xyz_c = xyzc, region = region, verbose = verbose):
+            yield(line + [entry[2]] if entry[2] is not None else line)
+
+# def xyz_yield_entry(entry, region = None, verbose = False):
+#     with open(entry[0]) as infile:
+#         for line in xyz_parse(infile):
+#             if region is not None:
+#                 if xyz_in_region_p(line, region):
+#                     yield(line + [entry[2]] if entry[2] is not None else line)
+#             else: yield(line + [entry[2]] if entry[2] is not None else line)            
+            
 def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
+    '''dump the xyz data from the xyz datalist entry to dst_port'''
+    
     for xyz in xyz_yield_entry(entry, region, verbose):
         xyz_line(xyz, dst_port)
 
@@ -1986,7 +2123,6 @@ def datalist_inf(dl, inf_file = True):
         for x in out_regions[1:]:
             out_region = regions_merge(out_region, x)
         minmax = out_region
-        
     if minmax is not None and inf_file:
         echo_msg('generating inf for datalist {}'.format(dl))
         with open('{}.inf'.format(dl), 'w') as inf:
@@ -2068,18 +2204,19 @@ def datalist_dump(wg, dst_port = sys.stdout, region = None, verbose = False):
     
     if region is not None:
         #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
-        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != 400 else True
+        #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != 400 else True
+        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     else: dl_p = _dl_pass_h
     for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p, verbose = verbose):
         #try:
         if this_entry[1] == 168:
-            xyz_dump_entry(this_entry, region = region, dst_port = dst_port)
+            xyz_dump_entry(this_entry, region = region, dst_port = dst_port, verbose = verbose)
         elif this_entry[1] == 200:
-            gdal_dump_entry(this_entry, region = region, dst_port = dst_port, epsg = wg['epsg'])
+            gdal_dump_entry(this_entry, region = region, dst_port = dst_port, epsg = wg['epsg'], verbose = verbose)
         elif this_entry[1] == 236:
             gdal_h_dump_entry(this_entry, region = region, dst_port = dst_port)
         elif this_entry[1] == 400: # fetch
-            fetch_dump_entry(this_entry, region = region, dst_port = dst_port)
+            fetch_dump_entry(this_entry, region = region, dst_port = dst_port, verbose = verbose)
         elif this_entry[1] == 401: # nos fetch
             remote_nos_dump_entry(this_entry, region = region, dst_port = dst_port)
         #except Exception as e: echo_error_msg('could not parse {}, {}'.format(this_entry[0], e))
@@ -2164,10 +2301,10 @@ def datalist_yield_xyz(dl, fmt = -1, wt = None, pass_h = lambda e: os.path.exits
     
     for this_entry in datalist(dl, fmt = fmt, wt = wt, pass_h = pass_h, verbose = verbose):
         if this_entry[1] == 168:
-            for xyz in xyz_yield_entry(this_entry):
+            for xyz in xyz_yield_entry(this_entry, region, verbose):
                 yield(xyz)
         elif this_entry[1] == 200:
-            for xyz in gdal_yield_entry(this_entry):
+            for xyz in gdal_yield_entry(this_entry, region, verbose):
                 yield(xyz)
         elif this_entry[1] == 400:
             for xyz in fetch_yield_entry(this_entry, region):
@@ -2194,7 +2331,8 @@ def datalist(dl, fmt = -1, wt = None, pass_h = lambda e: path_exists_or_url(e[0]
             this_entry_md = ' '.join(this_entry[3:]).split(',')
             this_entry = this_entry[:3] + [this_entry_md] + [os.path.basename(dl).split('.')[0]]
             if pass_h(this_entry):
-                if verbose: echo_msg('{} {}'.format('scanning datalist ({})'.format(this_entry[2]) if this_entry[1] == -1 else 'using datafile', this_entry[0]))
+                #if verbose: echo_msg('{} {}'.format('scanning datalist ({})'.format(this_entry[2]) if this_entry[1] == -1 else 'using datafile', this_entry[0]))
+                if verbose and this_entry[1] == -1: echo_msg('parsing datalist ({}) {}'.format(this_entry[2], this_entry[0]))
                 if this_entry[1] == -1:
                     dl_proc_h(this_entry)
                     for entry in datalist(this_entry[0], fmt, this_entry[2], pass_h, dl_proc_h, verbose):
@@ -2291,7 +2429,7 @@ def waffles_dict2wg(wg = _waffles_grid_info):
     ## note: the vdatum module doesn't need a datalist
     ## ==============================================
     if wg['datalist'] is None and len(wg['datalists']) > 0:
-        wg['datalist'] = datalist_major(wg['datalists'], '{}_mstr.datalist'.format(wg['name']))
+        wg['datalist'] = datalist_major(wg['datalists'], '{}_{}_mjr.datalist'.format(wg['name'], this_date()))
     if wg['mod'].lower() != 'vdatum':
         if wg['datalist'] is None:
             echo_error_msg('invalid datalist/s entry')
@@ -2490,7 +2628,7 @@ def waffles_spatial_metadata(wg):
         if len(dls) == 0: dls = wg['datalists']
         for this_entry in dls:
             #print(this_entry)
-            if this_entry[-1] != 'waffles_dem_mstr':
+            if this_entry[-1] != 'waffles_dem_mjr':
                 #print(this_entry)
                 twg = waffles_config()
                 twg['datalist'] = this_entry[0]
@@ -2514,7 +2652,7 @@ def waffles_spatial_metadata(wg):
                     tmp_ds = tmp_layer = out_feat = None
                     remove_glob('{}_poly.*'.format(wg['name']))
                 remove_glob('{}'.format(ng))
-                remove_glob('waffles_dem_mstr.datalist')
+                remove_glob('waffles_dem_mjr.datalist')
         ds = None
     return(dst_vector, 0)
 
@@ -2569,7 +2707,7 @@ def waffles_gdal_grid(wg = _waffles_grid_info, alg_str = 'linear:radius=1'):
     wt = 1 if wg['weights'] is not None else None
     dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = wt, region = region, verbose = wg['verbose']), region, wg['inc'], weights = False if wg['weights'] is None else True)
     ds = xyz2gdal_ds(dly, '{}'.format(wg['name']))
-    xcount, ycount, dst_gt = gdal_region2gt(wg['region'], wg['inc'])
+    xcount, ycount, dst_gt = gdal_region2gt(region, wg['inc'])
     gd_opts = gdal.GridOptions(outputType = gdal.GDT_Float32, noData = -9999, format = 'GTiff', \
                                width = xcount, height = ycount, algorithm = alg_str, callback = _gdal_progress if wg['verbose'] else None, \
                                outputBounds = [region[0], region[3], region[1], region[2]])
@@ -2669,14 +2807,14 @@ def waffles_run(wg = _waffles_grid_info):
         ## ==============================================
         ## gererate the DEM (run the module)
         ## ==============================================
-        try:
-            out, status = _waffles_modules[this_wg['mod']][0](args_d)
-        except KeyboardInterrupt as e:
-            echo_error_msg('killed by user, {}'.format(e))
-            sys.exit(-1)
-        except Exception as e:
-            echo_error_msg('{}'.format(e))
-            status = -1
+        #try:
+        out, status = _waffles_modules[this_wg['mod']][0](args_d)
+        #except KeyboardInterrupt as e:
+        #    echo_error_msg('killed by user, {}'.format(e))
+        #    sys.exit(-1)
+        #except Exception as e:
+        #    echo_error_msg('{}'.format(e))
+        #    status = -1
 
         if status != 0: remove_glob(this_dem)
         if not os.path.exists(this_dem): continue
@@ -2783,7 +2921,8 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     ## if dem has data, return
     ## ==============================================
-    remove_glob('waffles_dem_mstr.datalist')
+    remove_glob('waffles_dem_mjr.datalist')
+    remove_glob(wg['datalist'])
     return(dem)
         
 ## ==============================================
@@ -2860,6 +2999,7 @@ def waffles_cli(argv = sys.argv):
     want_prefix = False
     want_verbose = False
     want_config = False
+    status = 0
     i = 1
     while i < len(argv):
         arg = argv[i]
@@ -3007,7 +3147,7 @@ def waffles_cli(argv = sys.argv):
                 echo_msg(this_wg)
                 with open('{}.json'.format(this_wg['name']), 'w') as wg_json:
                     echo_msg('generating waffles config file: {}.json'.format(this_wg['name']))
-                    echo_msg('generating major datalist: {}_mstr.datalist'.format(this_wg['name']))
+                    echo_msg('generating major datalist: {}_mjr.datalist'.format(this_wg['name']))
                     wg_json.write(json.dumps(this_wg, indent = 4, sort_keys = True))
             else: echo_error_msg('could not parse config.')
         else:
@@ -3016,24 +3156,23 @@ def waffles_cli(argv = sys.argv):
             ## ==============================================
             # import threading
             # t = threading.Thread(target = waffles_run, args = (wg,))
+            # p = _progress('waffles: generating dem')
             # try:
             #     t.start()
-            #     a = 0
             #     while True:
-            #         time.sleep(2)
-            #         sys.stderr.write('\x1b[2K\r')
-            #         sys.stderr.flush()
-            #         sys.stderr.write('waffles: {}'.format(a))
-            #         a+=1
+            #         time.sleep(1)
+            #         p.update()
             #         if not t.is_alive():
             #             break
             # except (KeyboardInterrupt, SystemExit):
             #     echo_msg('stopping all threads')
             #     stop_threads = True
-
+            #     status = -1
+            
             # t.join()
+            # p.end(status, 'waffles: generated dem')
             try:
-                dem = waffles_run(wg)
+                em = waffles_run(wg)
             except RuntimeError or OSError as e:
                 echo_error_msg('Cannot access {}.tif, may be in use elsewhere, {}'.format(wg['name'], e))
 
