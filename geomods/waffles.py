@@ -379,38 +379,24 @@ class _progress:
             sys.stderr.write('\r {}  {:40}\n'.format(" " * (self.tw - 1), self.opm))
         
     def _switch_way(self):
-        if self.spin_way == self.add_one:
-            self.spin_way = self.sub_one
-        else: self.spin_way = self.add_one
+        self.spin_way = self.sub_one if self.spin_way == self.add_one else self.add_one
 
     def _clear_stderr(self, slen = 79):
         sys.stderr.write('\x1b[2K\r')
         sys.stderr.flush()
 
-    def err_msg(self, msg):
-        self._clear_stderr()
-        sys.stderr.write('geomods: error, {}\n'.format(msg))
-
-    def msg(self, msg):
-        self._clear_stderr()
-        sys.stderr.write('geomods: {}\n'.format(msg))
-
     def update(self):
         self.pc = (self.count % self.tw)
         self.sc = (self.count % (self.tw+1))
         self._clear_stderr()
-
         sys.stderr.write('\r[\033[36m{:6}\033[m] {:40}\r'.format(self.spinner[self.sc], self.opm))
-
         if self.count == self.tw: self.spin_way = self.sub_one
         if self.count == 0: self.spin_way = self.add_one
-
         self.count = self.spin_way(self.count)
 
     def end(self, status, end_msg = None):
         self._clear_stderr()
-        if end_msg is None:
-            end_msg = self.opm
+        if end_msg is None: end_msg = self.opm
         if status != 0:
             sys.stderr.write('\r[\033[31m\033[1m{:^6}\033[m] {:40}\n'.format('fail', end_msg))
         else: sys.stderr.write('\r[\033[32m\033[1m{:^6}\033[m] {:40}\n'.format('ok', end_msg))
@@ -1952,7 +1938,7 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
     for xyz in src_xyz:
         if ln >= skip:
             pass_d = False
-            this_xyz = xyz_parse_line(xyz)
+            this_xyz = xyz_parse_line(xyz, xyz_c)
             if region is not None:
                 if xyz_in_region_p(this_xyz, region): pass_d = True
             else: pass_d = True
