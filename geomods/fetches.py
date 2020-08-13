@@ -231,7 +231,7 @@ def fetch_nos_xml(src_url):
     '''fetch src_url and return it as an XML object'''
     results = lxml.etree.fromstring('<?xml version="1.0"?><!DOCTYPE _[<!ELEMENT _ EMPTY>]><_/>'.encode('utf-8'))
     try:
-        req = fetch_req(src_url, timeout = .5)
+        req = fetch_req(src_url, timeout = 1)
         results = lxml.etree.fromstring(req.text.encode('utf-8'))
     except: echo_error_msg('could not access {}'.format(src_url))
     #except: pass
@@ -239,7 +239,7 @@ def fetch_nos_xml(src_url):
         
 def fetch_html(src_url):
     '''fetch src_url and return it as an HTML object'''
-    req = fetch_req(src_url)
+    req = fetch_req(src_url, timeout = 2)
     if req:
         return(lh.document_fromstring(req.text))
     else: return(None)
@@ -600,8 +600,9 @@ class nos:
     '''Fetch NOS BAG and XYZ sounding data from NOAA'''
     def __init__(self, extent = None, filters = [], callback = None):
         echo_msg('loading NOS fetch module...')
-        #self._nos_xml_url = lambda nd: 'https://data.noaa.gov/waf/NOAA/NESDIS/NGDC/MGG/NOS/%siso_u/xml/' %(nd)
-        self._nos_xml_url = lambda nd: 'https://data.noaa.gov/waf/NOAA/NESDIS/NGDC/MGG/NOS/%siso/xml/' %(nd)
+        self._nos_xml_url = lambda nd: 'https://data.noaa.gov/waf/NOAA/NESDIS/NGDC/MGG/NOS/%siso_u/xml/' %(nd)
+        #self._nos_xml_url = lambda nd: 'https://data.noaa.gov/waf/NOAA/NESDIS/NGDC/MGG/NOS/%siso/xml/' %(nd)
+        #self._nos_data_url = "https://data.ngdc.noaa.gov/platforms/ocean/nos/coast/"
         self._nos_directories = [
             "B00001-B02000/", "D00001-D02000/", "F00001-F02000/", \
             "H00001-H02000/", "H02001-H04000/", "H04001-H06000/", \
@@ -609,6 +610,8 @@ class nos:
             "H12001-H14000/", "L00001-L02000/", "L02001-L04000/", \
             "T00001-T02000/", "W00001-W02000/" \
         ]
+
+        self._nos_fmts = ['.xyz.gz', '.bag.gz', '.bag']
 
         self._outdir = os.path.join(os.getcwd(), 'nos')
         self._ref_vector = os.path.join(fetchdata, 'nos.gmt')
@@ -654,7 +657,7 @@ class nos:
     ## ==============================================
     ## Reference Vector Generation
     ## ==============================================
-    def _parse_nos_xml(self, xml_url, sid):
+    def _parse_nos_xml(self, xml_url, sid, nosdir):
         '''pare the NOS XML file and extract relavant infos.'''
         xml_doc = fetch_nos_xml(xml_url)
         title_ = xml_doc.find('.//gmd:title/gco:CharacterString', namespaces = namespaces)
@@ -672,10 +675,11 @@ class nos:
         dts = ['GEODAS_XYZ', 'BAG', 'GRID_BAG']
         xml_dsf = 'None'
         xml_dsu = []
-
+        
         ## ==============================================
         ## Get all the data URLs
         ## ==============================================
+        
         dfs = xml_doc.findall('.//gmd:MD_Format/gmd:name/gco:CharacterString', namespaces = namespaces)
         dus = xml_doc.findall('.//gmd:onLine/gmd:CI_OnlineResource/gmd:linkage/gmd:URL', namespaces = namespaces)
         if dus is not None:
@@ -685,8 +689,7 @@ class nos:
                         if dfs[i].text in dts:
                             xml_dsu.append(j.text)
                             xml_dsf = dfs[i].text
-
-            return([obbox, title, sid, odt, xml_url, ','.join(list(set(xml_dsu))), xml_dsf])
+                            return([obbox, title, sid, odt, xml_url, ','.join(list(set(xml_dsu))), xml_dsf])
         return([None])
 
     def _scan_directory(self, nosdir):
@@ -714,8 +717,13 @@ class nos:
             #if self._has_vector: layer.SetAttributeFilter('ID = "{}"'.format(sid))
             if len(layer) == 0:
                 xml_url = xml_catalog + survey
-                s_entry = self._parse_nos_xml(xml_url, sid)
+                s_entry = self._parse_nos_xml(xml_url, sid, nosdir)
                 if s_entry[0]: self._surveys.append(s_entry)
+                #try:
+                #    s_entries = self._parse_nos_xml(xml_url, sid, nosdir)
+                #    for s_entry in s_entries:
+                #        if s_entry[0]: self._surveys.append(s_entry)
+                #except: pass
         gmt1 = layer = None
         sys.stderr.write('\x1b[2K\rfetches: scanning {} surveys in {} [ OK ].\n'.format(len(rows), nosdir))
         sys.stderr.flush()
@@ -1608,14 +1616,14 @@ def fetches_cli(argv = sys.argv):
             '.format(fetch_mod, region_format(this_region, 'str'), rn+1, len(these_regions)))
             fl = fetch_infos[fetch_mod][0](region_buffer(this_region, 5, pct = True), f, lambda: stop_threads)
             args_d = args2dict(args)
-            try:
-                r = fl.run(**args_d)
-            except ValueError as e:
-                echo_error_msg('something went wrong, {}'.format(e))
-                sys.exit(-1)
-            except Exception as e:
-                echo_error_msg('{}'.format(e))
-                sys.exit(-1)
+            #try:
+            r = fl.run(**args_d)
+            #except ValueError as e:
+            #    echo_error_msg('something went wrong, {}'.format(e))
+            #    sys.exit(-1)
+            #except Exception as e:
+            #    echo_error_msg('{}'.format(e))
+            #    sys.exit(-1)
             echo_msg('found {} data files.'.format(len(r)))
             
             if want_list:

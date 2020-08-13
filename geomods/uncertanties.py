@@ -161,8 +161,8 @@ def err_plot(err_arr, d_max):
 def waffles_interpolation_uncertainty(uc = _unc_config):
     '''calculate the interpolation uncertainty.'''
     dp = None
-    sims = 10
-    sim_loops = 1
+    sims = 4
+    sim_loops = 4
     chnk_lvl = 4
     echo_msg('running INTERPOLATION uncertainty module using {}...'.format(uc['wg']['mod']))
 
@@ -180,9 +180,9 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
     ## chunk region into sub regions
     ## ==============================================
     echo_msg('chunking region into sub-regions using chunk level {}...'.format(chnk_lvl))
-    chnk_inc = int(region_info[uc['wg']['name']][4] / chnk_lvl)
+    chnk_inc = int((100 - region_info[uc['wg']['name']][4]) / chnk_lvl)
     print(chnk_inc)
-    sub_regions = region_chunk(uc['wg']['region'], uc['wg']['inc'], chnk_inc)
+    sub_regions = region_chunk(uc['wg']['region'], uc['wg']['inc'], 500)
     echo_msg('chunked region into {} sub-regions.'.format(len(sub_regions)))
 
     ## ==============================================
@@ -289,8 +289,9 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
                         wc['mod'] = uc['wg']['mod']
                         wc['verbose'] = True
                         wc['mod_args'] = uc['wg']['mod_args']
+                        #print(wc)
                         sub_dem = waffles_run(wc)
-                        print(sub_dem)
+                        #print(sub_dem)
                         ## ==============================================
                         ## generate the random-sample data MASK and PROX
                         ## ==============================================        
@@ -311,7 +312,8 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
                             sub_xyd = gdal_query(sub_xyz[sx_cnt:], sub_dem, 'xyd')
                             sub_dp = gdal_query(sub_xyd, sub_prox, 'zg')
                         else: sub_dp = None
-                        print(sub_dp)
+                        #print(sub_xyd)
+                        #print(sub_dp)
                         remove_glob(sub_xyz_head)
                         sub_xyz = None
 
@@ -346,7 +348,7 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
         math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_dst_unc.tif=gd+n-9999:GTiff\
         '.format(uc['prox'], ec[2], ec[1], 0, uc['wg']['name'])
         run_cmd(math_cmd, verbose = uc['wg']['verbose'])
-        echo_msg('applyed coefficient to proximity grid')
+        echo_msg('applied coefficient {} to proximity grid'.format(ec))
 
     return(dp)
 
@@ -378,7 +380,8 @@ if __name__ == '__main__':
     uc['dem'] = dem
     uc['msk'] = msk
     uc['prox'] = prox
-    waffles_interpolation_uncertainty(uc)
+    dp = waffles_interpolation_uncertainty(uc)
+    print(dp)
     #dp = np.loadtxt('test.err')
     #ec = err_plot(dp, 100)
     #print(ec)
