@@ -45,7 +45,7 @@ try:
 except: import queue as queue
 
 #from geomods import waffles
-import waffles
+from geomods import waffles
 
 _version = '0.4.2'
 
@@ -224,14 +224,14 @@ def fetch_req(src_url, params = None, tries = 5, timeout = 2):
     '''fetch src_url and return the requests object'''
     if tries <= 0: return(None)
     try:
-        return(requests.get(src_url, stream = True, params = params, timeout = timeout, headers = r_headers))
+        return(requests.get(src_url, stream = True, params = params, timeout = (timeout,10), headers = r_headers))
     except: return(fetch_req(src_url, params = params, tries = tries - 1, timeout = timeout + 1))
 
 def fetch_nos_xml(src_url):
     '''fetch src_url and return it as an XML object'''
     results = lxml.etree.fromstring('<?xml version="1.0"?><!DOCTYPE _[<!ELEMENT _ EMPTY>]><_/>'.encode('utf-8'))
     try:
-        req = fetch_req(src_url, timeout = 1)
+        req = fetch_req(src_url, timeout = .25)
         results = lxml.etree.fromstring(req.text.encode('utf-8'))
     except: echo_error_msg('could not access {}'.format(src_url))
     #except: pass
@@ -550,7 +550,8 @@ class dc:
         if entry[-1].lower() == 'lidar':
             src_dc = os.path.basename(entry[1])
             if fetch_file(entry[0], src_dc, callback = lambda: False, verbose = self._verbose) == 0:
-                xyz_dat = waffles.yield_cmd('las2txt -verbose -stdout -parse xyz -keep_xy {} -keep_class {} -i {}'.format(waffles.region_format(self.region, 'te'), '2 29', src_dc), verbose = False)
+                xyz_dat = waffles.yield_cmd('las2txt -verbose -stdout -parse xyz -keep_xy {} -keep_class {} -i {}\
+                '.format(waffles.region_format(self.region, 'te'), '2 29', src_dc), verbose = False)
                 xyzc = copy.deepcopy(waffles._xyz_config)
                 xyzc['name'] = src_dc
                 for xyz in waffles.xyz_parse(xyz_dat, xyz_c = xyzc, verbose = self._verbose):
@@ -689,7 +690,7 @@ class nos:
                         if dfs[i].text in dts:
                             xml_dsu.append(j.text)
                             xml_dsf = dfs[i].text
-                            return([obbox, title, sid, odt, xml_url, ','.join(list(set(xml_dsu))), xml_dsf])
+            return([obbox, title, sid, odt, xml_url, ','.join(list(set(xml_dsu))), xml_dsf])
         return([None])
 
     def _scan_directory(self, nosdir):

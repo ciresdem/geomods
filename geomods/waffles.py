@@ -278,6 +278,7 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc'):
     
     error = err_arr[:,0]
     distance = err_arr[:,1]
+    #wt = err_arr[:,2]
     
     max_int_dist = np.max(distance)
     nbins = 10
@@ -1405,14 +1406,23 @@ def gdal_gt2region(ds_config):
 def gdal_region2gt(region, inc):
     '''return a count info and a gdal geotransform based on extent and cellsize
     output is a list (xcount, ycount, geot)'''
-    
-    ysize = region[3] - region[2]
-    xsize = region[1] - region[0]
-    ## add one to sizes
-    xcount = int((xsize / inc) + 0.5)
-    ycount = int((ysize / inc) + 0.5)
+
     dst_gt = (region[0], inc, 0, region[3], 0, (inc * -1.))
-    return(xcount, ycount, dst_gt)
+    
+    this_origin = _geo2pixel(region[0], region[3], dst_gt)
+    this_end = _geo2pixel(region[1], region[2], dst_gt)
+    this_size = ((this_end[0] - this_origin[0]) + 1, (this_end[1] - this_origin[1]) + 1)
+    
+    #ysize = region[3] - region[2]
+    #xsize = region[1] - region[0]
+    ## add one to sizes
+    #xcount = int((xsize / inc) + 0.5)
+    #ycount = int((ysize / inc) + 0.5)
+
+    #xcount = int((xsize / inc) + .5)
+    #ycount = int((ysize / inc) + .5)
+
+    return(this_size[0], this_size[1], dst_gt)
 
 def gdal_ogr_mask_union(src_layer, src_field, dst_defn = None):
     '''`union` a `src_layer`'s features based on `src_field` where
@@ -1513,8 +1523,8 @@ def _geo2pixel(geo_x, geo_y, geoTransform):
     '''convert a geographic x,y value to a pixel location of geoTransform'''
     
     if geoTransform[2] + geoTransform[4] == 0:
-        pixel_x = (geo_x - geoTransform[0]) / geoTransform[1]
-        pixel_y = (geo_y - geoTransform[3]) / geoTransform[5]
+        pixel_x = ((geo_x - geoTransform[0]) / geoTransform[1]) + .5
+        pixel_y = ((geo_y - geoTransform[3]) / geoTransform[5]) + .5
     else: pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt(geoTransform))
     return(int(pixel_x), int(pixel_y))
 
@@ -1554,8 +1564,8 @@ def gdal_srcwin(src_ds, region):
     this_origin = _geo2pixel(region[0], region[3], ds_config['geoT'])
     this_origin = [0 if x < 0 else x for x in this_origin]
     this_end = _geo2pixel(region[1], region[2], ds_config['geoT'])
-    #this_size = (int((this_end[0] - this_origin[0]) + .5), int((this_end[1] - this_origin[1]) + .5))
-    this_size = (int((this_end[0] - this_origin[0]) + 1), int((this_end[1] - this_origin[1]) + 1))
+    this_size = ((this_end[0] - this_origin[0]), (this_end[1] - this_origin[1]))
+    #this_size = (int((this_end[0] - this_origin[0]) + 1), int((this_end[1] - this_origin[1]) + 1))
     this_size = [0 if x < 0 else x for x in this_size]
     if this_size[0] > ds_config['nx'] - this_origin[0]: this_size[0] = ds_config['nx'] - this_origin[0]
     if this_size[1] > ds_config['ny'] - this_origin[1]: this_size[1] = ds_config['ny'] - this_origin[1]
@@ -1595,29 +1605,28 @@ def xyz2gdal_ds(src_xyz, dst_ogr):
         layer.CreateFeature(f)
     return(ds)
 
-def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format = 'GTiff', mode = 'n', epsg = 4326, yield_xyz = False, verbose = False):
+def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format = 'GTiff', mode = 'n', epsg = 4326, verbose = False):
     '''Create a GDAL supported grid from xyz data 
     `mode` of `n` generates a num grid
     `mode` of `m` generates a mean grid
     `mode` of `k` generates a mask grid'''
     
     xcount, ycount, dst_gt = gdal_region2gt(region, inc)
+    if verbose:
+        echo_msg('gridding data with mode: {} to {}'.format(mode, dst_gdal))
+        echo_msg('grid size: {}/{}'.format(ycount, xcount))
     if mode == 'm':
         sumArray = np.zeros((ycount, xcount))
     gdt = gdal.GDT_Float32
     #else: gdt = gdal.GDT_Int32
     ptArray = np.zeros((ycount, xcount))
     ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(epsg), gdt, -9999, dst_format)
-    if verbose:
-        echo_msg('gridding data with mode: {} to {}'.format(mode, dst_gdal))
-        echo_msg('grid size: {}/{}'.format(ycount, xcount))
     for this_xyz in src_xyz:
         x = this_xyz[0]
         y = this_xyz[1]
         z = this_xyz[2]
         if x > region[0] and x < region[1]:
             if y > region[2] and y < region[3]:
-                if yield_xyz: yield(this_xyz)
                 xpos, ypos = _geo2pixel(x, y, dst_gt)
                 if mode == 'm':
                     sumArray[ypos, xpos] += z
@@ -1629,7 +1638,7 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format = 'GTiff', mode = '
     elif mode == 'n': outarray = ptArray
     else: outarray = ptArray
     outarray[np.isnan(outarray)] = -9999
-    out, status = gdal_write(outarray, dst_gdal, ds_config)
+    return(gdal_write(outarray, dst_gdal, ds_config))
 
 def gdal_xyz_mask(src_xyz, dst_gdal, region, inc, dst_format='GTiff', epsg = 4326):
     '''Create a num grid mask of xyz data. The output grid
@@ -1643,11 +1652,12 @@ def gdal_xyz_mask(src_xyz, dst_gdal, region, inc, dst_format='GTiff', epsg = 432
         y = this_xyz[1]
         if x > region[0] and x < region[1]:
             if y > region[2] and y < region[3]:
+                yield(this_xyz)
                 xpos, ypos = _geo2pixel(x, y, dst_gt)
                 try:
                     ptArray[ypos, xpos] = 1
                 except: pass
-    return(gdal_write(ptArray, dst_gdal, ds_config))
+    out, status = gdal_write(ptArray, dst_gdal, ds_config)
 
 def np_gaussian_blur(in_array, size):
     '''blur an array using fftconvolve from scipy.signal
@@ -1900,6 +1910,7 @@ def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = N
         if msk_band is not None:
             msk_data = msk_band.ReadAsArray(srcwin[0], y, srcwin[2], 1)
             band_data[msk_data==0]=-9999
+            #msk_data = None
         band_data = np.reshape(band_data, (srcwin[2], ))
         for x_i in range(0, srcwin[2], 1):
             x = x_i + srcwin[0]
@@ -1915,7 +1926,10 @@ def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = N
                 else: line = [geo_x, geo_y, z]
                 #if verbose and ln % 25000 == 0: sys.stderr.write('.')
                 yield(line)
-    #if verbose: sys.stderr.write('{} data points read.\n'.format(ln))
+        #band_data = None
+    band = None
+    src_mask = None
+    msk_band = None
     if verbose: echo_msg('parsed {} data records from {}'.format(ln, src_ds.GetDescription()))
                 
 def gdal_inf(src_ds, warp = None):
@@ -1956,7 +1970,7 @@ def gdal_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False
     '''dump the xyz data from the gdal entry to dst_port'''
     
     for xyz in gdal_yield_entry(entry, region, verbose, epsg):
-        xyz_line(xyz, dst_port)
+        xyz_line(xyz, dst_port, True)
 
 ## ==============================================
 ## fetches processing (datalists fmt:400)
@@ -1980,7 +1994,7 @@ def fetch_dump_entry(entry = ['nos:datatype=nos'], dst_port = sys.stdout, region
     '''dump the xyz data from the fetch module datalist entry to dst_port'''
     
     for xyz in fetch_yield_entry(entry, region, verbose):
-        xyz_line(xyz, dst_port)
+        xyz_line(xyz, dst_port, True)
         
 ## ==============================================
 ## xyz processing (datalists fmt:168)
@@ -2072,13 +2086,13 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False, verbo
             if z != -9999:
                 yield([geo_x, geo_y, z])
     
-def xyz_line(line, dst_port = sys.stdout):
+def xyz_line(line, dst_port = sys.stdout, encode = False):
     '''write "xyz" `line` to `dst_port`
     `line` should be a list of xyz values [x, y, z, ...].'''
     delim = _xyz_config['delim'] if _xyz_config['delim'] is not None else ' '
     
     l = '{}\n'.format(delim.join([str(x) for x in line]))
-    if dst_port != sys.stdout: l = l.encode('utf-8')
+    if encode: l = l.encode('utf-8')
     dst_port.write(l)
 
 def xyz_in_region_p(src_xy, src_region):
@@ -2150,7 +2164,7 @@ def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False)
     '''dump the xyz data from the xyz datalist entry to dst_port'''
     
     for xyz in xyz_yield_entry(entry, region, verbose):
-        xyz_line(xyz, dst_port)
+        xyz_line(xyz, dst_port, True)
 
 ## ==============================================
 ## datalists and entries - datalists.py
@@ -2629,14 +2643,14 @@ def waffles_mask_and_yield(wg = _waffles_grid_info):
     region = waffles_proc_region(wg)
     dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     dly = datalist_yield_xyz(wg['datalist'], pass_h = dlh, region = region, verbose = wg['verbose'])
-    for xyz in gdal_xyz2gdal(dly, '{}_msk.tif'.format(wg['name']), region, wg['inc'], dst_format = wg['fmt'], mode = 'k', yield_xyz = True):
+    for xyz in gdal_xyz_mask(dly, '{}_msk.tif'.format(wg['name']), region, wg['inc'], dst_format = wg['fmt']):
         yield(xyz)
 
 def waffles_mask_and_dump(wg = _waffles_grid_info, dst_port = sys.stdout):
     '''dump the xyz data from datalist and generate a data mask while doing it.'''
 
     for xyz in waffles_mask_and_yield(wg):
-        xyz_line(xyz, dst_port)
+        xyz_line(xyz, dst_port, True)
     
 def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, use_datalists = False):
     '''Generate a DEM with MBSystem's mbgrid program.
@@ -2703,13 +2717,16 @@ def waffles_num(wg = _waffles_grid_info, mode = 'n'):
     mode of `n` generates a num grid'''
     
     wg['region'] = region_buffer(wg['region'], wg['inc'] * .5) if wg['node'] == 'grid' else wg['region']
-    region = waffles_dist_region(wg)
+    region = waffles_proc_region(wg)
     #dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
     dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+    dl_y = datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = 1 if wg['weights'] is not None else None, region = region, verbose = wg['verbose'])
+    dl_my = waffles_mask_and_yield(wg)
     if wg['weights']:
-        dly = xyz_block(datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = 1 if wg['weights'] is not None else None, region = region, verbose = wg['verbose']), region, wg['inc'], weights = True if wg['weights'] else False)
-    else: dly = datalist_yield_xyz(wg['datalist'], pass_h = dlh, region = region, verbose = wg['verbose'])    
-    return(gdal_xyz2gdal(dly, '{}.tif'.format(wg['name']), region, wg['inc'], dst_format = wg['fmt'], mode = mode))
+        dly = xyz_block(dl_y if not wg['mask'] else dl_my, region, wg['inc'], weights = True if wg['weights'] else False)
+    else: dly = dl_y if not wg['mask'] else dl_my
+    #else: dly = datalist_yield_xyz(wg['datalist'], pass_h = dlh, region = region, verbose = wg['verbose'])
+    return(gdal_xyz2gdal(dly, '{}.tif'.format(wg['name']), region, wg['inc'], dst_format = wg['fmt'], mode = mode, verbose = wg['verbose']))
 
 def waffles_gdal_grid(wg = _waffles_grid_info, alg_str = 'linear:radius=1'):
     '''run gdal grid using alg_str
@@ -2857,8 +2874,7 @@ _unc_config = {
     'prox': None,
     'slp': None,
     'zones': ['bathy', 'bathy-topo', 'topo'],
-    'sims': 10,
-    'sim_loops': 2,
+    'sims': 25,
     'chnk_lvl': 4,
 }
 
@@ -2867,14 +2883,19 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
     - as related to distance to nearest measurement.
 
     returns [[err, dist] ...]'''
-    dp = None
+    s_dp = None
     echo_msg('running INTERPOLATION uncertainty module using {}...'.format(uc['wg']['mod']))
-
+    out, status = run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
+    
     ## ==============================================
     ## region analysis
     ## ==============================================
     region_info = {}
+        
+    ## mask analysis
     num_sum, g_max, num_perc = gdal_mask_analysis(mask = uc['msk'])
+
+    ## proximity analysis
     prox_perc_95 = gdal_percentile(uc['prox'], 95)
 
     region_info[uc['wg']['name']] = [uc['wg']['region'], g_max, num_sum, num_perc, prox_perc_95] 
@@ -2902,8 +2923,6 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
         zone = 'Bathy' if s_dc['zmax'] < 0 else 'Topo' if s_dc['zmin'] > 0 else 'BathyTopo'
         sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, s_dc['zmin'], s_dc['zmax'], zone]
         remove_glob('tmp_*.tif')
-    for x in sub_zones.keys():
-        echo_msg('Sub-region {}: {}'.format(x, sub_zones[x]))
         
     s_dens = np.array([sub_zones[x][3] for x in sub_zones.keys()])
     s_5perc = np.percentile(s_dens, 5)
@@ -2934,139 +2953,98 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
     ## ==============================================
     ## split-sample simulations and error calculations
     ## ==============================================
-    s_dp = None
-    s_ds = None
     for sim in range(0, uc['sims']):
         sys.stderr.write('\x1b[2K\rwaffles: performing SPLIT-SAMPLE simulation {} out of {} [{:3}%]'.format(sim + 1, uc['sims'], 0))
         sys.stderr.flush()
-        #echo_msg('performing SPLIT-SAMPLE simulation {} out of {}...'.format(sim + 1, uc['sims']))
         status = 0
-        for s_l in range(0, uc['sim_loops']):
-            for z, train in enumerate(trains):
-                train_h = train[:25]
-                ss_samp = s_5perc
-                
+        for z, train in enumerate(trains):
+            train_h = train[:25]
+            ss_samp = s_5perc
+
+            ## ==============================================
+            ## perform split-sample analysis on each training region.
+            ## ==============================================
+            for n, sub_region in enumerate(train_h):
+                perc = int(float(n+(len(train_h) * z))/(len(train_h)*len(trains)) * 100)
+                sys.stderr.write('\x1b[2K\rwaffles: performing SPLIT-SAMPLE simulation {} out of {} [{:3}%]'.format(sim + 1, uc['sims'], perc))
+                this_region = sub_region[0]
+                if sub_region[3] < ss_samp: ss_samp = None
+
                 ## ==============================================
-                ## perform split-sample analysis on each training region.
+                ## extract the xyz data for the region from the DEM
                 ## ==============================================
-                for n, sub_region in enumerate(train_h):
-                    #perc = float(n+(len(train_h) * s_l))/(len(train_h)*uc['sim_loops']) * 100
-                    perc = float(n)/len(train_h) * 100
-                    sys.stderr.write('\x1b[2K\rwaffles: performing SPLIT-SAMPLE simulation {} out of {} [{:3}%]'.format(sim + 1, uc['sims'], perc))
-                    #sys.stderr.write('.')
-                    #sys.stderr.write(n / len(train_h) * 100)
-                    #echo_msg('processing sub-region ({}) {}'.format(n, sub_region))
-                    this_region = sub_region[0]
-                    #echo_msg('initial/desired sampling density: {}/{}'.format(sub_region[3], ss_samp))
-                    if sub_region[3] < ss_samp: ss_samp = None
+                o_xyz = '{}_{}.xyz'.format(uc['wg']['name'], n)
+                ds = gdal.Open(uc['dem'])
+                with open(o_xyz, 'w') as o_fh:
+                    for xyz in gdal_parse(ds, srcwin = gdal_srcwin(ds, region_buffer(this_region, (20 * uc['wg']['inc']))), mask = uc['msk']):
+                        xyz_line(xyz, o_fh)
+                ds = None
+
+                if os.stat(o_xyz).st_size == 0:
+                    echo_error_msg('no data in sub-region...')
+                else:
+                    ## ==============================================
+                    ## split the xyz data to inner/outer; outer is
+                    ## the data buffer, inner will be randomly sampled
+                    ## ==============================================
+                    s_inner, s_outer = gmt_select_split(o_xyz, this_region, 'sub_{}'.format(n), verbose = False) #verbose = uc['wg']['verbose'])
+                    if os.stat(s_inner).st_size != 0:
+                        sub_xyz = np.loadtxt(s_inner, ndmin=2, delimiter = ' ')
+                    else: sub_xyz = []
+                    ss_len = len(sub_xyz)
+                    if ss_samp is not None:
+                        sx_cnt = int(sub_region[1] * (ss_samp / 100)) + 1
+                    else: sx_cnt = 1
+                    sub_xyz_head = 'sub_{}_head.xyz'.format(n)
+                    np.random.shuffle(sub_xyz)
+                    np.savetxt(sub_xyz_head, sub_xyz[:sx_cnt], '%f', ' ')
+
+                    ## ==============================================
+                    ## generate the random-sample DEM
+                    ## ==============================================
+                    wc = waffles_config()
+                    wc['name'] = 'sub_{}'.format(n)
+                    wc['datalists'] = [s_outer, sub_xyz_head]
+                    wc['region'] = this_region
+                    wc['inc'] = uc['wg']['inc']
+                    wc['mod'] = uc['wg']['mod']
+                    wc['verbose'] = False
+                    wc['mod_args'] = uc['wg']['mod_args']
+                    wc['mask'] = True
+                    sub_dem = waffles_run(wc)
+                    sub_msk = '{}_msk.tif'.format(wc['name'])
                     
-                    o_xyz = '{}_{}.xyz'.format(uc['wg']['name'], n)
-
-                    ## ==============================================
-                    ## extract the xyz data for the region from the DEM
-                    ## ==============================================
-                    ds = gdal.Open(uc['dem'])
-                    with open(o_xyz, 'w') as o_fh:
-                        for xyz in gdal_parse(ds, srcwin = gdal_srcwin(ds, region_buffer(this_region, (20 * uc['wg']['inc']))), mask = uc['msk']):
-                            xyz_line(xyz, o_fh)
-                    ds = None
-
-                    if os.stat(o_xyz).st_size != 0:
-
+                    if os.path.exists(sub_dem) and os.path.exists(sub_msk):
                         ## ==============================================
-                        ## split the xyz data to inner/outer; outer is
-                        ## the data buffer, inner will be randomly sampled
-                        ## ==============================================
-                        s_inner, s_outer = gmt_select_split(o_xyz, this_region, 'sub_{}'.format(n), verbose = False) #verbose = uc['wg']['verbose'])
-                        if os.stat(s_inner).st_size != 0:
-                            sub_xyz = np.loadtxt(s_inner, ndmin=2, delimiter = ' ')
-                        else: sub_xyz = []
-                        ss_len = len(sub_xyz)
-                        if ss_samp is not None:
-                            sx_cnt = int(sub_region[1] * (ss_samp / 100)) + 1
-                        else: sx_cnt = 1
-                        sub_xyz_head = 'sub_{}_head.xyz'.format(n)
-                        #echo_msg('withholding {} out of {} points for error sampling'.format(ss_len - sx_cnt, ss_len))
-                        np.random.shuffle(sub_xyz)
-                        np.savetxt(sub_xyz_head, sub_xyz[:sx_cnt], '%f', ' ')
-
-                        ## ==============================================
-                        ## generate the random-sample DEM
-                        ## ==============================================
-                        wc = waffles_config()
-                        wc['name'] = 'sub_{}'.format(n)
-                        wc['datalists'] = [s_outer, sub_xyz_head]
-                        wc['region'] = this_region
-                        wc['inc'] = uc['wg']['inc']
-                        wc['mod'] = uc['wg']['mod']
-                        #wc['verbose'] = uc['wg']['verbose']
-                        wc['verbose'] = False
-                        wc['mod_args'] = uc['wg']['mod_args']
-                        wc['mask'] = True
-                        sub_dem = waffles_run(wc)
-
-                        if not os.path.exists(sub_dem):
-                            sub_dem = None
-                        
-                        ## ==============================================
-                        ## generate the random-sample data MASK and PROX
+                        ## generate the random-sample data PROX and SLOPE
                         ## ==============================================        
-                        if sub_dem is not None:
-                            sub_msk = '{}_msk.tif'.format(wc['name'])
-                            sub_prox = '{}_prox.tif'.format(wc['name'])
-                            gdal_proximity(sub_msk, sub_prox)
+                        sub_prox = '{}_prox.tif'.format(wc['name'])
+                        gdal_proximity(sub_msk, sub_prox)
 
-                            sub_slp = '{}_slp.tif'.format(wc['name'])
-                            #gmt_slope(sub_dem, sub_slp)
-                            gdal_slope(sub_dem, sub_slp)
+                        ## ==============================================
+                        ## Calculate the random-sample errors
+                        ## ==============================================
+                        sub_xyd = gdal_query(sub_xyz[sx_cnt:], sub_dem, 'xyd')
+                        sub_dp = gdal_query(sub_xyd, sub_prox, 'zg')
 
-                            ## ==============================================
-                            ## Calculate the random-sample errors
-                            ## ==============================================
-                            sub_xyd = gdal_query(sub_xyz[sx_cnt:], sub_dem, 'xyd')
-                            sub_dp = gdal_query(sub_xyd, sub_prox, 'zg')
-                            sub_ds = gdal_query(sub_xyd, sub_slp, 'zg')
-                            
-                        else:
-                            sub_dp = None
-                            sub_ds = None
-                        remove_glob(sub_xyz_head)
-                        sub_xyz = None
+                    else: sub_dp = None
+                    remove_glob(sub_xyz_head)
 
-                        if s_dp is None:
-                            s_dp = sub_dp
-                        else:
-                            if sub_dp is not None:
-                                s_dp = np.concatenate((s_dp, sub_dp), axis = 0)
-
-                        if s_ds is None:
-                            s_ds = sub_ds[sub_ds[:,1] > 0]
-                            #s_ds = sub_ds
-                        else:
-                            if sub_ds is not None:
-                                s_ds = np.concatenate((s_ds, sub_ds[sub_ds[:,1] > 0]), axis = 0)
-                                #s_ds = np.concatenate((s_ds, sub_ds[:,sub_ds[1] != 0]), axis = 0)
-                                
-                    else: echo_error_msg('no data in sub-region...')    
-                    remove_glob(o_xyz)
-                    remove_glob('sub_{}*'.format(n))
-                dp = s_dp
-                ds = s_ds
-        #sys.stderr.write('\x1b[2K\rwaffles: performed {} SPLIT-SAMPLE simulations [ OK ]\n'.format(uc['sims']))
-        #echo_msg('performed SPLIT-SAMPLE simulation {} out of {}; {} error points accumulated.'.format(sim + 1, uc['sims'], len(dp)))
+                    if s_dp is not None: 
+                        if sub_dp is not None and len(sub_dp) > 0:
+                            s_dp = np.concatenate((s_dp, sub_dp), axis = 0)
+                    else: s_dp = sub_dp
+                remove_glob(o_xyz)
+                remove_glob('sub_{}*'.format(n))
     echo_msg('ran INTERPOLATION uncertainty module using {}.'.format(uc['wg']['mod']))
 
-    if len(dp) > 0:
+    if len(s_dp) > 0:
         ## ==============================================
         ## save err dist data files
         ## ==============================================
-        echo_msg('gathered {} error points'.format(len(dp)))
-        np.savetxt('{}_dst.err'.format(uc['wg']['name']), dp, '%f', ' ')
-        ec_d = err_plot(dp[:50000000], region_info[uc['wg']['name']][4], uc['wg']['name'] + '_prox')
-        #ec_d = err_plot(dp[:50000000], prox_perc_55, uc['wg']['name'] + '_prox')
-
-        np.savetxt('{}_slp.err'.format(uc['wg']['name']), ds, '%f', ' ')
-        ec_s = err_plot(ds[:50000000], region_info[uc['wg']['name']][4], uc['wg']['name'] + '_slp')
+        echo_msg('gathered {} error points'.format(len(s_dp)))
+        np.savetxt('{}_prox.err'.format(uc['wg']['name']), s_dp, '%f', ' ')
+        ec_d = err_plot(s_dp[:50000000], region_info[uc['wg']['name']][4], uc['wg']['name'] + '_prox')
 
         ## ==============================================
         ## apply error coefficient to full proximity grid
@@ -3077,18 +3055,7 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
         '.format(uc['prox'], ec_d[2], ec_d[1], 0, uc['wg']['name'])
         run_cmd(math_cmd, verbose = uc['wg']['verbose'])
         echo_msg('applied coefficient {} to proximity grid'.format(ec_d))
-
-        ## ==============================================
-        ## apply error coefficient to full Slope grid
-        ## ==============================================
-        echo_msg('applying coefficient to slope grid')
-        ## USE numpy instead
-        math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
-        '.format(uc['slp'], ec_s[2], ec_s[1], ec_s[0], uc['wg']['name'])
-        run_cmd(math_cmd, verbose = uc['wg']['verbose'])
-        echo_msg('applied coefficient {} to slope grid'.format(ec_s))
-
-    return([ec_d, ec_s])
+    return(ec_d)
 
 def waffles_wg_valid_p(wg = _waffles_grid_info):
     '''return True if wg_config appears valid'''
