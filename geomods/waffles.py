@@ -202,7 +202,7 @@ def gunzip(gz_file):
         gz_split = gz_file.split('.')[:-1]
         guz_file = '{}.{}'.format(gz_split[0], gz_split[1])
         with gzip.open(gz_file, 'rb') as in_gz, \
-             open(guz_file, 'w') as f:
+             open(guz_file, 'wb') as f:
             while True:
                 block = in_gz.read(65536)
                 if not block:
@@ -1646,7 +1646,7 @@ def gdal_xyz_mask(src_xyz, dst_gdal, region, inc, dst_format='GTiff', epsg = 432
     
     xcount, ycount, dst_gt = gdal_region2gt(region, inc)
     ptArray = np.zeros((ycount, xcount))
-    ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(epsg), gdal.GDT_Int32, -9999, 'GTiff')
+    ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(epsg), gdal.GDT_Float32, -9999, 'GTiff')
     for this_xyz in src_xyz:
         x = this_xyz[0]
         y = this_xyz[1]
@@ -2874,7 +2874,7 @@ _unc_config = {
     'prox': None,
     'slp': None,
     'zones': ['bathy', 'bathy-topo', 'topo'],
-    'sims': 25,
+    'sims': 5,
     'chnk_lvl': 4,
 }
 

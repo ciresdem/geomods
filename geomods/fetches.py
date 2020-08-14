@@ -156,7 +156,6 @@ def fetch_queue(q):
         this_region = fetch_args[2]
         this_dt = fetch_args[4].lower()
         fetch_args[2] = None
-        print(fetch_args)
 
         if not fetch_args[3]():
             if fetch_args[0].split(':')[0] == 'ftp':
@@ -191,7 +190,6 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
     req = None
     halt = callback
     if verbose: echo_msg('fetching remote file: {}...'.format(os.path.basename(src_url)))
-    #if verbose: sys.stderr.write('fetches: fetching remote file: {}...'.format(os.path.basename(src_url)))
     if not os.path.exists(os.path.dirname(dst_fn)):
         try:
             os.makedirs(os.path.dirname(dst_fn))
@@ -199,7 +197,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
 
     if not os.path.exists(dst_fn) or overwrite:
         try:
-            req = requests.get(src_url, stream = True, params = params, headers = r_headers)
+            req = requests.get(src_url, stream = True, params = params, headers = r_headers, timeout=(5,25))
         except requests.ConnectionError as e:
             echo_error_msg('Error: {}'.format(e))
             status = -1
@@ -207,17 +205,16 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
             try:
                 with open(dst_fn, 'wb') as local_file:
                     for chunk in req.iter_content(chunk_size = 8196):
-                        #if verbose: sys.stderr.write('.')
                         if chunk:
                             if halt(): 
                                 status = -1
                                 break
                             local_file.write(chunk)
             except Exception as e: echo_error_msg(e)
+            req.close()
     else: status = -1
     if not os.path.exists(dst_fn) or os.stat(dst_fn).st_size ==  0: status = -1
     if verbose: echo_msg('fetched remote file: {}.'.format(os.path.basename(dst_fn)))
-    #if verbose: sys.stderr.write('.ok')
     return(status)
 
 def fetch_req(src_url, params = None, tries = 5, timeout = 2):
@@ -234,7 +231,6 @@ def fetch_nos_xml(src_url):
         req = fetch_req(src_url, timeout = .25)
         results = lxml.etree.fromstring(req.text.encode('utf-8'))
     except: echo_error_msg('could not access {}'.format(src_url))
-    #except: pass
     return(results)
         
 def fetch_html(src_url):
@@ -324,7 +320,6 @@ def addf_ref_vector(ogr_layer, survey):
 def update_ref_vector(src_vec, surveys, update=True):
     '''update or create a reference vector'''
     layer = None
-    #print(update)
     if update:
         ds = ogr.GetDriverByName('GMT').Open(src_vec, 1)
         if ds is not None: layer = ds.GetLayer()
@@ -486,7 +481,10 @@ class dc:
                         next(layer, None)
                         continue
                 if self._index:
-                    print("%s (%s): %s (%s) - %s" %(feature1.GetField("ID"),feature1.GetField("Datatype"),feature1.GetField("Name"),feature1.GetField("Date"),feature1.GetField("Data")))
+                    echo_msg('{} ({}): {} ({}) - {}\
+                    '.format(feature1.GetField("ID"),feature1.GetField("Datatype"),
+                             feature1.GetField("Name"),feature1.GetField("Date"),
+                             feature1.GetField("Data")))
                 else:
                     suh = fetch_html(surv_url)
                     if suh is None: 
@@ -720,11 +718,6 @@ class nos:
                 xml_url = xml_catalog + survey
                 s_entry = self._parse_nos_xml(xml_url, sid, nosdir)
                 if s_entry[0]: self._surveys.append(s_entry)
-                #try:
-                #    s_entries = self._parse_nos_xml(xml_url, sid, nosdir)
-                #    for s_entry in s_entries:
-                #        if s_entry[0]: self._surveys.append(s_entry)
-                #except: pass
         gmt1 = layer = None
         sys.stderr.write('\x1b[2K\rfetches: scanning {} surveys in {} [ OK ].\n'.format(len(rows), nosdir))
         sys.stderr.flush()
@@ -732,13 +725,11 @@ class nos:
     def _update(self):
         '''Crawl the NOS database and update the NOS reference vector.'''
         for j in self._nos_directories:
-            #echo_msg('scanning {}...'.format(j))
             if self.stop(): break
             self._has_vector = True if os.path.exists(self._local_ref_vector) else False
             self._scan_directory(j)
             update_ref_vector(self._local_ref_vector, self._surveys, self._has_vector)
             self._surveys = []
-            #echo_msg('scanned {}...'.format(j))
 
     ## ==============================================
     ## Filter for results
@@ -767,11 +758,7 @@ class nos:
 
     ## ==============================================
     ## Process results to xyz
-    ## ==============================================
-    def _dump_xyz(self, entry, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(entry):
-            waffles.xyz_line(xyz, dst_port)
-    
+    ## ==============================================    
     def _yield_xyz(self, entry, vdc = None, xyzc = None):
         if vdc is None: vdc = waffles._vd_config
         if xyzc is None: xyzc = waffles._xyz_config
@@ -807,29 +794,29 @@ class nos:
                 vdc['skip'] = '0'
                 vdc['xyzl'] = '0,1,2'
                 xyzc['name'] = src_bag
-                try:
-                    src_ds = gdal.Open(src_bag)
-                    if src_ds is not None:
-                        srcwin = waffles.gdal_srcwin(src_ds, waffles.region_warp(self.region, s_warp = 4326, t_warp = waffles.gdal_getEPSG(src_ds)))
-                        with open(nos_f, 'w') as cx:
-                            for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, warp = 4326):
-                                waffles.xyz_line(xyz, cx)
-                        src_ds = None
-                        if os.stat(nos_f).st_size != 0:
-                            out, status = waffles.run_vdatum(nos_f, vdc)
-                            src_r_bag = os.path.join('result', os.path.basename(nos_f))
-                            with open(src_r_bag, 'r') as in_b:
-                                for xyz in waffles.xyz_parse(in_b, verbose = self._verbose):
-                                    #for xyz in waffles.xyz_block(waffles.xyz_parse(in_b), self.region, ):
-                                    yield(xyz)
-                except: waffles.echo_error_msg('could not read bag file: {}'.format(src_bag))
+                #try:
+                src_ds = gdal.Open(src_bag)
+                if src_ds is not None:
+                    srcwin = waffles.gdal_srcwin(src_ds, waffles.region_warp(self.region, s_warp = 4326, t_warp = waffles.gdal_getEPSG(src_ds)))
+                    with open(nos_f, 'w') as cx:
+                        for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, warp = 4326):
+                            waffles.xyz_line(xyz, cx)
+                    src_ds = None
+                    if os.stat(nos_f).st_size != 0:
+                        out, status = waffles.run_vdatum(nos_f, vdc)
+                        src_r_bag = os.path.join('result', os.path.basename(nos_f))
+                        with open(src_r_bag, 'r') as in_b:
+                            for xyz in waffles.xyz_parse(in_b, verbose = self._verbose):
+                                #for xyz in waffles.xyz_block(waffles.xyz_parse(in_b), self.region, ):
+                                yield(xyz)
+                #except: waffles.echo_error_msg('could not read bag file: {}'.format(src_bag))
                 waffles.remove_glob(src_bag)
             waffles.remove_glob(nos_f)            
         waffles.remove_glob(src_nos)
         waffles.vdatum_clean_result()
-    
-    def _dump_results_to_xyz(self, datatype = None, dst_port = sys.stdout):
-        for xyz in self._yield_results_to_xyz(datatype):
+
+    def _dump_xyz(self, entry, dst_port = sys.stdout):
+        for xyz in self._yield_xyz(entry):
             waffles.xyz_line(xyz, dst_port)
             
     def _yield_results_to_xyz(self, datatype = None):
@@ -841,6 +828,11 @@ class nos:
         for entry in self._results:
             for xyz in self._yield_xyz(entry, vdc, xyzc):
                 yield(xyz)
+
+    def _dump_results_to_xyz(self, datatype = None, dst_port = sys.stdout):
+        for xyz in self._yield_results_to_xyz(datatype):
+            waffles.xyz_line(xyz, dst_port)
+                
                 
 ## =============================================================================
 ##
@@ -1644,7 +1636,7 @@ def fetches_cli(argv = sys.argv):
                     while True:
                         time.sleep(2)
                         sys.stderr.write('\x1b[2K\r')
-                        sys.stderr.write('fetches: [{}/{}]'.format(len(r) - fr.fetch_q.qsize(), len(r)))
+                        sys.stderr.write('fetches: [{}/{}] - {}'.format(len(r) - fr.fetch_q.qsize(), len(r), fr.fetch_q.get()[0]))
                         sys.stderr.flush()
                         if not fr.is_alive():
                             break
