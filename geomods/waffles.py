@@ -2304,6 +2304,10 @@ def datalist_archive_yield_entry(entry, dirname = 'archive', region = None, inc 
             for xyz in fetch_module_yield_entry(entry, region = region, verbose = verbose, module = 'dc'):
                 xyz_line(xyz, fob)
                 yield(xyz)
+        elif entry[1] == 403:
+            for xyz in fetch_module_yield_entry(entry, region = region, verbose = verbose, module = 'charts'):
+                xyz_line(xyz, fob)
+                yield(xyz)
         elif entry[1] == 408:
             for xyz in fetch_module_yield_entry(entry, region = region, verbose = verbose, module = 'gmrt'):
                 xyz_line(xyz, fob)
@@ -2384,7 +2388,7 @@ def entry2py(dle):
     if len(entry) < 2:
         for key in _known_datalist_fmts.keys():
             se = entry[0].split('.')
-            if len(se) == 1: see = 'fetch'
+            if len(se) == 1: see = 'fetch-module'
             else: see = se[-1]
             if see in _known_datalist_fmts[key]:
                 entry.append(key)
@@ -2436,6 +2440,9 @@ def datalist_yield_entry(this_entry, region, verbose = False):
             yield(xyz)
     elif this_entry[1] == 402:
         for xyz in fetch_module_yield_entry(this_entry, region, verbose, 'dc'):
+            yield(xyz)
+    elif this_entry[1] == 403:
+        for xyz in fetch_module_yield_entry(this_entry, region, verbose, 'charts'):
             yield(xyz)
     elif this_entry[1] == 408:
         for xyz in fetch_module_yield_entry(this_entry, region, verbose, 'gmrt'):
@@ -2585,6 +2592,7 @@ def waffles_dict2wg(wg = _waffles_grid_info):
     ## ==============================================
     if wg['datalist'] is None and len(wg['datalists']) > 0:
         #wg['datalist'] = datalist_major([x[0] for x in datalist2py(wg['datalists'])])
+        print(wg['datalists'])
         wg['datalist'] = datalist_major(wg['datalists'], region = wg['region'])
     if wg['mod'].lower() != 'vdatum':
         if wg['datalist'] is None:
