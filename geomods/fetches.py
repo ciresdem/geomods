@@ -45,7 +45,7 @@ try:
 except: import queue as queue
 
 import waffles
-_version = '0.4.2'
+_version = '0.4.3'
 
 ## =============================================================================
 ## functions from waffles:
@@ -166,7 +166,7 @@ def fetch_queue(q, p):
                         os.makedirs(os.path.dirname(fetch_args[1]))
                     except: pass 
                 with open(fetch_args[1].split('.')[0] + '.xyz', 'w') as out_xyz:
-                    p._dump_xyz(fetch_args, out_xyz)
+                    p._dump_xyz([fetch_args[0], fetch_args[1], fetch_args[-1]], out_xyz)
                     
         q.task_done()
 
@@ -204,7 +204,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
 
     if not os.path.exists(dst_fn) or overwrite:
         try:
-            req = requests.get(src_url, stream = True, params = params, headers = r_headers, timeout=(20,40))
+            req = requests.get(src_url, stream = True, params = params, headers = r_headers, timeout=(25,60))
         except requests.ConnectionError as e:
             echo_error_msg(e)
             status = -1
@@ -520,8 +520,7 @@ class dc:
                         ## to get extent
                         ## ==============================================
                         sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
-                        fetch_file(surv_url + sshpz, os.path.join('.', sshpz),
-                                   callback = self.stop)
+                        fetch_file(surv_url + sshpz, os.path.join('.', sshpz), callback = self.stop)
                         zip_ref = zipfile.ZipFile(sshpz)
                         zip_ref.extractall('dc_tile_index')
                         zip_ref.close()
@@ -772,18 +771,23 @@ class nos:
     ## Process results to xyz
     ## ==============================================    
     def _yield_xyz(self, entry, datatype = None, vdc = None, xyzc = None):
-        if vdc is None: vdc = waffles._vd_config
-        if xyzc is None: xyzc = waffles._xyz_config
+        if vdc is None: vdc = copy.deepcopy(waffles._vd_config)
+        if xyzc is None: xyzc = copy.deepcopy(waffles._xyz_config)
         src_nos = os.path.basename(entry[1])
         dt = None
         if fetch_file(entry[0], src_nos, callback = lambda: False, verbose = self._verbose) == 0:
-            nos_f, nos_zips = waffles.procs_unzip(src_nos, waffles._known_datalist_fmts[168])
-            if nos_f is None:
-                nos_f, nos_zips = waffles.procs_unzip(src_nos, waffles._known_datalist_fmts[200])
-                if nos_f is not None: dt = 'grid_bag'
-            else: dt = 'geodas_xyz'
-
+            src_ext = src_nos.split('.')
+            if len(src_ext) > 2:
+                if src_ext[-2] == 'bag': dt = 'grid_bag'
+                elif src_ext[-2] == 'xyz': dt = 'geodas_xyz'
+                else: dt = None
+            elif len(src_ext) == 2:
+                if src_ext[-1] == 'bag': dt = 'grid_bag'
+                elif src_ext[-1] == 'xyz': dt = 'geodas_xyz'
+                else: dt = None
+            else: dt = None
             if dt == 'geodas_xyz':
+                nos_f, nos_zips = waffles.procs_unzip(src_nos, waffles._known_datalist_fmts[168])
                 vdc['ivert'] = 'mllw:m:sounding'
                 vdc['overt'] = 'navd88:m:height'
                 vdc['delim'] = 'comma'
@@ -798,13 +802,14 @@ class nos:
                 xyzc['ypos'] = 1
                 xyzc['zpos'] = 3
                 xyzc['name'] = nos_f_r
-                
-                with open(nos_f_r, 'r') as in_n:
-                    for xyz in waffles.xyz_parse(in_n, xyz_c = xyzc, region = self.region, verbose = self._verbose):
-                        yield(xyz)
+                if os.path.exists(nos_f_r):
+                    with open(nos_f_r, 'r') as in_n:
+                        for xyz in waffles.xyz_parse(in_n, xyz_c = xyzc, region = self.region, verbose = self._verbose):
+                            yield(xyz)
                     
             elif dt == 'grid_bag':
-                src_bag = nos_f
+                src_bag, nos_zips = waffles.procs_unzip(src_nos, waffles._known_datalist_fmts[200])
+                #src_bag = nos_f
                 nos_f = '{}.tmp'.format(os.path.basename(src_bag).split('.')[0])
                 vdc['ivert'] = 'mllw:m:height'
                 vdc['overt'] = 'navd88:m:height'
@@ -822,11 +827,13 @@ class nos:
                     src_ds = None
                     if os.stat(nos_f).st_size != 0:
                         out, status = waffles.run_vdatum(nos_f, vdc)
+                        #print(out, status)
                         src_r_bag = os.path.join('result', os.path.basename(nos_f))
-                        with open(src_r_bag, 'r') as in_b:
-                            for xyz in waffles.xyz_parse(in_b, verbose = self._verbose):
-                                #for xyz in waffles.xyz_block(waffles.xyz_parse(in_b), self.region, ):
-                                yield(xyz)
+                        if os.path.exists(src_r_bag):
+                            with open(src_r_bag, 'r') as in_b:
+                                for xyz in waffles.xyz_parse(in_b, verbose = self._verbose):
+                                    #for xyz in waffles.xyz_block(waffles.xyz_parse(in_b), self.region, ):
+                                    yield(xyz)
                 #except: waffles.echo_error_msg('could not read bag file: {}'.format(src_bag))
                 waffles.remove_glob(src_bag)
             waffles.remove_glob(nos_f)            
@@ -985,7 +992,7 @@ class charts():
                         for f in layer_s:
                             g = json.loads(f.GetGeometryRef().ExportToJson())
                             for xyz in g['coordinates']:
-                                waffles.xyz_line([float(x) for x in xyz], o_xyz)
+                                waffles.xyz_line([float(x) for x in xyz], o_xyz, self._verbose)
 
                 ds_ogr = layer_s = None
 
@@ -1405,14 +1412,14 @@ class gmrt:
     def _yield_xyz(self, entry, res = 'max', fmt = 'geotiff'):
         src_gmrt = 'gmrt_tmp.{}'.format(gdal_fext(fmt))
         if fetch_file(entry[0], src_gmrt, callback = lambda: False, verbose = self._verbose) == 0:
-            try:
-                src_ds = gdal.Open(src_gmrt)
-                if src_ds is not None:
-                    srcwin = waffles.gdal_srcwin(src_ds, self.region)
-                    for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose):
-                        yield(xyz)
-                src_ds = None
-            except: waffles.echo_error_msg('could not read gmrt data: {}'.format(src_gmrt))
+            #try:
+            src_ds = gdal.Open(src_gmrt)
+            if src_ds is not None:
+                srcwin = waffles.gdal_srcwin(src_ds, self.region)
+                for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose):
+                    yield(xyz)
+            src_ds = None
+            #except: waffles.echo_error_msg('could not read gmrt data: {}'.format(src_gmrt))
         else: waffles.echo_error_msg('failed to fetch remote file, {}...'.format(src_gmrt))
         waffles.remove_glob(src_gmrt)
 
@@ -1635,6 +1642,7 @@ def fetches_cli(argv = sys.argv):
             echo_msg('running fetch module {} on region {} ({}/{})...\
             '.format(fetch_mod, region_format(this_region, 'str'), rn+1, len(these_regions)))
             fl = fetch_infos[fetch_mod][0](region_buffer(this_region, 5, pct = True), f, lambda: stop_threads)
+            fl._verbose = True
             args_d = args2dict(args)
             try:
                 r = fl.run(**args_d)

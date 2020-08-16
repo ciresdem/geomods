@@ -92,7 +92,7 @@ from geomods import fetches
 ## ==============================================
 ## General utility functions - utils.py
 ## ==============================================
-_version = '0.5.5'
+_version = '0.5.6'
 
 def inc2str_inc(inc):
     '''convert a WGS84 geographic increment to a str_inc (e.g. 0.0000925 ==> `13`)
@@ -230,8 +230,11 @@ def procs_unzip(src_file, exts):
     elif src_file.split('.')[-1] == 'gz':
         tmp_proc = gunzip(src_file)
         if tmp_proc is not None:
-            src_proc = os.path.basename(tmp_proc)
-            os.rename(tmp_proc, src_proc)
+            for ext in exts:
+                if ext in tmp_proc:
+                    src_proc = os.path.basename(tmp_proc)
+                    os.rename(tmp_proc, src_proc)
+                    break
     else:
         for ext in exts:
             if ext in src_file:
@@ -753,7 +756,7 @@ def run_vdatum(src_fn, vd_config = _vd_config):
         '.format(vd_config['ihorz'], vd_config['ivert'], vd_config['ohorz'], vd_config['overt'], \
                  vd_config['delim'], vd_config['xyzl'], vd_config['skip'], src_fn, vd_config['result_dir'], vd_config['region'])
         #return(run_cmd('java -jar {} {}'.format(vd_config['jar'], vdc), verbose = True))
-        return(run_cmd('java -Djava.awt.headless=false -jar {} {}'.format(vd_config['jar'], vdc), verbose = vd_config['verbose']))
+        return(run_cmd('java -Djava.awt.headless=true -jar {} {}'.format(vd_config['jar'], vdc), verbose = vd_config['verbose']))
     else: return([], -1)
     
 ## ==============================================
@@ -2279,6 +2282,7 @@ def datalist_archive_yield_entry(entry, dirname = 'archive', region = None, inc 
     else: a_name = '{}_{}_{}'.format(entry[-1], region_format(region, 'fn'), this_year())
     i_dir = os.path.dirname(entry[0])
     i_xyz = os.path.basename(entry[0]).split('.')[0]
+    i_xyz = ''.join(x for x in i_xyz if x.isalnum())
     a_dir = os.path.join(dirname, a_name, 'data', entry[-1])
     a_xyz_dir = os.path.join(a_dir, 'xyz')
     a_xyz = os.path.join(a_xyz_dir, i_xyz + '.xyz')
@@ -2288,31 +2292,10 @@ def datalist_archive_yield_entry(entry, dirname = 'archive', region = None, inc 
     if not os.path.exists(a_xyz_dir): os.makedirs(a_xyz_dir)
 
     with open(a_xyz, 'w') as fob:
-        if entry[1] == 168:
-            for xyz in xyz_yield_entry(entry, region = region, verbose = verbose):
-                xyz_line(xyz, fob)
-                yield(xyz)
-        elif entry[1] == 200: 
-            for xyz in gdal_yield_entry(entry, region = region, verbose = verbose):
-                xyz_line(xyz, fob)
-                yield(xyz)
-        elif entry[1] == 401:
-            for xyz in fetch_module_yield_entry(entry, region = region, verbose = verbose, module = 'nos'):
-                xyz_line(xyz, fob)
-                yield(xyz)
-        elif entry[1] == 402:
-            for xyz in fetch_module_yield_entry(entry, region = region, verbose = verbose, module = 'dc'):
-                xyz_line(xyz, fob)
-                yield(xyz)
-        elif entry[1] == 403:
-            for xyz in fetch_module_yield_entry(entry, region = region, verbose = verbose, module = 'charts'):
-                xyz_line(xyz, fob)
-                yield(xyz)
-        elif entry[1] == 408:
-            for xyz in fetch_module_yield_entry(entry, region = region, verbose = verbose, module = 'gmrt'):
-                xyz_line(xyz, fob)
-                yield(xyz)
-                
+        for xyz in datalist_yield_entry(entry, region, verbose):
+            xyz_line(xyz, fob)
+            yield(xyz)
+            
     mb_inf(a_xyz)
     datalist_append_entry([i_xyz + '.xyz', 168, entry[2] if entry[2] is not None else 1], a_dl)
     
@@ -2416,11 +2399,12 @@ def datalist2py(dl, region = None):
         fl._verbose = True
 
         results = fl.run(**args_d)
-        with open('{}.datalist'.format(fetch_mod), 'w') as fdl:
-            for r in results:
-                e = [r[0], fl._datalists_code, 1]
-                fdl.write('{} {} {}\n'.format(e[0], e[1], e[2]))
-        these_entries.append(['{}.datalist'.format(fetch_mod), -1, 1])
+        if len(results) > 0:
+            with open('{}.datalist'.format(fetch_mod), 'w') as fdl:
+                for r in results:
+                    e = [r[0], fl._datalists_code, 1]
+                    fdl.write('{} {} {}\n'.format(e[0], e[1], e[2]))
+            these_entries.append(['{}.datalist'.format(fetch_mod), -1, 1])
                 
     else: these_entries.append(this_entry)
     return(these_entries)
@@ -2444,11 +2428,18 @@ def datalist_yield_entry(this_entry, region, verbose = False):
     elif this_entry[1] == 403:
         for xyz in fetch_module_yield_entry(this_entry, region, verbose, 'charts'):
             yield(xyz)
+    elif this_entry[1] == 404:
+        for xyz in fetch_module_yield_entry(this_entry, region, verbose, 'srtm'):
+            yield(xyz)
+    elif this_entry[1] == 406:
+        for xyz in fetch_module_yield_entry(this_entry, region, verbose, 'mb'):
+            yield(xyz)
     elif this_entry[1] == 408:
         for xyz in fetch_module_yield_entry(this_entry, region, verbose, 'gmrt'):
             yield(xyz)
+            
 
-def datalist_yield_xyz(dl, fmt = -1, wt = None, pass_h = lambda e: True, dl_proc_h = lambda e: None, region = None, archive = False, mask = False, verbose = False):
+def datalist_yield_xyz(dl, fmt = -1, wt = None, pass_h = lambda e: path_exists_or_url(e[0]), dl_proc_h = lambda e: None, region = None, archive = False, mask = False, verbose = False):
     '''parse out the xyz data from the datalist
     for xyz in datalist_yield_xyz(dl): xyz_line(xyz)
 
@@ -2460,7 +2451,7 @@ def datalist_yield_xyz(dl, fmt = -1, wt = None, pass_h = lambda e: True, dl_proc
         for xyz in dly:
             yield(xyz)
 
-def datalist_dump_xyz(dl, fmt = -1, wt = None, pass_h = lambda e: True, dl_proc_h = lambda e: None, region = None, archive = False, mask = False, verbose = False, dst_port = sys.stdout):
+def datalist_dump_xyz(dl, fmt = -1, wt = None, pass_h = lambda e: path_exists_or_url(e[0]), dl_proc_h = lambda e: None, region = None, archive = False, mask = False, verbose = False, dst_port = sys.stdout):
     '''parse out the xyz data from the datalist
     for xyz in datalist_yield_xyz(dl): xyz_line(xyz)
 
@@ -2485,7 +2476,6 @@ def datalist(dl, fmt = -1, wt = None, pass_h = lambda e: path_exists_or_url(e[0]
                 this_entry[2] = wt * this_entry[2]
             else: this_entry[2] = wt
             this_entry_md = ' '.join(this_entry[3:]).split(',')
-            #this_parent = os.path.basename(dl)
             this_entry = this_entry[:3] + [this_entry_md] + [os.path.basename(dl).split('.')[0]]
             if pass_h(this_entry):
                 if verbose and this_entry[1] == -1: echo_msg('parsing datalist ({}) {}'.format(this_entry[2], this_entry[0]))
@@ -2591,8 +2581,6 @@ def waffles_dict2wg(wg = _waffles_grid_info):
     ## note: the vdatum module doesn't need a datalist
     ## ==============================================
     if wg['datalist'] is None and len(wg['datalists']) > 0:
-        #wg['datalist'] = datalist_major([x[0] for x in datalist2py(wg['datalists'])])
-        print(wg['datalists'])
         wg['datalist'] = datalist_major(wg['datalists'], region = wg['region'])
     if wg['mod'].lower() != 'vdatum':
         if wg['datalist'] is None:
@@ -3647,7 +3635,7 @@ def datalists_cli(argv = sys.argv):
     ## ==============================================
     ## recurse the datalist
     ## ==============================================
-    major = datalist_major(dls)
+    major = datalist_major(dls, region = region)
     if major is not None:
         #datalist_archive(major, arch_dir = 'archive', region = region, verbose = want_verbose)
         if want_infos: print(datalist_inf(major, inf_file = True))
@@ -3659,12 +3647,7 @@ def datalists_cli(argv = sys.argv):
             ## ==============================================
             ## dump to stdout
             ## ==============================================
-            #def datalist_dump_xyz(dl, fmt = -1, wt = None, pass_h = lambda e: os.path.exits(e), dl_proc_h = lambda e: None, region = None, archive = False, mask = False, verbose = False, dst_port = sys.stdout)
             datalist_dump_xyz(major, wt = 1 if want_weight else None, region = region)
-            #waffles_dump_datalist(waffles_dict2wg({'datalist':major, 'weights': want_weight, 'epsg': epsg, 'region': region}))
-            #waffles_dump_datalist({'datalist':major, 'weights': want_weight, 'epsg': epsg, 'region': region})
-            #datalist_dump({'datalist':major, 'weights': want_weight, 'epsg': epsg}, region = region)
-            #waffles_spatial_metadata(waffles_dict2wg({'datalist':major, 'weights': want_weight, 'epsg': epsg, 'region': region}))
         remove_glob('{}*'.format(major))
 
 ## ==============================================
