@@ -417,14 +417,14 @@ def echo_error_msg2(msg, prefix = 'waffles'):
     sys.stderr.flush()
     sys.stderr.write('{}: error, {}\n'.format(prefix, msg))
 
-def echo_msg2(msg, prefix = 'waffles'):
+def echo_msg2(msg, prefix = 'waffles', nl = True):
     '''echo `msg` to stderr using `prefix`
     >> echo_msg2('message', 'test')
     test: message'''
     
     sys.stderr.write('\x1b[2K\r')
     sys.stderr.flush()
-    sys.stderr.write('{}: {}\n'.format(prefix, msg))
+    sys.stderr.write('{}: {}{}'.format(prefix, msg, '\n' if nl else ''))
 
 ## ==============================================
 ## echo message `m` to sys.stderr using
@@ -1065,6 +1065,14 @@ def gdal_infos(src_gdal, scan = False):
         else: return(None)
     else: return(None)
 
+def gdal_ds_c(src_gdal):
+    if os.path.exists(src_gdal):
+        ds = gdal.Open(src_gdal)
+        if ds is not None:
+            dsc = gdal_gather_infos(ds)
+            return(dsc)
+    return(None)
+    
 def gdal_gather_infos(src_ds):
     '''gather information from `src_ds` GDAL dataset
 
@@ -1933,7 +1941,117 @@ def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = N
     src_mask = None
     msk_band = None
     if verbose: echo_msg('parsed {} data records from {}'.format(ln, src_ds.GetDescription()))
+
+def xyz_transform(src_fn, xyz_c = None, inc = None, vdatum = None, region = None, datalist = None, verbose = False):
+    src_xyz, src_zips = procs_unzip(src_fn, _known_datalist_fmts[168])
+    if xyz_c is None: xyz_c = copy.deepcopy(_xyz_config)
+    if not os.path.exists(os.path.join(os.path.dirname(src_fn), 'xyz')): os.mkdir(os.path.join(os.path.dirname(src_fn), 'xyz'))
+
+    if vdatum is not None:
+        vds = vdatum.split(',')
+        iv = vds[0]
+        ov = vds[1]
+        vdc = _vd_config
+        if vdc['jar'] is None: vdc['jar'] = vdatum_locate_jar()[0]
+        vdc['ivert'] = iv
+        vdc['overt'] = ov
+        vdc['delim'] = 'comma' if xyz_c['delim'] == ',' else 'space' if xyz_c['delim'] == ' ' else xyz_c['delim']
+        vdc['skip'] = xyz_c['skip']
+        vdc['xyzl'] = ','.join([str(x) for x in [xyz_c['xpos'], xyz_c['ypos'], xyz_c['zpos']]])
+        out, status = run_vdatum(src_xyz, vdc)
+        src_result = os.path.join('result', os.path.basename(src_xyz))
+    else: src_result = src_xyz
+    xyz_final = os.path.join('xyz', os.path.basename(src_xyz))
+
+    if datalist is not None:
+        datalist = os.path.join(os.path.dirname(src_fn), 'xyz', datalist)
+    
+    if os.path.exists(src_result):
+        with open(src_result, 'r') as in_n, open(xyz_final, 'w') as out_n:
+            for xyz in xyz_parse(in_n, xyz_c = xyz_c, region = region, verbose = verbose):
+                xyz_line(xyz, out_n)
+
+    if os.path.exists(xyz_final):
+        if datalist is not None:
+            mb_inf(xyz_final)
+            datalist_append_entry([os.path.basename(xyz_final), 168, 1], datalist)
+            if verbose: echo_msg('appended xyz file {} to datalist {}'.format(xyz_final, datalist))
                 
+    if src_xyz != src_fn: remove_glob(src_xyz)
+    
+def gdal2xyz_chunks(src_fn, chunk_value = 1000, inc  = None, epsg = None, vdatum = None, datalist = None, verbose = False):
+    if verbose:
+        echo_msg('------------------------------------')
+        echo_msg('input gdal:\t\t{}'.format(src_fn))
+        echo_msg('chunk size:\t\t{}'.format(chunk_value))
+        echo_msg('output epsg:\t\t{}'.format(epsg))
+        echo_msg('output increment:\t{}'.format(inc))
+        echo_msg('vdatum string:\t{}'.format(vdatum))
+        echo_msg('output datalist:\t{}'.format(datalist))
+        echo_msg('------------------------------------')
+
+    if not os.path.exists('xyz'): os.mkdir('xyz')
+
+    src_gdal, src_zips = procs_unzip(src_fn, _known_datalist_fmts[200])
+    src_c = gdal_ds_c(src_gdal)
+    if verbose:
+        echo_msg('{}'.format(src_c))
+        echo_msg('chunking grid file {}...'.format(src_gdal))
+    chunks = gdal_chunks(src_gdal, chunk_value)
+    if verbose: echo_msg('generated {} chunks from {}'.format(len(chunks), src_gdal))
+    if src_gdal != src_fn: remove_glob(src_gdal)
+
+    if vdatum is not None:
+        vds = vdatum.split(',')
+        if len(vds) < 2:
+            echo_error_msg('bad vdatum string {}'.format(vdatum))
+            vdatum = None
+        else:
+            iv = vds[0]
+            ov = vds[1]
+            vdc = _vd_config
+            if vdc['jar'] is None: vdc['jar'] = vdatum_locate_jar()[0]
+            vdc['ivert'] = iv
+            vdc['overt'] = ov
+            vdc['delim'] = 'space'
+            vdc['skip'] = '0'
+            vdc['xyzl'] = '0,1,2'
+
+    if datalist is not None:
+        datalist = os.path.join('xyz', datalist)
+        
+    for i,chunk in enumerate(chunks):
+        echo_msg('* processing chunk {} [{}/{}]...'.format(chunk, i+1, len(chunks)))
+        xyz_chunk = '{}.xyz'.format(chunk.split('.')[0])
+        xyz_chunk_final = os.path.join('xyz', os.path.basename(xyz_chunk))
+
+        if epsg is not None or inc is not None:
+            tif_chunk = '{}_warp.tif'.format(chunk.split('.')[0])
+            gdw = 'gdalwarp {} -dstnodata -9999 -overwrite {}'.format(chunk, tif_chunk)
+            if epsg is not None: gdw += ' -t_srs EPSG:{}'.format(epsg)
+            if inc is not None: gdw += ' -tr {} {}'.format(inc, inc)
+            out, status = run_cmd(gdw, verbose = verbose)
+            remove_glob(chunk)
+        else: tif_chunk = chunk
+
+        with open(xyz_chunk, 'w') as xyz_c: gdal_dump_entry([tif_chunk, 200, 1], xyz_c, verbose = verbose)
+        remove_glob(tif_chunk)
+
+        if vdatum is not None:
+            out, status = run_vdatum(xyz_chunk, vdc)
+            remove_glob(xyz_chunk)
+            xyz_chunk = os.path.join('result', os.path.basename(xyz_chunk)) 
+            os.rename(xyz_chunk, xyz_chunk_final)
+            vdatum_clean_result()
+
+            if verbose: echo_msg('transformed {} chunk to {}'.format(iv, ov))
+        else: os.rename(xyz_chunk, xyz_chunk_final)
+
+        if datalist is not None:
+            mb_inf(xyz_chunk_final)
+            datalist_append_entry([os.path.basename(xyz_chunk_final), 168, 1], datalist)
+            if verbose: echo_msg('appended xyz chunk {} to datalist {}'.format(xyz_chunk_final, datalist))
+    
 def gdal_inf(src_ds, warp = None):
     '''generate an info (.inf) file from a src_gdal file using gdal
 
@@ -2363,6 +2481,7 @@ def entry2py(dle):
 
     return the entry as a list [fn, fmt, wt, ...]'''
     this_entry = dle.rstrip().split()
+
     try:
         entry = [x if n == 0 else float(x) if n < 3 else x for n, x in enumerate(this_entry)]
     except Exception as e:
@@ -2384,12 +2503,14 @@ def datalist2py(dl, region = None):
     returns a list of datalist entries.'''
     
     these_entries = []
+    this_dir = os.path.dirname(dl)
+    print(this_dir)
     this_entry = entry2py(dl)
     if this_entry[1] == -1:
         with open(this_entry[0], 'r') as op:
             for this_line in op:
                 if this_line[0] != '#' and this_line[0] != '\n' and this_line[0].rstrip() != '':
-                    these_entries.append(entry2py(this_line.rstrip()))
+                    these_entries.append([os.path.join(this_dir, x) if n == 0 else x for n,x in enumerate(entry2py(this_line.rstrip()))])
     elif this_entry[1] == 400:
         fetch_mod = this_entry[0].split(':')[0]
         fetch_args = this_entry[0].split(':')[1:]
@@ -2465,9 +2586,10 @@ def datalist(dl, fmt = -1, wt = None, pass_h = lambda e: path_exists_or_url(e[0]
     for entry in datalist(dl): do_something_with entry
 
     yields entry [path, fmt, wt, ...]'''
-    
+
     this_dir = os.path.dirname(dl)
     these_entries = datalist2py(dl)
+    print(these_entries)
     if len(these_entries) == 0: these_entries = [entry2py(dl)]
     for this_entry in these_entries:
         if this_entry is not None:

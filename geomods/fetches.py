@@ -165,8 +165,9 @@ def fetch_queue(q, p):
                     try:
                         os.makedirs(os.path.dirname(fetch_args[1]))
                     except: pass 
-                with open(fetch_args[1].split('.')[0] + '.xyz', 'w') as out_xyz:
-                    p._dump_xyz([fetch_args[0], fetch_args[1], fetch_args[-1]], out_xyz)
+                #with open(fetch_args[1].split('.')[0] + '.xyz', 'w') as out_xyz:
+                out_xyz = fetch_args[1].split('.')[0] + '.xyz'
+                p._dump_xyz([fetch_args[0], fetch_args[1], fetch_args[-1]], out_xyz)
                     
         q.task_done()
 
@@ -809,40 +810,68 @@ class nos:
                     
             elif dt == 'grid_bag':
                 src_bag, nos_zips = waffles.procs_unzip(src_nos, waffles._known_datalist_fmts[200])
-                #src_bag = nos_f
                 nos_f = '{}.tmp'.format(os.path.basename(src_bag).split('.')[0])
                 vdc['ivert'] = 'mllw:m:height'
                 vdc['overt'] = 'navd88:m:height'
                 vdc['delim'] = 'space'
                 vdc['skip'] = '0'
                 vdc['xyzl'] = '0,1,2'
+                xyzc['delim'] = ' '
+                xyzc['skip'] = 0
+                xyzc['xpos'] = 0
+                xyzc['ypos'] = 1
+                xyzc['zpos'] = 2
                 xyzc['name'] = src_bag
-                #try:
+
+
                 src_ds = gdal.Open(src_bag)
                 if src_ds is not None:
                     srcwin = waffles.gdal_srcwin(src_ds, waffles.region_warp(self.region, s_warp = 4326, t_warp = waffles.gdal_getEPSG(src_ds)))
                     with open(nos_f, 'w') as cx:
-                        for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, warp = 4326):
+                        for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, warp = 4326), waffles.gdal_region(src_ds, warp = 4326):
                             waffles.xyz_line(xyz, cx)
                     src_ds = None
                     if os.stat(nos_f).st_size != 0:
                         out, status = waffles.run_vdatum(nos_f, vdc)
-                        #print(out, status)
                         src_r_bag = os.path.join('result', os.path.basename(nos_f))
                         if os.path.exists(src_r_bag):
                             with open(src_r_bag, 'r') as in_b:
-                                for xyz in waffles.xyz_parse(in_b, verbose = self._verbose):
-                                    #for xyz in waffles.xyz_block(waffles.xyz_parse(in_b), self.region, ):
+                                for xyz in waffles.xyz_parse(in_b, xyz_c = xyzc, verbose = self._verbose):
                                     yield(xyz)
-                #except: waffles.echo_error_msg('could not read bag file: {}'.format(src_bag))
                 waffles.remove_glob(src_bag)
-            waffles.remove_glob(nos_f)            
+            waffles.remove_glob(nos_f)
         waffles.remove_glob(src_nos)
         #waffles.vdatum_clean_result()
         
     def _dump_xyz(self, entry, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(entry):
-            waffles.xyz_line(xyz, dst_port, self._verbose)
+        # for xyz in self._yield_xyz(entry):
+        #     waffles.xyz_line(xyz, dst_port, self._verbose)
+      
+        src_nos = os.path.basename(entry[1])
+        dt = None
+        if fetch_file(entry[0], src_nos, callback = lambda: False, verbose = self._verbose) == 0:
+            src_ext = src_nos.split('.')
+            if len(src_ext) > 2:
+                if src_ext[-2] == 'bag': dt = 'grid_bag'
+                elif src_ext[-2] == 'xyz': dt = 'geodas_xyz'
+                else: dt = None
+            elif len(src_ext) == 2:
+                if src_ext[-1] == 'bag': dt = 'grid_bag'
+                elif src_ext[-1] == 'xyz': dt = 'geodas_xyz'
+                else: dt = None
+            else: dt = None
+
+            if dt == 'grid_bag':
+                waffles.gdal2xyz_chunks(src_nos, 2000, None, 4269, 'mllw,navd88', 'bags.datalist', True)
+            elif dt == 'geodas_xyz':
+                xyzc = copy.deepcopy(waffles._xyz_config)
+                xyzc['delim'] = ','
+                xyzc['skip'] = 1
+                xyzc['xpos'] = 2
+                xyzc['ypos'] = 1
+                xyzc['zpos'] = 3
+                waffles.xyz_transform(src_nos, xyzc, None, 'mllw:m:sounding,navd88:m:height', self.region, 'hydronos.datalist', True)
+            waffles.remove_glob(src_nos)
             
     def _yield_results_to_xyz(self, datatype = None):
         self.run(datatype)
@@ -1677,6 +1706,7 @@ def fetches_cli(argv = sys.argv):
                 fr.join()
             echo_msg('ran fetch module {} on region {} ({}/{})...\
             '.format(fetch_mod, region_format(this_region, 'str'), rn+1, len(these_regions)))
+            if want_proc: waffles.vdatum_clean_result()
 
 if __name__ == '__main__':  fetches_cli(sys.argv)
 ### End

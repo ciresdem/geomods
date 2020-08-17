@@ -74,6 +74,7 @@ setuptools.setup(
         #'scripts/gdal_vrt_avg.py',
         'scripts/create_datalist.sh',
         'scripts/bag2tif2chunks2xyz.sh',
+        'scripts/gdal2xyzchunks.py',
     ],
     #python_requires = '>=2.7, <3',
     #project_urls = {
