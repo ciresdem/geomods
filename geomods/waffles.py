@@ -2504,13 +2504,13 @@ def datalist2py(dl, region = None):
     
     these_entries = []
     this_dir = os.path.dirname(dl)
-    print(this_dir)
     this_entry = entry2py(dl)
     if this_entry[1] == -1:
         with open(this_entry[0], 'r') as op:
             for this_line in op:
                 if this_line[0] != '#' and this_line[0] != '\n' and this_line[0].rstrip() != '':
-                    these_entries.append([os.path.join(this_dir, x) if n == 0 else x for n,x in enumerate(entry2py(this_line.rstrip()))])
+                    #these_entries.append([os.path.join(this_dir, x) if n == 0 else x for n,x in enumerate(entry2py(this_line.rstrip()))])
+                    these_entries.append(entry2py(this_line.rstrip()))
     elif this_entry[1] == 400:
         fetch_mod = this_entry[0].split(':')[0]
         fetch_args = this_entry[0].split(':')[1:]
@@ -2589,7 +2589,6 @@ def datalist(dl, fmt = -1, wt = None, pass_h = lambda e: path_exists_or_url(e[0]
 
     this_dir = os.path.dirname(dl)
     these_entries = datalist2py(dl)
-    print(these_entries)
     if len(these_entries) == 0: these_entries = [entry2py(dl)]
     for this_entry in these_entries:
         if this_entry is not None:
