@@ -367,7 +367,8 @@ def yield_cmd(cmd, data_fun = None, verbose = False):
         p.stdin.close()
 
     while True:
-        line = p.stdout.readline()
+        line = p.stdout.readline().decode('utf-8')
+        #sys.stderr.write(line.decode('utf-8'))
         if not line: break
         else: yield(line)
     p.stdout.close()
@@ -1531,7 +1532,6 @@ def gdal_region(src_ds, warp = None):
 
 def _geo2pixel(geo_x, geo_y, geoTransform):
     '''convert a geographic x,y value to a pixel location of geoTransform'''
-    
     if geoTransform[2] + geoTransform[4] == 0:
         pixel_x = ((geo_x - geoTransform[0]) / geoTransform[1]) + .5
         pixel_y = ((geo_y - geoTransform[3]) / geoTransform[5]) + .5
@@ -1761,6 +1761,25 @@ def gdal_polygonize(src_gdal, dst_layer):
     ds = ds_arr = None
     return(0, 0)
 
+# def gdal_bag_fix_inc(src_fn):
+#     #pixel_x = xmax - xmin / X
+#     #pixel_x * X = xmax - xmin
+#     #X = (xmax - xmin) * pixel_x
+
+#     src_ds = gdal.Open(src_fn)
+#     ds_config = gdal_gather_infos(src_ds)
+#     band = src_ds.GetRasterBand(1)
+#     gt = ds_config['geoT']
+#     gdi = gdal.Info(src_ds, format = 'json')
+
+#     ul = gdi['cornerCoordinates']['upperLeft']
+#     ur = gdi['cornerCoordinates']['upperRight']
+#     ll = gdi['cornerCoordinates']['lowerLeft']
+#     lr = gdi['cornerCoordinates']['lowerRight']
+
+#     region = [ul[0], ur[0], ll[1], lr[1]]
+#     print(region)
+    
 def gdal_chunks(src_fn, n_chunk = 10):
     '''split `src_fn` GDAL file into chunks with `n_chunk` cells squared.'''
     
@@ -2176,7 +2195,7 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
     ypos = xyz_c['ypos']
     zpos = xyz_c['zpos']
     pass_d = False
-    #if verbose: sys.stderr.write('waffles: parsing xyz data from {}...'.format(xyz_c['name']))
+    #if verbose: echo_msg('parsing xyz data from {}...'.format(xyz_c['name']))
     for xyz in src_xyz:
         if ln >= skip:
             pass_d = False
@@ -2186,12 +2205,13 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
                     if xyz_in_region_p(this_xyz, region): pass_d = True
                 else: pass_d = True
                 if pass_d:
-                    #if verbose and ln % 25000 == 0: sys.stderr.write('.')
                     ln += 1
                     yield(this_xyz)
         else: skip -= 1
     if verbose: echo_msg('parsed {} data records from {}'.format(ln, xyz_c['name']))
 
+#def xyz_parse(src_xyz
+    
 def xyz2py(src_xyz):
     '''return src_xyz as a python list'''
     
@@ -2289,7 +2309,7 @@ def xyz_inf_entry(entry):
         except: minmax = xyz_inf(infile)
     return(minmax)        
 
-def xyz_yield_entry(entry, region = None, verbose = False):
+def xyz_yield_entry2(entry, region = None, verbose = False):
     '''yield the xyz data from the xyz datalist entry
 
     yields [x, y, z, <w, ...>]'''
@@ -2300,6 +2320,18 @@ def xyz_yield_entry(entry, region = None, verbose = False):
         for line in xyz_parse(infile, xyz_c = xyzc, region = region, verbose = verbose):
             yield(line + [entry[2]] if entry[2] is not None else line)
 
+def xyz_yield_entry(entry, region = None, verbose = False):
+    '''yield the xyz data from the xyz datalist entry
+
+    yields [x, y, z, <w, ...>]'''
+    ln = 0
+    for line in yield_cmd('gmt gmtselect -V {} {}\
+    '.format(entry[0], '' if region is None else region_format(region, 'gmt')), data_fun = None, verbose = False):
+        ln += 1
+        xyz = [float(x) for x in line.split(' ')]
+        yield(xyz + [entry[2]] if entry[2] is not None else xyz)
+    if verbose: echo_msg('read {} data points from {}'.format(ln, entry[0]))
+        
 def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False):
     '''dump the xyz data from the xyz datalist entry to dst_port'''
     
@@ -3026,6 +3058,7 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
 
     returns [[err, dist] ...]'''
     s_dp = None
+    s_ds = None
     echo_msg('running INTERPOLATION uncertainty module using {}...'.format(uc['wg']['mod']))
     out, status = run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
     
@@ -3163,12 +3196,26 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
                         sub_prox = '{}_prox.tif'.format(wc['name'])
                         gdal_proximity(sub_msk, sub_prox)
 
+                        sub_slp = '{}_slp.tif'.format(wc['name'])
+                        gdal_slope(sub_dem, sub_slp)
+
                         ## ==============================================
                         ## Calculate the random-sample errors
                         ## ==============================================
                         sub_xyd = gdal_query(sub_xyz[sx_cnt:], sub_dem, 'xyd')
-                        sub_dp = gdal_query(sub_xyd, sub_prox, 'zg')
+                        #sub_dp = gdal_query(sub_xyd, sub_prox, 'zg')
+                        sub_dp = gdal_query(sub_xyd, sub_prox, 'xyzg')
+                        sub_ds = gdal_query(sub_xyd, sub_slp, 'g')
 
+                        #print(sub_dp.shape)
+                        #print(sub_ds.shape)
+                        #for rec in sub_ds:
+                        #    sub_dp = np.append(sub_dp, rec)
+
+                        if len(sub_dp) > 0:
+                            print(sub_dp.shape)
+                            print(sub_ds.shape)
+                            sub_dp = np.append(sub_dp, sub_ds, 1)
                     else: sub_dp = None
                     remove_glob(sub_xyz_head)
 
@@ -3176,6 +3223,7 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
                         if sub_dp is not None and len(sub_dp) > 0:
                             s_dp = np.concatenate((s_dp, sub_dp), axis = 0)
                     else: s_dp = sub_dp
+                    #print(s_dp)
                 remove_glob(o_xyz)
                 remove_glob('sub_{}*'.format(n))
     echo_msg('ran INTERPOLATION uncertainty module using {}.'.format(uc['wg']['mod']))
@@ -3185,8 +3233,21 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
         ## save err dist data files
         ## ==============================================
         echo_msg('gathered {} error points'.format(len(s_dp)))
-        np.savetxt('{}_prox.err'.format(uc['wg']['name']), s_dp, '%f', ' ')
-        ec_d = err_plot(s_dp[:50000000], region_info[uc['wg']['name']][4], uc['wg']['name'] + '_prox')
+
+        np.savetxt('{}.err'.format(uc['wg']['name']), s_dp, '%f', ' ')
+        
+        err = s_dp[:,0]
+        prox = s_dp[:,1]
+        slp = s_dp[:,2]
+
+        prox_err = np.append(err, prox, 1)
+        slp_err = np.append(err, slp, 1)
+        
+        np.savetxt('{}_prox.err'.format(uc['wg']['name']), prox_err, '%f', ' ')
+        np.savetxt('{}_slp.err'.format(uc['wg']['name']), slp_err, '%f', ' ')
+
+        ec_d = err_plot(prox_err[:50000000], region_info[uc['wg']['name']][4], uc['wg']['name'] + '_prox')
+        ec_s = err_plot(slp_err[:50000000], region_info[uc['wg']['name']][4], uc['wg']['name'] + '_slp')
 
         ## ==============================================
         ## apply error coefficient to full proximity grid
@@ -3197,7 +3258,13 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
         '.format(uc['prox'], ec_d[2], ec_d[1], 0, uc['wg']['name'])
         run_cmd(math_cmd, verbose = uc['wg']['verbose'])
         echo_msg('applied coefficient {} to proximity grid'.format(ec_d))
-    return(ec_d)
+        
+        math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
+        '.format(uc['slp'], ec_s[2], ec_s[1], 0, uc['wg']['name'])
+        run_cmd(math_cmd, verbose = uc['wg']['verbose'])
+        echo_msg('applied coefficient {} to proximity grid'.format(ec_s))
+        
+    return([ec_d, ec_s])
 
 def waffles_wg_valid_p(wg = _waffles_grid_info):
     '''return True if wg_config appears valid'''
@@ -3233,6 +3300,8 @@ def waffles_run(wg = _waffles_grid_info):
 
     returns dem-fn'''
 
+    out, status = run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
+    
     ## ==============================================
     ## validate and/or set the waffles_config
     ## ==============================================
