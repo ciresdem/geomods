@@ -44,7 +44,8 @@ try:
     import Queue as queue
 except: import queue as queue
 
-from geomods import waffles
+import waffles
+#from geomods import waffles
 _version = '0.4.3'
 
 ## =============================================================================
