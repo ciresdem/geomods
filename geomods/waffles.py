@@ -2383,13 +2383,19 @@ def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False,
 ## entry processing fmt:*
 ## ==============================================
 _known_dl_delims = [' ']
-_known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'csv', 'dat', 'ascii'], 200: ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'], 400: ['fetch-module']}
+_known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'csv', 'dat', 'ascii'], 200: ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'], 400: ['nos', 'dc', 'gmrt', 'srtm', 'charts', 'mb']}
 _dl_inf_h = {
     -1: lambda e: datalist_inf_entry(e),
     168: lambda e: xyz_inf_entry(e),
     200: lambda e: gdal_inf_entry(e)
 }
 _dl_pass_h = lambda e: path_exists_or_url(e[0])
+
+def _known_datalist_fmts_short_desc():
+    lns = []
+    for key in _known_datalist_fmts.keys():
+        lns.append('{}\t{}'.format(key, _known_datalist_fmts[key]))
+    return('\n  '.join(lns))
 
 def datalist_inf(dl, inf_file = True, overwrite = False):
     '''return the region of the datalist and generate
@@ -2535,7 +2541,8 @@ def entry2py(dle):
     if len(entry) < 2:
         for key in _known_datalist_fmts.keys():
             se = entry[0].split('.')
-            if len(se) == 1: see = 'fetch-module'
+            if len(se) == 1:
+                see = entry[0].split(':')[0]
             else: see = se[-1]
             if see in _known_datalist_fmts[key]:
                 entry.append(int(key))
@@ -2866,7 +2873,7 @@ def waffles_yield_datalist(wg = _waffles_grid_info):
     else: z_region = None
     if wg['spat']:
         dly = waffles_spat_meta(wg, dlh)
-    else:  dly = datalist_yield_xyz(wg['datalist'], pass_h = dlh, dl_proc_h = dlh_p, wt = 1 if wg['weights'] else None, region = region, archive = wg['archive'], verbose = wg['verbose'], z_region = z_region)
+    else:  dly = datalist_yield_xyz(wg['datalist'], pass_h = dlh, wt = 1 if wg['weights'] else None, region = region, archive = wg['archive'], verbose = wg['verbose'], z_region = z_region)
     if wg['mask']: dly = gdal_xyz_mask(dly, '{}_msk.tif'.format(wg['name']), region, wg['inc'], dst_format = wg['fmt'])
     for xyz in dly:
         yield(xyz)
@@ -3605,7 +3612,7 @@ General Options:
 
   -a, --archive\t\tArchive the datalist to the given region.
   -m, --mask\t\tGenerate a data mask raster.
-  -s, --spat-meta\tGenerate spatial-metadata of the datalist.
+  -s, --spat-meta\tGenerate spatial-metadata.
   -u, --uncert\t\tGenerate uncertainty grid.
 
   --help\t\tPrint the usage text
@@ -3625,7 +3632,7 @@ Modules (see waffles --modules for more info):
   {}
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
-'''.format(_known_datalist_fmts, _waffles_module_short_desc(_waffles_modules))
+'''.format(_known_datalist_fmts_short_desc(), _waffles_module_short_desc(_waffles_modules))
 
 def waffles_cli(argv = sys.argv):
     '''run waffles from command-line
