@@ -2555,18 +2555,18 @@ def datalist2py(dl, region = None):
     elif this_entry[1] == 400:
         fetch_mod = this_entry[0].split(':')[0]
         fetch_args = this_entry[0].split(':')[1:]
-    
-        fl = fetches.fetch_infos[fetch_mod][0](region_buffer(region, 5, pct = True), [], lambda: False)
-        args_d = args2dict(fetch_args, {})
-        fl._verbose = True
+        if fetch_mod in fetches.fetch_infos.keys():
+            fl = fetches.fetch_infos[fetch_mod][0](region_buffer(region, 5, pct = True), [], lambda: False)
+            args_d = args2dict(fetch_args, {})
+            fl._verbose = True
 
-        results = fl.run(**args_d)
-        if len(results) > 0:
-            with open('{}.datalist'.format(fetch_mod), 'w') as fdl:
-                for r in results:
-                    e = [r[0], fl._datalists_code, 1]
-                    fdl.write('{} {} {}\n'.format(e[0], e[1], e[2]))
-            these_entries.append(['{}.datalist'.format(fetch_mod), -1, 1])
+            results = fl.run(**args_d)
+            if len(results) > 0:
+                with open('{}.datalist'.format(fetch_mod), 'w') as fdl:
+                    for r in results:
+                        e = [r[0], fl._datalists_code, 1]
+                        fdl.write('{} {} {}\n'.format(e[0], e[1], e[2]))
+                these_entries.append(['{}.datalist'.format(fetch_mod), -1, 1])
                 
     else: these_entries.append(this_entry)
     return(these_entries)
@@ -2794,9 +2794,6 @@ _waffles_modules = {
     'num': [lambda args: waffles_num(**args), '''Uninterpolated DEM populated by <mode>.
     \t\t\t  < num:mode=n >
     \t\t\t  :mode=[key] - specify mode of grid population: k (mask), m (mean) or n (num)'''],
-    #'spat-metadata': [lambda args: waffles_spatial_metadata(**args), '''Datalist SPATIAL METADATA <beta>
-    #\t\t\t  < spatial-metadata:inc=None >
-    #\t\t\t  :inc=[increment] - Spatial metadata resolution [default uses -E value]'''],
     'vdatum': [lambda args: waffles_vdatum(**args), '''VDATUM transformation grid
     \t\t\t  < vdatum:ivert=navd88:overt=mhw:region=3:jar=None >
     \t\t\t  :ivert=[vdatum] - Input VDatum vertical datum.
@@ -3068,62 +3065,6 @@ def waffles_moving_average(wg = _waffles_grid_info, radius1 = None, radius2 = No
     radius2 = wg['inc'] * 2 if radius2 is None else gmt_inc2inc(radius2)
     gg_mod = 'average:radius1={}:radius2={}:angle={}:min_points={}:nodata={}'.format(radius1, radius2, angle, min_points, nodata)
     return(waffles_gdal_grid(wg, gg_mod))
-
-# def datalist_polygonize(wg):
-    
-def waffles_spatial_metadata(wg):
-    '''generate spatial-metadata for the top-level of the datalist
-    top-level entries in the datalist should include a comma-separated list
-    of field entries, (see `v_fields`). should be column 3 (from 0) in the 
-    datalist entry (e.g."datalist.datalist -1 1 name,agency,date,type,resolution,hdatum,vdatum,url") '''
-
-    #dls = []
-    dst_vector = '{}_sm.shp'.format(wg['name'])
-    dst_layer = '{}_sm'.format(wg['name'])
-    v_fields = ['Name', 'Agency', 'Date', 'Type', 'Resolution', 'HDatum', 'VDatum', 'URL']
-    t_fields = [ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString, ogr.OFTString]
-    remove_glob('{}.*'.format(dst_layer))
-    gdal_prj_file('{}.prj'.format(dst_layer), wg['epsg'])
-    
-    ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource(dst_vector)
-    if ds is not None: 
-        layer = ds.CreateLayer('{}'.format(dst_layer), None, ogr.wkbMultiPolygon)
-        [layer.CreateField(ogr.FieldDefn('{}'.format(f), t_fields[i])) for i, f in enumerate(v_fields)]
-        [layer.SetFeature(feature) for feature in layer]
-        #defn = layer.GetLayerDefn()
-    
-        dlh = lambda e: False if e[1] != -1 else regions_intersect_ogr_p(waffles_dist_region(wg), inf_entry(e))
-        dlph = lambda e: waffles_polygonize_datalist(wg, e, layer, v_fields)
-        #for d in datalist(wg['datalist'], pass_h = dlh, dl_proc_h = dlph, verbose = False): print(d)
-        #if len(dls) == 0: dls = wg['datalists']
-        #print(wg['datalist'])
-        for this_entry in datalist(wg['datalist'], pass_h = dlh, dl_proc_h = dlph, verbose = wg['verbose']):
-            echo_msg('generated spatial-metadata for {}'.format(this_entry[0]))
-        # if this_entry[-1] != '':
-        #     twg = waffles_dict2wg(wg)
-        #     twg['datalist'] = this_entry[0]
-        #     twg['name'] = os.path.basename(this_entry[0]).split('.')[0]
-        #     o_v_fields = [twg['name'], 'Unknown', '0', 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
-        #     echo_msg('scanning datalist {}...'.format(twg['datalist']))
-        #     ng, s = waffles_num(twg, mode = 'k')
-
-        #     if gdal_infos(ng, True)['zr'][1] == 1:
-        #         tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(wg['name']))
-        #         tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(wg['name']), None, ogr.wkbMultiPolygon)
-        #         tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
-        #         gdal_polygonize(ng, tmp_layer)
-
-        #         if len(tmp_layer) > 1:
-        #             out_feat = gdal_ogr_mask_union(tmp_layer, 'DN', defn)
-        #             [out_feat.SetField(f, o_v_fields[i]) for i, f in enumerate(v_fields)]
-        #             layer.CreateFeature(out_feat)
-
-        #         tmp_ds = tmp_layer = out_feat = None
-        #         remove_glob('{}_poly.*'.format(wg['name']))
-        #     remove_glob('{}'.format(ng))
-        #     remove_glob('waffles_dem_mjr.datalist')
-        ds = None
-    return(dst_vector, 0)
 
 def waffles_vdatum(wg = _waffles_grid_info, ivert = 'navd88', overt = 'mhw', region = '3', jar = None):
     '''generate a 'conversion-grid' with vdatum.
@@ -3425,9 +3366,6 @@ def waffles_run(wg = _waffles_grid_info):
         echo_error_msg('invalid configuration, {}'.format(wg))
         sys.exit(-1)
 
-    #echo_msg(wg['datalists'])
-    #echo_msg(wg['datalist'])
-        
     args_d = {}
     args_d = args2dict(wg['mod_args'], args_d)
     if wg['verbose']:
@@ -3610,7 +3548,6 @@ def waffles_run(wg = _waffles_grid_info):
         uc['prox'] = dem_prox
 
         dem_slp = '{}_slp.tif'.format(wg['name'])
-        #gmt_slope(dem, dem_slp, verbose = wg['verbose'])
         gdal_slope(dem, dem_slp)
         uc['slp'] = dem_slp
         
