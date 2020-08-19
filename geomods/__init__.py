@@ -24,8 +24,8 @@
 #import geomods.procs
 #from waffles import *
 #from fetches import *
-from geomods import waffles
-from geomods import fetches
+#from geomods import waffles
+#from geomods import fetches
 
 #from archook import locate_arcgis, get_arcpy
 

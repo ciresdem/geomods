@@ -75,9 +75,9 @@ import io
 import time
 import glob
 import math
-import subprocess
 import copy
 import shutil
+import subprocess
 ## ==============================================
 ## import gdal, etc.
 ## ==============================================
@@ -87,7 +87,8 @@ import gdal
 import ogr
 import osr
 
-from geomods import fetches
+#from geomods import fetches
+import fetches
 
 ## ==============================================
 ## General utility functions - utils.py
@@ -104,6 +105,7 @@ def inc2str_inc(inc):
 
 def this_date():
     '''return the current date'''
+    
     import datetime
     return(datetime.datetime.now().strftime('%Y%m%d%H%M%S'))
 
@@ -189,6 +191,7 @@ def _clean_zips(zip_files):
 
 def unzip(zip_file):
     '''unzip (extract) `zip_file` and return a list of extracted file names.'''
+    
     import zipfile
     zip_ref = zipfile.ZipFile(zip_file)
     zip_files = zip_ref.namelist()
@@ -198,6 +201,7 @@ def unzip(zip_file):
 
 def gunzip(gz_file):
     '''gunzip `gz_file` and return the extracted file name.'''
+    
     import gzip
     if os.path.exists(gz_file):
         gz_split = gz_file.split('.')[:-1]

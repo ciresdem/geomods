@@ -166,9 +166,9 @@ def fetch_queue(q, p):
                     try:
                         os.makedirs(os.path.dirname(fetch_args[1]))
                     except: pass 
-                #with open(fetch_args[1].split('.')[0] + '.xyz', 'w') as out_xyz:
-                out_xyz = fetch_args[1].split('.')[0] + '.xyz'
-                p._dump_xyz([fetch_args[0], fetch_args[1], fetch_args[-1]], out_xyz)
+                with open(fetch_args[1].split('.')[0] + '.xyz', 'w') as out_xyz:
+                    #out_xyz = fetch_args[1].split('.')[0] + '.xyz'
+                    p._dump_xyz([fetch_args[0], fetch_args[1], fetch_args[-1]], out_xyz)
                     
         q.task_done()
 
@@ -845,9 +845,11 @@ class nos:
         #waffles.vdatum_clean_result()
         
     def _dump_xyz(self, entry, dst_port = sys.stdout):
-        # for xyz in self._yield_xyz(entry):
-        #     waffles.xyz_line(xyz, dst_port, self._verbose)
-      
+         for xyz in self._yield_xyz(entry):
+             waffles.xyz_line(xyz, dst_port, self._verbose)
+
+    def _dump_xyz_entry(self, entry, dst_port = sys.stdout):
+             
         src_nos = os.path.basename(entry[1])
         dt = None
         if fetch_file(entry[0], src_nos, callback = lambda: False, verbose = self._verbose) == 0:
