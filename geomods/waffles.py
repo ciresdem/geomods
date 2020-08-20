@@ -2483,10 +2483,10 @@ def datalist_archive(wg, arch_dir = 'archive', region = None, verbose = False, z
 def datalist_list(wg):
     '''list the datalist entries in the given region'''
     if wg['region'] is not None:
-        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
+        dl_p = lambda e: regions_intersect_ogr_p(wg['region'], inf_entry(e))
     else: dl_p = _dl_pass_h
     for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p):
-        print(this_entry)
+        print(' '.join([','.join(x) if i == 3 else str(x) for i,x in enumerate(this_entry[:-1])]))
     
 def datalist_echo(entry):
     '''echo datalist entry to stderr'''
@@ -2808,8 +2808,12 @@ _waffles_modules = {
     'average': [lambda args: waffles_moving_average(**args), '''Moving AVERAGE DEM via gdal_grid
     \t\t\t  < average:radius1=0.01:radius2=0.01 >'''],
     'help': [lambda args: waffles_help(**args), '''display module info'''],
-    'pass': [lambda args: waffles_pass_datalist(**args), '''run waffles without gridding
-    \t\t\t  < pass:dump=[True/False] >'''],
+    'datalists': [lambda args: waffles_datalists(**args), '''recurse the DATALIST
+    \t\t\t  < datalists:dump=False:echo=False:infos=False:recurse=True >
+    \t\t\t  :dump=[True/False] - dump the data from the datalist(s)
+    \t\t\t  :echo=[True/False] - echo the data entries from the datalist(s)
+    \t\t\t  :infos=[True/False] - generate inf files for the datalists datalist entries.
+    \t\t\t  :recurse=[True/False] - recurse the datalist (default = True)'''],
 }
 
 ## ==============================================
@@ -2848,7 +2852,7 @@ waffles_gmt_reg_str = lambda wg: '-r' if wg['node'] == 'pixel' else ''
 waffles_append_fn = lambda bn, region, inc: '{}{}_{}_{}'.format(bn, inc2str_inc(inc), region_format(region, 'fn'), this_year())
 
 def waffles_help(wg = _waffles_grid_info):
-    print(_waffles_module_long_desc(_waffles_modules))
+    sys.stderr.write(_waffles_module_long_desc(_waffles_modules))
     return(0, 0)
 
 def waffles_yield_datalist(wg = _waffles_grid_info):    
@@ -2882,13 +2886,18 @@ def waffles_dump_datalist(wg = _waffles_grid_info, dst_port = sys.stdout):
     for xyz in waffles_yield_datalist(wg):
         xyz_line(xyz, dst_port, True)
         
-def waffles_pass_datalist(wg = _waffles_grid_info, dump = False):
+def waffles_datalists(wg = _waffles_grid_info, dump = False, echo = False, infos = False, recurse = True):
     '''dump the xyz data from datalist and generate a data mask while doing it.'''
 
-    if dump: pass_func = lambda xyz: xyz_line(xyz, sys.stdout, True)
+    if echo: datalist_list(wg)
+    if infos: print(datalist_inf(wg['datalist'], inf_file = True))
+    if dump:
+        recurse = True
+        pass_func = lambda xyz: xyz_line(xyz, sys.stdout, True)
     else: pass_func = lambda xyz: None
-    
-    for xyz in waffles_yield_datalist(wg): pass_func(xyz)
+
+    if recurse:
+        for xyz in waffles_yield_datalist(wg): pass_func(xyz)
     return(0,0)
 
 def waffles_polygonize_datalist(wg, entry, layer = None, dlh = lambda e: True,
@@ -3864,116 +3873,6 @@ def waffles_cli(argv = sys.argv):
             #    echo_error_msg('Cannot access {}.tif, may be in use elsewhere, {}'.format(wg['name'], e))
 
 ## ==============================================
-## datalists cli
-## ==============================================
-datalists_cli_usage = '''datalists [-cilwPR] <datalist/entry ...>
-
-Process and analyze geographic datalists.
-
-CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
-'''
-
-def datalists_cli(argv = sys.argv):
-    dls = []
-    wg = waffles_config()
-    wg_user = None
-    region = None
-    want_infos = False
-    want_list = False
-    rec_infos = False
-    want_verbose = False
-    epsg = None
-    i = 1
-    while i < len(argv):
-        arg = argv[i]
-        if arg == '--region' or arg == '-R':
-            region = str(argv[i + 1])
-            i += 1
-        elif arg[:2] == '-R': region = str(arg[2:])
-        elif arg == '--epsg' or arg == '-P':
-            epsg = argv[i + 1]
-            i = i + 1
-        elif arg[:2] == '-P': epsg = arg[2:]
-        elif arg == '--wg-config' or arg == '-W':
-            wg_user = argv[i + 1]
-            i += 1
-        elif arg[:2] == '-W': wg_user = arg[2:]
-        elif arg == '-w' or arg == '--weights': wg['weights'] = True
-        elif arg == '-i': want_infos = True
-        elif arg == '-l': want_list = True
-        elif arg == '-c': rec_infos = True
-        elif arg == '--verbose' or arg == '-V': want_verbose = True
-        elif arg == '--help' or arg == '-h':
-            sys.stderr.write(datalists_cli_usage)
-            sys.exit(0)
-        elif arg == '--version' or arg == '-v':
-            sys.stdout.write('{}\n'.format(_version))
-            sys.exit(0)
-        else: dls.append(arg)
-        i += 1
-
-    ## ==============================================
-    ## load the user wg json and run waffles with that.
-    ## ==============================================
-    if wg_user is not None:
-        if os.path.exists(wg_user):
-            try:
-                with open(wg_user, 'r') as wgj:
-                    wg = json.load(wgj)
-                    #dem = waffles_run(wg)
-                    #sys.exit(0)
-            except Exception as e:
-                wg = waffles_config()
-                echo_error_msg(e)
-        else:
-            echo_error_msg('specified json file does not exist, {}'.format(wg_user))
-            sys.exit(0)
-
-    ## ==============================================
-    ## set the datalists and names
-    ## ==============================================
-    wg['datalists'] = dls
-
-    ## ==============================================
-    ## reformat and set the region
-    ## ==============================================
-    if region is not None:
-        try:
-            these_regions = [[float(x) for x in region.split('/')]]
-        except ValueError: these_regions = gdal_ogr_regions(region)
-    else: these_regions = [None]
-    if len(these_regions) == 0:
-        echo_error_msg('failed to parse region(s)')
-        
-    for this_region in these_regions:
-        wg['region'] = this_region
-        if this_region is None:
-            dl_p = lambda e: path_exists_or_url(e)
-        else: dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != 400 else True
-
-        ## ==============================================
-        ## recurse the datalist
-        ## ==============================================
-        wg = waffles_dict2wg(wg)
-        if wg is None:
-            sys.stderr.write(datalists_cli_usage)
-            sys.exit(-1)
-        
-        if want_infos: print(datalist_inf(wg['datalist'], inf_file = True))
-        elif rec_infos:
-            inf_entry(wg['datalist'])
-        elif want_list:
-            datalist_list(wg, region)
-        else:
-            ## ==============================================
-            ## dump to stdout
-            ## ==============================================
-            waffles_dump_datalist(wg)
-            datalist_dump_xyz(wg['datalist'], wt = wg['weights'], region = wg['region'], archive = wg['archive'], mask = wg['mask'], verbose = wg['verbose'], z_region = None)
-            #datalist_dump_xyz(major, wt = 1 if want_weight else None, region = region, verbose = want_verbose)
-    #remove_glob('{}*'.format(major))
-
-## ==============================================
 ## mainline -- run waffles directly...
 ##
 ## run waffles:
@@ -3983,13 +3882,6 @@ def datalists_cli(argv = sys.argv):
 ## run datalists:
 ## % python waffles.py datalists <args>
 ## ==============================================
-if __name__ == '__main__':
-    if len(sys.argv) > 1:
-        if sys.argv[1] == 'dem':
-            waffles_cli(sys.argv[:1] + sys.argv[2:])
-        elif sys.argv[1] == 'datalists':
-            datalists_cli(sys.argv[:1] + sys.argv[2:])
-        else: waffles_cli(sys.argv)
-    else: waffles_cli(sys.argv)
+if __name__ == '__main__': waffles_cli(sys.argv)
 
 ### End
