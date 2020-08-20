@@ -246,7 +246,7 @@ def procs_unzip(src_file, exts):
                 break
     return([src_proc, zips])
 
-def err_fit_plot(xdata, ydata, out, fitfunc, dst_name = 'unc'):
+def err_fit_plot(xdata, ydata, out, fitfunc, dst_name = 'unc', xa = 'distance'):
     '''plot a best fit plot'''
     try:
         import matplotlib
@@ -257,13 +257,13 @@ def err_fit_plot(xdata, ydata, out, fitfunc, dst_name = 'unc'):
     
     plt.plot(xdata, ydata, 'o')
     plt.plot(xdata, fitfunc(out, xdata), '-')
-    plt.xlabel('distance')
+    plt.xlabel(xa)
     plt.ylabel('error (m)')
     out_png = '{}_bf.png'.format(dst_name)
     plt.savefig(out_png)
     plt.close()
 
-def err_scatter_plot(error_arr, dist_arr, dst_name = 'unc'):
+def err_scatter_plot(error_arr, dist_arr, dst_name = 'unc', xa = 'distance'):
     '''plot a scatter plot'''
     try:
         import matplotlib
@@ -274,13 +274,13 @@ def err_scatter_plot(error_arr, dist_arr, dst_name = 'unc'):
 
     plt.scatter(dist_arr, error_arr)
     #plt.title('Scatter')
-    plt.xlabel('distance')
+    plt.xlabel(xa)
     plt.ylabel('error (m)')
     out_png = '{}_scatter.png'.format(dst_name)
     plt.savefig(out_png)
     plt.close()
 
-def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc'):
+def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'distance'):
     '''calculate and plot the error coefficient given err_arr which is 
     a 2 col array with `err dist`'''
 
@@ -307,7 +307,7 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc'):
     errfunc = lambda p, x, y: y - fitfunc(p, x)
     out, cov, infodict, mesg, ier = optimize.leastsq(errfunc, coeff_guess, args = (xdata, ydata), full_output = True)
     err_fit_plot(xdata, ydata, out, fitfunc, dst_name)
-    err_scatter_plot(error, distance, dst_name)
+    err_scatter_plot(error, distance, dst_name, xa)
     return(out)
 
 def err_plot(err_arr, d_max, dst_name = 'unc'):
@@ -2509,9 +2509,7 @@ def datalist_major(dls, major = '.mjr.datalist', region = None):
         for dl in dls:
             entries = datalist2py(dl, region)
             for entry in entries:
-                print(entry)
                 md.write('{}\n'.format(' '.join([str(e) for e in entry])))
-                #md.write('{} {} {}\n'.format(entry[0], entry[1], entry[2]))
     if os.stat(major).st_size == 0:
         remove_glob(major)
         echo_error_msg('bad datalist/entry, {}'.format(dls))
@@ -3139,7 +3137,7 @@ _unc_config = {
     'prox': None,
     'slp': None,
     'zones': ['bathy', 'bathy-topo', 'topo'],
-    'sims': 5,
+    'sims': 10,
     'chnk_lvl': 4,
 }
 
@@ -3334,8 +3332,8 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
         np.savetxt('{}_prox.err'.format(uc['wg']['name']), prox_err, '%f', ' ')
         np.savetxt('{}_slp.err'.format(uc['wg']['name']), slp_err, '%f', ' ')
 
-        ec_d = err_plot(prox_err[:50000000], region_info[uc['wg']['name']][4], uc['wg']['name'] + '_prox')
-        ec_s = err_plot(slp_err[:50000000], region_info[uc['wg']['name']][4], uc['wg']['name'] + '_slp')
+        ec_d = err2coeff(prox_err[:50000000], region_info[uc['wg']['name']][4], uc['wg']['name'] + '_prox', 'distance')
+        ec_s = err2coeff(slp_err[:50000000], region_info[uc['wg']['name']][4], uc['wg']['name'] + '_slp', 'slope')
 
         ## ==============================================
         ## apply error coefficient to full proximity grid
