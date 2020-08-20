@@ -1606,11 +1606,10 @@ def xyz2gdal_ds(src_xyz, dst_ogr):
     fd.SetPrecision(8)
     layer.CreateField(fd)
     fd = ogr.FieldDefn('elev', ogr.OFTReal)
-    fd.SetWidth(12)
-    fd.SetPrecision(12)
+    fd.SetWidth(10)
+    fd.SetPrecision(10)
     layer.CreateField(fd)
     f = ogr.Feature(feature_def = layer.GetLayerDefn())
-
     for this_xyz in src_xyz:
         f.SetField(0, this_xyz[0])
         f.SetField(1, this_xyz[1])
@@ -2250,7 +2249,9 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False, verbo
     '''block the src_xyz data to the mean block value
 
     yields the xyz value for each block with data'''
+    
     xcount, ycount, dst_gt = gdal_region2gt(region, inc)
+    print(xcount, ycount)
     sumArray = np.zeros((ycount, xcount))
     gdt = gdal.GDT_Float32
     ptArray = np.zeros((ycount, xcount))
@@ -2275,6 +2276,11 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False, verbo
         outarray = (sumArray / wtArray) / ptArray
     else: outarray = sumArray / ptArray
 
+    sumArray = ptArray = None
+    if weights: wtArray = None
+
+    outarray[np.isnan(outarray)] = -9999
+    
     for y in range(0, ycount):
         for x in range(0, xcount):
             geo_x, geo_y = _pixel2geo(x, y, dst_gt)
@@ -2384,18 +2390,13 @@ def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False,
 ## ==============================================
 _known_dl_delims = [' ']
 _known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'csv', 'dat', 'ascii'], 200: ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'], 400: ['nos', 'dc', 'gmrt', 'srtm', 'charts', 'mb']}
+_known_datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, _known_datalist_fmts[key]) for key in _known_datalist_fmts])
 _dl_inf_h = {
     -1: lambda e: datalist_inf_entry(e),
     168: lambda e: xyz_inf_entry(e),
     200: lambda e: gdal_inf_entry(e)
 }
 _dl_pass_h = lambda e: path_exists_or_url(e[0])
-
-def _known_datalist_fmts_short_desc():
-    lns = []
-    for key in _known_datalist_fmts.keys():
-        lns.append('{}\t{}'.format(key, _known_datalist_fmts[key]))
-    return('\n  '.join(lns))
 
 def datalist_inf(dl, inf_file = True, overwrite = False):
     '''return the region of the datalist and generate
@@ -3608,7 +3609,7 @@ General Options:
 
   -p, --prefix\t\tSet BASENAME to PREFIX (append inc/region/year info to output BASENAME).
   -r, --grid-node\tUse grid-node registration, default is pixel-node
-  -w, --weights\t\tUse weights provided in the datalist.
+-w, --weights\t\tUse weights provided in the datalist to weight overlapping data.
 
   -a, --archive\t\tArchive the datalist to the given region.
   -m, --mask\t\tGenerate a data mask raster.
