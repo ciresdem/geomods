@@ -823,13 +823,12 @@ class nos:
                 xyzc['ypos'] = 1
                 xyzc['zpos'] = 2
                 xyzc['name'] = src_bag
-
-
+                #, waffles.gdal_region(src_ds, warp = 4326):
                 src_ds = gdal.Open(src_bag)
                 if src_ds is not None:
                     srcwin = waffles.gdal_srcwin(src_ds, waffles.region_warp(self.region, s_warp = 4326, t_warp = waffles.gdal_getEPSG(src_ds)))
                     with open(nos_f, 'w') as cx:
-                        for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, warp = 4326), waffles.gdal_region(src_ds, warp = 4326):
+                        for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, warp = 4326):
                             waffles.xyz_line(xyz, cx)
                     src_ds = None
                     if os.stat(nos_f).st_size != 0:
