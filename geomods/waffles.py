@@ -126,8 +126,10 @@ def rm_f(f_str):
         
 def remove_glob(glob_str):
     '''glob `glob_str` and os.remove results, pass if error'''
-    
-    globs = glob.glob(glob_str)
+
+    try:
+        globs = glob.glob(glob_str)
+    except: globs = None
     if globs is None: return(0)
     for g in globs:
         try:
@@ -3112,7 +3114,9 @@ def waffles_vdatum(wg = _waffles_grid_info, ivert = 'navd88', overt = 'mhw', reg
     `ivert` and `overt` for the region'''
     
     vc = _vd_config
-    vc['jar'] = jar
+    if jar is None:
+        vc['jar'] = vdatum_locate_jar()[0]
+    else: vc['jar'] = jar
     vc['ivert'] = ivert
     vc['overt'] = overt
     vc['region'] = region
@@ -3130,7 +3134,9 @@ def waffles_vdatum(wg = _waffles_grid_info, ivert = 'navd88', overt = 'mhw', reg
 
         ll = 'd' if empty_infos[4] < 0 else '0'
         lu = 'd' if empty_infos[5] > 0 else '0'
-        wg['datalist'] = datalist_major(['result/empty.xyz'])
+        wg['datalists'] = ['result/empty.xyz']
+        wg['spat'] = False
+        wg = waffles_dict2wg(wg)
         out, status = waffles_gmt_surface(wg, tension = 0, upper_limit = lu, lower_limit = ll)
         
     remove_glob('empty.*')
@@ -3576,23 +3582,24 @@ def waffles_run(wg = _waffles_grid_info):
     ## optionally generate uncertainty grid
     ## ==============================================
     if wg['unc']:
-        echo_msg('generating uncertainty')
+        if os.path.exists(dem) and os.path.exists(dem_msk):
+            echo_msg('generating uncertainty')
 
-        uc = _unc_config
-        uc['wg'] = wg
-        uc['dem'] = dem
-        uc['msk'] = dem_msk
+            uc = _unc_config
+            uc['wg'] = wg
+            uc['dem'] = dem
+            uc['msk'] = dem_msk
 
-        dem_prox = '{}_prox.tif'.format(wg['name'])
-        gdal_proximity(dem_msk, dem_prox)
-        uc['prox'] = dem_prox
+            dem_prox = '{}_prox.tif'.format(wg['name'])
+            gdal_proximity(dem_msk, dem_prox)
+            uc['prox'] = dem_prox
 
-        dem_slp = '{}_slp.tif'.format(wg['name'])
-        gdal_slope(dem, dem_slp)
-        uc['slp'] = dem_slp
-        
-        echo_msg(uc)
-        waffles_interpolation_uncertainty(uc)
+            dem_slp = '{}_slp.tif'.format(wg['name'])
+            gdal_slope(dem, dem_slp)
+            uc['slp'] = dem_slp
+
+            echo_msg(uc)
+            waffles_interpolation_uncertainty(uc)
 
     ## ==============================================
     ## if dem has data, return
