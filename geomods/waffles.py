@@ -980,20 +980,6 @@ def mb_inf(src_xyz, src_fmt = 168):
     run_cmd('mbdatalist -O -F{} -I{}'.format(src_fmt, src_xyz))
     return(inf_parse('{}.inf'.format(src_xyz)))
 
-def run_mbgrid(datalist, region, inc, dst_name, dist = '10/3', tension = 35, extras = False, verbose = False):
-    '''run the MBSystem command `mbgrid` given a datalist, region and increment.
-    the datalist should be an MBSystem-style datalist; if using a waffles datalist, 
-    it should be converted first (using datalist_archive()).
-
-    returns [mbgrid-output, mbgrid-return-code]'''
-
-    e_switch = '-M' if extras else ''
-
-    if len(dist.split('/')) == 1: dist = dist + '/2'
-    mbgrid_cmd = ('mbgrid -I{} {} -E{:.10f}/{:.10f}/degrees! -O{} -A2 -G100 -F1 -N -C{} -S0 -X0.1 -T{} {} > mb_proc.txt \
-    '.format(datalist, region_format(region, 'gmt'), inc, inc, dst_name, dist, tension, e_switch))
-    return(run_cmd(mbgrid_cmd, verbose = verbose))
-
 ## ==============================================
 ## GDAL Wrappers and Functions - gdalfun.py
 ## ==============================================
@@ -1101,7 +1087,10 @@ def gdal_gather_infos(src_ds, scan = False):
         'zr': None,
     }
     if ds_config['ndv'] is None: ds_config['ndv'] = -9999
-    if scan: ds_config['zr'] = src_band.ComputeRasterMinMax()
+    if scan:
+        try:
+            ds_config['zr'] = src_band.ComputeRasterMinMax()
+        except: ds_config = None
     
     return(ds_config)
 
@@ -2251,7 +2240,6 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False, verbo
     yields the xyz value for each block with data'''
     
     xcount, ycount, dst_gt = gdal_region2gt(region, inc)
-    print(xcount, ycount)
     sumArray = np.zeros((ycount, xcount))
     gdt = gdal.GDT_Float32
     ptArray = np.zeros((ycount, xcount))
@@ -2492,9 +2480,9 @@ def datalist_archive(wg, arch_dir = 'archive', region = None, verbose = False, z
                 datalist_append_entry([rel_file, -1, 1], a_dl)
     return(a_dl, 0)
 
-def datalist_list(wg, region = None):
+def datalist_list(wg):
     '''list the datalist entries in the given region'''
-    if region is not None:
+    if wg['region'] is not None:
         dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
     else: dl_p = _dl_pass_h
     for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p):
@@ -2521,7 +2509,9 @@ def datalist_major(dls, major = '.mjr.datalist', region = None):
         for dl in dls:
             entries = datalist2py(dl, region)
             for entry in entries:
-                md.write('{} {} {}\n'.format(entry[0], entry[1], entry[2]))
+                print(entry)
+                md.write('{}\n'.format(' '.join([str(e) for e in entry])))
+                #md.write('{} {} {}\n'.format(entry[0], entry[1], entry[2]))
     if os.stat(major).st_size == 0:
         remove_glob(major)
         echo_error_msg('bad datalist/entry, {}'.format(dls))
@@ -2533,7 +2523,6 @@ def entry2py(dle):
 
     return the entry as a list [fn, fmt, wt, ...]'''
     this_entry = dle.rstrip().split()
-
     try:
         entry = [x if n == 0 else int(x) if n < 2 else float(x) if n < 3 else x for n, x in enumerate(this_entry)]
     except Exception as e:
@@ -2554,7 +2543,6 @@ def datalist2py(dl, region = None):
     '''convert a datalist to python data
     
     returns a list of datalist entries.'''
-    
     these_entries = []
     this_dir = os.path.dirname(dl)
     this_entry = entry2py(dl)
@@ -2822,6 +2810,8 @@ _waffles_modules = {
     'average': [lambda args: waffles_moving_average(**args), '''Moving AVERAGE DEM via gdal_grid
     \t\t\t  < average:radius1=0.01:radius2=0.01 >'''],
     'help': [lambda args: waffles_help(**args), '''display module info'''],
+    'pass': [lambda args: waffles_pass_datalist(**args), '''run waffles without gridding
+    \t\t\t  < pass:dump=[True/False] >'''],
 }
 
 ## ==============================================
@@ -2863,8 +2853,7 @@ def waffles_help(wg = _waffles_grid_info):
     print(_waffles_module_long_desc(_waffles_modules))
     return(0, 0)
 
-def waffles_yield_datalist(wg = _waffles_grid_info):
-
+def waffles_yield_datalist(wg = _waffles_grid_info):    
     wg['region'] = region_buffer(wg['region'], wg['inc'] * .5) if wg['node'] == 'grid' else wg['region']
     region = waffles_proc_region(wg)
     dlh = lambda e: regions_intersect_ogr_p(region, inf_entry(e))
@@ -2879,12 +2868,30 @@ def waffles_yield_datalist(wg = _waffles_grid_info):
     for xyz in dly:
         yield(xyz)
     if wg['spat']: sm_ds = None
+    if wg['archive']:
+        a_dl = os.path.join('archive', '{}.datalist'.format(wg['name']))
+
+        for dir_, _, files in os.walk('archive'):
+            for f in files:
+                if '.datalist' in f:
+                    rel_dir = os.path.relpath(dir_, 'archive')
+                    rel_file = os.path.join(rel_dir, f)
+                    datalist_append_entry([rel_file, -1, 1], a_dl)
 
 def waffles_dump_datalist(wg = _waffles_grid_info, dst_port = sys.stdout):
     '''dump the xyz data from datalist and generate a data mask while doing it.'''
 
     for xyz in waffles_yield_datalist(wg):
         xyz_line(xyz, dst_port, True)
+        
+def waffles_pass_datalist(wg = _waffles_grid_info, dump = False):
+    '''dump the xyz data from datalist and generate a data mask while doing it.'''
+
+    if dump: pass_func = lambda xyz: xyz_line(xyz, sys.stdout, True)
+    else: pass_func = lambda xyz: None
+    
+    for xyz in waffles_yield_datalist(wg): pass_func(xyz)
+    return(0,0)
 
 def waffles_polygonize_datalist(wg, entry, layer = None, dlh = lambda e: True,
                                 v_fields = ['Name', 'Agency', 'Date', 'Type', 'Resolution', 'HDatum', 'VDatum', 'URL']):
@@ -2899,7 +2906,9 @@ def waffles_polygonize_datalist(wg, entry, layer = None, dlh = lambda e: True,
     twg['name'] = os.path.basename(entry[0]).split('.')[0]
     twg['region'] = region_buffer(wg['region'], wg['inc'] * .5) if wg['node'] == 'grid' else wg['region']
     ng = '{}_msk.tif'.format(twg['name'])
-    o_v_fields = [twg['name'], 'Unknown', '0', 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
+    if len(entry[3]) == 8:
+        o_v_fields = entry[3]
+    else: o_v_fields = [twg['name'], 'Unknown', '0', 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
     dly = datalist_yield_xyz(entry[0], pass_h = dlh, wt = 1 if twg['weights'] else None, region = twg['region'], archive = twg['archive'], verbose = twg['verbose'])
     for xyz in gdal_xyz_mask(dly, ng, twg['region'], twg['inc'], dst_format = twg['fmt']):
         yield(xyz)
@@ -2976,21 +2985,33 @@ def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, use_dat
         return(None, -1)
 
     if use_datalists:
-        datalist_archive(wg, arch_dir = '.mb_tmp_datalist', verbose = True)
-        wg['datalist'] = datalist_major(['.mb_tmp_datalist/{}.datalist'.format(wg['name'])])
+        #datalist_archive(wg, arch_dir = '.mb_tmp_datalist', verbose = True)
+        archive = wg['archive']
+        wg['archive'] = True
+        for xyz in waffles_yield_datalist(wg): pass
+        wg['datalist'] = datalist_major(['archive/{}.datalist'.format(wg['name'])])
+        wg['archive'] = archive
 
-    out, status = run_mbgrid(wg['datalist'], waffles_dist_region(wg), wg['inc'], wg['name'], dist = dist, tension = tension, extras = True if wg['mask'] else False, verbose = True)
+    wg['region'] = region_buffer(wg['region'], wg['inc'] * -.5) if wg['node'] == 'pixel' else wg['region']
+    xsize, ysize, gt = gdal_region2gt(waffles_proc_region(wg), wg['inc'])
+    
+    if len(dist.split('/')) == 1: dist = dist + '/2'
+    mbgrid_cmd = ('mbgrid -I{} {} -D{}/{} -O{} -A2 -G100 -F1 -N -C{} -S0 -X0.1 -T{} {} > mb_proc.txt \
+    '.format(wg['datalist'], waffles_proc_str(wg), xsize, ysize, wg['name'], dist, tension, '-M' if wg['mask'] else ''))
+    out, status = run_cmd(mbgrid_cmd, verbose = wg['verbose'])
+
     remove_glob('*.cmd')
     gmt_grd2gdal('{}.grd'.format(wg['name']))
-    if wg['node'] == 'pixel': gmt_sample_gnr('{}.tif'.format(wg['name']), verbose = wg['verbose'])
     remove_glob('{}.grd'.format(wg['name']))
-    if use_datalists: shutil.rmtree('.mb_tmp_datalist')
+    if use_datalists and not wg['archive']: shutil.rmtree('archive')
     if wg['mask']:
         num_grd = '{}_num.grd'.format(wg['name'])
-        if wg['node'] == 'pixel': gmt_sample_gnr(num_grd, verbose = wg['verbose'])
         dst_msk = '{}_msk.tif=gd+n-9999:GTiff'.format(wg['name'])
         out, status = gmt_num_msk(num_grd, dst_msk, verbose = wg['verbose'])
         remove_glob(num_grd)
+    if not use_datalists:
+        if wg['spat'] or wg['archive']:
+            for xyz in waffles_yield_datalist(wg): pass
     return(0, 0)
 
 def waffles_gmt_surface(wg = _waffles_grid_info, tension = .35, relaxation = 1.2, lower_limit = 'd', upper_limit = 'd'):
@@ -3609,7 +3630,7 @@ General Options:
 
   -p, --prefix\t\tSet BASENAME to PREFIX (append inc/region/year info to output BASENAME).
   -r, --grid-node\tUse grid-node registration, default is pixel-node
--w, --weights\t\tUse weights provided in the datalist to weight overlapping data.
+  -w, --weights\t\tUse weights provided in the datalist to weight overlapping data.
 
   -a, --archive\t\tArchive the datalist to the given region.
   -m, --mask\t\tGenerate a data mask raster.
@@ -3856,8 +3877,9 @@ CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
 
 def datalists_cli(argv = sys.argv):
     dls = []
+    wg = waffles_config()
+    wg_user = None
     region = None
-    want_weight = False
     want_infos = False
     want_list = False
     rec_infos = False
@@ -3874,7 +3896,11 @@ def datalists_cli(argv = sys.argv):
             epsg = argv[i + 1]
             i = i + 1
         elif arg[:2] == '-P': epsg = arg[2:]
-        elif arg == '-w': want_weight = True
+        elif arg == '--wg-config' or arg == '-W':
+            wg_user = argv[i + 1]
+            i += 1
+        elif arg[:2] == '-W': wg_user = arg[2:]
+        elif arg == '-w' or arg == '--weights': wg['weights'] = True
         elif arg == '-i': want_infos = True
         elif arg == '-l': want_list = True
         elif arg == '-c': rec_infos = True
@@ -3887,39 +3913,67 @@ def datalists_cli(argv = sys.argv):
             sys.exit(0)
         else: dls.append(arg)
         i += 1
-    if len(dls) == 0:
-        sys.stderr.write(datalists_cli_usage)
-        echo_error_msg('''must specify a datalist/entry file''')
-        sys.exit(-1)
-    dl_p = lambda e: path_exists_or_url(e)
+
+    ## ==============================================
+    ## load the user wg json and run waffles with that.
+    ## ==============================================
+    if wg_user is not None:
+        if os.path.exists(wg_user):
+            try:
+                with open(wg_user, 'r') as wgj:
+                    wg = json.load(wgj)
+                    #dem = waffles_run(wg)
+                    #sys.exit(0)
+            except Exception as e:
+                wg = waffles_config()
+                echo_error_msg(e)
+        else:
+            echo_error_msg('specified json file does not exist, {}'.format(wg_user))
+            sys.exit(0)
+
+    ## ==============================================
+    ## set the datalists and names
+    ## ==============================================
+    wg['datalists'] = dls
+
+    ## ==============================================
+    ## reformat and set the region
+    ## ==============================================
     if region is not None:
         try:
-            region = [float(x) for x in region.split('/')]
-        except ValueError as e:
+            these_regions = [[float(x) for x in region.split('/')]]
+        except ValueError: these_regions = gdal_ogr_regions(region)
+    else: these_regions = [None]
+    if len(these_regions) == 0:
+        echo_error_msg('failed to parse region(s)')
+        
+    for this_region in these_regions:
+        wg['region'] = this_region
+        if this_region is None:
+            dl_p = lambda e: path_exists_or_url(e)
+        else: dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != 400 else True
+
+        ## ==============================================
+        ## recurse the datalist
+        ## ==============================================
+        wg = waffles_dict2wg(wg)
+        if wg is None:
             sys.stderr.write(datalists_cli_usage)
-            echo_error_msg('bad region, {}'.format(e))
             sys.exit(-1)
-        #dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != -1 else True
-        dl_p = lambda e: regions_intersect_ogr_p(region, inf_entry(e)) if e[1] != 400 else True
-    wt = 1 if want_weight else None
-            
-    ## ==============================================
-    ## recurse the datalist
-    ## ==============================================
-    major = datalist_major(dls, region = region)
-    if major is not None:
-        #datalist_archive(major, arch_dir = 'archive', region = region, verbose = want_verbose)
-        if want_infos: print(datalist_inf(major, inf_file = True))
+        
+        if want_infos: print(datalist_inf(wg['datalist'], inf_file = True))
         elif rec_infos:
-            inf_entry([major, -1, 1])
+            inf_entry(wg['datalist'])
         elif want_list:
-            datalist_list({'datalist':major, 'weights': want_weight}, region)
+            datalist_list(wg, region)
         else:
             ## ==============================================
             ## dump to stdout
             ## ==============================================
-            datalist_dump_xyz(major, wt = 1 if want_weight else None, region = region, verbose = want_verbose)
-        remove_glob('{}*'.format(major))
+            waffles_dump_datalist(wg)
+            datalist_dump_xyz(wg['datalist'], wt = wg['weights'], region = wg['region'], archive = wg['archive'], mask = wg['mask'], verbose = wg['verbose'], z_region = None)
+            #datalist_dump_xyz(major, wt = 1 if want_weight else None, region = region, verbose = want_verbose)
+    #remove_glob('{}*'.format(major))
 
 ## ==============================================
 ## mainline -- run waffles directly...

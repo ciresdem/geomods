@@ -1443,6 +1443,7 @@ class gmrt:
     ## ==============================================    
     def _yield_xyz(self, entry, res = 'max', fmt = 'geotiff'):
         src_gmrt = 'gmrt_tmp.{}'.format(gdal_fext(fmt))
+        print(entry)
         if fetch_file(entry[0], src_gmrt, callback = lambda: False, verbose = self._verbose) == 0:
             #try:
             src_ds = gdal.Open(src_gmrt)
