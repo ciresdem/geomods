@@ -55,7 +55,7 @@
 ## for faster processing
 ##
 ## 'inf' files can be generated using 'mbdatalist -O -V -I~datalist.datalist'
-## or via `datalists -i`
+## or via `waffles -M datalists:infos=True`
 ##
 ## GDAL/LIDAR/FETCHES data don't need inf files.
 ##
@@ -63,10 +63,11 @@
 ## the given region
 ##
 ### TODO:
-## Add uncertainty functions and modules
 ## Add remove/replace module
 ## Add source uncertainty to uncertainty module
 ## Add LAS/LAZ support to datalits
+## -W weight-range for datalist processing
+## -B for 'breakline' (densify line/exract nodes/add to datalist)
 ##
 ### Code:
 import sys

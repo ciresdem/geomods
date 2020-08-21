@@ -1307,17 +1307,17 @@ class mb:
     ## ==============================================
     ## Process results to xyz
     ## ==============================================    
-    def _yield_xyz(self, entry, vdc, xyzc):
+    def _yield_xyz(self, entry, vdc = None, xyzc = None):
         if vdc is None: vdc = waffles._vd_config
         if xyzc is None: xyzc = waffles._xyz_config
         src_mb = os.path.basename(entry[1])
         
         if fetch_file(entry[0], src_mb, callback = lambda: False, verbose = self._verbose) == 0:
             src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
-            out, status = waffles.run_cmd('mblist -MX20 -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
+            out, status = waffles.run_cmd('mblist -MX20 -OXYZ -I{} > {}'.format(src_mb, src_xyz), verbose = False)
             vdc['ivert'] = 'lmsl:m:height'
             vdc['overt'] = 'navd88:m:height'
-            vdc['delim'] = 'space'
+            vdc['delim'] = 'tab'
             vdc['xyzl'] = '0,1,2'
             vdc['skip'] = '0'
             out, status = waffles.run_vdatum(src_xyz, vdc)
@@ -1326,14 +1326,14 @@ class mb:
             with open(mb_r, 'r') as in_m:
                 for xyz in waffles.xyz_parse(in_m, verbose = self._verbose):
                     yield(xyz)
-            waffles.remove_glob(src_xyz)
-            waffles.vdatum_clean_result()
+            #waffles.remove_glob(src_xyz)
+            #waffles.vdatum_clean_result()
         else: waffles.echo_error_msg('failed to fetch remote file, {}...', src_mb)
         waffles.remove_glob(src_mb)
 
     def _dump_xyz(self, entry, dst_port = sys.stdout):
         for xyz in self._yield_xyz(entry):
-            xyz_line(xyz, dst_port, self._verbose)
+            waffles.xyz_line(xyz, dst_port, self._verbose)
     
     def _yield_results_to_xyz(self):
         if len(self._results) == 0: self.run()
