@@ -2914,6 +2914,7 @@ def waffles_polygonize_datalist(wg, entry, layer = None, dlh = lambda e: True,
     twg['datalist'] = entry[0]
     twg['name'] = os.path.basename(entry[0]).split('.')[0]
     twg['region'] = region_buffer(wg['region'], wg['inc'] * .5) if wg['node'] == 'grid' else wg['region']
+    twg['inc'] = gmt_inc2inc('.3333333s') if twg['inc'] < gmt_inc2inc('.3333333s') else twg['inc']
     ng = '{}_msk.tif'.format(twg['name'])
     if len(entry[3]) == 8:
         o_v_fields = entry[3]
