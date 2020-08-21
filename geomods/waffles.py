@@ -3155,7 +3155,7 @@ _unc_config = {
     'msk': None,
     'prox': None,
     'slp': None,
-    'percentile': 90,
+    'percentile': 95,
     'zones': ['bathy', 'bathy-topo', 'topo'],
     'sims': 10,
     'chnk_lvl': 4,
