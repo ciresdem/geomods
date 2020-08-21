@@ -3156,6 +3156,8 @@ _unc_config = {
     'chnk_lvl': 4,
 }
 
+waffles_unc_config = lambda: copy.deepcopy(_unc_config)
+
 def waffles_interpolation_uncertainty(uc = _unc_config):
     '''calculate the interpolation uncertainty
     - as related to distance to nearest measurement.
