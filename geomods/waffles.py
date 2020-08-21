@@ -3350,8 +3350,8 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
         np.savetxt('{}_prox.err'.format(uc['wg']['name']), prox_err, '%f', ' ')
         np.savetxt('{}_slp.err'.format(uc['wg']['name']), slp_err, '%f', ' ')
 
-        ec_d = err2coeff(prox_err[:50000000], region_info[uc['wg']['name']][4], uc['wg']['name'] + '_prox', 'distance')
-        ec_s = err2coeff(slp_err[:50000000], region_info[uc['wg']['name']][4], uc['wg']['name'] + '_slp', 'slope')
+        ec_d = err2coeff(prox_err[:50000000], dst_name = region_info[uc['wg']['name']][4], uc['wg']['name'] + '_prox', xa = 'distance')
+        ec_s = err2coeff(slp_err[:50000000], dst_name = region_info[uc['wg']['name']][4], uc['wg']['name'] + '_slp', xa = 'slope')
 
         ## ==============================================
         ## apply error coefficient to full proximity grid
