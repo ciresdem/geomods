@@ -312,11 +312,11 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
     err_scatter_plot(error, distance, dst_name, xa)
     return(out)
 
-def err_plot(err_arr, d_max, dst_name = 'unc'):
-    '''plot a numpy array of 'err dist' values and return the error coefficient.'''    
+#def err_plot(err_arr, d_max, dst_name = 'unc'):
+    #'''plot a numpy array of 'err dist' values and return the error coefficient.'''    
     #err_arr = err_arr[err_arr[:,1] < d_max,:]
     #err_arr = err_arr[err_arr[:,1] > 0,:]
-    return(err2coeff(err_arr, dst_name = dst_name))
+    #return(err2coeff(err_arr, dst_name = dst_name))
 
 ## ==============================================
 ## system cmd verification and configs.
@@ -3350,8 +3350,8 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
         np.savetxt('{}_prox.err'.format(uc['wg']['name']), prox_err, '%f', ' ')
         np.savetxt('{}_slp.err'.format(uc['wg']['name']), slp_err, '%f', ' ')
 
-        ec_d = err2coeff(prox_err[:50000000], dst_name = region_info[uc['wg']['name']][4], uc['wg']['name'] + '_prox', xa = 'distance')
-        ec_s = err2coeff(slp_err[:50000000], dst_name = region_info[uc['wg']['name']][4], uc['wg']['name'] + '_slp', xa = 'slope')
+        ec_d = err2coeff(prox_err[:50000000], dst_name = uc['wg']['name'] + '_prox', xa = 'distance')
+        ec_s = err2coeff(slp_err[:50000000], dst_name = uc['wg']['name'] + '_slp', xa = 'slope')
 
         ## ==============================================
         ## apply error coefficient to full proximity grid
