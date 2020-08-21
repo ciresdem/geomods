@@ -308,7 +308,7 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
     fitfunc = lambda p, x: p[0] + p[1] * (abs(x) ** abs(p[2]))
     errfunc = lambda p, x, y: y - fitfunc(p, x)
     out, cov, infodict, mesg, ier = optimize.leastsq(errfunc, coeff_guess, args = (xdata, ydata), full_output = True)
-    err_fit_plot(xdata, ydata, out, fitfunc, dst_name)
+    err_fit_plot(xdata, ydata, out, fitfunc, dst_name, xa)
     err_scatter_plot(error, distance, dst_name, xa)
     return(out)
 
@@ -3011,10 +3011,12 @@ def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, use_dat
     out, status = run_cmd(mbgrid_cmd, verbose = wg['verbose'])
 
     remove_glob('*.cmd')
+    remove_glob('*.mb-1')
     gmt_grd2gdal('{}.grd'.format(wg['name']))
     remove_glob('{}.grd'.format(wg['name']))
     if use_datalists and not wg['archive']: shutil.rmtree('archive')
     if wg['mask']:
+        remove_glob('*_sd.grd')
         num_grd = '{}_num.grd'.format(wg['name'])
         dst_msk = '{}_msk.tif=gd+n-9999:GTiff'.format(wg['name'])
         out, status = gmt_num_msk(num_grd, dst_msk, verbose = wg['verbose'])
@@ -3152,6 +3154,7 @@ _unc_config = {
     'msk': None,
     'prox': None,
     'slp': None,
+    'percentile': 90,
     'zones': ['bathy', 'bathy-topo', 'topo'],
     'sims': 10,
     'chnk_lvl': 4,
@@ -3179,8 +3182,10 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
 
     ## proximity analysis
     prox_perc_95 = gdal_percentile(uc['prox'], 95)
+    prox_perc_90 = gdal_percentile(uc['prox'], 90)
+    prox_percentile = gdal_percentile(uc['prox'], uc['percentile'])
 
-    region_info[uc['wg']['name']] = [uc['wg']['region'], g_max, num_sum, num_perc, prox_perc_95] 
+    region_info[uc['wg']['name']] = [uc['wg']['region'], g_max, num_sum, num_perc, prox_percentile] 
     for x in region_info.keys():
         echo_msg('region: {}: {}'.format(x, region_info[x]))
 
