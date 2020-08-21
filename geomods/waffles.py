@@ -1879,9 +1879,10 @@ def inf_parse(src_inf):
                         #     minmax[4] = til[2]
                         #     minmax[5] = til[5]
                         elif til[1] == 'Depth:':
-                            minmax[4] = til[2]
-                            minmax[5] = til[5]
-                            
+                            minmax[4] = float(til[5])*-1
+                            minmax[5] = float(til[2])*-1
+    #print(src_inf)
+    #print(minmax)
     return([float(x) for x in minmax])
 
 def inf_entry(src_entry, overwrite = False):
