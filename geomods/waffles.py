@@ -3590,24 +3590,27 @@ def waffles_run(wg = _waffles_grid_info):
     ## optionally generate uncertainty grid
     ## ==============================================
     if wg['unc']:
-        if os.path.exists(dem) and os.path.exists(dem_msk):
-            echo_msg('generating uncertainty')
+        try:
+            if os.path.exists(dem) and os.path.exists(dem_msk):
+                echo_msg('generating uncertainty')
 
-            uc = _unc_config
-            uc['wg'] = wg
-            uc['dem'] = dem
-            uc['msk'] = dem_msk
+                uc = _unc_config
+                uc['wg'] = wg
+                uc['dem'] = dem
+                uc['msk'] = dem_msk
 
-            dem_prox = '{}_prox.tif'.format(wg['name'])
-            gdal_proximity(dem_msk, dem_prox)
-            uc['prox'] = dem_prox
+                dem_prox = '{}_prox.tif'.format(wg['name'])
+                gdal_proximity(dem_msk, dem_prox)
+                uc['prox'] = dem_prox
 
-            dem_slp = '{}_slp.tif'.format(wg['name'])
-            gdal_slope(dem, dem_slp)
-            uc['slp'] = dem_slp
+                dem_slp = '{}_slp.tif'.format(wg['name'])
+                gdal_slope(dem, dem_slp)
+                uc['slp'] = dem_slp
 
-            echo_msg(uc)
-            waffles_interpolation_uncertainty(uc)
+                echo_msg(uc)
+                waffles_interpolation_uncertainty(uc)
+        except Exception as e:
+            echo_error_msg('failed to calculate uncertainty, {}'.format(e))
 
     ## ==============================================
     ## if dem has data, return
