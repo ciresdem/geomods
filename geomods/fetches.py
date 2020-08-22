@@ -1328,7 +1328,7 @@ class mb:
                     yield(xyz)
             #waffles.remove_glob(src_xyz)
             #waffles.vdatum_clean_result()
-        else: waffles.echo_error_msg('failed to fetch remote file, {}...', src_mb)
+        else: waffles.echo_error_msg('failed to fetch remote file, {}...'.format(src_mb))
         waffles.remove_glob(src_mb)
 
     def _dump_xyz(self, entry, dst_port = sys.stdout):
