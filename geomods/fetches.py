@@ -1326,7 +1326,7 @@ class mb:
             with open(mb_r, 'r') as in_m:
                 for xyz in waffles.xyz_parse(in_m, verbose = self._verbose):
                     yield(xyz)
-            #waffles.remove_glob(src_xyz)
+            waffles.remove_glob(src_xyz)
             #waffles.vdatum_clean_result()
         else: waffles.echo_error_msg('failed to fetch remote file, {}...'.format(src_mb))
         waffles.remove_glob(src_mb)
