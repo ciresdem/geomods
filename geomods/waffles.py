@@ -686,7 +686,7 @@ def region_warp(region, s_warp = 4326, t_warp = 4326):
 def z_region_pass(region, upper_limit = None, lower_limit = None):
     if region is not None:
         z_region = region[4:]
-        if z_region is not None or len(z_region) >= 2:
+        if z_region is not None and len(z_region) >= 2:
             if upper_limit is not None:
                 if z_region[0] > upper_limit:
                     return(False)
