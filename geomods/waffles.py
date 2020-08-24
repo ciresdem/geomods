@@ -1050,7 +1050,7 @@ def gdal_set_nodata(src_fn, nodata = -9999):
 
     returns 0'''
     
-    ds = gdal.Open(src_gdal, gdal.GA_Update)
+    ds = gdal.Open(src_fn, gdal.GA_Update)
     band = ds.GetRasterBand(1)
     band.SetNoDataValue(float(nodata))
     ds = None
@@ -2489,7 +2489,7 @@ def datalist_list(wg):
     if wg['region'] is not None:
         dl_p = lambda e: regions_intersect_ogr_p(wg['region'], inf_entry(e))
     else: dl_p = _dl_pass_h
-    for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dl_p):
+    for this_entry in datalist(wg['datalist'], wt = 1, pass_h = dl_p):
         print(' '.join([','.join(x) if i == 3 else str(x) for i,x in enumerate(this_entry[:-1])]))
     
 def datalist_echo(entry):
