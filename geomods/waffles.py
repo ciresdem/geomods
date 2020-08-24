@@ -2087,7 +2087,7 @@ def gdal_inf(src_ds, warp = None):
     zr = src_ds.GetRasterBand(1).ComputeRasterMinMax()
     minmax = minmax + list(zr)
     with open('{}.inf'.format(src_ds.GetDescription()), 'w') as inf:
-        #echo_msg('generating inf file for {}'.format(src_ds.GetDescription()))
+        echo_msg('generating inf file for {}'.format(src_ds.GetDescription()))
         inf.write('{}\n'.format(' '.join([str(x) for x in minmax])))
     return(minmax)
                     
@@ -3496,6 +3496,15 @@ def waffles_run(wg = _waffles_grid_info):
                 if this_wg['verbose']: echo_msg('clipping {}...'.format(this_dem_msk))
                 gdal_clip(this_dem_msk, **clip_args)
 
+        if not os.path.exists(this_dem): continue
+        gdi = gdal_infos(this_dem, scan = True)
+        if gdi is not None:
+            if np.isnan(gdi['zr'][0]):
+                remove_glob(this_dem)
+                if this_wg['mask']: remove_glob(this_dem_msk)
+                continue
+        else: continue
+                
         ## ==============================================
         ## optionally filter the DEM 
         ## ==============================================
@@ -3845,8 +3854,10 @@ def waffles_cli(argv = sys.argv):
         try:
             these_regions = [[float(x) for x in region.split('/')]]
         except ValueError: these_regions = gdal_ogr_regions(region)
+        except Exception as e:
+            echo_error_msg('failed to parse region(s), {}'.format(e))
     else: these_regions = [None]
-    if len(these_regions) == 0: echo_error_msg('failed to parse region(s)')
+    if len(these_regions) == 0: echo_error_msg('failed to parse region(s), {}'.format(region))
     if want_prefix or len(these_regions) > 1: wg['name_prefix'] = wg['name']
     
     ## ==============================================
