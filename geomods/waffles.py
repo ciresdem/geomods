@@ -175,6 +175,8 @@ def hav_dst(pnt0, pnt1):
 def path_exists_or_url(src_str):
     if os.path.exists(src_str): return(True)
     if src_str[:4] == 'http': return(True)
+    if src_str.split(':')[0] in _known_datalist_fmts[400]: return(True)
+    echo_error_msg('invalid datafile/datalist: {}'.format(src_str))
     return(False)
 
 def _clean_zips(zip_files):
@@ -2604,7 +2606,7 @@ def datalist_yield_entry(this_entry, region, verbose = False, z_region = None):
             
 
 def datalist_yield_xyz(dl, fmt = -1, wt = None,
-                       pass_h = lambda e: path_exists_or_url(e[0]),
+                       pass_h = lambda e: True,
                        dl_proc_h = False, region = None, archive = False,
                        mask = False, verbose = False, z_region = None):
     '''parse out the xyz data from the datalist
@@ -2619,7 +2621,7 @@ def datalist_yield_xyz(dl, fmt = -1, wt = None,
             yield(xyz)
 
 def datalist_dump_xyz(dl, fmt = -1, wt = None,
-                      pass_h = lambda e: path_exists_or_url(e[0]),
+                      pass_h = lambda e: True,
                       dl_proc_h = False,
                       region = None, archive = False, mask = False,
                       verbose = False, dst_port = sys.stdout, z_region = None):
@@ -2632,7 +2634,7 @@ def datalist_dump_xyz(dl, fmt = -1, wt = None,
         xyz_line(xyz, dst_port, verbose)
             
 def datalist(dl, fmt = -1, wt = None,
-             pass_h = lambda e: path_exists_or_url(e[0]),
+             pass_h = lambda e: True,
              dl_proc_h = False, verbose = False):
     '''recurse a datalist/entry
     for entry in datalist(dl): do_something_with entry
@@ -2650,7 +2652,7 @@ def datalist(dl, fmt = -1, wt = None,
             else: this_entry[2] = wt
             this_entry_md = ' '.join(this_entry[3:]).split(',')
             this_entry = this_entry[:3] + [this_entry_md] + [os.path.basename(dl).split('.')[0]]
-            if pass_h(this_entry):
+            if path_exists_or_url(this_entry[0]) and pass_h(this_entry):
                 if verbose and this_entry[1] == -1: echo_msg('parsing datalist ({}) {}'.format(this_entry[2], this_entry[0]))
                 if this_entry[1] == -1:
                     if dl_proc_h: yield(this_entry)
