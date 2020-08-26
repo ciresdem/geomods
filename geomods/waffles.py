@@ -2923,8 +2923,8 @@ def waffles_polygonize_datalist(wg, entry, layer = None, dlh = lambda e: True,
     if len(entry[3]) == 8:
         o_v_fields = entry[3]
     else: o_v_fields = [twg['name'], 'Unknown', '0', 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
-    dly = datalist_yield_xyz(entry[0], pass_h = dlh, wt = 1 if twg['weights'] else None, region = twg['region'], archive = twg['archive'], verbose = twg['verbose'])
-    for xyz in gdal_xyz_mask(dly, ng, twg['region'], twg['inc'], dst_format = twg['fmt']):
+    dly = datalist_yield_xyz(entry[0], pass_h = dlh, wt = 1 if twg['weights'] else None, region = waffles_proc_region(twg), archive = twg['archive'], verbose = twg['verbose'])
+    for xyz in gdal_xyz_mask(dly, ng, waffles_dist_region(twg), twg['inc'], dst_format = twg['fmt']):
         yield(xyz)
 
     if gdal_infos(ng, True)['zr'][1] == 1:
