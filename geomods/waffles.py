@@ -94,7 +94,7 @@ import fetches
 ## ==============================================
 ## General utility functions - utils.py
 ## ==============================================
-_version = '0.5.6'
+_version = '0.5.7'
 
 def inc2str_inc(inc):
     '''convert a WGS84 geographic increment to a str_inc (e.g. 0.0000925 ==> `13`)
