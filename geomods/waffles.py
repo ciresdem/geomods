@@ -1424,7 +1424,8 @@ def gdal_region2gt(region, inc):
     
     this_origin = _geo2pixel(region[0], region[3], dst_gt)
     this_end = _geo2pixel(region[1], region[2], dst_gt)
-    this_size = ((this_end[0] - this_origin[0]) + 1, (this_end[1] - this_origin[1]) + 1)
+    #this_size = ((this_end[0] - this_origin[0]) + 1, (this_end[1] - this_origin[1]) + 1)
+    this_size = (this_end[0] - this_origin[0], this_end[1] - this_origin[1])
     
     return(this_size[0], this_size[1], dst_gt)
 
@@ -1639,10 +1640,12 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format = 'GTiff', mode = '
         if x > region[0] and x < region[1]:
             if y > region[2] and y < region[3]:
                 xpos, ypos = _geo2pixel(x, y, dst_gt)
-                if mode == 'm':
-                    sumArray[ypos, xpos] += z
-                if mode == 'n' or mode == 'm': ptArray[ypos, xpos] += 1
-                else: ptArray[ypos, xpos] = 1
+                try:
+                    if mode == 'm':
+                        sumArray[ypos, xpos] += z
+                    if mode == 'n' or mode == 'm': ptArray[ypos, xpos] += 1
+                    else: ptArray[ypos, xpos] = 1
+                except: pass
     if mode == 'm':
         ptArray[ptArray == 0] = np.nan
         outarray = sumArray / ptArray
@@ -2263,9 +2266,11 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False, verbo
         if x > region[0] and x < region[1]:
             if y > region[2] and y < region[3]:
                 xpos, ypos = _geo2pixel(x, y, dst_gt)
-                sumArray[ypos, xpos] += z
-                ptArray[ypos, xpos] += 1
-                if weights: wtArray[ypos, xpos] += w
+                try:
+                    sumArray[ypos, xpos] += z
+                    ptArray[ypos, xpos] += 1
+                    if weights: wtArray[ypos, xpos] += w
+                except: pass
     ptArray[ptArray == 0] = np.nan
     if weights:
         wtArray[wtArray == 0] = 1
