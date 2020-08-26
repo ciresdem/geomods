@@ -1424,7 +1424,8 @@ def gdal_region2gt(region, inc):
     
     this_origin = _geo2pixel(region[0], region[3], dst_gt)
     this_end = _geo2pixel(region[1], region[2], dst_gt)
-    this_size = ((this_end[0] - this_origin[0]) + 1, (this_end[1] - this_origin[1]) + 1)
+    #this_size = ((this_end[0] - this_origin[0]) + 1, (this_end[1] - this_origin[1]) + 1)
+    this_size = (int((this_end[0] - this_origin[0]) + .5), int((this_end[1] - this_origin[1]) + .5))
     
     return(this_size[0], this_size[1], dst_gt)
 
@@ -1661,11 +1662,11 @@ def gdal_xyz_mask(src_xyz, dst_gdal, region, inc, dst_format='GTiff', epsg = 432
     ptArray = np.zeros((ycount, xcount))
     ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(epsg), gdal.GDT_Int32, -9999, 'GTiff')
     for this_xyz in src_xyz:
+        yield(this_xyz)
         x = this_xyz[0]
         y = this_xyz[1]
         if x > region[0] and x < region[1]:
             if y > region[2] and y < region[3]:
-                yield(this_xyz)
                 xpos, ypos = _geo2pixel(x, y, dst_gt)
                 try:
                     ptArray[ypos, xpos] = 1
