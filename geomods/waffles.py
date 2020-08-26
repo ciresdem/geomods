@@ -1424,8 +1424,7 @@ def gdal_region2gt(region, inc):
     
     this_origin = _geo2pixel(region[0], region[3], dst_gt)
     this_end = _geo2pixel(region[1], region[2], dst_gt)
-    #this_size = ((this_end[0] - this_origin[0]) + 1, (this_end[1] - this_origin[1]) + 1)
-    this_size = (int((this_end[0] - this_origin[0]) + .5), int((this_end[1] - this_origin[1]) + .5))
+    this_size = ((this_end[0] - this_origin[0]) + 1, (this_end[1] - this_origin[1]) + 1)
     
     return(this_size[0], this_size[1], dst_gt)
 
@@ -2247,6 +2246,8 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False, verbo
     yields the xyz value for each block with data'''
     
     xcount, ycount, dst_gt = gdal_region2gt(region, inc)
+    #xcount += 1
+    #ycount += 1
     sumArray = np.zeros((ycount, xcount))
     gdt = gdal.GDT_Float32
     ptArray = np.zeros((ycount, xcount))
