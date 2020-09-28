@@ -22,10 +22,15 @@ Options:\n
 coastline2xyz.sh v.${c2x_version}\n"
 
 ## Getopts
-while getopts ":I:Z:" options; do
+while getopts ":I:Z:W:E:S:N:O:" options; do
     case $options in
 	I ) in_coast=$OPTARG;;
 	Z ) out_zed=$OPTARG;;
+	W ) w=$OPTARG;;
+	E ) e=$OPTARG;;
+	S ) s=$OPTARG;;
+	N ) n=$OPTARG;;
+	O ) out_coast=$OPTARG;;
 	h ) echo -e $usage;;
 	\? ) echo -e $usage
 	exit 1;;
@@ -39,16 +44,32 @@ if [ ! $in_coast ] ; then
     exit 1
 fi
 
-mkdir .c2x_tmp
-cp $(basename $in_coast .shp).* .c2x_tmp
-cd .c2x_tmp
-rm $(basename $in_coast .shp).dbf
-ogr2ogr tmp.csv $in_coast -f CSV -lco GEOMETRY=AS_WKT -overwrite
-if [ ! $out_zed ] ; then
-    cat tmp.csv | sed -e '1,1d' | tr ',' '\n' | sed 's/[A-Za-z"()]*//g' | tr ' ' ',' | sed 's/^,//' | awk -F, '{print $1,$2,$3}' > ../$(basename $in_coast .shp).xyz
-else
-    cat tmp.csv | sed -e '1,1d' | tr ',' '\n' | sed 's/[A-Za-z"()]*//g' | tr ' ' ',' | sed 's/^,//' | awk -v zed="$out_zed" -F, '{print $1,$2,zed}' > ../$(basename $in_coast .shp).xyz
+if [ ! $out_coast ] ; then
+    out_coast=$(basename $in_coast .shp).xyz
 fi
-cd ..
-rm -rf .c2x_tmp
+
+#mkdir .c2x_tmp
+cp $(dirname $in_coast)/$(basename $in_coast .shp).shp ${out_coast}.shp
+cp $(dirname $in_coast)/$(basename $in_coast .shp).shx ${out_coast}.shx
+#cd .c2x_tmp
+tmp_coast=${out_coast}.csv
+if [ ! $w ] ; then
+    ogr2ogr $tmp_coast $(basename $in_coast .shp).shp -f CSV -lco GEOMETRY=AS_WKT -overwrite
+else
+    ogr2ogr $tmp_coast $in_coast -f CSV -lco GEOMETRY=AS_WKT -overwrite -clipsrc $w $n $e $s
+fi
+if [ ! $out_zed ] ; then
+    cat $tmp_coast | sed -e '1,1d' | tr ',' '\n' | sed 's/[A-Za-z"()]*//g' | tr ' ' ',' | sed 's/^,//' | awk -F, '{if (NR != 1) {print $1,$2,$3}}' > $out_coast
+else
+    if [ -f "$out_zed" ]; then
+	cat $tmp_coast | sed -e '1,1d' | tr ',' '\n' | sed 's/[A-Za-z"()]*//g' | tr ' ' ',' | sed 's/^,//' | awk -F, '{if (NR != 1) {print $1,$2}}' | gdal_query.py $out_zed -d_format 'xyg' -s_format '0,1,-' > $out_coast
+    else
+	cat $tmp_coast | sed -e '1,1d' | tr ',' '\n' | sed 's/[A-Za-z"()]*//g' | tr ' ' ',' | sed 's/^,//' | awk -v zed="$out_zed" -F, '{if (NR != 1) {print $1,$2,zed}}' > $out_coast
+    fi
+fi
+rm -rf $tmp_coast
+cp $(dirname $in_coast)/$(basename $in_coast .shp).shx ${out_coast}.shp
+cp $(dirname $in_coast)/$(basename $in_coast .shp).shx ${out_coast}.shx
+#cd ..
+#rm -rf .c2x_tmp
 ### End

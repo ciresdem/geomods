@@ -168,7 +168,7 @@ def fetch_queue(q, p):
                     except: pass 
                 with open(fetch_args[1].split('.')[0] + '.xyz', 'w') as out_xyz:
                     #out_xyz = fetch_args[1].split('.')[0] + '.xyz'
-                    p._dump_xyz([fetch_args[0], fetch_args[1], fetch_args[-1]], out_xyz)
+                    p._dump_xyz([fetch_args[0], fetch_args[1], fetch_args[-1]], dst_port = out_xyz)
                     
         q.task_done()
 
@@ -1035,9 +1035,10 @@ class charts():
                 out, status = waffles.run_vdatum(dst_xyz, vdc)
                 ch_f_r = os.path.join('result', os.path.basename(dst_xyz))
 
-                with open(ch_f_r, 'r') as in_c:
-                    for xyz in waffles.xyz_parse(in_c, verbose = self._verbose):
-                        yield(xyz)
+                if os.path.exists(ch_f_r):
+                    with open(ch_f_r, 'r') as in_c:
+                        for xyz in waffles.xyz_parse(in_c, verbose = self._verbose):
+                            yield(xyz)
 
                 waffles.remove_glob(src_ch)
                 waffles.remove_glob(dst_xyz)

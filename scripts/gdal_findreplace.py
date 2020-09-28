@@ -9,6 +9,7 @@ import os
 import struct
 import numpy as np
 from osgeo import gdal
+from geomods import waffles
 
 gfr_version = 0.3
 def isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
@@ -39,20 +40,20 @@ if __name__ == "__main__":
     while i < len(sys.argv):
         arg = sys.argv[i]
         if arg == '-s_value':
-            fdata = argv[i+1]
+            fdata = sys.argv[i+1]
             i = i + 1
         elif arg == '-t_value':
-            rdata = argv[i+1]
+            rdata = sys.argv[i+1]
             i = i + 1
         elif arg == '-row':
             row = argv[i+1]
             i = i + 1
         elif arg == '-column':
-            column = argv[i+1]
+            column = sys.argv[i+1]
             i = i + 1
         elif arg == '-nodata':
             mk_ndata = True
-            ndata = argv[i+1]
+            ndata = sys.argv[i+1]
             i = i + 1
         elif arg == '-overwrite':
             overwrite = True
