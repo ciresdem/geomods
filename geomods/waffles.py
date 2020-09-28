@@ -2913,7 +2913,7 @@ waffles_gmt_reg_str = lambda wg: '-r' if wg['node'] == 'pixel' else ''
 ## ==============================================
 ## the 'long-name' used from prefix
 ## ==============================================
-waffles_append_fn = lambda bn, region, inc: '{}{}_{}_{}_v1'.format(bn, inc2str_inc(inc), region_format(region, 'fn'), this_year())
+waffles_append_fn = lambda bn, region, inc: '{}{}_{}_{}v1'.format(bn, inc2str_inc(inc), region_format(region, 'fn'), this_year())
 
 def waffles_wg_valid_p(wg = _waffles_grid_info):
     '''return True if wg_config appears valid'''
