@@ -3106,7 +3106,7 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     b_wg['inc'] = gmt_inc2inc('1s')
     b_wg['name'] = 'bathy_{}'.format(wg['name'])
     b_wg['clip'] = '{}:invert=True'.format(coastline)
-    b_wg['extend_proc'] = 40
+    b_wg['extend_proc'] = 100
     b_wg['mask'] = False
 
     b_wg = waffles_config(**b_wg)
@@ -4284,8 +4284,6 @@ usage: {} [ -dghirsvEFOPR [ args ] ] DATALIST ...
 
 Options:
   -R, --region\t\tSpecifies the desired REGION;
-  -E, --increment\tThe CELL-SIZE in native units.
-  -O, --output-name\tThe OUTPUT file name.
   -P, --epsg\t\tSpecify the EPSG of the DATALIST.
   -F, --format\t\tOnly process FORMAT data type.
 
@@ -4295,7 +4293,6 @@ Options:
   -l, --list\t\tLIST the datafiles from the DATALIST.
   -m, --mask\t\tMASK the datafiles from the DATALIST.
   -r, --region-info\tReturn the full REGION of the DATALIST.
-  -s, --spatial-md\tGenerate SPATIAL-METADATA from the DATALIST.
   -w, --weights\t\toutput weights along with each datalist.
 
   --help\t\tPrint the usage text
