@@ -65,7 +65,7 @@ def createNullCopy(srcfile, outfile, nodata, outformat, verbose, overwrite):
 def createGrid(outfile, extent, cellsize, nodata, outformat, verbose, overwrite):
     '''create a nodata grid'''
     xcount, ycount, gt = waffles.gdal_region2gt(extent, cellsize)
-    ds_config = waffles.gdal_set_infos(xcount, ycount, xcount * ycount, gt, gdal_sr_wkt(epsg), gdal.GDT_Float32, nodata, outformat)
+    ds_config = waffles.gdal_set_infos(xcount, ycount, xcount * ycount, gt, waffles.gdal_sr_wkt(4326), gdal.GDT_Float32, nodata, outformat)
     nullArray = np.zeros( (ycount, xcount) )
     nullArray[nullArray==0]=nodata
     waffles.gdal_write(nullArray, outfile, ds_config)
@@ -78,27 +78,27 @@ if __name__ == '__main__':
     cpgrd = None
     overwrite = False
     verbose = False
-    nodata = None
+    nodata = -9999
     output = None
     i = 1
     
     while i < len(sys.argv):
         arg = sys.argv[i]
         if arg == '-region' or arg == '-r' or arg == '--region':
-            extent = (float(argv[i+1]),float(argv[i+2]),
-                      float(argv[i+3]),float(argv[i+4]))
+            extent = (float(sys.argv[i+1]),float(sys.argv[i+2]),
+                      float(sys.argv[i+3]),float(sys.argv[i+4]))
             i = i + 4
         elif arg == '-cell_size' or arg == '-s' or arg == '--cell_size':
-            cellsize = float(argv[i+1])
+            cellsize = float(sys.argv[i+1])
             i = i + 1
         elif arg == '-d_format' or arg == 'd' or arg == '--d_format':
-            d_format = str(argv[i+1])
+            d_format = str(sys.argv[i+1])
             i = i + 1
         elif arg == '-t_nodata' or arg == '-t' or arg == '--t_nodata':
-            nodata = float(argv[i+1])
+            nodata = float(sys.argv[i+1])
             i = i + 1
         elif arg == '-copy' or arg == '-c' or arg == '--copy':
-            cpgrd = argv[i+1]
+            cpgrd = sys.argv[i+1]
             i = i + 1
         elif arg == '-overwrite' or arg == '--overwrite':
             overwrite = True

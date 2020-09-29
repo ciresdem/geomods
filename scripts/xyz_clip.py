@@ -298,8 +298,8 @@ if __name__ == '__main__':
         Usage()
         sys.exit(0)
 
-    if quickly:
-        xyz_clip(infile, mskgrd, outfile, dual_out, delim, msk_nval, msk_kval, invert, rall)
-    else:
-        xyzClip(infile, mskgrd, outfile, dual_out, delim, msk_nval, msk_kval, invert, rall)
+    #if quickly:
+    xyz_clip(infile, mskgrd, outfile, dual_out, delim, msk_nval, msk_kval, invert, rall)
+    #else:
+    #    xyzClip(infile, mskgrd, outfile, dual_out, delim, msk_nval, msk_kval, invert, rall)
 #--END

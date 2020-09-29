@@ -99,7 +99,7 @@ import fetches
 ## ==============================================
 ## General utility functions - utils.py
 ## ==============================================
-_version = '0.5.8'
+_version = '0.5.9'
 
 def inc2str_inc(inc):
     '''convert a WGS84 geographic increment to a str_inc (e.g. 0.0000925 ==> `13`)
@@ -3093,7 +3093,7 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
 
     ## generate NN DEM with high weight bathy data
     b_wg['z_region'] = [None, 1]
-    b_wg['mod'] = 'nearest'
+    #b_wg['mod'] = 'surface'
     #b_wg['mod_args'] = ('radius=1s',)
     b_wg['name'] = 'bathy_nn_{}'.format(wg['name'])
     b_wg['spat'] = False
@@ -3103,7 +3103,7 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     b_wg['mod'] = 'surface'
     b_wg['mod_args'] = ('upper_limit=-0.1','tension=.25',)
     b_wg['sample'] = wg['inc']
-    b_wg['inc'] = gmt_inc2inc('3s')
+    b_wg['inc'] = gmt_inc2inc('1s')
     b_wg['name'] = 'bathy_{}'.format(wg['name'])
     b_wg['clip'] = '{}:invert=True'.format(coastline)
     b_wg['extend_proc'] = 40
@@ -3119,8 +3119,8 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     ## generate final DEM using 'surface'
     ## ==============================================
     wg['datalist'] = None
-    wg['datalists'].append('{} 200 1'.format(bathy_surf))
-    wg['w_region'] = [.4,None]
+    wg['datalists'].append('{} 200 .5'.format(bathy_surf))
+    wg['w_region'] = [.4, None]
     wg = waffles_config(**wg)
 
     print(wg)
@@ -3766,10 +3766,7 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     ## validate and/or set the waffles_config
     ## ==============================================
-    #wg = waffles_dict2wg(wg)
-    #wg = waffles_config(**wg)
     if wg is None:
-        #echo_error_msg('invalid configuration, {}'.format(json.dumps(wg, indent=4, sort_keys=True)))
         echo_error_msg('invalid configuration, {}'.format(wg))
         sys.exit(-1)
 
@@ -3797,13 +3794,11 @@ def waffles_run(wg = _waffles_grid_info):
     if wg['spat']: chunks_spat = []
     for region in s_regions:
         this_wg = waffles_config_copy(wg)
-        #this_wg = waffles_dict2wg(wg)
         this_wg['region'] = region
         this_wg['region'] = waffles_grid_node_region(this_wg) if this_wg['node'] == 'grid' else this_wg['region']
         this_wg['name'] = 'chunk_{}'.format(region_format(region, 'fn'))
         this_dem = this_wg['name'] + '.tif'
         chunks.append(this_dem)
-        #this_wg['name'] = this_dem
         if this_wg['mask']:
             this_dem_msk = this_wg['name'] + '_msk.tif'
             chunks_msk.append(this_dem_msk)
@@ -3813,14 +3808,14 @@ def waffles_run(wg = _waffles_grid_info):
         ## ==============================================
         ## gererate the DEM (run the module)
         ## ==============================================
-        #try:
-        out, status = _waffles_modules[this_wg['mod']][0](args_d)
-        #except KeyboardInterrupt as e:
-        #    echo_error_msg('killed by user, {}'.format(e))
-        #    sys.exit(-1)
-        #except Exception as e:
-        #    echo_error_msg('{}'.format(e))
-        #    status = -1
+        try:
+            out, status = _waffles_modules[this_wg['mod']][0](args_d)
+        except KeyboardInterrupt as e:
+            echo_error_msg('killed by user, {}'.format(e))
+            sys.exit(-1)
+        except Exception as e:
+            echo_error_msg('{}'.format(e))
+            status = -1
 
         if status != 0: remove_glob(this_dem)
         if not os.path.exists(this_dem): continue
@@ -3896,15 +3891,15 @@ def waffles_run(wg = _waffles_grid_info):
         ## region buffered by (inc * extend) or
         ## sample * extend) if sample if specified
         ## ==============================================
-        #try:
-        out = gdal_cut(this_dem, waffles_dist_region(this_wg), 'tmp_cut.tif')
-        if out is not None: os.rename('tmp_cut.tif', this_dem)
-        if this_wg['mask']:
-            out = gdal_cut(this_dem_msk, waffles_dist_region(this_wg), 'tmp_cut.tif')
-            if out is not None: os.rename('tmp_cut.tif', this_dem_msk)
-        #except OSError as e:
-        #    remove_glob('tmp_cut.tif')
-        #    echo_error_msg('cut failed, is the dem open somewhere, {}'.format(e))                
+        try:
+            out = gdal_cut(this_dem, waffles_dist_region(this_wg), 'tmp_cut.tif')
+            if out is not None: os.rename('tmp_cut.tif', this_dem)
+            if this_wg['mask']:
+                out = gdal_cut(this_dem_msk, waffles_dist_region(this_wg), 'tmp_cut.tif')
+                if out is not None: os.rename('tmp_cut.tif', this_dem_msk)
+        except OSError as e:
+            remove_glob('tmp_cut.tif')
+            echo_error_msg('cut failed, is the dem open somewhere, {}'.format(e))                
                 
     ## ==============================================
     ## merge the chunks and remove
@@ -3918,7 +3913,6 @@ def waffles_run(wg = _waffles_grid_info):
         if os.path.exists(chunks[0]):
             gdal_gdal2gdal(chunks[0], dst_fmt = wg['fmt'], dst_gdal = dem)
             remove_glob(chunks[0])
-            #os.rename(chunks[0], dem)
 
     if wg['mask']:
         if len(chunks_msk) > 1:
@@ -3930,7 +3924,6 @@ def waffles_run(wg = _waffles_grid_info):
             if os.path.exists(chunks_msk[0]):
                 gdal_gdal2gdal(chunks_msk[0], dst_fmt = wg['fmt'], dst_gdal = dem_msk, co = False)
                 remove_glob(chunks_msk[0])
-                #os.rename(chunks_msk[0], dem_msk)
 
     if wg['spat']:
         if len(chunks_spat) > 1:
@@ -3990,7 +3983,14 @@ def waffles_run(wg = _waffles_grid_info):
     remove_glob('waffles_dem_mjr.datalist')
     remove_glob(wg['datalist'])
     return(dem)
-        
+
+## ==============================================
+## Command-line Interfaces (CLIs)
+## $ waffles
+## $ datalists
+## $ regions
+## ==============================================
+
 ## ==============================================
 ## waffles cli
 ## ==============================================
@@ -4073,6 +4073,7 @@ def waffles_cli(argv = sys.argv):
     want_prefix = False
     want_verbose = False
     want_config = False
+    want_threads = False
     status = 0
     i = 1
     while i < len(argv):
@@ -4236,13 +4237,11 @@ def waffles_cli(argv = sys.argv):
     ## ==============================================
     these_wgs = []
     for this_region in these_regions:
-    #for _ in range(3):
         twg = waffles_config_copy(wg)
         twg['region'] = this_region
         if want_prefix or len(these_regions) > 1:
             twg['name'] = waffles_append_fn(wg['name'], twg['region'], twg['sample'] if twg['sample'] is not None else twg['inc'])
             
-        #twg['datalist'] = datalist_major(wg['datalists'], region = wg['region'], major = '{}_major.datalist'.format(wg['name']))
         twg = waffles_config(**twg)
         if want_config:
             this_wg = waffles_config_copy(twg)
@@ -4254,57 +4253,223 @@ def waffles_cli(argv = sys.argv):
                     echo_msg('generating major datalist: {}_mjr.datalist'.format(this_wg['name']))
                     wg_json.write(json.dumps(this_wg, indent = 4, sort_keys = True))
             else: echo_error_msg('could not parse config.')
-        else: dem = waffles_run(twg) ####these_wgs.append(twg)###dem = waffles_run(twg) ###
-    # wq = queue.Queue()
-    # num_threads = 3 if len(these_wgs) > 1 else len(these_wgs)
-    # for _ in range(num_threads):
-    #     t = threading.Thread(target = waffles_queue, args = (wq, ))
-    #     t.daemon = True
-    #     t.start()
-            
-    # [wq.put(x) for x in these_wgs]
-    # #p = _progress('')
-    # #while True:
-    # while not wq.empty():
-    #     time.sleep(2)
-    #     #print(wq.qsize())
-    #     #perc = float((len(these_wgs) - wq.qsize())) / len(these_wgs) * 100
-    #     #p.opm = 'generating dem(s) [{}/{}]'.format(len(these_wgs) - wq.qsize(),len(these_wgs))
-    #     #p.update()
-    #     echo_msg_inline('generating dem(s) [{}/{}]'.format((len(these_wgs) - wq.qsize()) - num_threads,len(these_wgs)))
-    #     #if wq.qsize == 0:
-    #           #if wq.empty():
-    #     #    break
-        
-    # wq.join()
-        ## ==============================================
-        ## generate the DEM
-        ## ==============================================
-        # import threading
-        # t = threading.Thread(target = waffles_run, args = (wg,))
-        # p = _progress('waffles: generating dem')
-        # try:
-        #     t.start()
-        #     while True:
-        #         time.sleep(1)
-        #         p.update()
-        #         if not t.is_alive():
-        #             break
-        # except (KeyboardInterrupt, SystemExit):
-        #     echo_msg('stopping all threads')
-        #     stop_threads = True
-        #     status = -1
-        
-        # t.join()
-        # p.end(status, 'waffles: generated dem')
-        #try:
-        #twg = waffles_config(**twg)
-        #if twg is not None:
-        #em = waffles_run(twg)
-            
-            #except RuntimeError or OSError as e:
-            #echo_error_msg('Cannot access {}.tif, may be in use elsewhere, {}'.format(wg['name'], e))
+        else:
+            if want_threads:
+                these_wgs.append(twg)
+            else: dem = waffles_run(twg)
+    if want_threads:
+        wq = queue.Queue()
+        num_threads = 3 if len(these_wgs) > 1 else len(these_wgs)
+        for _ in range(num_threads):
+            t = threading.Thread(target = waffles_queue, args = (wq, ))
+            t.daemon = True
+            t.start()
 
+        [wq.put(x) for x in these_wgs]
+        while True:
+            #while not wq.empty():
+            time.sleep(2)
+            echo_msg_inline('generating dem(s) [{}/{}]'.format((len(these_wgs) - wq.qsize()) - num_threads,len(these_wgs)))
+            #if wq.qsize == 0:
+            if wq.empty(): break
+        wq.join()
+
+## ==============================================
+## dadtalists cli
+## ==============================================    
+datalists_version = '0.0.1'
+datalists_usage = '''{} ({}): Process and generate datalists
+
+usage: {} [ -dghirsvEFOPR [ args ] ] DATALIST ...
+
+Options:
+  -R, --region\t\tSpecifies the desired REGION;
+  -E, --increment\tThe CELL-SIZE in native units.
+  -O, --output-name\tThe OUTPUT file name.
+  -P, --epsg\t\tSpecify the EPSG of the DATALIST.
+  -F, --format\t\tOnly process FORMAT data type.
+
+  -a, --archive\t\tARCHIVE the data from the DATALIST.
+  -g, --glob\t\tGLOB FORMAT data into the DATALIST.
+  -i, --info-file\tGenerate INF files for the data in the DATALIST
+  -l, --list\t\tLIST the datafiles from the DATALIST.
+  -m, --mask\t\tMASK the datafiles from the DATALIST.
+  -r, --region-info\tReturn the full REGION of the DATALIST.
+  -s, --spatial-md\tGenerate SPATIAL-METADATA from the DATALIST.
+  -w, --weights\t\toutput weights along with each datalist.
+
+  --help\t\tPrint the usage text
+  --version\t\tPrint the version information
+  --verbose\t\tIncrease the verbosity
+
+ Examples:
+ % {} my_data.datalist -R -90/-89/30/31 -g -i
+ % {} my_data.datalist -R -90/-89/30/31 -E.000925 -O my_data_spatial -s
+
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
+'''.format( os.path.basename(sys.argv[0]), 
+            datalists_version, 
+            os.path.basename(sys.argv[0]),
+            os.path.basename(sys.argv[0]),
+            os.path.basename(sys.argv[0]))
+
+def datalists_cli(argv = sys.argv):
+
+    status = 0
+    dls = []
+    i_region = None
+    i_inc = 0.000277777
+    o_bn = None
+    epsg = '4326'
+    these_regions = []
+    want_verbose = False
+    want_inf = False
+    want_region = False
+    want_sm = False
+    want_glob = False
+    want_list = False
+    want_archive = False
+    want_mask = False
+    want_weights = False
+    dl_fmt = None
+    #dl_fmts = []
+    
+    ## ==============================================
+    ## parse command line arguments.
+    ## ==============================================
+
+    i = 1
+    while i < len(argv):
+        arg = argv[i]
+
+        if arg == '--region' or arg == '-R':
+            i_region = str(argv[i + 1])
+            i = i + 1
+        elif arg[:2] == '-R':
+            i_region = str(arg[2:])
+
+        elif arg == '--output-name' or arg == '-O':
+            o_bn = str(argv[i + 1])
+            i = i + 1
+        elif arg[:2] == '-O':
+            o_bn = str(arg[2:])
+
+        elif arg == '--increment' or arg == '-E':
+            try:
+                i_inc = float(argv[i + 1])
+            except:
+                sys.stederr.write('error, -E should be a float value\n')
+                sys.exit(1)
+            i = i + 1
+        elif arg[:2] == '-E':
+            try:
+                i_inc = float(arg[2:])
+            except:
+                sys.stederr.write('error, -E should be a float value\n')
+                sys.exit(1)
+
+        elif arg == '--epsg' or arg == '-P':
+            epsg = argv[i + 1]
+            i = i + 1
+        elif arg[:2] == '-P':
+            epsg = arg[2:]
+
+        elif arg == '--format' or arg == '-F':
+            dl_fmt = int(argv[i + 1])
+            i = i + 1
+        elif arg[:2] == '-F':
+            dl_fmt = int(arg[2:])
+
+        elif arg == '--glob' or arg == '-g':
+            want_glob = True
+
+        elif arg == '--spatial-md' or arg == '-s':
+            want_sm = True
+
+        elif arg == '--list' or arg == '-l':
+            want_list = True
+
+        elif arg == '--mask' or arg == '-m':
+            want_mask = True
+
+        elif arg == '--archive' or arg == '-a':
+            want_archive = True
+
+        elif arg == '--info-file' or arg == '-i':
+            want_inf = True
+
+        elif arg == '--region-info' or arg == '-r':
+            want_region = True
+
+        elif arg == '--weights' or arg == '-w':
+            want_weights = True
+
+        elif arg == '--help' or arg == '-h':
+            print(_usage)
+            sys.exit(1)
+
+        elif arg == '--version' or arg == '-v':
+            print('{}, version {}'.format(os.path.basename(sys.argv[0]), datalists_version))
+            sys.exit(1)
+
+        elif arg == '--verbose' or arg == '-V':
+            want_verbose = True
+
+        elif arg[0] == '-':
+            print(_usage)
+            sys.exit(0)
+
+        else:
+            dls.append(arg)
+
+        i = i + 1
+
+    if want_glob:
+        if dl_fmt is None:
+            dl_fmts = _known_datalist_fmts.keys()[:1]
+        else: dl_fmts = [dl_fmt]
+        for key in dl_fmts:
+            for f in _known_datalist_fmts[key]:
+                globs = glob.glob('*.{}'.format(f))
+                [sys.stdout.write('{}\n'.format(' '.join([x, str(key), '1']))) for x in globs]
+        sys.exit(0)
+        
+    if len(dls) == 0:
+        print(datalists_usage)
+        sys.exit(1)
+        
+    ## ==============================================
+    ## process input region(s) and loop
+    ## ==============================================
+
+    if i_region is not None:
+        try:
+            these_regions = [[float(x) for x in i_region.split('/')]]
+        except ValueError: these_regions = gdal_ogr_regions(i_region)
+        except Exception as e:
+            echo_error_msg('failed to parse region(s), {}'.format(e))
+    else: these_regions = [[-180,180,-90,90]]
+    if len(these_regions) == 0: echo_error_msg('failed to parse region(s), {}'.format(i_region))
+
+    for rn, this_region in enumerate(these_regions):
+        ## ==============================================
+        ## Load the input datalist
+        ## ==============================================
+        datalist_major = datalist_major(dls, region = this_region)
+        dlp_hooks = datalist_default_hooks()
+        dlp_hooks.append(lambda e: regions_intersect_ogr_p(this_region, inf_entry(e)))
+
+        if want_inf:
+            datalist_inf_entry([datalist_major, -1, 1])
+        elif want_region:
+            print(datalist_inf(datalist_major, False, False))
+        elif want_list:
+            for this_entry in datalist(datalist_major, wt = 1, pass_h = dlp_hooks):
+                print(' '.join([','.join(x) if i == 3 else os.path.abspath(str(x)) if i == 0 else str(x) for i,x in enumerate(this_entry[:-1])]))
+        elif want_mask: pass
+        else: datalist_dump_xyz(datalist_major, wt = 1 if want_weights else None, pass_h = dlp_hooks, region = this_region)
+        remove_glob(datalist_major)
+        
 ## ==============================================
 ## mainline -- run waffles directly...
 ##
