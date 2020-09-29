@@ -2842,6 +2842,7 @@ _waffles_modules = {
     \t\t\t  :tension=[0-1] - Spline tension.'''],
     'triangulate': [lambda args: waffles_gmt_triangulate(**args), '''TRIANGULATION DEM via GMT triangulate'''],
     'cudem': [lambda args: waffles_cudem(**args), '''Generate a CUDEM Bathy/Topo DEM <beta>'''],
+    'bathy': [lambda args: waffles_bathy_surface(**args), '''Generate a CUDEM Bathy-Surface DEM <beta>'''],
     'nearest': [lambda args: waffles_nearneighbor(**args), '''NEAREST NEIGHBOR DEM via GMT or gdal_grid
     \t\t\t  < nearest:radius=6s:use_gdal=False >
     \t\t\t  :radius=[value] - Nearest Neighbor search radius
@@ -3006,7 +3007,7 @@ def waffles_polygonize_datalist(wg, entry, dlp_h = [], layer = None,
     twg['inc'] = gmt_inc2inc('.3333333s') if twg['inc'] < gmt_inc2inc('.3333333s') else twg['inc']
     #twg['region'] = waffles_grid_node_region(twg) if wg['node'] == 'grid' else twg['region']
     twg = waffles_config(**twg)
-    ng = '{}_msk.tif'.format(twg['name'])
+    ng = '{}_{}_msk.tif'.format(twg['name'], region_format(twg['region'], 'fn'))
 
     if len(entry[3]) == 8:
         o_v_fields = entry[3]
@@ -3083,46 +3084,42 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     b_wg = waffles_config_copy(wg)
     ul = -0.1
     if coastline is not None:
-        # fetch gmrt to sample coastline
-        #gmrt_res = fetches.gmrt(extent = waffles_proc_region(b_wg)).run()
-        #print(gmrt_res)
-        #gmrt = 'gmrt_{}.tif'.format(region_format(waffles_proc_region(b_wg), 'fn'))
-        #status = fetches.fetch_file(gmrt_res[0][0], gmrt, verbose = True)
-        #print(status)
-        b_wg['clip'] = '{}:invert=True'.format(coastline)
-        #out, status = run_cmd('coastline2xyz.sh -I {} -Z 0 -W {}'.format(coastline, gdal_region2wkt(waffles_proc_region(b_wg))), verbose = True)
+
         out, status = run_cmd('coastline2xyz.sh -I {} -O {}_coast.xyz -Z {} -W {} -E {} -S {} -N {}'\
                               .format(coastline, b_wg['name'], 0, waffles_proc_region(b_wg)[0], waffles_proc_region(b_wg)[1], waffles_proc_region(b_wg)[2], waffles_proc_region(b_wg)[3]), verbose = True)
-        #coast_xyz = '{}.xyz'.format('.'.join(os.coastline.split('.')[0:-1]))
-        #remove_glob(gmrt)
         coast_xyz = '{}_coast.xyz'.format(b_wg['name'])
-        b_wg['datalist'] = None
-        b_wg['datalists'].append(coast_xyz)
-        ## take coastline to xyz and add to datalist (z = 0)
         coast_region = xyz_inf_entry([coast_xyz])
-        #ul = coast_region[5]
         print(coast_region)
-        b_wg['z_region'] = [None, 1]
+
+    ## generate NN DEM with high weight bathy data
+    b_wg['z_region'] = [None, 1]
+    b_wg['mod'] = 'nearest'
+    #b_wg['mod_args'] = ('radius=1s',)
+    b_wg['name'] = 'bathy_nn_{}'.format(wg['name'])
+    b_wg['spat'] = False
+    b_wg['fltr'] = None
+    b_wg['datalist'] = None
+    b_wg['datalists'].append(coast_xyz)
     b_wg['mod'] = 'surface'
     b_wg['mod_args'] = ('upper_limit=-0.1','tension=.25',)
-    #b_wg['mod_args'] = ('tension=1')
     b_wg['sample'] = wg['inc']
-    b_wg['inc'] = gmt_inc2inc('1s')
+    b_wg['inc'] = gmt_inc2inc('3s')
     b_wg['name'] = 'bathy_{}'.format(wg['name'])
-    b_wg['spat'] = False
-    b_wg['mask'] = False
-    b_wg['fltr'] = None
+    b_wg['clip'] = '{}:invert=True'.format(coastline)
     b_wg['extend_proc'] = 40
+    b_wg['mask'] = False
+
     b_wg = waffles_config(**b_wg)
     
     bathy_surf = waffles_run(b_wg)
     remove_glob(coast_xyz)
+
     ## ==============================================
     ## append the bathy-surface to the datalist and
     ## generate final DEM using 'surface'
     ## ==============================================
     wg['datalist'] = None
-    wg['datalists'].append('{} 200 .5'.format(bathy_surf))
+    wg['datalists'].append('{} 200 1'.format(bathy_surf))
     wg['w_region'] = [.4,None]
     wg = waffles_config(**wg)
 
@@ -3139,65 +3136,149 @@ def waffles_bathy_surface(wg = _waffles_grid_info, coastline = None):
     if wg['gc']['GMT'] is None:
         echo_error_msg('GMT must be installed to use the BATHY-SURFACE module')
         return(None, -1)
-
     ## ==============================================
     ## generate the bathy-surface
     ## using 'surface' with upper_limit of -0.1
     ## at 1 arc-second spacing
     ## ==============================================
+    b_wg = waffles_config_copy(wg)
     ul = -0.1
-    
     if coastline is not None:
         # fetch gmrt to sample coastline
-        gmrt_res = fetches.gmrt(extent = waffles_proc_region(wg)).run()
-        gmrt = 'gmrt_{}.tif'.format(region_format(waffles_proc_region(wg), 'fn'))
-        status = fetches.fetch_file(gmrt_res[0][0], gmrt, verbose = True)
-        
-        wg['clip'] = '{}:invert=True'.format(coastline)
+        #gmrt_res = fetches.gmrt(extent = waffles_proc_region(b_wg)).run()
+        #print(gmrt_res)
+        #gmrt = 'gmrt_{}.tif'.format(region_format(waffles_proc_region(b_wg), 'fn'))
+        #status = fetches.fetch_file(gmrt_res[0][0], gmrt, verbose = True)
+        #print(status)
+        #out, status = run_cmd('coastline2xyz.sh -I {} -Z 0 -W {}'.format(coastline, gdal_region2wkt(waffles_proc_region(b_wg))), verbose = True)
         out, status = run_cmd('coastline2xyz.sh -I {} -O {}_coast.xyz -Z {} -W {} -E {} -S {} -N {}'\
-                              .format(coastline, wg['name'], gmrt, waffles_proc_region(wg)[0],
-                                      waffles_proc_region(wg)[1], waffles_proc_region(wg)[2],
-                                      waffles_proc_region(wg)[3]), verbose = True)
-        remove_glob(gmrt)
-        coast_xyz = '{}_coast.xyz'.format(wg['name'])
-        wg['datalist'] = None
-        wg['datalists'].append(coast_xyz)
-        
+                              .format(coastline, b_wg['name'], 0, waffles_proc_region(b_wg)[0], waffles_proc_region(b_wg)[1], waffles_proc_region(b_wg)[2], waffles_proc_region(b_wg)[3]), verbose = True)
+        #coast_xyz = '{}.xyz'.format('.'.join(os.coastline.split('.')[0:-1]))
+        #remove_glob(gmrt)
+        coast_xyz = '{}_coast.xyz'.format(b_wg['name'])
+        #b_wg['datalist'] = None
+        #b_wg['datalists'].append(coast_xyz)
         ## take coastline to xyz and add to datalist (z = 0)
         coast_region = xyz_inf_entry([coast_xyz])
-        ul = coast_region[5]
-        wg['z_region'] = [None, ul]
-        
-    wg['mod'] = 'surface'
-    wg['mod_args'] = ('upper_limit={}'.format(ul),'tension=.25',)
-    wg['sample'] = wg['inc']
-    wg['inc'] = gmt_inc2inc('1s')
-    #wg['name'] = 'bathy_{}'.format(wg['name'])
-    wg['spat'] = False
-    wg['mask'] = False
-    wg['fltr'] = None
-    wg['extend_proc'] = 40
-    wg = waffles_config(**wg)
+        #ul = coast_region[5]
+        print(coast_region)
+
+    ## generate NN DEM with high weight bathy data
+    b_wg['z_region'] = [None, 1]
+    b_wg['mod'] = 'nearest'
+    b_wg['mod_args'] = ('radius=3s',)
+    b_wg['name'] = 'bathy_nn_{}'.format(wg['name'])
+    b_wg['spat'] = False
+    #b_wg['mask'] = True
+    b_wg['fltr'] = None
+    b_wg['w_region'] = [.9,None]
+    b_wg = waffles_config(**b_wg)
     
-    #bathy_surf = waffles_run(wg)
-    args_d = {}
-    args_d = args2dict(wg['mod_args'], args_d)
-    args_d['wg'] = wg
-    out, status = waffles_gmt_surface(**args_d)
+    bathy_surf_nn = waffles_run(b_wg)
+    #bathy_surf_nn_msk = 'bathy_nn_{}_msk.tif'.format(wg['name'])
+
+    ## generate surface DEM with all bathy data at 1 arc/sec
+    bb_wg = waffles_config_copy(b_wg)
+    bb_wg['datalist'] = None
+    #bb_wg['datalists'].append('{} 200 .5'.format(bathy_surf_nn))
+    bb_wg['datalists'].append(coast_xyz)
+    bb_wg['mod'] = 'surface'
+    bb_wg['mod_args'] = ('upper_limit=-0.1','tension=.25',)
+    bb_wg['w_region'] = None
+    bb_wg['sample'] = wg['inc']
+    bb_wg['inc'] = gmt_inc2inc('3s')
+    bb_wg['name'] = 'bathy_{}'.format(wg['name'])
+    bb_wg['clip'] = '{}:invert=True'.format(coastline)
+    bb_wg['extend_proc'] = 40
+    bb_wg['mask'] = False
+    bb_wg = waffles_config(**bb_wg)
+    
+    bathy_surf = waffles_run(bb_wg)
+    bathy_surf_diff = 'bathy_{}_diff.tif'.format(wg['name'])
+    
+    gdc = 'gdal_calc.py -A {} -B {} --calc A-B --outfile {}'.format(bathy_surf_nn, bathy_surf, bathy_surf_diff)
+    run_cmd(gdc, verbose = True)
+
+    d_wg = waffles_config_copy(bb_wg)
+    d_wg['datalist'] = None
+    d_wg['datalists'].append
+    d_wg = waffles_config(**d_wg)
+    diff_grid = waffles_run(d_wg)
+    
     remove_glob(coast_xyz)
-    return(out, status)
+    return(0, 0)
     ## ==============================================
     ## append the bathy-surface to the datalist and
     ## generate final DEM using 'surface'
     ## ==============================================
     # wg['datalist'] = None
-    # wg['datalists'].append('{} 200 .5'.format(bathy_surf))
+    # wg['datalists'].append('{} 200 1'.format(bathy_surf))
     # wg['w_region'] = [.4,None]
     # wg = waffles_config(**wg)
 
     # print(wg)
     
     # return(waffles_gmt_surface(wg))
+
+    
+    # ## ==============================================
+    # ## generate the bathy-surface
+    # ## using 'surface' with upper_limit of -0.1
+    # ## at 1 arc-second spacing
+    # ## ==============================================
+    # ul = -0.1
+    
+    # if coastline is not None:
+    #     # fetch gmrt to sample coastline
+    #     gmrt_res = fetches.gmrt(extent = waffles_proc_region(wg)).run()
+    #     gmrt = 'gmrt_{}.tif'.format(region_format(waffles_proc_region(wg), 'fn'))
+    #     status = fetches.fetch_file(gmrt_res[0][0], gmrt, verbose = True)
+        
+    #     wg['clip'] = '{}:invert=True'.format(coastline)
+    #     out, status = run_cmd('coastline2xyz.sh -I {} -O {}_coast.xyz -Z {} -W {} -E {} -S {} -N {}'\
+    #                           .format(coastline, wg['name'], gmrt, waffles_proc_region(wg)[0],
+    #                                   waffles_proc_region(wg)[1], waffles_proc_region(wg)[2],
+    #                                   waffles_proc_region(wg)[3]), verbose = True)
+    #     remove_glob(gmrt)
+    #     coast_xyz = '{}_coast.xyz'.format(wg['name'])
+    #     wg['datalist'] = None
+    #     wg['datalists'].append(coast_xyz)
+        
+    #     ## take coastline to xyz and add to datalist (z = 0)
+    #     coast_region = xyz_inf_entry([coast_xyz])
+    #     ul = coast_region[5]
+    #     wg['z_region'] = [None, ul]
+        
+    # wg['mod'] = 'surface'
+    # wg['mod_args'] = ('upper_limit={}'.format(ul),'tension=.25',)
+    # wg['sample'] = wg['inc']
+    # wg['inc'] = gmt_inc2inc('1s')
+    # #wg['name'] = 'bathy_{}'.format(wg['name'])
+    # wg['spat'] = False
+    # wg['mask'] = False
+    # wg['fltr'] = None
+    # wg['extend_proc'] = 40
+    # wg = waffles_config(**wg)
+    
+    # #bathy_surf = waffles_run(wg)
+    # args_d = {}
+    # args_d = args2dict(wg['mod_args'], args_d)
+    # args_d['wg'] = wg
+    # out, status = waffles_gmt_surface(**args_d)
+    # remove_glob(coast_xyz)
+    # return(out, status)
+    # ## ==============================================
+    # ## append the bathy-surface to the datalist and
+    # ## generate final DEM using 'surface'
+    # ## ==============================================
+    # # wg['datalist'] = None
+    # # wg['datalists'].append('{} 200 .5'.format(bathy_surf))
+    # # wg['w_region'] = [.4,None]
+    # # wg = waffles_config(**wg)
+
+    # # print(wg)
+    
+    # # return(waffles_gmt_surface(wg))
     
 ## ==============================================
 ## Waffles MBGrid module
@@ -3284,7 +3365,7 @@ def waffles_gmt_triangulate(wg = _waffles_grid_info):
 def waffles_nearneighbor(wg = _waffles_grid_info, radius = None, use_gdal = False):
     '''genearte a DEM with GMT nearneighbor or gdal_grid nearest'''
     
-    radius = wg['inc'] * 2 if radius is None else gmt_inc2inc(radius)
+    radius = wg['inc'] * 3 if radius is None else gmt_inc2inc(radius)
     if wg['gc']['GMT'] is not None and not use_gdal:
         dem_nn_cmd = ('gmt blockmean {} -I{:.10f}{} -V -r | gmt nearneighbor {} -I{:.10f} -S{} -V -G{}.tif=gd+n-9999:GTiff -r\
         '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', waffles_proc_str(wg), \
@@ -4173,29 +4254,29 @@ def waffles_cli(argv = sys.argv):
                     echo_msg('generating major datalist: {}_mjr.datalist'.format(this_wg['name']))
                     wg_json.write(json.dumps(this_wg, indent = 4, sort_keys = True))
             else: echo_error_msg('could not parse config.')
-        else: dem = waffles_run(twg) ###these_wgs.append(twg)##
-    # wq = queue.Queue()
-    # num_threads = 2 if len(these_wgs) > 1 else len(these_wgs)
-    # for _ in range(num_threads):
-    #     t = threading.Thread(target = waffles_queue, args = (wq, ))
-    #     t.daemon = True
-    #     t.start()
+        else: these_wgs.append(twg)###dem = waffles_run(twg) ###
+    wq = queue.Queue()
+    num_threads = 3 if len(these_wgs) > 1 else len(these_wgs)
+    for _ in range(num_threads):
+        t = threading.Thread(target = waffles_queue, args = (wq, ))
+        t.daemon = True
+        t.start()
             
-    # [wq.put(x) for x in these_wgs]
-    # #p = _progress('')
-    # #while True:
-    # while not wq.empty():
-    #     time.sleep(2)
-    #     #print(wq.qsize())
-    #     #perc = float((len(these_wgs) - wq.qsize())) / len(these_wgs) * 100
-    #     #p.opm = 'generating dem(s) [{}/{}]'.format(len(these_wgs) - wq.qsize(),len(these_wgs))
-    #     #p.update()
-    #     echo_msg_inline('generating dem(s) [{}/{}]'.format((len(these_wgs) - wq.qsize()) - num_threads,len(these_wgs)))
-    #     #if wq.qsize == 0:
-    #           #if wq.empty():
-    #     #    break
+    [wq.put(x) for x in these_wgs]
+    #p = _progress('')
+    #while True:
+    while not wq.empty():
+        time.sleep(2)
+        #print(wq.qsize())
+        #perc = float((len(these_wgs) - wq.qsize())) / len(these_wgs) * 100
+        #p.opm = 'generating dem(s) [{}/{}]'.format(len(these_wgs) - wq.qsize(),len(these_wgs))
+        #p.update()
+        echo_msg_inline('generating dem(s) [{}/{}]'.format((len(these_wgs) - wq.qsize()) - num_threads,len(these_wgs)))
+        #if wq.qsize == 0:
+              #if wq.empty():
+        #    break
         
-    # wq.join()
+    wq.join()
         ## ==============================================
         ## generate the DEM
         ## ==============================================
