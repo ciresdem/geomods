@@ -4254,29 +4254,29 @@ def waffles_cli(argv = sys.argv):
                     echo_msg('generating major datalist: {}_mjr.datalist'.format(this_wg['name']))
                     wg_json.write(json.dumps(this_wg, indent = 4, sort_keys = True))
             else: echo_error_msg('could not parse config.')
-        else: these_wgs.append(twg)###dem = waffles_run(twg) ###
-    wq = queue.Queue()
-    num_threads = 3 if len(these_wgs) > 1 else len(these_wgs)
-    for _ in range(num_threads):
-        t = threading.Thread(target = waffles_queue, args = (wq, ))
-        t.daemon = True
-        t.start()
+        else: dem = waffles_run(twg) ####these_wgs.append(twg)###dem = waffles_run(twg) ###
+    # wq = queue.Queue()
+    # num_threads = 3 if len(these_wgs) > 1 else len(these_wgs)
+    # for _ in range(num_threads):
+    #     t = threading.Thread(target = waffles_queue, args = (wq, ))
+    #     t.daemon = True
+    #     t.start()
             
-    [wq.put(x) for x in these_wgs]
-    #p = _progress('')
-    #while True:
-    while not wq.empty():
-        time.sleep(2)
-        #print(wq.qsize())
-        #perc = float((len(these_wgs) - wq.qsize())) / len(these_wgs) * 100
-        #p.opm = 'generating dem(s) [{}/{}]'.format(len(these_wgs) - wq.qsize(),len(these_wgs))
-        #p.update()
-        echo_msg_inline('generating dem(s) [{}/{}]'.format((len(these_wgs) - wq.qsize()) - num_threads,len(these_wgs)))
-        #if wq.qsize == 0:
-              #if wq.empty():
-        #    break
+    # [wq.put(x) for x in these_wgs]
+    # #p = _progress('')
+    # #while True:
+    # while not wq.empty():
+    #     time.sleep(2)
+    #     #print(wq.qsize())
+    #     #perc = float((len(these_wgs) - wq.qsize())) / len(these_wgs) * 100
+    #     #p.opm = 'generating dem(s) [{}/{}]'.format(len(these_wgs) - wq.qsize(),len(these_wgs))
+    #     #p.update()
+    #     echo_msg_inline('generating dem(s) [{}/{}]'.format((len(these_wgs) - wq.qsize()) - num_threads,len(these_wgs)))
+    #     #if wq.qsize == 0:
+    #           #if wq.empty():
+    #     #    break
         
-    wq.join()
+    # wq.join()
         ## ==============================================
         ## generate the DEM
         ## ==============================================
