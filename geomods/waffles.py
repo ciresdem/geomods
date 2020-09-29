@@ -4280,7 +4280,7 @@ def waffles_cli(argv = sys.argv):
 datalists_version = '0.0.1'
 datalists_usage = '''{} ({}): Process and generate datalists
 
-usage: {} [ -dghirsvEFOPR [ args ] ] DATALIST ...
+usage: {} [ -aghirvFPR [ args ] ] DATALIST ...
 
 Options:
   -R, --region\t\tSpecifies the desired REGION;
@@ -4301,7 +4301,6 @@ Options:
 
  Examples:
  % {} my_data.datalist -R -90/-89/30/31 -g -i
- % {} my_data.datalist -R -90/-89/30/31 -E.000925 -O my_data_spatial -s
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
 '''.format( os.path.basename(sys.argv[0]), 
