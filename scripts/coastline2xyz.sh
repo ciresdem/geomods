@@ -57,14 +57,15 @@ if [ ! $w ] ; then
     ogr2ogr $tmp_coast $(basename $in_coast .shp).shp -f CSV -lco GEOMETRY=AS_WKT -overwrite
 else
     ogr2ogr $tmp_coast $in_coast -f CSV -lco GEOMETRY=AS_WKT -overwrite -clipsrc $w $n $e $s
+    #ogr2ogr $tmp_coast $in_coast -f CSV -lco GEOMETRY=AS_WKT -overwrite -clipdst $w $s $e $n -clipsrc $w $s $e $n -spat $w $s $e $n 
 fi
 if [ ! $out_zed ] ; then
     cat $tmp_coast | sed -e '1,1d' | tr ',' '\n' | sed 's/[A-Za-z"()]*//g' | tr ' ' ',' | sed 's/^,//' | awk -F, '{if (NR != 1) {print $1,$2,$3}}' > $out_coast
 else
     if [ -f "$out_zed" ]; then
-	cat $tmp_coast | sed -e '1,1d' | tr ',' '\n' | sed 's/[A-Za-z"()]*//g' | tr ' ' ',' | sed 's/^,//' | awk -F, '{if (NR != 1) {print $1,$2}}' | gdal_query.py $out_zed -d_format 'xyg' -s_format '0,1,-' > $out_coast
+	cat $tmp_coast | sed -e '1,1d' | tr ',' '\n' | sed 's/[A-Za-z"()]*//g' | tr ' ' ',' | sed 's/^,//' | awk -F, '{if (NR != 1 && $1 != 0) {print $1,$2}}' | gdal_query.py $out_zed -d_format 'xyg' -s_format '0,1,-' > $out_coast
     else
-	cat $tmp_coast | sed -e '1,1d' | tr ',' '\n' | sed 's/[A-Za-z"()]*//g' | tr ' ' ',' | sed 's/^,//' | awk -v zed="$out_zed" -F, '{if (NR != 1) {print $1,$2,zed}}' > $out_coast
+	cat $tmp_coast | sed -e '1,1d' | tr ',' '\n' | sed 's/[A-Za-z"()]*//g' | tr ' ' ',' | sed 's/^,//' | awk -v zed="$out_zed" -F, '{if (NR != 1 && $1 != 0) {print $1,$2,zed}}' > $out_coast
     fi
 fi
 rm -rf $tmp_coast

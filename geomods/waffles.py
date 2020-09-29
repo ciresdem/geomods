@@ -2891,6 +2891,7 @@ waffles_grid_node_region = lambda wg: region_buffer(wg['region'], wg['inc'] * .5
 ## the "proc-region" region_buffer(wg['region'], (wg['inc'] * 20) + (wg['inc'] * wg['extend']))
 ## ==============================================
 waffles_proc_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * wg['extend_proc']) + (wg['inc'] * wg['extend']))
+waffles_coast_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * wg['extend_proc']) + (wg['inc'] * wg['extend']) + (wg['inc'] * 200))
 waffles_proc_str = lambda wg: region_format(waffles_proc_region(wg), 'gmt')
 waffles_proc_bbox = lambda wg: region_format(waffles_proc_region(wg), 'bbox')
 waffles_proc_ul_lr = lambda wg: region_format(waffles_proc_region(wg), 'ul_lr')
@@ -3086,7 +3087,7 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     if coastline is not None:
 
         out, status = run_cmd('coastline2xyz.sh -I {} -O {}_coast.xyz -Z {} -W {} -E {} -S {} -N {}'\
-                              .format(coastline, b_wg['name'], 0, waffles_proc_region(b_wg)[0], waffles_proc_region(b_wg)[1], waffles_proc_region(b_wg)[2], waffles_proc_region(b_wg)[3]), verbose = True)
+                              .format(coastline, b_wg['name'], 0, waffles_coast_region(b_wg)[0], waffles_coast_region(b_wg)[1], waffles_coast_region(b_wg)[2], waffles_coast_region(b_wg)[3]), verbose = True)
         coast_xyz = '{}_coast.xyz'.format(b_wg['name'])
         coast_region = xyz_inf_entry([coast_xyz])
         print(coast_region)
@@ -3101,12 +3102,12 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     b_wg['datalist'] = None
     b_wg['datalists'].append(coast_xyz)
     b_wg['mod'] = 'surface'
-    b_wg['mod_args'] = ('upper_limit=-0.1','tension=.25',)
+    b_wg['mod_args'] = ('upper_limit=-0.1',)
     b_wg['sample'] = wg['inc']
     b_wg['inc'] = gmt_inc2inc('1s')
     b_wg['name'] = 'bathy_{}'.format(wg['name'])
     b_wg['clip'] = '{}:invert=True'.format(coastline)
-    b_wg['extend_proc'] = 100
+    b_wg['extend_proc'] = 40
     b_wg['mask'] = False
 
     b_wg = waffles_config(**b_wg)
