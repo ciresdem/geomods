@@ -93,8 +93,8 @@ import gdal
 import ogr
 import osr
 
-#from geomods import fetches
-import fetches
+from geomods import fetches
+#import fetches
 
 ## ==============================================
 ## General utility functions - utils.py
@@ -3102,10 +3102,14 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     b_wg['fltr'] = None
     b_wg['datalist'] = None
     b_wg['datalists'].append(coast_xyz)
-    b_wg['mod'] = 'surface'
-    b_wg['mod_args'] = ('upper_limit=-0.1',)
+    #b_wg['mod'] = 'surface'
+    #b_wg['mod_args'] = ('upper_limit=-0.1',)
+    b_wg['mod'] = 'triangulate'
+    b_wg['mod_args'] = ()
+    #b_wg['mod'] = 'invdst'
+    #b_wg['mod_args'] = ('radius1=3s','radius2=3s',)
     b_wg['sample'] = wg['inc']
-    b_wg['inc'] = gmt_inc2inc('1s')
+    b_wg['inc'] = gmt_inc2inc('3s')
     b_wg['name'] = 'bathy_{}'.format(wg['name'])
     b_wg['clip'] = '{}:invert=True'.format(coastline)
     b_wg['extend_proc'] = 40
@@ -4330,6 +4334,8 @@ def datalists_cli(argv = sys.argv):
     want_archive = False
     want_mask = False
     want_weights = False
+    z_region = None
+    w_region = None
     dl_fmt = None
     #dl_fmts = []
     
@@ -4425,7 +4431,7 @@ def datalists_cli(argv = sys.argv):
 
     if want_glob:
         if dl_fmt is None:
-            dl_fmts = _known_datalist_fmts.keys()[:1]
+            dl_fmts = list(_known_datalist_fmts.keys())[1:]
         else: dl_fmts = [dl_fmt]
         for key in dl_fmts:
             for f in _known_datalist_fmts[key]:
@@ -4459,6 +4465,11 @@ def datalists_cli(argv = sys.argv):
         dlp_hooks = datalist_default_hooks()
         dlp_hooks.append(lambda e: regions_intersect_ogr_p(this_region, inf_entry(e)))
 
+        if z_region is not None:
+            dlp_hooks.append(lambda e: z_region_pass(inf_entry(e), upper_limit = z_region[1], lower_limit = z_region[0]))
+        if w_region is not None:
+            dlp_hooks.append(lambda e: z_pass(e[2], upper_limit = w_region[1], lower_limit = w_region[0]))
+        
         if want_inf:
             datalist_inf_entry([dl_m, -1, 1])
         elif want_region:

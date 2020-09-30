@@ -135,12 +135,12 @@ def proc_elev(elev, smooth_factor):
         output_name=elev[:-4]+"_smooth_"+str(smooth_factor)
         xsize, ysize, GeoT, Projection, DataType, NDV = GetGeoInfo(elev)
         
-        print "elev is", elev
-        print "size is", xsize, ysize
-        print "nodata is", NDV
-        print "datatype is", DataType
-        print "smooth factor is", smooth_factor
-        print "output_name is", output_name
+        print("elev is", elev)
+        print("size is", xsize, ysize)
+        print("nodata is", NDV)
+        print("datatype is", DataType)
+        print("smooth factor is", smooth_factor)
+        print("output_name is", output_name)
         
         elev_g = gdal.Open(elev) #
         elev_array = elev_g.GetRasterBand(1).ReadAsArray(0,0,xsize,ysize) 
@@ -149,7 +149,7 @@ def proc_elev(elev, smooth_factor):
         #Set topo values to zero
         mask_array[mask_array > 0] = 0
         mask_array[mask_array == NDV] = 0
-        print "loaded input dem"
+        print("loaded input dem")
 
         #print mask_array
         #Perform smoothing
@@ -161,7 +161,7 @@ def proc_elev(elev, smooth_factor):
         mask_array[mask_array < 0] = 1
         smooth_elev = smooth_elev * mask_array
         mask_array = None
-        print "smoothed array"
+        print("smoothed array")
     
         #Reload original array and merge the topo with the smoothed bathy
         elev_array = elev_g.GetRasterBand(1).ReadAsArray(0,0,xsize,ysize)
@@ -173,7 +173,7 @@ def proc_elev(elev, smooth_factor):
         driver = gdal.GetDriverByName('GTiff')
         CreateGeoTiff(output_name, smoothed_array, driver, xsize, ysize, GeoT, Projection, DataType, NDV)
         smoothed_array = None
-        print "created Smoothed Geotiff"
+        print("created Smoothed Geotiff")
 
 #def smooth_bathy(src_gdal, smooth_factor):
     # gdal-split by 0

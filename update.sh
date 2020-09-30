@@ -1,4 +1,4 @@
 #!/bin/sh
 
 #git pull
-pip install --user --upgrade ./
+pip3 install --user --upgrade ./
