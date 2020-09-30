@@ -371,23 +371,23 @@ def yield_cmd(cmd, data_fun = None, verbose = False):
 
     returns [command-output, command-return-code]'''
     
-    if verbose: echo_msg('running cmd: {}...'.format(cmd.rstrip()))    
-    if data_fun is not None:
-        pipe_stdin = subprocess.PIPE
-    else: pipe_stdin = None
-    p = subprocess.Popen(cmd, shell = True, stdin = pipe_stdin, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)    
+    #if verbose: echo_msg('running cmd: {}...'.format(cmd.rstrip()))    
+    #if data_fun is not None:
+    #    pipe_stdin = subprocess.PIPE
+    #else: pipe_stdin = None
+    p = subprocess.Popen(cmd, shell = True, stdout = subprocess.PIPE, close_fds = True)
 
-    if data_fun is not None:
-        if verbose: echo_msg('piping data to cmd subprocess...')
-        data_fun(p.stdin)
-        p.stdin.close()
+    #if data_fun is not None:
+    #    if verbose: echo_msg('piping data to cmd subprocess...')
+    #    data_fun(p.stdin)
+    #    p.stdin.close()
 
     while True:
         line = p.stdout.readline().decode('utf-8')
         if not line: break
         else: yield(line)
     p.stdout.close()
-    if verbose: echo_msg('ran cmd: {} and returned {}.'.format(cmd.rstrip(), p.returncode))
+    #if verbose: echo_msg('ran cmd: {} and returned {}.'.format(cmd.rstrip(), p.returncode))
 
 def cmd_check(cmd_str, cmd_vers_str):
     '''check system for availability of 'cmd_str' 
@@ -2419,17 +2419,17 @@ def gmt_yield_entry(entry, region = None, verbose = False, z_region = None):
 
     yields [x, y, z, <w, ...>]'''
     ln = 0
-    delim = None
-    if z_region is not None:
-        z_region = ['-' if x is None else str(x) for x in z_region]
+    delim = ' '
+    if z_region is not None: z_region = ['-' if x is None else str(x) for x in z_region]
     out, status = run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
-    for line in yield_cmd('gmt gmtselect -V {} {} {}\
+    for line in yield_cmd('gmt gmtselect {} {} {}\
     '.format(entry[0], '' if region is None else region_format(region, 'gmt'), '' if z_region is None else '-Z{}'.format('/'.join(z_region))),
                           data_fun = None, verbose = False):
         ln += 1
-        if delim is None: delim = xyz_line_delim(line)
-        xyz = [float(x) for x in line.split(delim)]
-        yield(xyz + [entry[2]] if entry[2] is not None else xyz)
+        #if delim is None: delim = xyz_line_delim(line)
+        yield(line)
+        #xyz = [float(x) for x in line.split(delim)]
+        #yield(xyz + [entry[2]] if entry[2] is not None else xyz)
     if verbose: echo_msg('read {} data points from {}'.format(ln, entry[0]))
         
 def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, z_region = None):
@@ -2651,6 +2651,7 @@ def datalist_yield_entry(this_entry, region, verbose = False, z_region = None, w
 
     if this_entry[1] == 168:
         for xyz in xyz_yield_entry(this_entry, region = region, verbose = verbose, z_region = z_region):
+            #for xyz in gmt_yield_entry(this_entry, region = region, verbose = verbose, z_region = z_region):
             yield(xyz)
     elif this_entry[1] == 200:
         for xyz in gdal_yield_entry(this_entry, region = region, verbose = verbose, z_region = z_region):
@@ -2891,7 +2892,7 @@ waffles_grid_node_region = lambda wg: region_buffer(wg['region'], wg['inc'] * .5
 ## the "proc-region" region_buffer(wg['region'], (wg['inc'] * 20) + (wg['inc'] * wg['extend']))
 ## ==============================================
 waffles_proc_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * wg['extend_proc']) + (wg['inc'] * wg['extend']))
-waffles_coast_region = lambda wg: region_buffer(wg['region'], (wg['inc'] * wg['extend_proc']) + (wg['inc'] * wg['extend']) + (wg['inc'] * 200))
+waffles_coast_region = lambda wg: region_buffer(waffles_proc_region(wg), (wg['inc'] * 200))
 waffles_proc_str = lambda wg: region_format(waffles_proc_region(wg), 'gmt')
 waffles_proc_bbox = lambda wg: region_format(waffles_proc_region(wg), 'bbox')
 waffles_proc_ul_lr = lambda wg: region_format(waffles_proc_region(wg), 'ul_lr')
@@ -4152,6 +4153,7 @@ def waffles_cli(argv = sys.argv):
             if len(wr) > 1:
                 wg['w_region'] = [None if x == '-' else float(x) for x in wr]
         elif arg == '-w' or arg == '--weights': wg['weights'] = True
+        elif arg == '-h' or arg == '--threads': want_threads = True
         elif arg == '-p' or arg == '--prefix': want_prefix = True
         elif arg == '-a' or arg == '--archive': wg['archive'] = True
         elif arg == '-m' or arg == '--mask': wg['mask'] = True
@@ -4260,7 +4262,7 @@ def waffles_cli(argv = sys.argv):
             else: dem = waffles_run(twg)
     if want_threads:
         wq = queue.Queue()
-        num_threads = 3 if len(these_wgs) > 1 else len(these_wgs)
+        num_threads = 2 if len(these_wgs) > 1 else len(these_wgs)
         for _ in range(num_threads):
             t = threading.Thread(target = waffles_queue, args = (wq, ))
             t.daemon = True
@@ -4452,20 +4454,22 @@ def datalists_cli(argv = sys.argv):
         ## ==============================================
         ## Load the input datalist
         ## ==============================================
-        datalist_major = datalist_major(dls, region = this_region)
+        dl_m = datalist_major(dls, region = this_region)
+        echo_msg('processed datalist')
         dlp_hooks = datalist_default_hooks()
         dlp_hooks.append(lambda e: regions_intersect_ogr_p(this_region, inf_entry(e)))
 
         if want_inf:
-            datalist_inf_entry([datalist_major, -1, 1])
+            datalist_inf_entry([dl_m, -1, 1])
         elif want_region:
-            print(datalist_inf(datalist_major, False, False))
+            print(datalist_inf(dl_m, False, False))
         elif want_list:
-            for this_entry in datalist(datalist_major, wt = 1, pass_h = dlp_hooks):
+            for this_entry in datalist(dl_m, wt = 1, pass_h = dlp_hooks):
                 print(' '.join([','.join(x) if i == 3 else os.path.abspath(str(x)) if i == 0 else str(x) for i,x in enumerate(this_entry[:-1])]))
         elif want_mask: pass
-        else: datalist_dump_xyz(datalist_major, wt = 1 if want_weights else None, pass_h = dlp_hooks, region = this_region)
-        remove_glob(datalist_major)
+        else:
+            datalist_dump_xyz(dl_m, wt = 1 if want_weights else None, pass_h = dlp_hooks, region = this_region)
+        remove_glob(dl_m)
         
 ## ==============================================
 ## mainline -- run waffles directly...
