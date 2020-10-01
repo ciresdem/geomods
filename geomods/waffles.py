@@ -93,8 +93,8 @@ import gdal
 import ogr
 import osr
 
-from geomods import fetches
-#import fetches
+#from geomods import fetches
+import fetches
 
 ## ==============================================
 ## General utility functions - utils.py
@@ -3030,7 +3030,10 @@ def waffles_polygonize_datalist(wg, entry, dlp_h = [], layer = None,
             [out_feat.SetField(f, o_v_fields[i]) for i, f in enumerate(v_fields)]
             layer.CreateFeature(out_feat)
 
-        tmp_ds = tmp_layer = out_feat = None
+        tmp_ds = None
+        tmp_layer = None
+        out_feat = None
+        
         if layer is not None:
             remove_glob('{}_poly.*'.format(twg['name']))
     remove_glob(ng)
@@ -3065,7 +3068,6 @@ def waffles_spat_meta(wg, dlp_h = []):
         elif this_entry[-1] == wg['datalist'].split('.')[0]:
             for xyz in datalist_yield_xyz(this_entry[0], pass_h = dlp_h, wt = 1 if wg['weights'] else None, region = waffles_proc_region(wg), archive = wg['archive'], verbose = wg['verbose'], z_region = wg['z_region']):
                 yield(xyz)
-                
     ds = None
 
 ## ==============================================
@@ -3102,10 +3104,10 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     b_wg['fltr'] = None
     b_wg['datalist'] = None
     b_wg['datalists'].append(coast_xyz)
-    #b_wg['mod'] = 'surface'
-    #b_wg['mod_args'] = ('upper_limit=-0.1',)
-    b_wg['mod'] = 'triangulate'
-    b_wg['mod_args'] = ()
+    b_wg['mod'] = 'surface'
+    b_wg['mod_args'] = ('upper_limit=-0.1',)
+    #b_wg['mod'] = 'triangulate'
+    #b_wg['mod_args'] = ()
     #b_wg['mod'] = 'invdst'
     #b_wg['mod_args'] = ('radius1=3s','radius2=3s',)
     b_wg['sample'] = wg['inc']
