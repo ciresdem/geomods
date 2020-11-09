@@ -43,7 +43,7 @@ import gdal
 try:
     import Queue as queue
 except: import queue as queue
-
+from xml.dom import minidom
 import waffles
 #from geomods import waffles
 _version = '0.4.3'
@@ -147,6 +147,9 @@ namespaces = {
     'gco': 'http://www.isotc211.org/2005/gco',
     'gml': 'http://www.isotc211.org/2005/gml',
 }
+thredds_namespaces = {
+    'th': 'http://www.unidata.ucar.edu/namespaces/thredds/InvCatalog/v1.0',
+}
 
 def fetch_queue(q, p):
     '''fetch queue `q` of fetch results'''
@@ -165,9 +168,9 @@ def fetch_queue(q, p):
                 if not os.path.exists(os.path.dirname(fetch_args[1])):
                     try:
                         os.makedirs(os.path.dirname(fetch_args[1]))
-                    except: pass 
-                with open(fetch_args[1].split('.')[0] + '.xyz', 'w') as out_xyz:
-                    #out_xyz = fetch_args[1].split('.')[0] + '.xyz'
+                    except: pass
+                echo_msg(fetch_args[1])
+                with open('.'.join(fetch_args[1].split('.')[:-1]) + '.xyz', 'w') as out_xyz:
                     p._dump_xyz([fetch_args[0], fetch_args[1], fetch_args[-1]], dst_port = out_xyz)
                     
         q.task_done()
@@ -889,7 +892,138 @@ class nos:
         for xyz in self._yield_results_to_xyz(datatype):
             waffles.xyz_line(xyz, dst_port, self._verbose)
                 
-                
+class cudem:
+    def __init__(self, extent = None, filters = [], callback = None):
+
+        self._cudem_catalog = "https://www.ngdc.noaa.gov/thredds/demCatalog.xml"
+        self._ngdc_url = "https://www.ngdc.noaa.gov"
+        self._surveys = []
+        self._results = []
+        self._wcs_results = []
+        self._ref_vector = os.path.join(fetchdata, 'cudem.gmt')
+        self._local_ref_vector = 'cudem.gmt'
+        self._has_vector = True if os.path.exists(self._ref_vector) else False
+        self._outdir = os.path.join(os.getcwd(), 'cudem')
+        self._status = 0
+        self.stop = callback
+        self._filters = filters
+        self.region = extent
+        self._boundsGeom = None
+        self._datalists_code = 410
+        self._verbose = False
+
+    def run(self, datatype = None, update = False):
+        '''Run the cudem fetching module.'''
+        self._want_update = update
+        if self._want_update:
+            self._update()
+            return([])
+        else:
+            if self.region is None: return([])
+            self.dt = datatype
+            self._boundsGeom = bounds2geom(self.region)
+            self._filter_reference_vector()
+        return(self._results)
+
+    ## ==============================================
+    ## Reference Vector Generation
+    ## ==============================================
+
+    def _parse_ds_catalog(self, ds_xml, ds_url, want_update = False):
+        print("cudemfetch: scanning %s" %(ds_url))
+        #if want_update:
+        #    gmt1 = ogr.GetDriverByName('GMT').Open(fetchdata + "cudem.gmt", 0)
+        #    layer = gmt1.GetLayer()
+        #else:
+        layer = []
+        ds = ds_xml.findall('.//th:dataset', namespaces = thredds_namespaces)
+        ds_services = ds_xml.findall('.//th:service', namespaces = thredds_namespaces)
+
+        for node in ds:
+            ds_name = node.attrib['name']
+            ds_id = node.attrib['ID']
+            sub_catalogRefs = node.findall('.//th:catalogRef', namespaces = thredds_namespaces)
+            if len(sub_catalogRefs) > 0:
+                self._parse_catalog(node, ds_url)
+                break
+            #if self.want_update:
+            #    layer.SetAttributeFilter("Name = '%s'" %(str(ds_name)))
+            if len(layer) == 0:
+                try:
+                    ds_path = node.attrib['urlPath']
+                except: continue
+                if ds_path:
+                    iso_url = False
+                    wcs_url = False
+                    http_url = False
+                    for service in ds_services:
+                        service_name = service.attrib['name']
+                        if service_name == 'iso':
+                            iso_url = self._ngdc_url + service.attrib['base'] + ds_path
+                        if service_name == 'wcs':
+                            wcs_url = self._ngdc_url + service.attrib['base'] + ds_path
+                        if service_name == 'http':
+                            http_url = self._ngdc_url + service.attrib['base'] + ds_path
+                    if iso_url and http_url and wcs_url:
+                        iso_xml = fetch_nos_xml(iso_url)
+                        #iso_xml = self._fetch_xml(iso_url)
+
+                        wl = iso_xml.find('.//gmd:westBoundLongitude/gco:Decimal', namespaces = namespaces)
+                        el = iso_xml.find('.//gmd:eastBoundLongitude/gco:Decimal', namespaces = namespaces)
+                        sl = iso_xml.find('.//gmd:southBoundLatitude/gco:Decimal', namespaces = namespaces)
+                        nl = iso_xml.find('.//gmd:northBoundLatitude/gco:Decimal', namespaces = namespaces)
+                        if wl is not None and el is not None and sl is not None and nl is not None:
+                            obbox = bounds2geom([float(wl.text), float(el.text), float(sl.text), float(nl.text)])
+                        else: obbox = None
+                        dt = iso_xml.find('.//gmd:date/gco:Date', namespaces = namespaces)
+                        odt = dt.text[:4] if dt is not None else '0000'
+
+                        survey = [obbox, ds_name, ds_id, odt, iso_url, wcs_url, ds_id.split('/')[:-1]]
+                        print(survey)
+                        self._surveys.append(survey)
+        print("cudemfetch: found %s dems in %s" %(len(self._surveys), ds_url))
+    
+    def _parse_catalog(self, catalog_xml, catalog_url, want_update = False):
+
+        catalogRefs = catalog_xml.findall('.//th:catalogRef', namespaces = thredds_namespaces)
+        for catalog in catalogRefs:
+            cat_href = catalog.attrib['{http://www.w3.org/1999/xlink}href']
+            if cat_href[0] == "/":
+                cat_url = self._ngdc_url + cat_href
+            else: cat_url = os.path.dirname(catalog_url) + "/" + cat_href
+            xmldoc = fetch_nos_xml(cat_url)
+            self._parse_ds_catalog(xmldoc, cat_url, want_update)
+    
+    def _update(self):
+        cudem_cat_xml = fetch_nos_xml(self._cudem_catalog)
+        self._parse_catalog(cudem_cat_xml, self._cudem_catalog, True)
+        update_ref_vector(self._local_ref_vector, self._surveys, self._has_vector)
+
+    ## ==============================================
+    ## Filter for results
+    ## ==============================================
+    def _filter_reference_vector(self):
+        '''Search for data in the reference vector file'''
+
+        echo_msg('filtering CUDEM reference vector...')
+        ds = ogr.Open(self._ref_vector)
+        layer = ds.GetLayer(0)
+
+        for filt in self._filters:
+            layer.SetAttributeFilter('{}'.format(filt))
+
+        for feature1 in layer:
+            geom = feature1.GetGeometryRef()
+            if self._boundsGeom.Intersects(geom):
+                wcs_url_service = "{}?request=GetCoverage&version=1.0.0&service=WCS&coverage=z&bbox={}&format=NetCDF3".format(feature1.GetField("Data"), region_format(self.region, 'bbox'))
+                if self.dt is not None:
+                    if feature1.GetField('Datatype').lower() == self.dt.lower():
+                        self._results.append([wcs_url_service, feature1.GetField('Data').split('/')[-1], feature1.GetField('Datatype')])
+                else: self._results.append([wcs_url_service, feature1.GetField('Data').split('/')[-1], feature1.GetField('Datatype')])
+                #print(self._results)
+        ds = layer = None
+        echo_msg('filtered \033[1m{}\033[m data files from CUDEM reference vector.'.format(len(self._results)))
+            
 ## =============================================================================
 ##
 ## Chart Fetch - ENC & RNC
@@ -1367,9 +1501,9 @@ class usace:
         self._status = 0
         self._req = None
         self._results = []
-        self.region = extent
         self._datalists_code = 407
         self._verbose = False
+        self.region = extent
 
     def run(self, stype = None):
         '''Run the USACE fetching module'''
@@ -1545,6 +1679,7 @@ fetch_infos = {
     \t\t\t< gmrt:res=max:fmt=geotiff >
     \t\t\t:res=[an Integer power of 2 zoom level (<=1024)]
     \t\t\t:fmt=[netcdf/geotiff/esriascii/coards]'''],
+    'cudem':[lambda x, f, c: cudem(x, f, c), '''ncei cudem thredds catalog'''],
     'usace':[lambda x, f, c: usace(x, f, c), '''USACE bathymetry surveys via eHydro'''],
     'ngs':[lambda x, f, c: ngs(x, f, c), '''NOAA NGS monuments''']
 }
@@ -1677,14 +1812,14 @@ def fetches_cli(argv = sys.argv):
             fl = fetch_infos[fetch_mod][0](region_buffer(this_region, 5, pct = True), f, lambda: stop_threads)
             fl._verbose = True
             args_d = args2dict(args)
-            try:
-                r = fl.run(**args_d)
-            except ValueError as e:
-                echo_error_msg('something went wrong, {}'.format(e))
-                sys.exit(-1)
-            except Exception as e:
-                echo_error_msg('{}'.format(e))
-                sys.exit(-1)
+            #try:
+            r = fl.run(**args_d)
+            #except ValueError as e:
+            #    echo_error_msg('something went wrong, {}'.format(e))
+            #    sys.exit(-1)
+            #except Exception as e:
+            #    echo_error_msg('{}'.format(e))
+            #    sys.exit(-1)
             echo_msg('found {} data files.'.format(len(r)))
             
             if want_list:
@@ -1698,7 +1833,7 @@ def fetches_cli(argv = sys.argv):
                     while True:
                         time.sleep(2)
                         sys.stderr.write('\x1b[2K\r')
-                        perc = float((len(r) - fr.fetch_q.qsize())) / len(r) * 100
+                        perc = float((len(r) - fr.fetch_q.qsize())) / len(r) * 100 if len(r) > 0 else 1
                         sys.stderr.write('fetches: fetching remote data files [{:.3f}%]'.format(perc))
                         sys.stderr.flush()
                         if not fr.is_alive():

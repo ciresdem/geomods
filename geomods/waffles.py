@@ -99,7 +99,7 @@ import fetches
 ## ==============================================
 ## General utility functions - utils.py
 ## ==============================================
-_version = '0.5.9'
+_version = '0.6.0'
 
 def inc2str_inc(inc):
     '''convert a WGS84 geographic increment to a str_inc (e.g. 0.0000925 ==> `13`)
@@ -1305,7 +1305,56 @@ def gdal_yield_query(src_xyz, src_grd, out_form):
                     for i in out_form:
                         outs.append(vars()[i])
                     yield(outs)
+
+def gdal_query2(src_xyz, src_grd, out_form):
+    '''query a gdal-compatible grid file with xyz data.
+    out_form dictates return values
+
+    yields out_form results'''
     
+    xyzl = []
+    out_array = []
+
+    ## ==============================================
+    ## Process the src grid file
+    ## ==============================================
+    ds = gdal.Open(src_grd)
+    if ds is not None:
+        ds_config = gdal_gather_infos(ds)
+        ds_band = ds.GetRasterBand(1)
+        ds_gt = ds_config['geoT']
+        ds_nd = ds_config['ndv']
+        tgrid = ds_band.ReadAsArray()
+
+        ## ==============================================   
+        ## Process the src xyz data
+        ## ==============================================
+        for xyz in src_xyz:
+            x = xyz[0]
+            y = xyz[1]
+            try: 
+                z = xyz[2]
+            except: z = ds_nd
+
+            if x > ds_gt[0] and y < float(ds_gt[3]):
+                xpos, ypos = _geo2pixel(x, y, ds_gt)
+                try: 
+                    g = tgrid[ypos, xpos]
+                except: g = ds_nd
+                #print(g)
+                d = c = m = s = ds_nd
+                if g != ds_nd:
+                    d = z - g
+                    m = z + g
+                    #c = con_dec(math.fabs(d / (g + 0.00000001) * 100), 2)
+                    #s = con_dec(math.fabs(d / (z + (g + 0.00000001))), 4)
+                    #d = con_dec(d, 4)
+                    outs = []
+                    for i in out_form:
+                        outs.append(vars()[i])
+                    yield(outs)
+        dsband = ds = None
+                    
 def np_split(src_arr, sv = 0, nd = -9999):
     '''split numpy `src_arr` by `sv` (turn u/l into `nd`)
 
@@ -1496,8 +1545,8 @@ def gdal_ogr_mask_union(src_layer, src_field, dst_defn = None):
             src_layer.DeleteFeature(f.GetFID())
     #union = multi.UnionCascaded() ## slow on large multi...
     out_feat = ogr.Feature(dst_defn)
-    out_feat.SetGeometry(multi)
-    union = multi = None
+    out_feat.SetGeometryDirectly(multi)
+    #union = multi = None
     return(out_feat)
 
 def gdal_ogr_regions(src_ds):
@@ -1820,7 +1869,7 @@ def gdal_polygonize(src_gdal, dst_layer, verbose = False):
     ds = gdal.Open('{}'.format(src_gdal))
     ds_arr = ds.GetRasterBand(1)
     if verbose: echo_msg('polygonizing {}'.format(src_gdal))
-    gdal.Polygonize(ds_arr, None, dst_layer, 0, callback = _gdal_progress if verbose else None)
+    status = gdal.Polygonize(ds_arr, None, dst_layer, 0, callback = _gdal_progress if verbose else None)
     ds = ds_arr = None
     return(0, 0)
     
@@ -1960,7 +2009,7 @@ def inf_entry(src_entry, overwrite = False):
 ## ==============================================
 ## gdal processing (datalist fmt:200)
 ## ==============================================
-def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = None, verbose = False, z_region = None):
+def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = None, verbose = False, z_region = None, step = 1):
     '''parse the data from gdal dataset src_ds (first band only)
     optionally mask the output with `mask` or transform the coordinates to `warp` (epsg-code)
 
@@ -2466,7 +2515,7 @@ def datalist_inf(dl, inf_file = True, overwrite = False):
     out_regions = []
     minmax = None
     dp_h = _dl_pass_h
-    dp_h.append(lambda e: region_valid_p(inf_entry(e, True)) if e[1] == -1 else region_valid_p(inf_entry(e)))
+    #dp_h.append(lambda e: region_valid_p(inf_entry(e, True)) if e[1] == -1 else region_valid_p(inf_entry(e)))
 
     echo_msg('generating inf for datalist {}'.format(dl))
     
@@ -2597,11 +2646,13 @@ def datalist2py(dl, region = None):
     this_entry = entry2py(dl)
     this_dir = os.path.dirname(this_entry[0])
     if this_entry[1] == -1:
-        with open(this_entry[0], 'r') as op:
-            for this_line in op:
-                if this_line[0] != '#' and this_line[0] != '\n' and this_line[0].rstrip() != '':
-                    these_entries.append([os.path.join(this_dir, x) if n == 0 else x for n,x in enumerate(entry2py(this_line.rstrip()))])
-                    #these_entries.append(entry2py(this_line.rstrip()))
+        if os.path.exists(this_entry[0]):
+            with open(this_entry[0], 'r') as op:
+                for this_line in op:
+                    if this_line[0] != '#' and this_line[0] != '\n' and this_line[0].rstrip() != '':
+                        these_entries.append([os.path.join(this_dir, x) if n == 0 else x for n,x in enumerate(entry2py(this_line.rstrip()))])
+                        #these_entries.append(entry2py(this_line.rstrip()))
+        else: echo_error_msg('could not open datalist/entry {}'.format(this_entry[0]))
     elif this_entry[1] == 400:
         fetch_mod = this_entry[0].split(':')[0]
         fetch_args = this_entry[0].split(':')[1:]
@@ -2644,7 +2695,7 @@ def datalist(dl, wt = None, pass_h = _dl_pass_h,
                         yield(entry)
                 else: yield(this_entry)
 
-def datalist_yield_entry(this_entry, region, verbose = False, z_region = None, w_region = None):
+def datalist_yield_entry(this_entry, region = None, verbose = False, z_region = None, w_region = None):
     '''yield the xyz data from the datalist entry [entry/path, entry-format, entry-weight]
 
     yields xyz line data [x, y, z, ...]'''
@@ -2725,7 +2776,6 @@ def datalist_yield_xyz(dl, wt = None, pass_h = _dl_pass_h,
     for xyz in datalist_yield_xyz(dl): xyz_line(xyz)
 
     yields xyz line data [x, y, z, ...]'''
-
     for this_entry in datalist(dl, wt = wt, pass_h = pass_h, verbose = verbose):
         dly = datalist_yield_entry(this_entry, region, verbose = verbose, z_region = z_region)
         if archive: dly = datalist_archive_yield_entry(this_entry, dirname = 'archive', region = region, weight = wt, verbose = verbose, z_region = z_region)
@@ -2828,59 +2878,71 @@ def waffles_config(datalist = None, datalists = [], region = None, inc = None, n
         if wg['datalist'] is None:
             echo_error_msg('invalid datalist/s entry')
             return(None)
-        
+
     if wg['region'] is None or not region_valid_p(wg['region']):
-        echo_error_msg('invalid region and/or datalist/s entry')
+        #if wg['mod'].lower() == 'datalists':
+        #    wg['region'] = [-180, 180, -90, 90]
+        #else:
+        echo_error_msg('invalid region {}'.format(wg['region']))
         return(None)
 
     if wg['inc'] is None: wg['inc'] = (wg['region'][1] - wg['region'][0]) / 500
     
     return(wg)
 
+## ==============================================
+## The waffles modules
+## { 'module-name': [module-lambda, module description], ... }
+## the module lambda should point to a function that takes at least
+## the waffles config as its first option (e.g. def mod(wg))
+## ==============================================
 _waffles_modules = {
     'surface': [lambda args: waffles_gmt_surface(**args), '''SPLINE DEM via GMT surface
-    \t\t\t  < surface:tension=.35:relaxation=1.2:lower_limit=d:upper_limit=d >
-    \t\t\t  :tension=[0-1] - Spline tension.'''],
+    < surface:tension=.35:relaxation=1.2:lower_limit=d:upper_limit=d >
+     :tension=[0-1] - Spline tension.'''],
     'triangulate': [lambda args: waffles_gmt_triangulate(**args), '''TRIANGULATION DEM via GMT triangulate'''],
     'cudem': [lambda args: waffles_cudem(**args), '''Generate a CUDEM Bathy/Topo DEM <beta>'''],
-    'bathy': [lambda args: waffles_bathy_surface(**args), '''Generate a CUDEM Bathy-Surface DEM <beta>'''],
+    'update': [lambda args: waffles_update_dem(**args), '''Update a CUDEM DEM with data from datalist <beta>'''],
     'nearest': [lambda args: waffles_nearneighbor(**args), '''NEAREST NEIGHBOR DEM via GMT or gdal_grid
-    \t\t\t  < nearest:radius=6s:use_gdal=False >
-    \t\t\t  :radius=[value] - Nearest Neighbor search radius
-    \t\t\t  :use_gdal=[True/False] - use gdal grid nearest algorithm'''],
+    < nearest:radius=6s:use_gdal=False >
+     :radius=[value] - Nearest Neighbor search radius
+     :use_gdal=[True/False] - use gdal grid nearest algorithm'''],
     'num': [lambda args: waffles_num(**args), '''Uninterpolated DEM populated by <mode>.
-    \t\t\t  < num:mode=n >
-    \t\t\t  :mode=[key] - specify mode of grid population: k (mask), m (mean) or n (num)'''],
+    < num:mode=n >
+     :mode=[key] - specify mode of grid population: k (mask), m (mean) or n (num)'''],
     'vdatum': [lambda args: waffles_vdatum(**args), '''VDATUM transformation grid
-    \t\t\t  < vdatum:ivert=navd88:overt=mhw:region=3:jar=None >
-    \t\t\t  :ivert=[vdatum] - Input VDatum vertical datum.
-    \t\t\t  :overt=[vdatum] - Output VDatum vertical datum.
-    \t\t\t  :region=[0-10] - VDatum region (3 is CONUS).
-    \t\t\t  :jar=[/path/to/vdatum.jar] - VDatum jar path - (auto-locates by default)'''],
+    < vdatum:ivert=navd88:overt=mhw:region=3:jar=None >
+     :ivert=[vdatum] - Input VDatum vertical datum.
+     :overt=[vdatum] - Output VDatum vertical datum.
+     :region=[0-10] - VDatum region (3 is CONUS).
+     :jar=[/path/to/vdatum.jar] - VDatum jar path - (auto-locates by default)'''],
     'mbgrid': [lambda args: waffles_mbgrid(**args), '''Weighted SPLINE DEM via mbgrid
-    \t\t\t  < mbgrid:tension=35:dist=10/3:use_datalists=False >
-    \t\t\t  :tension=[0-100] - Spline tension.
-    \t\t\t  :dist=[value] - MBgrid -C switch (distance to fill nodata with spline)
-    \t\t\t  :use_datalists=[True/False] - use waffles built-in datalists'''],
+    < mbgrid:tension=35:dist=10/3:use_datalists=False >
+     :tension=[0-100] - Spline tension.
+     :dist=[value] - MBgrid -C switch (distance to fill nodata with spline)
+     :use_datalists=[True/False] - use waffles built-in datalists'''],
     'invdst': [lambda args: waffles_invdst(**args), '''INVERSE DISTANCE DEM via gdal_grid
-    \t\t\t  < invdst:power=2.0:smoothing=0.0:radus1=0.1:radius2:0.1 >'''],
+    < invdst:power=2.0:smoothing=0.0:radus1=0.1:radius2:0.1 >'''],
     'average': [lambda args: waffles_moving_average(**args), '''Moving AVERAGE DEM via gdal_grid
-    \t\t\t  < average:radius1=0.01:radius2=0.01 >'''],
+    < average:radius1=0.01:radius2=0.01 >'''],
     'linear': [lambda args: waffles_linear(**args), '''LINEAR DEM via gdal_grid
-    \t\t\t  < linear:radius=0.01 >'''],
+    < linear:radius=0.01 >'''],
+    'spat-meta': [lambda args: waffles_spatial_metadata(**args), '''generate SPATIAL-METADATA'''],
+    'uncertainty': [lambda args: waffles_interpolation_uncertainty(**args), '''generate DEM UNCERTAINTY
+    < uncertainty:dem=None:msk=None:prox=None:slp=None:sims=2 >'''],
     'help': [lambda args: waffles_help(**args), '''display module info'''],
     'datalists': [lambda args: waffles_datalists(**args), '''recurse the DATALIST
-    \t\t\t  < datalists:dump=False:echo=False:infos=False:recurse=True >
-    \t\t\t  :dump=[True/False] - dump the data from the datalist(s)
-    \t\t\t  :echo=[True/False] - echo the data entries from the datalist(s)
-    \t\t\t  :infos=[True/False] - generate inf files for the datalists datalist entries.
-    \t\t\t  :recurse=[True/False] - recurse the datalist (default = True)'''],
+    < datalists:dump=False:echo=False:infos=False:recurse=True >
+     :dump=[True/False] - dump the data from the datalist(s)
+     :echo=[True/False] - echo the data entries from the datalist(s)
+     :infos=[True/False] - generate inf files for the datalists datalist entries.
+     :recurse=[True/False] - recurse the datalist (default = True)'''],
 }
 
 ## ==============================================
 ## module descriptors (used in cli help)
 ## ==============================================
-_waffles_module_long_desc = lambda x: 'waffles modules:\n% waffles ... -M <mod>:key=val:key=val...\n\n  ' + '\n  '.join(['{:22}{}\n'.format(key, x[key][-1]) for key in x]) + '\n'
+_waffles_module_long_desc = lambda x: 'waffles modules:\n% waffles ... -M <mod>:key=val:key=val...\n\n  ' + '\n  '.join(['{:14}{}\n'.format(key, x[key][-1]) for key in x]) + '\n'
 _waffles_module_short_desc = lambda x: ', '.join(['{}'.format(key) for key in x])
 
 ## ==============================================
@@ -2950,10 +3012,8 @@ def waffles_yield_datalist(wg = _waffles_grid_info):
     
     region = waffles_proc_region(wg)
     dlp_hooks = waffles_dlp_hooks(wg)
-
-    if wg['spat']:
-        dly = waffles_spat_meta(wg, dlp_hooks)
-    else:  dly = datalist_yield_xyz(wg['datalist'], pass_h = dlp_hooks, wt = 1 if wg['weights'] else None, region = region, archive = wg['archive'], verbose = wg['verbose'], z_region = wg['z_region'])
+    
+    dly = datalist_yield_xyz(wg['datalist'], pass_h = dlp_hooks, wt = 1 if wg['weights'] else None, region = region, archive = wg['archive'], verbose = wg['verbose'], z_region = wg['z_region'])
     if wg['mask']: dly = gdal_xyz_mask(dly, '{}_msk.tif'.format(wg['name']), region, wg['inc'], dst_format = wg['fmt'])
     for xyz in dly: yield(xyz)
     
@@ -2994,51 +3054,10 @@ def waffles_datalists(wg = _waffles_grid_info, dump = False, echo = False, infos
     return(0,0)
 
 ## ==============================================
-## Spatial Metadata
+## Waffles Spatial Metadata
+## Polygonize each datalist entry into vector data source
 ## ==============================================
-def waffles_polygonize_datalist(wg, entry, dlp_h = [], layer = None,
-                                v_fields = ['Name', 'Agency', 'Date', 'Type', 'Resolution', 'HDatum', 'VDatum', 'URL']):
-    '''polygonize the datalist entry given options from waffles-config wg.
-    the layer should be the major ogr layer to append polygon to.'''
-
-    defn = None if layer is None else layer.GetLayerDefn()
-    
-    twg = waffles_config_copy(wg)
-    twg['datalist'] = entry[0]
-    twg['name'] = os.path.basename(entry[0]).split('.')[0]
-    twg['inc'] = gmt_inc2inc('.3333333s') if twg['inc'] < gmt_inc2inc('.3333333s') else twg['inc']
-    #twg['region'] = waffles_grid_node_region(twg) if wg['node'] == 'grid' else twg['region']
-    twg = waffles_config(**twg)
-    ng = '{}_{}_msk.tif'.format(twg['name'], region_format(twg['region'], 'fn'))
-
-    if len(entry[3]) == 8:
-        o_v_fields = entry[3]
-    else: o_v_fields = [twg['name'], 'Unknown', '0', 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
-    dly = datalist_yield_xyz(entry[0], pass_h = dlp_h, wt = 1 if twg['weights'] else None, region = waffles_proc_region(twg), archive = twg['archive'], verbose = twg['verbose'])
-    for xyz in gdal_xyz_mask(dly, ng, waffles_dist_region(twg), twg['inc'], dst_format = twg['fmt']):
-        yield(xyz)
-
-    if gdal_infos(ng, True)['zr'][1] == 1:
-        tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(twg['name']))
-        tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(twg['name']), None, ogr.wkbMultiPolygon)
-        tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
-        gdal_polygonize(ng, tmp_layer, verbose = twg['verbose'])
-
-        if len(tmp_layer) > 1:
-            if defn is None: defn = tmp_layer.GetLayerDefn()
-            out_feat = gdal_ogr_mask_union(tmp_layer, 'DN', defn)
-            [out_feat.SetField(f, o_v_fields[i]) for i, f in enumerate(v_fields)]
-            layer.CreateFeature(out_feat)
-
-        tmp_ds = None
-        tmp_layer = None
-        out_feat = None
-        
-        if layer is not None:
-            remove_glob('{}_poly.*'.format(twg['name']))
-    remove_glob(ng)
-
-def waffles_spat_meta(wg, dlp_h = []):
+def waffles_spatial_metadata(wg):
     '''generate spatial-metadata'''
 
     dst_vector = '{}_sm.shp'.format(wg['name'])
@@ -3056,20 +3075,44 @@ def waffles_spat_meta(wg, dlp_h = []):
     else: layer = None
     defn = layer.GetLayerDefn()
 
-    dlp_h1 = datalist_default_hooks()
-    #dlp_h1.append(lambda e: False if e[1] != -1 else True)
-    for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = dlp_h, yield_dl_entry = True, verbose = wg['verbose']):
-        #echo_msg(this_entry[-1])
-        #echo_msg(wg['datalist'].split('.')[0])
-        #if this_entry[1] == -1 or this_entry[-1] == wg['datalist'].split('.')[0]:
-        if this_entry[1] == -1:
-            for xyz in waffles_polygonize_datalist(wg, this_entry, dlp_h = dlp_h, layer = layer):
-                yield(xyz)
-        elif this_entry[-1] == wg['datalist'].split('.')[0]:
-            for xyz in datalist_yield_xyz(this_entry[0], pass_h = dlp_h, wt = 1 if wg['weights'] else None, region = waffles_proc_region(wg), archive = wg['archive'], verbose = wg['verbose'], z_region = wg['z_region']):
-                yield(xyz)
-    ds = None
+    for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = waffles_dlp_hooks(wg), yield_dl_entry = True, verbose = wg['verbose']):
+        if this_entry[1] == -1 or this_entry[-1] == wg['datalist'].split('.')[0]:
+            echo_msg(this_entry[0])
 
+            defn = None if layer is None else layer.GetLayerDefn()            
+            twg = waffles_config_copy(wg)
+            twg['datalist'] = this_entry[0]
+            twg['name'] = '{}_{}_msk'.format(os.path.basename(this_entry[0]).split('.')[0], region_format(twg['region'], 'fn'))
+            if twg['inc'] < gmt_inc2inc('.3333333s'):
+                twg['inc'] = gmt_inc2inc('.3333333s')
+                twg['extend'] = twg['extend'] / 3
+            twg = waffles_config(**twg)
+
+            if len(this_entry[3]) == 8:
+                o_v_fields = this_entry[3]
+            else: o_v_fields = [twg['name'], 'Unknown', '0', 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
+
+            out, status = waffles_num(twg, mode='k')
+            waffles_gdal_md(twg)
+            ng = '{}.tif'.format(twg['name'])
+            if gdal_infos(ng, True)['zr'][1] == 1:
+                tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(twg['name']))
+                if tmp_ds is not None:
+                    tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(twg['name']), None, ogr.wkbMultiPolygon)
+                    tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
+                    gdal_polygonize(ng, tmp_layer, verbose = twg['verbose'])
+
+                    if len(tmp_layer) > 1:
+                        if defn is None: defn = tmp_layer.GetLayerDefn()
+                        out_feat = gdal_ogr_mask_union(tmp_layer, 'DN', defn)
+                        [out_feat.SetField(f, o_v_fields[i]) for i, f in enumerate(v_fields)]
+                        layer.CreateFeature(out_feat)
+                tmp_ds = None
+                remove_glob('{}_poly.*'.format(twg['name']))
+            remove_glob(ng)
+    ds = None
+    return(0, 0)
+    
 ## ==============================================
 ## Waffles CUDEM generation module
 ## ==============================================
@@ -3077,7 +3120,7 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     '''generate bathy/topo DEM'''
     
     if wg['gc']['GMT'] is None:
-        echo_error_msg('GMT must be installed to use the BATHY-SURFACE module')
+        echo_error_msg('GMT must be installed to use the CUDEM module')
         return(None, -1)
 
     ## ==============================================
@@ -3089,29 +3132,44 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     ul = -0.1
     if coastline is not None:
 
+        # fetch gmrt to sample coastline
+        #gmrt_res = fetches.gmrt(extent = waffles_coast_region(b_wg)).run()
+        #print(gmrt_res)
+        #gmrt = 'gmrt_{}.tif'.format(region_format(waffles_coast_region(b_wg), 'fn'))
+        #status = fetches.fetch_file(gmrt_res[0][0], gmrt, verbose = True)
+        #print(status)
+        #echo_msg('----------------------------')
+        #echo_msg('generating coastline surface')
+        #echo_msg('----------------------------')
+        #c_wg = waffles_config_copy(wg)
+        #c_wg['inc'] = gmt_inc2inc('3s')
+        #c_wg['name'] = 'coast_{}'.format(wg['name'])
+        #c_wg['mod'] = 'surface'
+        #c_wg['mod_args'] = ('tension=1',)
+        #c_wg = waffles_config(**c_wg)
+        #coast_surf = waffles_run(c_wg)
         out, status = run_cmd('coastline2xyz.sh -I {} -O {}_coast.xyz -Z {} -W {} -E {} -S {} -N {}'\
                               .format(coastline, b_wg['name'], 0, waffles_coast_region(b_wg)[0], waffles_coast_region(b_wg)[1], waffles_coast_region(b_wg)[2], waffles_coast_region(b_wg)[3]), verbose = True)
+        #remove_glob(coast_surf)
         coast_xyz = '{}_coast.xyz'.format(b_wg['name'])
         coast_region = xyz_inf_entry([coast_xyz])
         print(coast_region)
+        #ul = coast_region[5]
 
-    ## generate NN DEM with high weight bathy data
-    b_wg['z_region'] = [None, 1]
-    #b_wg['mod'] = 'surface'
-    #b_wg['mod_args'] = ('radius=1s',)
-    b_wg['name'] = 'bathy_nn_{}'.format(wg['name'])
+    echo_msg('----------------------------')
+    echo_msg('generating bathy surface')
+    echo_msg('----------------------------')
+    b_wg['z_region'] = [None, ul + .5]
+    b_wg['name'] = 'bathy_{}'.format(wg['name'])
     b_wg['spat'] = False
     b_wg['fltr'] = None
     b_wg['datalist'] = None
-    b_wg['datalists'].append(coast_xyz)
+    b_wg['datalists'].append('{} 168 .1'.format(coast_xyz))
     b_wg['mod'] = 'surface'
-    b_wg['mod_args'] = ('upper_limit=-0.1',)
+    b_wg['mod_args'] = ('upper_limit={}'.format(ul),)
     #b_wg['mod'] = 'triangulate'
-    #b_wg['mod_args'] = ()
-    #b_wg['mod'] = 'invdst'
-    #b_wg['mod_args'] = ('radius1=3s','radius2=3s',)
     b_wg['sample'] = wg['inc']
-    b_wg['inc'] = gmt_inc2inc('3s')
+    b_wg['inc'] = gmt_inc2inc('1s')
     b_wg['name'] = 'bathy_{}'.format(wg['name'])
     b_wg['clip'] = '{}:invert=True'.format(coastline)
     b_wg['extend_proc'] = 40
@@ -3122,6 +3180,9 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     bathy_surf = waffles_run(b_wg)
     remove_glob(coast_xyz)
 
+    echo_msg('----------------------------')
+    echo_msg('generating integrated bathy-topo surface')
+    echo_msg('----------------------------')
     ## ==============================================
     ## append the bathy-surface to the datalist and
     ## generate final DEM using 'surface'
@@ -3136,157 +3197,58 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     return(waffles_gmt_surface(wg))
 
 ## ==============================================
-## Waffles BATHY-SURFACE module
+## Waffles Update module <beta>
 ## ==============================================
-def waffles_bathy_surface(wg = _waffles_grid_info, coastline = None):
-    '''generate bathy/topo DEM'''
-    
-    if wg['gc']['GMT'] is None:
-        echo_error_msg('GMT must be installed to use the BATHY-SURFACE module')
-        return(None, -1)
-    ## ==============================================
-    ## generate the bathy-surface
-    ## using 'surface' with upper_limit of -0.1
-    ## at 1 arc-second spacing
-    ## ==============================================
-    b_wg = waffles_config_copy(wg)
-    ul = -0.1
-    if coastline is not None:
-        # fetch gmrt to sample coastline
-        #gmrt_res = fetches.gmrt(extent = waffles_proc_region(b_wg)).run()
-        #print(gmrt_res)
-        #gmrt = 'gmrt_{}.tif'.format(region_format(waffles_proc_region(b_wg), 'fn'))
-        #status = fetches.fetch_file(gmrt_res[0][0], gmrt, verbose = True)
-        #print(status)
-        #out, status = run_cmd('coastline2xyz.sh -I {} -Z 0 -W {}'.format(coastline, gdal_region2wkt(waffles_proc_region(b_wg))), verbose = True)
-        out, status = run_cmd('coastline2xyz.sh -I {} -O {}_coast.xyz -Z {} -W {} -E {} -S {} -N {}'\
-                              .format(coastline, b_wg['name'], 0, waffles_proc_region(b_wg)[0], waffles_proc_region(b_wg)[1], waffles_proc_region(b_wg)[2], waffles_proc_region(b_wg)[3]), verbose = True)
-        #coast_xyz = '{}.xyz'.format('.'.join(os.coastline.split('.')[0:-1]))
-        #remove_glob(gmrt)
-        coast_xyz = '{}_coast.xyz'.format(b_wg['name'])
-        #b_wg['datalist'] = None
-        #b_wg['datalists'].append(coast_xyz)
-        ## take coastline to xyz and add to datalist (z = 0)
-        coast_region = xyz_inf_entry([coast_xyz])
-        #ul = coast_region[5]
-        print(coast_region)
+def waffles_update_dem(wg = _waffles_grid_info, dem = None):
+    ## grid datalist with nearneighbor
+    nn_wg = waffles_config_copy(wg)
+    nn_wg['mod'] = 'surface'
+    nn_wg['mod_args'] = ()
+    nn_wg['name'] = 'surf_{}'.format(wg['name'])
+    nn_wg['spat'] = True
+    nn_wg['mask'] = False
+    nn_wg['fltr'] = None
+    nn_wg['sample'] = wg['inc']
+    nn_wg['inc'] = gmt_inc2inc('1s')
+    nn_wg['clip'] = '{}_sm.shp:invert=True'.format(wg['name'])
 
-    ## generate NN DEM with high weight bathy data
-    b_wg['z_region'] = [None, 1]
-    b_wg['mod'] = 'nearest'
-    b_wg['mod_args'] = ('radius=3s',)
-    b_wg['name'] = 'bathy_nn_{}'.format(wg['name'])
-    b_wg['spat'] = False
-    #b_wg['mask'] = True
-    b_wg['fltr'] = None
-    b_wg['w_region'] = [.9,None]
-    b_wg = waffles_config(**b_wg)
+    nn_dem = waffles_run(nn_wg)
     
-    bathy_surf_nn = waffles_run(b_wg)
-    #bathy_surf_nn_msk = 'bathy_nn_{}_msk.tif'.format(wg['name'])
-
-    ## generate surface DEM with all bathy data at 1 arc/sec
-    bb_wg = waffles_config_copy(b_wg)
-    bb_wg['datalist'] = None
-    #bb_wg['datalists'].append('{} 200 .5'.format(bathy_surf_nn))
-    bb_wg['datalists'].append(coast_xyz)
-    bb_wg['mod'] = 'surface'
-    bb_wg['mod_args'] = ('upper_limit=-0.1','tension=.25',)
-    bb_wg['w_region'] = None
-    bb_wg['sample'] = wg['inc']
-    bb_wg['inc'] = gmt_inc2inc('3s')
-    bb_wg['name'] = 'bathy_{}'.format(wg['name'])
-    bb_wg['clip'] = '{}:invert=True'.format(coastline)
-    bb_wg['extend_proc'] = 40
-    bb_wg['mask'] = False
-    bb_wg = waffles_config(**bb_wg)
+    ## mask nearneighbor grid
+    dst_msk = 'msk_{}.tif'.format(nn_wg['name'])
+    gmt_num_msk(nn_dem, '{}=gd:GTiff'.format(dst_msk), verbose = wg['verbose'])
+    gdal_set_nodata('msk_{}.tif'.format(nn_wg['name']), -9999)
+    msk_inf = gdal_infos(dst_msk, scan = False)
+    print(msk_inf)
     
-    bathy_surf = waffles_run(bb_wg)
-    bathy_surf_diff = 'bathy_{}_diff.tif'.format(wg['name'])
+    dem_inf = gdal_infos(dem, scan = False)
+    print(dem_inf)
+    nd = dem_inf['ndv']
     
-    gdc = 'gdal_calc.py -A {} -B {} --calc A-B --outfile {}'.format(bathy_surf_nn, bathy_surf, bathy_surf_diff)
-    run_cmd(gdc, verbose = True)
-
-    d_wg = waffles_config_copy(bb_wg)
-    d_wg['datalist'] = None
-    d_wg['datalists'].append
-    d_wg = waffles_config(**d_wg)
-    diff_grid = waffles_run(d_wg)
+    #dst_msk1 = 'msk_{}.tif'.format(nn_wg['name'])
+    #out, status = run_cmd('gmt grdmath {} {} MUL = {}=gd:GTiff'.format(dst_msk, nd, dst_msk1), verbose = True)
+    #gdal_set_nodata('msk_{}.tif'.format(nn_wg['name']), -9999)
+        
+    ### clip DEM to nearneighbor mask
+    #msk_dem = 'msk_{}'.format(dem)
+    ##out, status = run_cmd('gmt grdmath -N {} {} SUM = {}=gd:GTiff'.format(dem, dst_msk1, msk_dem), verbose = True)
+    #out, status = run_cmd('gdal_calc.py -A {} -B {} --calc A+B --outfile {}'.format(dem, dst_msk1, msk_dem), verbose = True)
     
-    remove_glob(coast_xyz)
+    ## add clipped DEM to datalist
+    f_wg = waffles_config_copy(wg)
+    f_wg['mod'] = 'surface'
+    f_wg['mod_args'] = ()
+    f_wg['datalist'] = None
+    #f_wg['datalists'] =[]
+    f_wg['datalists'].append('{} 200 10'.format(nn_dem))
+    f_wg['datalists'].append('{} 200 .25'.format(dem)) #msk_dem))
+    
+    f_wg = waffles_config(**f_wg)
+    
+    ## grid datalist with surface
+    #dem_update = waffles_run(f_wg)
+    dem_update = waffles_gmt_surface(f_wg)
     return(0, 0)
-    ## ==============================================
-    ## append the bathy-surface to the datalist and
-    ## generate final DEM using 'surface'
-    ## ==============================================
-    # wg['datalist'] = None
-    # wg['datalists'].append('{} 200 1'.format(bathy_surf))
-    # wg['w_region'] = [.4,None]
-    # wg = waffles_config(**wg)
-
-    # print(wg)
-    
-    # return(waffles_gmt_surface(wg))
-
-    
-    # ## ==============================================
-    # ## generate the bathy-surface
-    # ## using 'surface' with upper_limit of -0.1
-    # ## at 1 arc-second spacing
-    # ## ==============================================
-    # ul = -0.1
-    
-    # if coastline is not None:
-    #     # fetch gmrt to sample coastline
-    #     gmrt_res = fetches.gmrt(extent = waffles_proc_region(wg)).run()
-    #     gmrt = 'gmrt_{}.tif'.format(region_format(waffles_proc_region(wg), 'fn'))
-    #     status = fetches.fetch_file(gmrt_res[0][0], gmrt, verbose = True)
-        
-    #     wg['clip'] = '{}:invert=True'.format(coastline)
-    #     out, status = run_cmd('coastline2xyz.sh -I {} -O {}_coast.xyz -Z {} -W {} -E {} -S {} -N {}'\
-    #                           .format(coastline, wg['name'], gmrt, waffles_proc_region(wg)[0],
-    #                                   waffles_proc_region(wg)[1], waffles_proc_region(wg)[2],
-    #                                   waffles_proc_region(wg)[3]), verbose = True)
-    #     remove_glob(gmrt)
-    #     coast_xyz = '{}_coast.xyz'.format(wg['name'])
-    #     wg['datalist'] = None
-    #     wg['datalists'].append(coast_xyz)
-        
-    #     ## take coastline to xyz and add to datalist (z = 0)
-    #     coast_region = xyz_inf_entry([coast_xyz])
-    #     ul = coast_region[5]
-    #     wg['z_region'] = [None, ul]
-        
-    # wg['mod'] = 'surface'
-    # wg['mod_args'] = ('upper_limit={}'.format(ul),'tension=.25',)
-    # wg['sample'] = wg['inc']
-    # wg['inc'] = gmt_inc2inc('1s')
-    # #wg['name'] = 'bathy_{}'.format(wg['name'])
-    # wg['spat'] = False
-    # wg['mask'] = False
-    # wg['fltr'] = None
-    # wg['extend_proc'] = 40
-    # wg = waffles_config(**wg)
-    
-    # #bathy_surf = waffles_run(wg)
-    # args_d = {}
-    # args_d = args2dict(wg['mod_args'], args_d)
-    # args_d['wg'] = wg
-    # out, status = waffles_gmt_surface(**args_d)
-    # remove_glob(coast_xyz)
-    # return(out, status)
-    # ## ==============================================
-    # ## append the bathy-surface to the datalist and
-    # ## generate final DEM using 'surface'
-    # ## ==============================================
-    # # wg['datalist'] = None
-    # # wg['datalists'].append('{} 200 .5'.format(bathy_surf))
-    # # wg['w_region'] = [.4,None]
-    # # wg = waffles_config(**wg)
-
-    # # print(wg)
-    
-    # # return(waffles_gmt_surface(wg))
     
 ## ==============================================
 ## Waffles MBGrid module
@@ -3318,8 +3280,8 @@ def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, use_dat
     if len(dist.split('/')) == 1: dist = dist + '/2'
     mbgrid_cmd = ('mbgrid -I{} {} -D{}/{} -O{} -A2 -G100 -F1 -N -C{} -S0 -X0.1 -T{} {} \
     '.format(wg['datalist'], region_format(region, 'gmt'), xsize, ysize, wg['name'], dist, tension, '-M' if wg['mask'] else ''))
-    for out in yield_cmd(mbgrid_cmd, verbose = wg['verbose']): sys.stderr.write('{}'.format(out))
-    #out, status = run_cmd(mbgrid_cmd, verbose = wg['verbose'])
+    #for out in yield_cmd(mbgrid_cmd, verbose = wg['verbose']): sys.stderr.write('{}'.format(out))
+    out, status = run_cmd(mbgrid_cmd, verbose = wg['verbose'])
 
     remove_glob('*.cmd')
     remove_glob('*.mb-1')
@@ -3388,11 +3350,21 @@ def waffles_num(wg = _waffles_grid_info, mode = 'n'):
     '''Generate an uninterpolated num grid.
     mode of `k` generates a mask grid
     mode of `m` generates a mean grid
-    mode of `n` generates a num grid'''
-    
-    dly = waffles_yield_datalist(wg)
-    if wg['weights']: dly = xyz_block(dly, waffles_proc_region(wg), wg['inc'], weights = True)
-    return(gdal_xyz2gdal(dly, '{}.tif'.format(wg['name']), waffles_proc_region(wg), wg['inc'], dst_format = wg['fmt'], mode = mode, verbose = wg['verbose']))
+    mode of `n` generates a num grid
+    mode of `A<mode> ` generates grid using GMT xyz2grd'''
+
+    if mode[0] == 'A':
+        if wg['gc']['GMT'] is None:
+            echo_error_msg('GMT must be installed to use the SURFACE module')
+            return(None, -1)
+
+        dem_xyz2grd_cmd = ('gmt blockmean {} -I{:.10f}{} -V -r | gmt xyz2grd -{} -V {} -I{:.10f} -G{}.tif=gd+n-9999:GTiff -r\
+        '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', mode, waffles_proc_str(wg), wg['inc'], wg['name']))
+        return(run_cmd(dem_xyz2grd_cmd, verbose = wg['verbose'], data_fun = waffles_dl_func(wg)))
+    else:
+        dly = waffles_yield_datalist(wg)
+        if wg['weights']: dly = xyz_block(dly, waffles_proc_region(wg), wg['inc'], weights = True)
+        return(gdal_xyz2gdal(dly, '{}.tif'.format(wg['name']), waffles_proc_region(wg), wg['inc'], dst_format = wg['fmt'], mode = mode, verbose = wg['verbose']))
 
 ## ==============================================
 ## Waffles GDAL_GRID module
@@ -3497,6 +3469,7 @@ def waffles_vdatum(wg = _waffles_grid_info, ivert = 'navd88', overt = 'mhw',
 
 ## ==============================================
 ## Waffles Interpolation Uncertainty module
+## make own module!
 ## ==============================================
 _unc_config = {
     'wg': waffles_config_copy(_waffles_grid_info),
@@ -3513,7 +3486,7 @@ _unc_config = {
 waffles_unc_config = lambda: copy.deepcopy(_unc_config)
 waffles_unc_config_copy = lambda uc: copy.deepcopy(uc)
 
-def waffles_interpolation_uncertainty(uc = _unc_config):
+def waffles_interpolation_uncertainty(wg = _waffles_grid_info, dem = None, msk = None, prox = None, slp = None, percentile = 95, zones = ['bathy', 'bathy-topo', 'topo'], sims = 10, chnk_lvl = 4):
     '''calculate the interpolation uncertainty
     - as related to distance to nearest measurement.
 
@@ -3521,7 +3494,7 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
     
     s_dp = None
     s_ds = None
-    echo_msg('running INTERPOLATION uncertainty module using {}...'.format(uc['wg']['mod']))
+    echo_msg('running INTERPOLATION uncertainty module using {}...'.format(wg['mod']))
     out, status = run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
     
     ## ==============================================
@@ -3530,23 +3503,23 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
     region_info = {}
         
     ## mask analysis
-    num_sum, g_max, num_perc = gdal_mask_analysis(mask = uc['msk'])
+    num_sum, g_max, num_perc = gdal_mask_analysis(mask =msk)
 
     ## proximity analysis
-    prox_perc_95 = gdal_percentile(uc['prox'], 95)
-    prox_perc_90 = gdal_percentile(uc['prox'], 90)
-    prox_percentile = gdal_percentile(uc['prox'], uc['percentile'])
+    prox_perc_95 = gdal_percentile(prox, 95)
+    prox_perc_90 = gdal_percentile(prox, 90)
+    prox_percentile = gdal_percentile(prox, percentile)
 
-    region_info[uc['wg']['name']] = [uc['wg']['region'], g_max, num_sum, num_perc, prox_percentile] 
+    region_info[wg['name']] = [wg['region'], g_max, num_sum, num_perc, prox_percentile] 
     for x in region_info.keys():
         echo_msg('region: {}: {}'.format(x, region_info[x]))
 
     ## ==============================================
     ## chunk region into sub regions
     ## ==============================================
-    echo_msg('chunking region into sub-regions using chunk level {}...'.format(uc['chnk_lvl']))
-    chnk_inc = int(region_info[uc['wg']['name']][4] * uc['chnk_lvl'])
-    sub_regions = region_chunk(uc['wg']['region'], uc['wg']['inc'], chnk_inc)
+    echo_msg('chunking region into sub-regions using chunk level {}...'.format(chnk_lvl))
+    chnk_inc = int(region_info[wg['name']][4] * chnk_lvl)
+    sub_regions = region_chunk(wg['region'], wg['inc'], chnk_inc)
     echo_msg('chunked region into {} sub-regions.'.format(len(sub_regions)))
 
     ## ==============================================
@@ -3555,8 +3528,8 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
     echo_msg('analyzing {} sub-regions...'.format(len(sub_regions)))
     sub_zones = {}    
     for sc, sub_region in enumerate(sub_regions):
-        gdal_cut(uc['msk'], sub_region, 'tmp_msk.tif')
-        gdal_cut(uc['dem'], sub_region, 'tmp_dem.tif')
+        gdal_cut(msk, sub_region, 'tmp_msk.tif')
+        gdal_cut(dem, sub_region, 'tmp_dem.tif')
         s_sum, s_g_max, s_perc = gdal_mask_analysis('tmp_msk.tif')
         s_dc = gdal_infos('tmp_dem.tif', True)
         zone = 'Bathy' if s_dc['zr'][1] < 0 else 'Topo' if s_dc['zr'][0] > 0 else 'BathyTopo'
@@ -3581,9 +3554,9 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
             t_dens = np.array([x[3] for x in tile_set])
             t_50perc = np.percentile(t_dens, 50)
         else: t_50perc = 0.0
-        echo_msg('Minimum sampling for {} tiles: {}'.format(uc['zones'][z].upper(), t_50perc))
+        echo_msg('Minimum sampling for {} tiles: {}'.format(zones[z].upper(), t_50perc))
         t_trainers = [x for x in tile_set if x[3] > t_50perc]
-        echo_msg('possible {} training zones: {}'.format(uc['zones'][z].upper(), len(t_trainers)))
+        echo_msg('possible {} training zones: {}'.format(zones[z].upper(), len(t_trainers)))
         trainers.append(t_trainers)
     trains = regions_sort(trainers)
     echo_msg('sorted training tiles.')
@@ -3592,8 +3565,8 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
     ## ==============================================
     ## split-sample simulations and error calculations
     ## ==============================================
-    for sim in range(0, uc['sims']):
-        echo_msg_inline('performing SPLIT-SAMPLE simulation {} out of {} [{:3}%]'.format(sim + 1, uc['sims'], 0))
+    for sim in range(0, sims):
+        echo_msg_inline('performing SPLIT-SAMPLE simulation {} out of {} [{:3}%]'.format(sim + 1, sims, 0))
         status = 0
         for z, train in enumerate(trains):
             train_h = train[:25]
@@ -3604,17 +3577,17 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
             ## ==============================================
             for n, sub_region in enumerate(train_h):
                 perc = int(float(n+(len(train_h) * z))/(len(train_h)*len(trains)) * 100)
-                echo_msg_inline('performing SPLIT-SAMPLE simulation {} out of {} [{:3}%]'.format(sim + 1, uc['sims'], perc))
+                echo_msg_inline('performing SPLIT-SAMPLE simulation {} out of {} [{:3}%]'.format(sim + 1, sims, perc))
                 this_region = sub_region[0]
                 if sub_region[3] < ss_samp: ss_samp = None
 
                 ## ==============================================
                 ## extract the xyz data for the region from the DEM
                 ## ==============================================
-                o_xyz = '{}_{}.xyz'.format(uc['wg']['name'], n)
-                ds = gdal.Open(uc['dem'])
+                o_xyz = '{}_{}.xyz'.format(wg['name'], n)
+                ds = gdal.Open(dem)
                 with open(o_xyz, 'w') as o_fh:
-                    for xyz in gdal_parse(ds, srcwin = gdal_srcwin(ds, region_buffer(this_region, (20 * uc['wg']['inc']))), mask = uc['msk']):
+                    for xyz in gdal_parse(ds, srcwin = gdal_srcwin(ds, region_buffer(this_region, (20 * wg['inc']))), mask = msk):
                         xyz_line(xyz, o_fh)
                 ds = None
 
@@ -3643,10 +3616,10 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
                     wc = waffles_config(name = 'sub_{}'.format(n),
                                         datalists = [s_outer, sub_xyz_head],
                                         region = this_region,
-                                        inc = uc['wg']['inc'],
-                                        mod = uc['wg']['mod'],
+                                        inc = wg['inc'],
+                                        mod = wg['mod'],
                                         verbose = False,
-                                        mod_args = uc['wg']['mod_args'],
+                                        mod_args = wg['mod_args'],
                                         mask = True,
                                         )
                     sub_dem = waffles_run(wc)
@@ -3668,7 +3641,7 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
                         sub_xyd = gdal_query(sub_xyz[sx_cnt:], sub_dem, 'xyd')
                         #sub_dp = gdal_query(sub_xyd, sub_prox, 'zg')
                         sub_dp = gdal_query(sub_xyd, sub_prox, 'xyzg')
-                        sub_ds = gdal_query(sub_dp, uc['slp'], 'g')
+                        sub_ds = gdal_query(sub_dp, slp, 'g')
  
                         if len(sub_dp) > 0:
                             if sub_dp.shape[0] == sub_ds.shape[0]:
@@ -3676,7 +3649,10 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
                             else:
                                 print(n)
                                 print(sub_dp.shape)
+                                print(sub_dp)
                                 print(sub_ds.shape)
+                                print(sub_ds)
+                                sys.exit()
                                 sub_dp = []
                     else: sub_dp = None
                     remove_glob(sub_xyz_head)
@@ -3689,7 +3665,7 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
                     else: s_dp = sub_dp
                 remove_glob(o_xyz)
                 remove_glob('sub_{}*'.format(n))
-    echo_msg('ran INTERPOLATION uncertainty module using {}.'.format(uc['wg']['mod']))
+    echo_msg('ran INTERPOLATION uncertainty module using {}.'.format(wg['mod']))
 
     if len(s_dp) > 0:
         ## ==============================================
@@ -3699,17 +3675,17 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
 
         #np.savetxt('{}.err'.format(uc['wg']['name']), s_dp, '%f', ' ')
 
-        d_max = region_info[uc['wg']['name']][4]
+        d_max = region_info[wg['name']][4]
         s_dp = s_dp[s_dp[:,3] < d_max,:]
 
         prox_err = s_dp[:,[2,3]]
         slp_err = s_dp[:,[2,4]]
         
-        np.savetxt('{}_prox.err'.format(uc['wg']['name']), prox_err, '%f', ' ')
-        np.savetxt('{}_slp.err'.format(uc['wg']['name']), slp_err, '%f', ' ')
+        np.savetxt('{}_prox.err'.format(wg['name']), prox_err, '%f', ' ')
+        np.savetxt('{}_slp.err'.format(wg['name']), slp_err, '%f', ' ')
 
-        ec_d = err2coeff(prox_err[:50000000], dst_name = uc['wg']['name'] + '_prox', xa = 'distance')
-        ec_s = err2coeff(slp_err[:50000000], dst_name = uc['wg']['name'] + '_slp', xa = 'slope')
+        ec_d = err2coeff(prox_err[:50000000], dst_name = wg['name'] + '_prox', xa = 'distance')
+        ec_s = err2coeff(slp_err[:50000000], dst_name = wg['name'] + '_slp', xa = 'slope')
 
         ## ==============================================
         ## apply error coefficient to full proximity grid
@@ -3717,13 +3693,13 @@ def waffles_interpolation_uncertainty(uc = _unc_config):
         echo_msg('applying coefficient to proximity grid')
         ## USE numpy instead
         math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_prox_unc.tif=gd+n-9999:GTiff\
-        '.format(uc['prox'], ec_d[2], ec_d[1], 0, uc['wg']['name'])
+        '.format(prox, ec_d[2], ec_d[1], 0, wg['name'])
         run_cmd(math_cmd, verbose = uc['wg']['verbose'])
         echo_msg('applied coefficient {} to proximity grid'.format(ec_d))
         
         math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
-        '.format(uc['slp'], ec_s[2], ec_s[1], 0, uc['wg']['name'])
-        run_cmd(math_cmd, verbose = uc['wg']['verbose'])
+        '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
+        run_cmd(math_cmd, verbose = wg['verbose'])
         echo_msg('applied coefficient {} to slope grid'.format(ec_s))
         
     return([ec_d, ec_s])
@@ -3786,9 +3762,13 @@ def waffles_run(wg = _waffles_grid_info):
         echo_msg('running module {} with {} [{}]...'.format(wg['mod'], wg['mod_args'], args_d))
 
     dem = '{}.tif'.format(wg['name'])
+    spat = True if wg['mod'] == 'spat-meta' else False
+    #if wg['mod'].lower() == 'spatial-metadata': wg['spat'] = True
     if wg['mask']: dem_msk = '{}_msk.tif'.format(wg['name'])
-    if wg['spat']: dem_spat = '{}_sm.shp'.format(wg['name'])
-
+    #if wg['spat']: dem_spat = '{}_sm.shp'.format(wg['name'])
+    if spat: dem_spat = '{}_sm.shp'.format(wg['name'])
+    wg['region'] = waffles_grid_node_region(wg) if wg['node'] == 'grid' else wg['region']
+    
     ## ==============================================
     ## optionally generate the DEM in chunks
     ## ==============================================
@@ -3799,31 +3779,33 @@ def waffles_run(wg = _waffles_grid_info):
 
     chunks = []
     if wg['mask']: chunks_msk = []
-    if wg['spat']: chunks_spat = []
+    #if wg['spat']: chunks_spat = []
+    if spat: chunks_spat = []
     for region in s_regions:
         this_wg = waffles_config_copy(wg)
         this_wg['region'] = region
-        this_wg['region'] = waffles_grid_node_region(this_wg) if this_wg['node'] == 'grid' else this_wg['region']
+        #this_wg['region'] = waffles_grid_node_region(this_wg) if this_wg['node'] == 'grid' else this_wg['region']
         this_wg['name'] = 'chunk_{}'.format(region_format(region, 'fn'))
         this_dem = this_wg['name'] + '.tif'
         chunks.append(this_dem)
         if this_wg['mask']:
             this_dem_msk = this_wg['name'] + '_msk.tif'
             chunks_msk.append(this_dem_msk)
-        if this_wg['spat']: chunks_spat.append('{}_sm.shp'.format(this_wg['name']))
+        #if this_wg['spat']: chunks_spat.append('{}_sm.shp'.format(this_wg['name']))
+        if spat: chunks_spat.append('{}_sm.shp'.format(this_wg['name']))
         args_d['wg'] = this_wg
 
         ## ==============================================
         ## gererate the DEM (run the module)
         ## ==============================================
-        try:
-            out, status = _waffles_modules[this_wg['mod']][0](args_d)
-        except KeyboardInterrupt as e:
-            echo_error_msg('killed by user, {}'.format(e))
-            sys.exit(-1)
-        except Exception as e:
-            echo_error_msg('{}'.format(e))
-            status = -1
+        #try:
+        out, status = _waffles_modules[this_wg['mod']][0](args_d)
+        #except KeyboardInterrupt as e:
+        #    echo_error_msg('killed by user, {}'.format(e))
+        #    sys.exit(-1)
+        #except Exception as e:
+        #echo_error_msg('{}'.format(e))
+        #    status = -1
 
         if status != 0: remove_glob(this_dem)
         if not os.path.exists(this_dem): continue
@@ -3907,7 +3889,7 @@ def waffles_run(wg = _waffles_grid_info):
                 if out is not None: os.rename('tmp_cut.tif', this_dem_msk)
         except OSError as e:
             remove_glob('tmp_cut.tif')
-            echo_error_msg('cut failed, is the dem open somewhere, {}'.format(e))                
+            echo_error_msg('cut failed, is the dem open somewhere, {}'.format(e)) 
                 
     ## ==============================================
     ## merge the chunks and remove
@@ -3933,12 +3915,16 @@ def waffles_run(wg = _waffles_grid_info):
                 gdal_gdal2gdal(chunks_msk[0], dst_fmt = wg['fmt'], dst_gdal = dem_msk, co = False)
                 remove_glob(chunks_msk[0])
 
-    if wg['spat']:
+    #if wg['mod'].lower() == 'spatial-metadata':
+    #if wg['spat'] == True:
+    if spat:
         if len(chunks_spat) > 1:
             out, status = run_cmd('ogrmerge.py {} {}'.format(dem_spat, ' '.join(chunks_spat)))
             [remove_glob('{}*'.format(x.split('.')[0])) for x in chunks_spat]
         else:
-            out, status = run_cmd('ogr2ogr {} {}'.format(dem_spat, chunks_spat[0]))
+            remove_glob('{}*'.format(dem_spat.split('.')[0]))
+            out, status = run_cmd('ogr2ogr -clipdst {} -nlt POLYGON {} {}'.format(region_format(wg['region'], 'te'), dem_spat, chunks_spat[0]), verbose = True)
+            #out, status = run_cmd('ogr2ogr {} {}'.format(dem_spat, chunks_spat[0]), verbose = True)
             remove_glob('{}*'.format(chunks_spat[0].split('.')[0]))
                 
     if os.path.exists(dem):
@@ -4042,8 +4028,6 @@ General Options:
 
   -a, --archive\t\tArchive the datalist to the given region.
   -m, --mask\t\tGenerate a data mask raster.
-  -s, --spat-meta\tGenerate spatial-metadata.
-  -u, --uncert\t\tGenerate uncertainty grid.
 
   --help\t\tPrint the usage text
   --config\t\tSave the waffles config JSON and major datalist
@@ -4159,14 +4143,14 @@ def waffles_cli(argv = sys.argv):
             if len(wr) > 1:
                 wg['w_region'] = [None if x == '-' else float(x) for x in wr]
         elif arg == '-w' or arg == '--weights': wg['weights'] = True
-        elif arg == '-h' or arg == '--threads': want_threads = True
+        elif arg == '-t' or arg == '--threads': want_threads = True
         elif arg == '-p' or arg == '--prefix': want_prefix = True
         elif arg == '-a' or arg == '--archive': wg['archive'] = True
         elif arg == '-m' or arg == '--mask': wg['mask'] = True
         elif arg == '-u' or arg == '--uncert':
             wg['mask'] = True
             wg['unc'] = True
-        elif arg == '-s' or arg == 'spat-meta': wg['spat'] = True
+        #elif arg == '-s' or arg == 'spat-meta': wg['spat'] = True
         elif arg == '-r' or arg == '--grid-node': wg['node'] = 'grid'
         elif arg == '--verbose' or arg == '-V': wg['verbose'] = True
         elif arg == '--config': want_config = True
@@ -4280,7 +4264,9 @@ def waffles_cli(argv = sys.argv):
             time.sleep(2)
             echo_msg_inline('generating dem(s) [{}/{}]'.format((len(these_wgs) - wq.qsize()) - num_threads,len(these_wgs)))
             #if wq.qsize == 0:
-            if wq.empty(): break
+            if (len(these_wgs) - wq.qsize()) - num_threads == len(these_wgs): break
+            #if wq.empty(): break
+        echo_msg('queue complete')
         wq.join()
 
 ## ==============================================
