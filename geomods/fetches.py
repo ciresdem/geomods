@@ -1648,6 +1648,15 @@ class ngs:
                 [outcsv.writerow(row.values()) for row in r]
                 outfile.close()
 
+class coastline:
+    '''fetch a coastline'''
+    def __init__(self):
+        pass
+    def run(self):
+        pass
+
+    ## process results to xyz
+    
 ## =============================================================================
 ##
 ## Run fetches from command-line
@@ -1690,9 +1699,12 @@ def fetch_desc(x):
         fd.append('{:18}{}'.format(key, x[key][-1]))
     return fd
 
-_usage = '''{} ({}): Fetch geographic elevation data.
+_fetch_long_desc = lambda x: 'fetches modules:\n% fetches ... <mod>:key=val:key=val...\n\n  ' + '\n  '.join(['{:14}{}\n'.format(key, x[key][-1]) for key in x]) + '\n'
+_fetch_short_desc = lambda x: ', '.join(['{}'.format(key) for key in x])
 
-usage: {} [ -hlpRv [ args ] ] module[:parameter=value]* ...
+_usage = '''{} [OPTIONS] <module[:parameter=value]* ...>
+
+Fetch geographic elevation data.
 
 General Options:
   -R, --region\t\tSpecifies the desired region to search;
@@ -1708,7 +1720,7 @@ General Options:
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
 
-Modules and their options:
+Modules (see fetches --modules for more info):
   {}
 
 Examples:
@@ -1719,15 +1731,14 @@ Examples:
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
 '''.format(os.path.basename(sys.argv[0]),
-           _version, 
-           os.path.basename(sys.argv[0]),
-           '\n  '.join(fetch_desc(fetch_infos)),
+           _fetch_short_desc(fetch_infos),
            os.path.basename(sys.argv[0]),
            os.path.basename(sys.argv[0]), 
            os.path.basename(sys.argv[0]), 
            os.path.basename(sys.argv[0]),
            os.path.basename(sys.argv[0]))
-
+           
+#'\n  '.join(fetch_desc(fetch_infos)),
 def fetches_cli(argv = sys.argv):
     status = 0
     extent = None
@@ -1767,6 +1778,9 @@ def fetches_cli(argv = sys.argv):
         elif arg == '--version' or arg == '-v':
             sys.stdout.write('{}\n'.format( _version))
             sys.exit(0)
+        elif arg == '--modules' or arg == '-m':
+            sys.stderr.write(_fetch_long_desc(fetch_infos))
+            sys.exit(0)
         else: 
             opts = arg.split(':')
             if opts[0] in fetch_infos.keys():
@@ -1775,8 +1789,8 @@ def fetches_cli(argv = sys.argv):
         i = i + 1
 
     if len(mod_opts) == 0:
-        echo_error_msg('you must select a fetch module')
         sys.stderr.write(_usage)
+        echo_error_msg('you must select a fetch module')
         sys.exit(1)
         
     for key in mod_opts.keys():
