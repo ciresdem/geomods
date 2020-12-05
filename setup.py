@@ -77,6 +77,7 @@ setuptools.setup(
         'scripts/bag2tif2chunks2xyz.sh',
         'scripts/gdal2xyzchunks.py',
         'scripts/error_distance_plots.py',
+        'scripts/fetch_coastline.py',
     ],
     #python_requires = '>=2.7, <3',
     #project_urls = {

@@ -224,7 +224,9 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
                             local_file.write(chunk)
             except Exception as e: echo_error_msg(e)
             req.close()
-    else: status = -1
+    else:
+        if os.path.exists(dst_fn): return(status)
+        status = -1
     if not os.path.exists(dst_fn) or os.stat(dst_fn).st_size ==  0: status = -1
     if verbose: echo_msg('fetched remote file: {}.'.format(os.path.basename(dst_fn)))
     return(status)
@@ -262,7 +264,7 @@ def fetch_csv(src_url):
 class fetch_results(threading.Thread):
     '''fetch results gathered from a fetch module.
     results is a list of URLs with data type'''
-    def __init__(self, results, region, out_dir, proc = None, callback = lambda: False):
+    def __init__(self, results, region, out_dir, proc = None, vdc = None, callback = lambda: False):
         threading.Thread.__init__(self)
         self.fetch_q = queue.Queue()
         self.results = results
@@ -794,12 +796,14 @@ class nos:
             if dt == 'geodas_xyz':
                 nos_f, nos_zips = waffles.procs_unzip(src_nos, waffles._known_datalist_fmts[168])
                 vdc['ivert'] = 'mllw:m:sounding'
-                vdc['overt'] = 'navd88:m:height'
+                vdc['overt'] = 'lmsl:m:height'
                 vdc['delim'] = 'comma'
                 vdc['xyzl'] = '2,1,3'
                 vdc['skip'] = '1'
-                out, status = waffles.run_vdatum(nos_f, vdc)
-                nos_f_r = os.path.join('result', os.path.basename(nos_f))
+                vdc['region'] = '5'
+                #out, status = waffles.run_vdatum(nos_f, vdc)
+                #nos_f_r = os.path.join('result', os.path.basename(nos_f))
+                nos_f_r = nos_f
 
                 xyzc['delim'] = ','
                 xyzc['skip'] = 1
@@ -816,7 +820,8 @@ class nos:
                 src_bag, nos_zips = waffles.procs_unzip(src_nos, waffles._known_datalist_fmts[200])
                 nos_f = '{}.tmp'.format(os.path.basename(src_bag).split('.')[0])
                 vdc['ivert'] = 'mllw:m:height'
-                vdc['overt'] = 'navd88:m:height'
+                vdc['overt'] = 'lmsl:m:height'
+                vdc['region'] = '5'
                 vdc['delim'] = 'space'
                 vdc['skip'] = '0'
                 vdc['xyzl'] = '0,1,2'
@@ -835,8 +840,9 @@ class nos:
                             waffles.xyz_line(xyz, cx)
                     src_ds = None
                     if os.stat(nos_f).st_size != 0:
-                        out, status = waffles.run_vdatum(nos_f, vdc)
-                        src_r_bag = os.path.join('result', os.path.basename(nos_f))
+                        #out, status = waffles.run_vdatum(nos_f, vdc)
+                        #src_r_bag = os.path.join('result', os.path.basename(nos_f))
+                        src_r_bag = nos_f
                         if os.path.exists(src_r_bag):
                             with open(src_r_bag, 'r') as in_b:
                                 for xyz in waffles.xyz_parse(in_b, xyz_c = xyzc, verbose = self._verbose):
@@ -1648,15 +1654,6 @@ class ngs:
                 [outcsv.writerow(row.values()) for row in r]
                 outfile.close()
 
-class coastline:
-    '''fetch a coastline'''
-    def __init__(self):
-        pass
-    def run(self):
-        pass
-
-    ## process results to xyz
-    
 ## =============================================================================
 ##
 ## Run fetches from command-line

@@ -696,6 +696,28 @@ def region_warp(region, s_warp = 4326, t_warp = 4326):
         region = [pointA.GetX(), pointB.GetX(), pointA.GetY(), pointB.GetY()]
     return(region)
 
+def region2ogr(region, dst_ogr, append = False):
+    '''convert a region string to an OGR vector'''
+
+    dst_wkt = gdal_region2wkt(region)
+    
+    driver = ogr.GetDriverByName('ESRI Shapefile')
+
+    if os.path.exists(dst_ogr):
+        driver.DeleteDataSource(dst_ogr)
+        
+    dst_ds = driver.CreateDataSource(dst_ogr)
+    dst_lyr = dst_ds.CreateLayer(dst_ogr, geom_type = ogr.wkbPolygon)
+
+    dst_lyr.CreateField(ogr.FieldDefn('id', ogr.OFTInteger))
+    dst_feat = ogr.Feature(dst_lyr.GetLayerDefn())
+    dst_feat.SetGeometryDirectly(ogr.CreateGeometryFromWkt(dst_wkt))
+    dst_feat.SetField('id', 1)
+    dst_lyr.CreateFeature(dst_feat)
+    dst_feat = None
+
+    dst_ds = None
+
 def z_region_valid_p(z_region):
     '''return True if z_region appears to be valid'''
     
@@ -1466,6 +1488,18 @@ def gdal_percentile(src_gdal, perc = 95):
         return(percentile)
     else: return(None)
 
+def gdal_mask(src_gdal, dst_gdal):
+    '''transform src_gdal to a raster mask (1 = data; 0 = nodata)'''
+    ds = gdal.Open(src_gdal)
+    if ds is not None:
+        ds_band = ds.GetRasterBand(1)
+        ds_array = ds_band.ReadAsArray()
+        ds_config = gdal_gather_infos(ds)
+        ndv = ds_band.GetNoDataValue()
+        ds_array[ds_array != ndv] = 1
+        
+        gdal_write(ds_array, dst_gdal, ds_config)
+    
 def gdal_mask_analysis(mask = None):
     '''mask is a GDAL mask grid of 0/1
 
@@ -2874,7 +2908,8 @@ def waffles_config(datalist = None, datalists = [], region = None, inc = None, n
     if wg['datalist'] is None and len(wg['datalists']) > 0:
         wg['datalist'] = datalist_major(wg['datalists'], region = wg['region'], major = '{}_major.datalist'.format(wg['name']))
         
-    if wg['mod'].lower() != 'vdatum':
+    #if wg['mod'].lower() != 'vdatum' and wg['mod'].lower() != 'coastline':
+    if _waffles_modules[wg['mod']][3]:
         if wg['datalist'] is None:
             echo_error_msg('invalid datalist/s entry')
             return(None)
@@ -2899,44 +2934,45 @@ def waffles_config(datalist = None, datalists = [], region = None, inc = None, n
 _waffles_modules = {
     'surface': [lambda args: waffles_gmt_surface(**args), '''SPLINE DEM via GMT surface
     < surface:tension=.35:relaxation=1.2:lower_limit=d:upper_limit=d >
-     :tension=[0-1] - Spline tension.'''],
-    'triangulate': [lambda args: waffles_gmt_triangulate(**args), '''TRIANGULATION DEM via GMT triangulate'''],
-    'cudem': [lambda args: waffles_cudem(**args), '''Generate a CUDEM Bathy/Topo DEM <beta>'''],
-    'update': [lambda args: waffles_update_dem(**args), '''Update a CUDEM DEM with data from datalist <beta>'''],
+     :tension=[0-1] - Spline tension.''', 'raster', True],
+    'triangulate': [lambda args: waffles_gmt_triangulate(**args), '''TRIANGULATION DEM via GMT triangulate''', 'raster', True],
+    'cudem': [lambda args: waffles_cudem(**args), '''Generate a CUDEM Bathy/Topo DEM <beta>''', 'raster', True],
+    'update': [lambda args: waffles_update_dem(**args), '''Update a CUDEM DEM with data from datalist <beta>''', 'raster', True],
     'nearest': [lambda args: waffles_nearneighbor(**args), '''NEAREST NEIGHBOR DEM via GMT or gdal_grid
     < nearest:radius=6s:use_gdal=False >
      :radius=[value] - Nearest Neighbor search radius
-     :use_gdal=[True/False] - use gdal grid nearest algorithm'''],
+     :use_gdal=[True/False] - use gdal grid nearest algorithm''', 'raster', True],
     'num': [lambda args: waffles_num(**args), '''Uninterpolated DEM populated by <mode>.
     < num:mode=n >
-     :mode=[key] - specify mode of grid population: k (mask), m (mean) or n (num)'''],
+     :mode=[key] - specify mode of grid population: k (mask), m (mean) or n (num)''', 'raster', True],
     'vdatum': [lambda args: waffles_vdatum(**args), '''VDATUM transformation grid
     < vdatum:ivert=navd88:overt=mhw:region=3:jar=None >
      :ivert=[vdatum] - Input VDatum vertical datum.
      :overt=[vdatum] - Output VDatum vertical datum.
      :region=[0-10] - VDatum region (3 is CONUS).
-     :jar=[/path/to/vdatum.jar] - VDatum jar path - (auto-locates by default)'''],
+     :jar=[/path/to/vdatum.jar] - VDatum jar path - (auto-locates by default)''', 'raster', False],
     'mbgrid': [lambda args: waffles_mbgrid(**args), '''Weighted SPLINE DEM via mbgrid
     < mbgrid:tension=35:dist=10/3:use_datalists=False >
      :tension=[0-100] - Spline tension.
      :dist=[value] - MBgrid -C switch (distance to fill nodata with spline)
-     :use_datalists=[True/False] - use waffles built-in datalists'''],
+     :use_datalists=[True/False] - use waffles built-in datalists''', 'raster', True],
     'invdst': [lambda args: waffles_invdst(**args), '''INVERSE DISTANCE DEM via gdal_grid
-    < invdst:power=2.0:smoothing=0.0:radus1=0.1:radius2:0.1 >'''],
+    < invdst:power=2.0:smoothing=0.0:radus1=0.1:radius2:0.1 >''', 'raster', True],
     'average': [lambda args: waffles_moving_average(**args), '''Moving AVERAGE DEM via gdal_grid
-    < average:radius1=0.01:radius2=0.01 >'''],
+    < average:radius1=0.01:radius2=0.01 >''', 'raster', True],
     'linear': [lambda args: waffles_linear(**args), '''LINEAR DEM via gdal_grid
-    < linear:radius=0.01 >'''],
-    'spat-meta': [lambda args: waffles_spatial_metadata(**args), '''generate SPATIAL-METADATA'''],
+    < linear:radius=0.01 >''', 'raster', True],
+    'spat-meta': [lambda args: waffles_spatial_metadata(**args), '''generate SPATIAL-METADATA''', 'vector', True],
     'uncertainty': [lambda args: waffles_interpolation_uncertainty(**args), '''generate DEM UNCERTAINTY
     < uncertainty:dem=None:msk=None:prox=None:slp=None:sims=2 >'''],
-    'help': [lambda args: waffles_help(**args), '''display module info'''],
+    'help': [lambda args: waffles_help(**args), '''display module info''', None, False],
+    'coastline': [lambda args: waffles_coastline(**args), '''generate a coastline (landmask)''', 'vector', False],
     'datalists': [lambda args: waffles_datalists(**args), '''recurse the DATALIST
     < datalists:dump=False:echo=False:infos=False:recurse=True >
      :dump=[True/False] - dump the data from the datalist(s)
      :echo=[True/False] - echo the data entries from the datalist(s)
      :infos=[True/False] - generate inf files for the datalists datalist entries.
-     :recurse=[True/False] - recurse the datalist (default = True)'''],
+     :recurse=[True/False] - recurse the datalist (default = True)''', None, True],
 }
 
 ## ==============================================
@@ -3174,7 +3210,7 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     b_wg['clip'] = '{}:invert=True'.format(coastline)
     b_wg['extend_proc'] = 40
     b_wg['mask'] = False
-
+    
     b_wg = waffles_config(**b_wg)
     
     bathy_surf = waffles_run(b_wg)
@@ -3704,6 +3740,126 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, dem = None, msk =
         
     return([ec_d, ec_s])
 
+def waffles_coastline(wg, want_landsat = False):
+
+    cs_region = waffles_proc_region(wg)
+
+    ## ==============================================
+    ## burn the region
+    ## ============================================== 
+    region2ogr(cs_region, 'region_buff.shp')
+    run_cmd('gdal_rasterize -tr {} {} -te {} -burn 0 -ot Int16 -co COMPRESS=DEFLATE region_buff.shp A.tif'\
+            .format(wg['inc'], wg['inc'], region_format(cs_region, 'te')), verbose = True)
+
+    ## ==============================================
+    ## GSHHG
+    ## ==============================================
+    if wg['gc']['GMT'] is not None and not want_landsat:
+        run_cmd('gmt grdlandmask {} -I{} -r -Df -GB.tif=gd:GTiff -V -N1/0/1/0/1'.format(region_format(cs_region, 'gmt'), wg['inc']), verbose = True)
+    else:
+        ## ==============================================
+        ## LANDSAT
+        ## ==============================================
+        
+        run_cmd('gdal_rasterize -tr {} {} -te {} -burn 1 -ot Int16 -co COMPRESS=DEFLATE region_buff.shp B.tif'\
+                .format(wg['inc'], wg['inc'], region_format(cs_region, 'te')), verbose = True)
+        ls_wrld = 'https://rmgsc.cr.usgs.gov/outgoing/ecosystems/Global/WorldEcologicalLandUnits2015data.zip'
+        ls_wrld_zip = 'WorldEcologicalLandUnits2015data.zip'
+
+        echo_msg('fetching landsat world ecological land units')
+        if fetches.fetch_file(ls_wrld, ls_wrld_zip, verbose = wg['verbose']) == 0:
+            echo_msg('unzipping landsat zip file')
+            src_ls, ls_zips = procs_unzip(ls_wrld_zip, ['tif'])
+            gdal_set_nodata(src_ls, -2147483647)
+
+            echo_msg('cutting landsat to user region of {}'.format(cs_region))
+            gdal_cut(src_ls, cs_region, 'tmp_ls.tif')
+            _clean_zips(ls_zips)
+            remove_glob(src_ls)
+            
+            echo_msg('masking landsat raster')
+            gdal_mask('tmp_ls.tif', 'tmp_ls_msk.tif')
+            remove_glob('tmp_ls.tif')
+            run_cmd('gdal_polygonize.py tmp_ls_msk.tif ls_coast_ply.shp', verbose = True)
+            remove_glob('tmp_ls_msk.tif')
+            run_cmd('ogr2ogr -sql "select ST_Buffer(geometry, 0.01) from ls_coast_ply" -dialect SQLite ls_coast_ply1.shp ls_coast_ply.shp', verbose = True)
+            remove_glob('ls_coast_ply.*')
+            run_cmd('gdal_rasterize -burn 0 ls_coast_ply1.shp B.tif')
+            remove_glob('ls_coast_ply1.*')
+    #else: run_cmd('gdal_rasterize -burn 0 landsat_all_NA.shp B.tif')
+
+    ## ==============================================
+    ## USGS NHD
+    ## ==============================================    
+    fl = fetches.fetch_infos['tnm'][0](region_buffer(cs_region, 5, pct = True), [], None)
+    r = fl.run(ds = 6, formats = 'FileGDB', extent = 'HU-4 Subregion')
+    fr = fetches.fetch_results(r, cs_region, fl._outdir, None)
+    fr.start()
+    fr.join()
+
+    if len(r) > 0:
+        r_shp = []
+        for result in r:
+            try:
+                gdb_zip = os.path.join(result[2], result[1])
+                gdb_files = unzip(gdb_zip)
+                gdb, gdb_files = procs_unzip(gdb_zip, ['gdb'])
+
+                gdb_bn = os.path.basename('.'.join(gdb_zip.split('.')[:-1]))
+                gdb = gdb_bn + '.gdb'
+
+                run_cmd('ogr2ogr {}_NHDArea.shp {} NHDArea -overwrite'.format(gdb_bn, gdb), verbose = True)
+                r_shp.append('{}_NHDArea.shp'.format(gdb_bn))
+                run_cmd('ogr2ogr {}_NHDPlusBurnWaterBody.shp {} NHDPlusBurnWaterBody -overwrite'.format(gdb_bn, gdb), verbose = True)
+                r_shp.append('{}_NHDPlusBurnWaterBody.shp'.format(gdb_bn))
+            except: echo_error_msg('unable to process {}'.format(result))
+
+        remove_glob(gdb_zip)
+        _clean_zips(gdb_files)
+        _clean_zips(gdb)
+        [run_cmd('ogr2ogr -skipfailures -update -append nhdArea_merge.shp {}'.format(shp), verbose = True) for shp in r_shp]
+        [remove_glob('{}*'.format(shp[:-3])) for shp in r_shp]
+        run_cmd('gdal_rasterize -tr {} {} -te {} -burn 1 -ot Int16 -co COMPRESS=DEFLATE nhdArea_merge.shp nhd_tmp.tif'\
+                .format(wg['inc'], wg['inc'], region_format(cs_region, 'te')), verbose = True)
+        remove_glob('nhdArea_merge.*')
+        run_cmd('gdal_polygonize.py -8 nhd_tmp.tif nhd_rast.shp', verbose = True)
+        remove_glob('nhd_tmp.tif*')
+        run_cmd('ogr2ogr -dialect SQLITE -sql "SELECT * FROM nhd_rast WHERE DN=1 order by ST_AREA(geometry) desc limit 4" nhd_clean.shp nhd_rast.shp', verbose = True)
+        remove_glob('nhd_rast.*')
+        run_cmd('gdal_rasterize -tr {} {} -te {} -burn 1 -ot Int16 -co COMPRESS=DEFLATE nhd_clean.shp A.tif'\
+                .format(wg['inc'], wg['inc'], region_format(cs_region, 'te')), verbose = True)
+        remove_glob('nhd_clean.*')
+
+    ### OTHER
+
+    ## ==============================================    
+    ## Combine
+    ## ==============================================    
+    run_cmd('gdal_calc.py -A A.tif -B B.tif --outfile=combined_coast_sum.tif --calc="A + B" --format=GTiff --overwrite', verbose = True)
+    run_cmd('gdal_calc.py -A combined_coast_sum.tif --outfile=combined_coast_rc.tif --calc="1*(A > 0)" --format=GTiff --overwrite', verbose = True)
+    run_cmd('gdal_polygonize.py -8 combined_coast_rc.tif combined_coast_all.shp', verbose = True)
+    run_cmd('ogr2ogr -dialect SQLITE -sql "SELECT * FROM combined_coast_all WHERE DN=0" {}.shp combined_coast_all.shp'.format(wg['name']), verbose = True)
+    remove_glob('combined_coast_*')
+    remove_glob('A.tif*')
+    remove_glob('B.tif*')
+    #remove_glob('landsat.tif')
+    
+    return(0, 0)
+
+def ogr_empty_p(src_ogr):
+
+    driver = ogr.GetDriverByName('ESRI Shapefile')
+    ds = driver.Open(src_ogr, 0)
+
+    if ds is not None:
+        layer = ds.GetLayer()
+        fc = layer.GetFeatureCount()
+        if fc == 0:
+            return(True)
+        else: return(False)
+    else: return(True)
+
+
 def waffles_gdal_md(wg, cudem = False):
     '''add metadata to the waffles dem'''
     
@@ -3762,11 +3918,9 @@ def waffles_run(wg = _waffles_grid_info):
         echo_msg('running module {} with {} [{}]...'.format(wg['mod'], wg['mod_args'], args_d))
 
     dem = '{}.tif'.format(wg['name'])
-    spat = True if wg['mod'] == 'spat-meta' else False
-    #if wg['mod'].lower() == 'spatial-metadata': wg['spat'] = True
+    vect = True if _waffles_modules[wg['mod']][2] == 'vector' else False
     if wg['mask']: dem_msk = '{}_msk.tif'.format(wg['name'])
-    #if wg['spat']: dem_spat = '{}_sm.shp'.format(wg['name'])
-    if spat: dem_spat = '{}_sm.shp'.format(wg['name'])
+    if vect: dem_vect = '{}.shp'.format(wg['name'])
     wg['region'] = waffles_grid_node_region(wg) if wg['node'] == 'grid' else wg['region']
     
     ## ==============================================
@@ -3779,8 +3933,7 @@ def waffles_run(wg = _waffles_grid_info):
 
     chunks = []
     if wg['mask']: chunks_msk = []
-    #if wg['spat']: chunks_spat = []
-    if spat: chunks_spat = []
+    if vect: chunks_vect = []
     for region in s_regions:
         this_wg = waffles_config_copy(wg)
         this_wg['region'] = region
@@ -3791,8 +3944,7 @@ def waffles_run(wg = _waffles_grid_info):
         if this_wg['mask']:
             this_dem_msk = this_wg['name'] + '_msk.tif'
             chunks_msk.append(this_dem_msk)
-        #if this_wg['spat']: chunks_spat.append('{}_sm.shp'.format(this_wg['name']))
-        if spat: chunks_spat.append('{}_sm.shp'.format(this_wg['name']))
+        if vect: chunks_vect.append('{}.shp'.format(this_wg['name']))
         args_d['wg'] = this_wg
 
         ## ==============================================
@@ -3915,18 +4067,16 @@ def waffles_run(wg = _waffles_grid_info):
                 gdal_gdal2gdal(chunks_msk[0], dst_fmt = wg['fmt'], dst_gdal = dem_msk, co = False)
                 remove_glob(chunks_msk[0])
 
-    #if wg['mod'].lower() == 'spatial-metadata':
-    #if wg['spat'] == True:
-    if spat:
-        if len(chunks_spat) > 1:
-            out, status = run_cmd('ogrmerge.py {} {}'.format(dem_spat, ' '.join(chunks_spat)))
-            [remove_glob('{}*'.format(x.split('.')[0])) for x in chunks_spat]
+    if vect:
+        if len(chunks_vect) > 1:
+            out, status = run_cmd('ogrmerge.py {} {}'.format(dem_vect, ' '.join(chunks_vect)))
+            [remove_glob('{}*'.format(x.split('.')[0])) for x in chunks_vect]
         else:
-            remove_glob('{}*'.format(dem_spat.split('.')[0]))
-            out, status = run_cmd('ogr2ogr -clipdst {} -nlt POLYGON {} {}'.format(region_format(wg['region'], 'te'), dem_spat, chunks_spat[0]), verbose = True)
+            remove_glob('{}*'.format(dem_vect.split('.')[0]))
+            out, status = run_cmd('ogr2ogr -clipdst {} -nlt POLYGON {} {}'.format(region_format(wg['region'], 'te'), dem_vect, chunks_vect[0]), verbose = True)
             #out, status = run_cmd('ogr2ogr {} {}'.format(dem_spat, chunks_spat[0]), verbose = True)
-            remove_glob('{}*'.format(chunks_spat[0].split('.')[0]))
-                
+            remove_glob('{}*'.format(chunks_vect[0].split('.')[0]))
+
     if os.path.exists(dem):
         ## ==============================================
         ## convert to final format if not geotiff
@@ -3976,6 +4126,12 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     remove_glob('waffles_dem_mjr.datalist')
     remove_glob(wg['datalist'])
+
+    if vect:
+        if ogr_empty_p('{}.shp'.format(wg['name'])):
+            remove_glob('{}*'.format(wg['name']))
+            return(None)
+        
     return(dem)
 
 ## ==============================================
@@ -4202,7 +4358,8 @@ def waffles_cli(argv = sys.argv):
         wg['mod'] = mod
         wg['mod_args'] = mod_args
 
-    if wg['mod'] != 'vdatum':
+    #if wg['mod'] != 'vdatum' and wg['mod'] != 'coastline':
+    if _waffles_modules[wg['mod']][3]:
         if len(dls) == 0:
             sys.stderr.write(waffles_cli_usage)
             echo_error_msg('''must specify a datalist/entry, try gmrt or srtm for global data.''')
