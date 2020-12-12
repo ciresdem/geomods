@@ -1106,7 +1106,7 @@ def gdal_set_nodata(src_fn, nodata = -9999):
     
     ds = gdal.Open(src_fn, gdal.GA_Update)
     band = ds.GetRasterBand(1)
-    band.SetNoDataValue(float(nodata))
+    band.SetNoDataValue(nodata)
     ds = None
     return(0)
 
@@ -1452,7 +1452,7 @@ def gdal_gdal2gdal(src_grd, dst_fmt = 'GTiff', epsg = 4326, dst_gdal = None, co 
             gdal2gdal_cmd = ('gdal_translate {} {} -f {}\
             '.format(src_grd, dst_gdal, dst_fmt))
         else:
-            gdal2gdal_cmd = ('gdal_translate {} {} -f {} -co TILED=YES -co COMPRESS=DEFLATE -co PREDICTOR=3\
+            gdal2gdal_cmd = ('gdal_translate {} {} -f {} -co TILED=YES -co COMPRESS=DEFLATE\
             '.format(src_grd, dst_gdal, dst_fmt))
         out, status = run_cmd(gdal2gdal_cmd, verbose = False)
         if status == 0: return(dst_gdal)
@@ -1488,17 +1488,26 @@ def gdal_percentile(src_gdal, perc = 95):
         return(percentile)
     else: return(None)
 
-def gdal_mask(src_gdal, dst_gdal):
-    '''transform src_gdal to a raster mask (1 = data; 0 = nodata)'''
+def gdal_mask(src_gdal, dst_gdal, invert = False):
+    '''transform src_gdal to a raster mask (1 = data; 0 = nodata)
+    if invert is True, 1 = nodata, 0 = data.'''
     ds = gdal.Open(src_gdal)
     if ds is not None:
         ds_band = ds.GetRasterBand(1)
         ds_array = ds_band.ReadAsArray()
         ds_config = gdal_gather_infos(ds)
+        ds_config['dtn'] = 'Int32'
         ndv = ds_band.GetNoDataValue()
-        ds_array[ds_array != ndv] = 1
-        
-        gdal_write(ds_array, dst_gdal, ds_config)
+        #print(ndv)
+        if not invert:
+            ds_array[ds_array != ndv] = 1
+            ds_array[ds_array == ndv] = 0
+        else:
+            ds_array[ds_array != ndv] = 0
+            ds_array[ds_array == ndv] = 1
+            
+        return(gdal_write(ds_array, dst_gdal, ds_config))
+    else: return(-1, -1)
     
 def gdal_mask_analysis(mask = None):
     '''mask is a GDAL mask grid of 0/1
@@ -1671,8 +1680,8 @@ def gdal_region(src_ds, warp = None):
 def _geo2pixel(geo_x, geo_y, geoTransform):
     '''convert a geographic x,y value to a pixel location of geoTransform'''
     if geoTransform[2] + geoTransform[4] == 0:
-        pixel_x = ((geo_x - geoTransform[0]) / geoTransform[1]) + .5
-        pixel_y = ((geo_y - geoTransform[3]) / geoTransform[5]) + .5
+        pixel_x = ((geo_x - geoTransform[0]) / geoTransform[1])# + .5
+        pixel_y = ((geo_y - geoTransform[3]) / geoTransform[5])# + .5
     else: pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt(geoTransform))
     return(int(pixel_x), int(pixel_y))
 
@@ -1687,6 +1696,7 @@ def _apply_gt(in_x, in_y, geoTransform):
     
     out_x = geoTransform[0] + (in_x + 0.5) * geoTransform[1] + (in_y + 0.5) * geoTransform[2]
     out_y = geoTransform[3] + (in_x + 0.5) * geoTransform[4] + (in_y + 0.5) * geoTransform[5]
+
     return(out_x, out_y)
 
 def _invert_gt(geoTransform):
@@ -1754,6 +1764,7 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format = 'GTiff', mode = '
     `mode` of `n` generates a num grid
     `mode` of `m` generates a mean grid
     `mode` of `k` generates a mask grid
+    `mode` of 'w' generates a wet/dry mask grid
 
     returns output, status'''
     
@@ -1761,11 +1772,12 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format = 'GTiff', mode = '
     if verbose:
         echo_msg('gridding data with mode: {} to {}'.format(mode, dst_gdal))
         echo_msg('grid size: {}/{}'.format(ycount, xcount))
-    if mode == 'm':
+    if mode == 'm' or mode == 'w':
         sumArray = np.zeros((ycount, xcount))
     gdt = gdal.GDT_Float32
     #else: gdt = gdal.GDT_Int32
     ptArray = np.zeros((ycount, xcount))
+    if mode == 'w': ptArray[ptArray == 0] = np.nan
     ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(epsg), gdt, -9999, dst_format)
     for this_xyz in src_xyz:
         x = this_xyz[0]
@@ -1775,14 +1787,18 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format = 'GTiff', mode = '
             if y > region[2] and y < region[3]:
                 xpos, ypos = _geo2pixel(x, y, dst_gt)
                 try:
-                    if mode == 'm':
+                    if mode == 'm' or mode == 'w':
                         sumArray[ypos, xpos] += z
-                    if mode == 'n' or mode == 'm': ptArray[ypos, xpos] += 1
+                    if mode == 'n' or mode == 'm':
+                        ptArray[ypos, xpos] += 1
                     else: ptArray[ypos, xpos] = 1
-                except: pass
-    if mode == 'm':
+                except Exception as e: echo_error_msg(e)
+    if mode == 'm' or mode == 'w':
         ptArray[ptArray == 0] = np.nan
         outarray = sumArray / ptArray
+        if mode == 'w':
+            outarray[outarray >= 0] = 1
+            outarray[outarray < 0] = 0
     elif mode == 'n': outarray = ptArray
     else: outarray = ptArray
     outarray[np.isnan(outarray)] = -9999
@@ -2963,8 +2979,8 @@ _waffles_modules = {
     'linear': [lambda args: waffles_linear(**args), '''LINEAR DEM via gdal_grid
     < linear:radius=0.01 >''', 'raster', True],
     'spat-meta': [lambda args: waffles_spatial_metadata(**args), '''generate SPATIAL-METADATA''', 'vector', True],
-    'uncertainty': [lambda args: waffles_interpolation_uncertainty(**args), '''generate DEM UNCERTAINTY
-    < uncertainty:dem=None:msk=None:prox=None:slp=None:sims=2 >'''],
+    #'uncertainty': [lambda args: waffles_interpolation_uncertainty(**args), '''generate DEM UNCERTAINTY
+    #< uncertainty:dem=None:msk=None:prox=None:slp=None:sims=2 >''', 'raster', False],
     'help': [lambda args: waffles_help(**args), '''display module info''', None, False],
     'coastline': [lambda args: waffles_coastline(**args), '''generate a coastline (landmask)''', 'vector', False],
     'datalists': [lambda args: waffles_datalists(**args), '''recurse the DATALIST
@@ -2978,7 +2994,7 @@ _waffles_modules = {
 ## ==============================================
 ## module descriptors (used in cli help)
 ## ==============================================
-_waffles_module_long_desc = lambda x: 'waffles modules:\n% waffles ... -M <mod>:key=val:key=val...\n\n  ' + '\n  '.join(['{:14}{}\n'.format(key, x[key][-1]) for key in x]) + '\n'
+_waffles_module_long_desc = lambda x: 'waffles modules:\n% waffles ... -M <mod>:key=val:key=val...\n\n  ' + '\n  '.join(['{:14}{}\n'.format(key, x[key][1]) for key in x]) + '\n'
 _waffles_module_short_desc = lambda x: ', '.join(['{}'.format(key) for key in x])
 
 ## ==============================================
@@ -3522,12 +3538,12 @@ _unc_config = {
 waffles_unc_config = lambda: copy.deepcopy(_unc_config)
 waffles_unc_config_copy = lambda uc: copy.deepcopy(uc)
 
-def waffles_interpolation_uncertainty(wg = _waffles_grid_info, dem = None, msk = None, prox = None, slp = None, percentile = 95, zones = ['bathy', 'bathy-topo', 'topo'], sims = 10, chnk_lvl = 4):
+def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', dem = None, msk = None, prox = None, slp = None, percentile = 95, zones = ['bathy', 'bathy-topo', 'topo'], sims = 10, chnk_lvl = 4):
     '''calculate the interpolation uncertainty
     - as related to distance to nearest measurement.
 
     returns [[err, dist] ...]'''
-    
+
     s_dp = None
     s_ds = None
     echo_msg('running INTERPOLATION uncertainty module using {}...'.format(wg['mod']))
@@ -3539,7 +3555,7 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, dem = None, msk =
     region_info = {}
         
     ## mask analysis
-    num_sum, g_max, num_perc = gdal_mask_analysis(mask =msk)
+    num_sum, g_max, num_perc = gdal_mask_analysis(mask = msk)
 
     ## proximity analysis
     prox_perc_95 = gdal_percentile(prox, 95)
@@ -3730,7 +3746,7 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, dem = None, msk =
         ## USE numpy instead
         math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_prox_unc.tif=gd+n-9999:GTiff\
         '.format(prox, ec_d[2], ec_d[1], 0, wg['name'])
-        run_cmd(math_cmd, verbose = uc['wg']['verbose'])
+        run_cmd(math_cmd, verbose = wg['verbose'])
         echo_msg('applied coefficient {} to proximity grid'.format(ec_d))
         
         math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
@@ -3740,111 +3756,155 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, dem = None, msk =
         
     return([ec_d, ec_s])
 
-def waffles_coastline(wg, want_landsat = False):
-
-    cs_region = waffles_proc_region(wg)
-
-    ## ==============================================
-    ## burn the region
-    ## ============================================== 
-    region2ogr(cs_region, 'region_buff.shp')
-    run_cmd('gdal_rasterize -tr {} {} -te {} -burn 0 -ot Int16 -co COMPRESS=DEFLATE region_buff.shp A.tif'\
-            .format(wg['inc'], wg['inc'], region_format(cs_region, 'te')), verbose = True)
-
-    ## ==============================================
-    ## GSHHG
-    ## ==============================================
-    if wg['gc']['GMT'] is not None and not want_landsat:
-        run_cmd('gmt grdlandmask {} -I{} -r -Df -GB.tif=gd:GTiff -V -N1/0/1/0/1'.format(region_format(cs_region, 'gmt'), wg['inc']), verbose = True)
+def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
+    '''Generate a coastline polygon from various sources.'''
+    w_mask = '{}_w.tif'.format(wg['name'])
+    
+    if wg['datalist'] is not None:    
+        ## ==============================================
+        ## wet/dry datalist mask
+        ## ==============================================
+        dly = waffles_yield_datalist(wg)
+        if wg['weights']: dly = xyz_block(dly, waffles_dist_region(wg), wg['inc'], weights = True)
+        gdal_xyz2gdal(dly, w_mask, waffles_dist_region(wg), wg['inc'], dst_format = wg['fmt'], mode = 'w', verbose = wg['verbose'])
     else:
         ## ==============================================
-        ## LANDSAT
+        ## burn the region
         ## ==============================================
-        
-        run_cmd('gdal_rasterize -tr {} {} -te {} -burn 1 -ot Int16 -co COMPRESS=DEFLATE region_buff.shp B.tif'\
-                .format(wg['inc'], wg['inc'], region_format(cs_region, 'te')), verbose = True)
-        ls_wrld = 'https://rmgsc.cr.usgs.gov/outgoing/ecosystems/Global/WorldEcologicalLandUnits2015data.zip'
-        ls_wrld_zip = 'WorldEcologicalLandUnits2015data.zip'
-
-        echo_msg('fetching landsat world ecological land units')
-        if fetches.fetch_file(ls_wrld, ls_wrld_zip, verbose = wg['verbose']) == 0:
-            echo_msg('unzipping landsat zip file')
-            src_ls, ls_zips = procs_unzip(ls_wrld_zip, ['tif'])
-            gdal_set_nodata(src_ls, -2147483647)
-
-            echo_msg('cutting landsat to user region of {}'.format(cs_region))
-            gdal_cut(src_ls, cs_region, 'tmp_ls.tif')
-            _clean_zips(ls_zips)
-            remove_glob(src_ls)
-            
-            echo_msg('masking landsat raster')
-            gdal_mask('tmp_ls.tif', 'tmp_ls_msk.tif')
-            remove_glob('tmp_ls.tif')
-            run_cmd('gdal_polygonize.py tmp_ls_msk.tif ls_coast_ply.shp', verbose = True)
-            remove_glob('tmp_ls_msk.tif')
-            run_cmd('ogr2ogr -sql "select ST_Buffer(geometry, 0.01) from ls_coast_ply" -dialect SQLite ls_coast_ply1.shp ls_coast_ply.shp', verbose = True)
-            remove_glob('ls_coast_ply.*')
-            run_cmd('gdal_rasterize -burn 0 ls_coast_ply1.shp B.tif')
-            remove_glob('ls_coast_ply1.*')
-    #else: run_cmd('gdal_rasterize -burn 0 landsat_all_NA.shp B.tif')
+        region2ogr(waffles_dist_region(wg), 'region_buff.shp')
+        run_cmd('gdal_rasterize -tr {} {} -te {} -burn -9999 -a_nodata -9999 -ot Int32 -co COMPRESS=DEFLATE region_buff.shp {}'\
+                .format(wg['inc'], wg['inc'], region_format(waffles_dist_region(wg), 'te'), w_mask), verbose = False)
 
     ## ==============================================
-    ## USGS NHD
-    ## ==============================================    
-    fl = fetches.fetch_infos['tnm'][0](region_buffer(cs_region, 5, pct = True), [], None)
-    r = fl.run(ds = 6, formats = 'FileGDB', extent = 'HU-4 Subregion')
-    fr = fetches.fetch_results(r, cs_region, fl._outdir, None)
-    fr.start()
-    fr.join()
+    ## load the wet/dry mask array
+    ## ==============================================
+    ds = gdal.Open(w_mask)
+    if ds is not None:
+        ds_config = gdal_gather_infos(ds)
+        region = gdal_gt2region(ds_config)
+        dst_gt = ds_config['geoT']        
+        coast_array = ds.GetRasterBand(1).ReadAsArray(0, 0, ds_config['nx'], ds_config['ny'])
+        ds = None
+    else: return(-1, -1)
+    remove_glob('{}*'.format(w_mask))
 
-    if len(r) > 0:
-        r_shp = []
-        for result in r:
-            try:
-                gdb_zip = os.path.join(result[2], result[1])
-                gdb_files = unzip(gdb_zip)
-                gdb, gdb_files = procs_unzip(gdb_zip, ['gdb'])
-
-                gdb_bn = os.path.basename('.'.join(gdb_zip.split('.')[:-1]))
-                gdb = gdb_bn + '.gdb'
-
-                run_cmd('ogr2ogr {}_NHDArea.shp {} NHDArea -overwrite'.format(gdb_bn, gdb), verbose = True)
-                r_shp.append('{}_NHDArea.shp'.format(gdb_bn))
-                run_cmd('ogr2ogr {}_NHDPlusBurnWaterBody.shp {} NHDPlusBurnWaterBody -overwrite'.format(gdb_bn, gdb), verbose = True)
-                r_shp.append('{}_NHDPlusBurnWaterBody.shp'.format(gdb_bn))
-            except: echo_error_msg('unable to process {}'.format(result))
-
-        remove_glob(gdb_zip)
-        _clean_zips(gdb_files)
-        _clean_zips(gdb)
-        [run_cmd('ogr2ogr -skipfailures -update -append nhdArea_merge.shp {}'.format(shp), verbose = True) for shp in r_shp]
-        [remove_glob('{}*'.format(shp[:-3])) for shp in r_shp]
-        run_cmd('gdal_rasterize -tr {} {} -te {} -burn 1 -ot Int16 -co COMPRESS=DEFLATE nhdArea_merge.shp nhd_tmp.tif'\
-                .format(wg['inc'], wg['inc'], region_format(cs_region, 'te')), verbose = True)
-        remove_glob('nhdArea_merge.*')
-        run_cmd('gdal_polygonize.py -8 nhd_tmp.tif nhd_rast.shp', verbose = True)
-        remove_glob('nhd_tmp.tif*')
-        run_cmd('ogr2ogr -dialect SQLITE -sql "SELECT * FROM nhd_rast WHERE DN=1 order by ST_AREA(geometry) desc limit 4" nhd_clean.shp nhd_rast.shp', verbose = True)
-        remove_glob('nhd_rast.*')
-        run_cmd('gdal_rasterize -tr {} {} -te {} -burn 1 -ot Int16 -co COMPRESS=DEFLATE nhd_clean.shp A.tif'\
-                .format(wg['inc'], wg['inc'], region_format(cs_region, 'te')), verbose = True)
-        remove_glob('nhd_clean.*')
-
-    ### OTHER
-
-    ## ==============================================    
-    ## Combine
-    ## ==============================================    
-    run_cmd('gdal_calc.py -A A.tif -B B.tif --outfile=combined_coast_sum.tif --calc="A + B" --format=GTiff --overwrite', verbose = True)
-    run_cmd('gdal_calc.py -A combined_coast_sum.tif --outfile=combined_coast_rc.tif --calc="1*(A > 0)" --format=GTiff --overwrite', verbose = True)
-    run_cmd('gdal_polygonize.py -8 combined_coast_rc.tif combined_coast_all.shp', verbose = True)
-    run_cmd('ogr2ogr -dialect SQLITE -sql "SELECT * FROM combined_coast_all WHERE DN=0" {}.shp combined_coast_all.shp'.format(wg['name']), verbose = True)
-    remove_glob('combined_coast_*')
-    remove_glob('A.tif*')
-    remove_glob('B.tif*')
-    #remove_glob('landsat.tif')
+    ## ==============================================
+    ## Input coastline shapefile `coastpoly`
+    ## ==============================================
     
+    ## ==============================================
+    ## USGS NHD (HIGH-RES U.S. Only)
+    ## ==============================================
+    if want_nhd:
+        u_mask = '{}_u.tif'.format(wg['name'])
+        region2ogr(waffles_dist_region(wg), 'region_buff.shp')
+        run_cmd('gdal_rasterize -tr {} {} -te {} -burn -9999 -a_nodata -9999 -ot Int32 -co COMPRESS=DEFLATE region_buff.shp {}'\
+                .format(wg['inc'], wg['inc'], region_format(waffles_dist_region(wg), 'te'), u_mask), verbose = False)
+        remove_glob('region_buff.*')
+
+        fl = fetches.fetch_infos['tnm'][0](waffles_proc_region(wg), [], None)
+        r = fl.run(ds = 6, formats = 'FileGDB', extent = 'HU-4 Subregion')
+        #fr = fetches.fetch_results(r, waffles_proc_region(wg), fl._outdir, None)
+        #fr.start()
+        #fr.join()
+
+        if len(r) > 0:
+            r_shp = []
+            for result in r:
+                if fetches.fetch_file(result[0], os.path.join(result[2], result[1]), verbose = True) == 0:
+                    gdb_zip = os.path.join(result[2], result[1])
+                    gdb_files = unzip(gdb_zip)
+                    gdb, gdb_files = procs_unzip(gdb_zip, ['gdb'])
+                    gdb_bn = os.path.basename('.'.join(gdb_zip.split('.')[:-1]))
+                    gdb = gdb_bn + '.gdb'
+
+                    run_cmd('ogr2ogr {}_NHDArea.shp {} NHDArea -overwrite'.format(gdb_bn, gdb), verbose = True)
+                    r_shp.append('{}_NHDArea.shp'.format(gdb_bn))
+                    run_cmd('ogr2ogr {}_NHDPlusBurnWaterBody.shp {} NHDPlusBurnWaterBody -overwrite'.format(gdb_bn, gdb), verbose = True)
+                    r_shp.append('{}_NHDPlusBurnWaterBody.shp'.format(gdb_bn))
+                else: echo_error_msg('unable to fetch {}'.format(result))
+                    #except: echo_error_msg('unable to process {}'.format(result))
+
+            [run_cmd('ogr2ogr -skipfailures -update -append nhdArea_merge.shp {}'.format(shp), verbose = True) for shp in r_shp]
+            run_cmd('gdal_rasterize -burn 1 nhdArea_merge.shp {}'\
+                    .format(u_mask), verbose = True)
+            remove_glob(gdb_zip)
+            remove_glob('{}*'.format(gdb_bn))
+            _clean_zips(gdb_files)
+            [remove_glob('{}*'.format(shp[:-3])) for shp in r_shp]
+            remove_glob('nhdArea_merge.*')
+
+        ## ==============================================
+        ## update wet/dry mask with nhd data
+        ## ==============================================
+        c_ds = gdal.Open(u_mask)
+        for this_xyz in gdal_parse(c_ds):
+            xpos, ypos = _geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
+            try:
+                if coast_array[ypos, xpos] == ds_config['ndv']:
+                    if this_xyz[2] == 1: coast_array[ypos, xpos] = 0
+            except: pass
+        c_ds = None            
+        remove_glob('{}*'.format(u_mask))
+    
+    ## ==============================================
+    ## GSHHG/GMRT - Global low-res
+    ## ==============================================
+    g_mask = '{}_g.tif'.format(wg['name'])
+    if wg['gc']['GMT'] is not None and not want_gmrt:
+        run_cmd('gmt grdlandmask {} -I{} -r -Df -G{}=gd:GTiff -V -N1/0/1/0/1'.format(region_format(waffles_dist_region(wg), 'gmt'), wg['inc'], g_mask), verbose = True)
+    else:
+        r = fetches.fetch_infos['gmrt'][0](region_buffer(waffles_dist_region(wg), 5, pct = True), [], None).run()
+        gmrt_tif = r[0][1]
+        if fetches.fetch_file(r[0][0], gmrt_tif, verbose = True) == 0:
+            run_cmd('gdalwarp {} {} -tr {} {} -overwrite'.format(gmrt_tif, g_mask, wg['inc'], wg['inc']), verbose = True)
+            remove_glob(gmrt_tif)
+
+    ## ==============================================
+    ## update wet/dry mask with gsshg/gmrt data
+    ## ==============================================
+    c_ds = gdal.Open(g_mask)
+    for this_xyz in gdal_parse(c_ds):
+        xpos, ypos = _geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
+        try:
+            if coast_array[ypos, xpos] == ds_config['ndv']:
+                if this_xyz[2] == 1: coast_array[ypos, xpos] = 0
+                elif this_xyz[2] == 0: coast_array[ypos, xpos] = 1
+        except: pass
+    c_ds = None
+    remove_glob('{}*'.format(g_mask))
+    gdal_write(coast_array, '{}.tif'.format(wg['name']), ds_config)
+    gdal_write(coast_array, 'test.tif', ds_config)
+
+    #run_cmd('gdal_polygonize.py -8 {}.tif {}.shp'.format(wg['name'], wg['name']), verbose = True)
+    
+    tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}.shp'.format(wg['name']))
+    if tmp_ds is not None:
+        tmp_layer = tmp_ds.CreateLayer('{}'.format(wg['name']), None, ogr.wkbMultiPolygon)
+        tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
+        gdal_polygonize('{}.tif'.format(wg['name']), tmp_layer, verbose = wg['verbose'])
+        
+    tmp_ds = None
+
     return(0, 0)
+
+def ogr_clip(src_ogr, dst_ogr, clip_region = None, dn = "ESRI Shapefile"):
+    
+    driver = ogr.GetDriverByName(dn)
+    ds = driver.Open(src_ogr, 0)
+    layer = ds.GetLayer()
+
+    region2ogr(clip_region, 'tmp_clip.shp')
+    c_ds = driver.Open('tmp_clip.shp', 0)
+    c_layer = c_ds.GetLayer()
+    
+    dst_ds = driver.CreateDataSource(dst_ogr)
+    dst_layer = dst_ds.CreateLayer(dst_ogr.split('.')[0], geom_type=ogr.wkbMultiPolygon)
+
+    layer.Clip(c_layer, dst_layer)
+    #ogr.Layer.Clip(layer, c_layer, dst_layer)
+
+    ds = c_ds = dst_ds = None
 
 def ogr_empty_p(src_ogr):
 
@@ -3956,7 +4016,7 @@ def waffles_run(wg = _waffles_grid_info):
         #    echo_error_msg('killed by user, {}'.format(e))
         #    sys.exit(-1)
         #except Exception as e:
-        #echo_error_msg('{}'.format(e))
+        #    echo_error_msg('{}'.format(e))
         #    status = -1
 
         if status != 0: remove_glob(this_dem)
@@ -4073,8 +4133,9 @@ def waffles_run(wg = _waffles_grid_info):
             [remove_glob('{}*'.format(x.split('.')[0])) for x in chunks_vect]
         else:
             remove_glob('{}*'.format(dem_vect.split('.')[0]))
-            out, status = run_cmd('ogr2ogr -clipdst {} -nlt POLYGON {} {}'.format(region_format(wg['region'], 'te'), dem_vect, chunks_vect[0]), verbose = True)
-            #out, status = run_cmd('ogr2ogr {} {}'.format(dem_spat, chunks_spat[0]), verbose = True)
+            #ogr_clip(chunks_vect[0], dem_vect, clip_region = wg['region'], dn = "ESRI Shapefile")
+            #out, status = run_cmd('ogr2ogr -clipsrc {} {} {}'.format(region_format(wg['region'], 'te'), dem_vect, chunks_vect[0]), verbose = True)
+            out, status = run_cmd('ogr2ogr {} {}'.format(dem_vect, chunks_vect[0]), verbose = True)
             remove_glob('{}*'.format(chunks_vect[0].split('.')[0]))
 
     if os.path.exists(dem):
@@ -4098,7 +4159,7 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     ## optionally generate uncertainty grid
     ## ==============================================
-    if wg['unc']:
+    if wg['unc'] and not vect:
         try:
             if os.path.exists(dem) and os.path.exists(dem_msk):
                 echo_msg('generating uncertainty')
@@ -4117,7 +4178,7 @@ def waffles_run(wg = _waffles_grid_info):
                 uc['slp'] = dem_slp
 
                 echo_msg(uc)
-                waffles_interpolation_uncertainty(uc)
+                waffles_interpolation_uncertainty(**uc)
         except Exception as e:
             echo_error_msg('failed to calculate uncertainty, {}'.format(e))
 
@@ -4184,6 +4245,7 @@ General Options:
 
   -a, --archive\t\tArchive the datalist to the given region.
   -m, --mask\t\tGenerate a data mask raster.
+  -u, --uncert\t\tGenerate an associated uncertainty grid.
 
   --help\t\tPrint the usage text
   --config\t\tSave the waffles config JSON and major datalist
@@ -4357,7 +4419,11 @@ def waffles_cli(argv = sys.argv):
         mod_args = tuple(mod_opts[mod])
         wg['mod'] = mod
         wg['mod_args'] = mod_args
-
+    else: 
+        sys.stderr.write(waffles_cli_usage)
+        echo_error_msg('''must specify a waffles -M module.''')
+        sys.exit(-1)
+        
     #if wg['mod'] != 'vdatum' and wg['mod'] != 'coastline':
     if _waffles_modules[wg['mod']][3]:
         if len(dls) == 0:
