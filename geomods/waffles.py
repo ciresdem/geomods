@@ -2979,8 +2979,8 @@ _waffles_modules = {
     'linear': [lambda args: waffles_linear(**args), '''LINEAR DEM via gdal_grid
     < linear:radius=0.01 >''', 'raster', True],
     'spat-meta': [lambda args: waffles_spatial_metadata(**args), '''generate SPATIAL-METADATA''', 'vector', True],
-    #'uncertainty': [lambda args: waffles_interpolation_uncertainty(**args), '''generate DEM UNCERTAINTY
-    #< uncertainty:dem=None:msk=None:prox=None:slp=None:sims=2 >''', 'raster', False],
+    'uncertainty': [lambda args: waffles_interpolation_uncertainty(**args), '''generate DEM UNCERTAINTY
+    < uncertainty:dem=None:msk=None:prox=None:slp=None:sims=2 >''', 'raster', False],
     'help': [lambda args: waffles_help(**args), '''display module info''', None, False],
     'coastline': [lambda args: waffles_coastline(**args), '''generate a coastline (landmask)''', 'vector', False],
     'datalists': [lambda args: waffles_datalists(**args), '''recurse the DATALIST
@@ -3525,6 +3525,8 @@ def waffles_vdatum(wg = _waffles_grid_info, ivert = 'navd88', overt = 'mhw',
 ## ==============================================
 _unc_config = {
     'wg': waffles_config_copy(_waffles_grid_info),
+    'mod': 'surface',
+    'mod_args': (),
     'dem': None,
     'msk': None,
     'prox': None,
@@ -3538,7 +3540,10 @@ _unc_config = {
 waffles_unc_config = lambda: copy.deepcopy(_unc_config)
 waffles_unc_config_copy = lambda uc: copy.deepcopy(uc)
 
-def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', dem = None, msk = None, prox = None, slp = None, percentile = 95, zones = ['bathy', 'bathy-topo', 'topo'], sims = 10, chnk_lvl = 4):
+def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', mod_args = (), \
+                                      dem = None, msk = None, prox = None, slp = None, \
+                                      percentile = 95, zones = ['bathy', 'bathy-topo', 'topo'], \
+                                      sims = 10, chnk_lvl = 4):
     '''calculate the interpolation uncertainty
     - as related to distance to nearest measurement.
 
@@ -3546,9 +3551,43 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
 
     s_dp = None
     s_ds = None
+
+    ## ==============================================
+    ## set the module and input grids.
+    ## ==============================================
+    if mod not in _waffles_modules.keys():
+        echo_error_msg('invalid module name `{}`'.format(mod))
+        
+    wg['mod'] = mod
+    wg['mod_args'] = mod_args
+    
     echo_msg('running INTERPOLATION uncertainty module using {}...'.format(wg['mod']))
     out, status = run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
-    
+
+    if dem is None or not os.path.exists(dem):
+        if dem is None: dem = '{}.tif'.format(wg['name'])
+        tmp_wg = waffles_config_copy(wg)
+        if msk is None or not os.path.exists(msk):
+            if msk is None: msk = '{}_msk.tif'.format(wg['name'])
+            tmp_wg['mask'] = True
+        else: tmp_wg['mask'] = False
+        waffles_run(tmp_wg)
+
+    if msk is None or not os.path.exists(msk):
+        if msk is None: msk = '{}_msk.tif'.format(wg['name'])
+        tmp_wg = waffles_config_copy(wg)
+        tmp_wg['name'] = '{}_msk'.format(wg['name'])
+        tmp_wg['mod'] = 'num'
+        tmp_wg['mod_args'] = ('mode=k',)
+        waffles_run(tmp_wg)
+        
+    if prox is None or not os.path.exists(prox):
+        if prox is None: prox = '{}_prox.tif'.format(wg['name'])
+        gdal_proximity(msk, prox)
+    if slp is None or not os.path.exists(slp):
+        if slp is None: slp = '{}_slp.tif'.format(wg['name'])
+        gdal_slope(dem, slp)
+
     ## ==============================================
     ## region analysis
     ## ==============================================
@@ -3731,33 +3770,34 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         s_dp = s_dp[s_dp[:,3] < d_max,:]
 
         prox_err = s_dp[:,[2,3]]
-        slp_err = s_dp[:,[2,4]]
+        # slp_err = s_dp[:,[2,4]]
         
         np.savetxt('{}_prox.err'.format(wg['name']), prox_err, '%f', ' ')
-        np.savetxt('{}_slp.err'.format(wg['name']), slp_err, '%f', ' ')
+        # np.savetxt('{}_slp.err'.format(wg['name']), slp_err, '%f', ' ')
 
         ec_d = err2coeff(prox_err[:50000000], dst_name = wg['name'] + '_prox', xa = 'distance')
-        ec_s = err2coeff(slp_err[:50000000], dst_name = wg['name'] + '_slp', xa = 'slope')
+        # ec_s = err2coeff(slp_err[:50000000], dst_name = wg['name'] + '_slp', xa = 'slope')
 
         ## ==============================================
         ## apply error coefficient to full proximity grid
         ## ==============================================
         echo_msg('applying coefficient to proximity grid')
-        ## USE numpy instead
-        math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_prox_unc.tif=gd+n-9999:GTiff\
+        ## USE numpy/gdal instead
+        math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}.tif=gd+n-9999:GTiff\
         '.format(prox, ec_d[2], ec_d[1], 0, wg['name'])
         run_cmd(math_cmd, verbose = wg['verbose'])
         echo_msg('applied coefficient {} to proximity grid'.format(ec_d))
         
         math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
-        '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
+        # '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
         run_cmd(math_cmd, verbose = wg['verbose'])
         echo_msg('applied coefficient {} to slope grid'.format(ec_s))
         
-    return([ec_d, ec_s])
+    return([ec_d, ec_s], 0)
 
 def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
     '''Generate a coastline polygon from various sources.'''
+    
     w_mask = '{}_w.tif'.format(wg['name'])
     
     if wg['datalist'] is not None:    
@@ -4166,6 +4206,8 @@ def waffles_run(wg = _waffles_grid_info):
 
                 uc = _unc_config
                 uc['wg'] = wg
+                uc['mod'] = wg['mod']
+                uc['mod_args'] = wg['mod_args']
                 uc['dem'] = dem
                 uc['msk'] = dem_msk
 
