@@ -3772,7 +3772,7 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         prox_err = s_dp[:,[2,3]]
         # slp_err = s_dp[:,[2,4]]
         
-        np.savetxt('{}_prox.err'.format(wg['name']), prox_err, '%f', ' ')
+        #np.savetxt('{}_prox.err'.format(wg['name']), prox_err, '%f', ' ')
         # np.savetxt('{}_slp.err'.format(wg['name']), slp_err, '%f', ' ')
 
         ec_d = err2coeff(prox_err[:50000000], dst_name = wg['name'] + '_prox', xa = 'distance')
@@ -3788,12 +3788,12 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         run_cmd(math_cmd, verbose = wg['verbose'])
         echo_msg('applied coefficient {} to proximity grid'.format(ec_d))
         
-        math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
-        # '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
-        run_cmd(math_cmd, verbose = wg['verbose'])
-        echo_msg('applied coefficient {} to slope grid'.format(ec_s))
+        # math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
+        # # '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
+        # run_cmd(math_cmd, verbose = wg['verbose'])
+        # echo_msg('applied coefficient {} to slope grid'.format(ec_s))
         
-    return([ec_d, ec_s], 0)
+    return(ec_d, 0)
 
 def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
     '''Generate a coastline polygon from various sources.'''
