@@ -304,16 +304,21 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
 
     from scipy import optimize
 
+    #np.seterr(divide='ignore', invalid='ignore')
+    
     error = err_arr[:,0]
     distance = err_arr[:,1]
     
     max_int_dist = np.max(distance)
     nbins = 10
     n, _ = np.histogram(distance, bins = nbins)
+    #print(n)
     # want at least 2 values in each bin?
-    while 0 or 1 in n:
+    while 0 in n:
         nbins -= 1
+        #print(nbins)
         n, _ = np.histogram(distance, bins = nbins)
+    #print(0 in n)
     serror, _ = np.histogram(distance, bins = nbins, weights = error)
     serror2, _ = np.histogram(distance, bins = nbins, weights = error**2)
     mean = serror / n
@@ -3534,7 +3539,7 @@ _unc_config = {
     'percentile': 95,
     'zones': ['bathy', 'bathy-topo', 'topo'],
     'sims': 10,
-    'chnk_lvl': 4,
+    'chnk_lvl': 6,
 }
 
 waffles_unc_config = lambda: copy.deepcopy(_unc_config)
@@ -3774,15 +3779,16 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
 
         d_max = region_info[wg['name']][4]
         s_dp = s_dp[s_dp[:,3] < d_max,:]
+        #s_dp = s_dp[s_dp[:,3] > 0,:]
 
         prox_err = s_dp[:,[2,3]]
         slp_err = s_dp[:,[2,4]]
         
         np.savetxt('{}_prox.err'.format(wg['name']), prox_err, '%f', ' ')
-        np.savetxt('{}_slp.err'.format(wg['name']), slp_err, '%f', ' ')
+        #np.savetxt('{}_slp.err'.format(wg['name']), slp_err, '%f', ' ')
 
         ec_d = err2coeff(prox_err[:50000000], dst_name = wg['name'] + '_prox', xa = 'distance')
-        ec_s = err2coeff(slp_err[:50000000], dst_name = wg['name'] + '_slp', xa = 'slope')
+        #ec_s = err2coeff(slp_err[:50000000], dst_name = wg['name'] + '_slp', xa = 'slope')
 
         ## ==============================================
         ## apply error coefficient to full proximity grid
