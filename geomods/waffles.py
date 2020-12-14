@@ -2980,7 +2980,7 @@ _waffles_modules = {
     < linear:radius=0.01 >''', 'raster', True],
     'spat-meta': [lambda args: waffles_spatial_metadata(**args), '''generate SPATIAL-METADATA''', 'vector', True],
     #'uncertainty': [lambda args: waffles_interpolation_uncertainty(**args), '''generate DEM UNCERTAINTY
-    #< uncertainty:dem=None:msk=None:prox=None:slp=None:sims=2 >''', 'raster', False],
+    #< uncertainty:mod=surface:dem=None:msk=None:prox=None:slp=None:sims=2 >''', 'raster', False],
     'help': [lambda args: waffles_help(**args), '''display module info''', None, False],
     'coastline': [lambda args: waffles_coastline(**args), '''generate a coastline (landmask)''', 'vector', False],
     'datalists': [lambda args: waffles_datalists(**args), '''recurse the DATALIST
@@ -3540,6 +3540,7 @@ _unc_config = {
 waffles_unc_config = lambda: copy.deepcopy(_unc_config)
 waffles_unc_config_copy = lambda uc: copy.deepcopy(uc)
 
+## TODO: update naming for when module is called directly...
 def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', mod_args = (), \
                                       dem = None, msk = None, prox = None, slp = None, \
                                       percentile = 95, zones = ['bathy', 'bathy-topo', 'topo'], \
@@ -3555,11 +3556,13 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     # ## ==============================================
     # ## set the module and input grids.
     # ## ==============================================
-    # if mod not in _waffles_modules.keys():
-    #     echo_error_msg('invalid module name `{}`'.format(mod))
+    if mod not in _waffles_modules.keys():
+        echo_error_msg('invalid module name `{}`; reverting to `surface`'.format(mod))
+        mod = 'surface'
+        mod_args = ()
         
-    # wg['mod'] = mod
-    # wg['mod_args'] = mod_args
+    wg['mod'] = mod
+    wg['mod_args'] = mod_args
     
     echo_msg('running INTERPOLATION uncertainty module using {}...'.format(wg['mod']))
     out, status = run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
@@ -3794,10 +3797,10 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
 
         #remove_glob('_*.tif')
         
-        math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
-        # '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
-        run_cmd(math_cmd, verbose = wg['verbose'])
-        echo_msg('applied coefficient {} to slope grid'.format(ec_s))
+        # math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
+        # # '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
+        # run_cmd(math_cmd, verbose = wg['verbose'])
+        # echo_msg('applied coefficient {} to slope grid'.format(ec_s))
         
     return(ec_d, 0)
 
