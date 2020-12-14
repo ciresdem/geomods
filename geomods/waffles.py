@@ -314,7 +314,7 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
     n, _ = np.histogram(distance, bins = nbins)
     #print(n)
     # want at least 2 values in each bin?
-    while 0 in n:
+    while 0 and 1 in n:
         nbins -= 1
         #print(nbins)
         n, _ = np.histogram(distance, bins = nbins)
@@ -3796,7 +3796,7 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         echo_msg('applying coefficient to proximity grid')
         ## USE numpy/gdal instead
         #run_cmd('gdal_calc.py -A {} --outfile {}.tif --calc {}+({}*(A**{}))'.format(prox, ec_d[0], ec_d[1], ec_d[2], wg['name']), verbose = True)
-        math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}.tif=gd+n-9999:GTiff\
+        math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_prox_unc.tif=gd+n-9999:GTiff\
         '.format(prox, ec_d[2], ec_d[1], 0, wg['name'])
         run_cmd(math_cmd, verbose = wg['verbose'])
         echo_msg('applied coefficient {} to proximity grid'.format(ec_d))
