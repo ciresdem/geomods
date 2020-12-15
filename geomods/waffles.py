@@ -597,6 +597,7 @@ def regions_intersect_ogr_p(region_a, region_b):
 def region_format(region, t = 'gmt'):
     '''format region to string, defined by `t`
     t = 'str': xmin/xmax/ymin/ymax
+    t = 'sstr': xmin xmax ymin ymax
     t = 'gmt': -Rxmin/xmax/ymin/ymax
     t = 'bbox': xmin,ymin,xmax,ymax
     t = 'te': xmin ymin xmax ymax
@@ -606,6 +607,7 @@ def region_format(region, t = 'gmt'):
     returns the formatted region as str'''
 
     if t == 'str': return('/'.join([str(x) for x in region[:4]]))
+    elif t == 'sstr': return(' '.join([str(x) for x in region[:4]]))
     elif t == 'gmt': return('-R' + '/'.join([str(x) for x in region[:4]]))
     elif t == 'bbox': return(','.join([str(region[0]), str(region[2]), str(region[1]), str(region[3])]))
     elif t == 'te': return(' '.join([str(region[0]), str(region[2]), str(region[1]), str(region[3])]))
@@ -2325,6 +2327,65 @@ def fetch_dc_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = F
     
     for xyz in fetch_module_yield_entry(entry, region, verbose, module):
         xyz_line(xyz, dst_port, True)        
+
+## ==============================================
+## las=file processing (datalists fmt:300)
+## ==============================================
+def las_inf(src_las):
+    '''scan an xyz file and find it's min/max values and
+    write an associated inf file for the src_xyz file.
+
+    returns region [xmin, xmax, ymin, ymax, zmin, zmax] of the src_xyz file.'''
+
+    minmax = []
+    out, status = run_cmd('lasinfo -nc -nv -stdout -i {}'.format(src_las), verbose = False)
+    for i in out.split('\n'):
+        if 'min x y z' in i:
+            xyz_min = [float(y) for y in [x.strip() for x in i.split(':')][1].split()]
+        if 'max x y z' in i:
+            xyz_max = [float(y) for y in [x.strip() for x in i.split(':')][1].split()]
+
+    minmax = [xyz_min[0], xyz_max[0], xyz_min[1], xyz_max[1], xyz_min[2], xyz_max[2]]
+
+    with open('{}.inf'.format(src_las), 'w') as inf:
+        echo_msg('generating inf file for {}'.format(src_las))
+        inf.write('{}\n'.format(' '.join([str(x) for x in minmax])))
+    
+    return(minmax)
+    
+def las_inf_entry(entry):
+    '''find the region of the xyz datalist entry
+    
+    returns the region [xmin, xmax, ymin, ymax, zmin, zmax] of the xyz entry'''
+
+    return(las_inf(entry[0]))
+    
+def las_yield_entry(entry, region = None, verbose = False, z_region = None):
+    '''yield the xyz data from the xyz datalist entry
+
+    yields [x, y, z, <w, ...>]'''
+    ln = 0
+    delim = ' '
+    if z_region is not None:
+        min_z = None if z_region[0] is None else z_region[0]
+        max_z = None if z_region[1] is None else z_region[1]
+        #z_region = ['-' if x is None else str(x) for x in z_region]
+    else: min_z = max_z = None
+    #out, status = run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
+    for line in yield_cmd('las2txt -parse xyz -stdout -keep_class 2 29 -i {} {} {} {}\
+    '.format(entry[0], '' if region is None else '-keep_xy {}'.format(region_format(region, 'sstr')),\
+             '' if min_z is None else '-drop_z_below {}'.format(min_z),\
+             '' if max_z is None else '-drop_z_above {}'.format(max_z)), data_fun = None, verbose = False):
+        ln += 1
+        yield(line.split())
+    if verbose: echo_msg('read {} data points from {}'.format(ln, entry[0]))
+
+def las_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, z_region = None):
+    '''dump the las data from the las datalist entry to dst_port'''
+    
+    for xyz in las_yield_entry(entry, region, verbose, z_region):
+        xyz_line(xyz, dst_port, True, None)
+
         
 ## ==============================================
 ## xyz processing (datalists fmt:168)
@@ -2535,7 +2596,7 @@ def gmt_yield_entry(entry, region = None, verbose = False, z_region = None):
         #xyz = [float(x) for x in line.split(delim)]
         #yield(xyz + [entry[2]] if entry[2] is not None else xyz)
     if verbose: echo_msg('read {} data points from {}'.format(ln, entry[0]))
-        
+                          
 def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, z_region = None):
     '''dump the xyz data from the xyz datalist entry to dst_port'''
     
@@ -2550,13 +2611,14 @@ def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False,
 ## TODO -> pass_h to list for all entry passing
 ## ==============================================
 _known_dl_delims = [' ']
-_known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'csv', 'dat', 'ascii'], 200: ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'], 400: ['nos', 'dc', 'gmrt', 'srtm', 'charts', 'mb']}
+_known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'csv', 'dat', 'ascii'], 200: ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'], 300: ['las', 'laz'], 400: ['nos', 'dc', 'gmrt', 'srtm', 'charts', 'mb']}
 _known_datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, _known_datalist_fmts[key]) for key in _known_datalist_fmts])
 _dl_inf_h = {
     -1: lambda e: datalist_inf_entry(e),
     168: lambda e: xyz_inf_entry(e),
     200: lambda e: gdal_inf_entry(e),
-    201: lambda e: gdal_inf_entry(e, 4269)
+    201: lambda e: gdal_inf_entry(e, 4269),
+    300: lambda e: las_inf_entry(e)
 }
 _dl_pass_h = [lambda e: path_exists_or_url(e[0])]
 
@@ -2764,6 +2826,9 @@ def datalist_yield_entry(this_entry, region = None, verbose = False, z_region = 
             yield(xyz)
     elif this_entry[1] == 201:
         for xyz in gdal_yield_entry(this_entry, verbose = verbose, z_region = z_region, epsg = 4269):
+            yield(xyz)
+    elif this_entry[1] == 300:
+        for xyz in las_yield_entry(this_entry, verbose = verbose, region = region, z_region = z_region):
             yield(xyz)
     elif this_entry[1] == 400:
         for xyz in fetch_yield_entry(this_entry, region = region, verbose = verbose):
@@ -4721,7 +4786,8 @@ def datalists_cli(argv = sys.argv):
         except ValueError: these_regions = gdal_ogr_regions(i_region)
         except Exception as e:
             echo_error_msg('failed to parse region(s), {}'.format(e))
-    else: these_regions = [[-180,180,-90,90]]
+        #else: these_regions = [[-180,180,-90,90]]
+    else: these_regions = [None]
     if len(these_regions) == 0: echo_error_msg('failed to parse region(s), {}'.format(i_region))
 
     for rn, this_region in enumerate(these_regions):
@@ -4731,8 +4797,8 @@ def datalists_cli(argv = sys.argv):
         dl_m = datalist_major(dls, region = this_region)
         echo_msg('processed datalist')
         dlp_hooks = datalist_default_hooks()
-        dlp_hooks.append(lambda e: regions_intersect_ogr_p(this_region, inf_entry(e)))
-
+        if region_valid_p(this_region):
+            dlp_hooks.append(lambda e: regions_intersect_ogr_p(this_region, inf_entry(e)))
         if z_region is not None:
             dlp_hooks.append(lambda e: z_region_pass(inf_entry(e), upper_limit = z_region[1], lower_limit = z_region[0]))
         if w_region is not None:
