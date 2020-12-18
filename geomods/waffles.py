@@ -969,7 +969,7 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
                     ## generate the random-sample DEM
                     ## ==============================================
                     wc = waffles_config(name = 'sub_{}'.format(n),
-                                        datalists = [s_outer, sub_xyz_head],
+                                        data = [s_outer, sub_xyz_head],
                                         region = this_region,
                                         inc = wg['inc'],
                                         mod = wg['mod'],
