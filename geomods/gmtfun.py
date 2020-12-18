@@ -111,10 +111,10 @@ def gmt_select_split(o_xyz, sub_region, sub_bn, verbose = False):
     
     out_inner = None
     out_outer = None
-    gmt_s_inner = 'gmt gmtselect -V {} {} > {}_inner.xyz'.format(o_xyz, region_format(sub_region, 'gmt'), sub_bn)
+    gmt_s_inner = 'gmt gmtselect -V {} {} > {}_inner.xyz'.format(o_xyz, regions.region_format(sub_region, 'gmt'), sub_bn)
     out, status = utils.run_cmd(gmt_s_inner, verbose = verbose)
     if status == 0: out_inner = '{}_inner.xyz'.format(sub_bn)
-    gmt_s_outer = 'gmt gmtselect -V {} {} -Ir > {}_outer.xyz'.format(o_xyz, region_format(sub_region, 'gmt'), sub_bn)
+    gmt_s_outer = 'gmt gmtselect -V {} {} -Ir > {}_outer.xyz'.format(o_xyz, regions.region_format(sub_region, 'gmt'), sub_bn)
     out, status = utils.run_cmd(gmt_s_outer, verbose = verbose)
     if status == 0:  out_outer = '{}_outer.xyz'.format(sub_bn)
     return([out_inner, out_outer])
