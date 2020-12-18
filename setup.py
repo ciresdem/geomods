@@ -25,7 +25,7 @@ with open('README', 'r') as fh:
 
 setuptools.setup(
     name = 'geomods',
-    version = '0.3.0',
+    version = '0.4.0',
     description = 'Modules and scripts for utilizing geographic data Digital Elevation Models',
     long_description = long_description,
     long_description_content_type = 'text/markdown',
@@ -48,7 +48,7 @@ setuptools.setup(
     entry_points = {
         'console_scripts': [
             'waffles = geomods.waffles:waffles_cli',
-            'datalists = geomods.waffles:datalists_cli',
+            'datalists = geomods.datalists:datalists_cli',
             'fetches = geomods.fetches:fetches_cli',
         ],
     },
@@ -72,7 +72,6 @@ setuptools.setup(
         'scripts/spatial-meta.sh',
         'scripts/clip_xyz.sh',
         'scripts/coastline2xyz.sh',
-        #'scripts/gdal_vrt_avg.py',
         'scripts/create_datalist.sh',
         'scripts/bag2tif2chunks2xyz.sh',
         'scripts/gdal2xyzchunks.py',

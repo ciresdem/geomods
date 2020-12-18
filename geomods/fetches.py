@@ -44,94 +44,14 @@ try:
     import Queue as queue
 except: import queue as queue
 from xml.dom import minidom
-import waffles
-#from geomods import waffles
-_version = '0.4.3'
 
-## =============================================================================
-## functions from waffles:
-## =============================================================================
-def args2dict(args, dict_args = {}):
-    '''args are a list of ['key=val'] pairs'''
-    for arg in args:
-        p_arg = arg.split('=')
-        dict_args[p_arg[0]] = False if p_arg[1].lower() == 'false' else True if p_arg[1].lower() == 'true' else None if p_arg[1].lower() == 'none' else p_arg[1]
-    return(dict_args)
+from geomods import utils
+from geomods import regions
+from geomods import vdatumfun
+from geomods import gdalfun
+from geomods import xyzfun
 
-def region_format(region, t = 'gmt'):
-    '''format region to string'''
-    if t == 'str': return('/'.join([str(x) for x in region]))
-    elif t == 'gmt': return('-R' + '/'.join([str(x) for x in region]))
-    elif t == 'bbox': return(','.join([str(region[0]), str(region[2]), str(region[1]), str(region[3])]))
-    elif t == 'fn':
-        if region[3] < 0: ns = 's'
-        else: ns = 'n'
-        if region[0] > 0: ew = 'e'
-        else: ew = 'w'
-        return('{}{:02d}x{:02d}_{}{:03d}x{:02d}'.format(ns, abs(int(region[3])), abs(int(region[3] * 100) % 100), 
-                                                        ew, abs(int(region[0])), abs(int(region[0] * 100) % 100)))
-
-def region_valid_p(region):
-    '''return True if region appears valid'''
-    if region is not None:
-        if region[0] < region[1] and region[2] < region[3]: return(True)
-        else: return(False)
-    else: return(False)
-
-def region_pct(region, pctv):
-    '''return the pctv val of the region'''
-    ewp = (region[1] - region[0]) * (pctv * .01)
-    nsp = (region[3] - region[2]) * (pctv * .01)
-    return((ewp + nsp) / 2)
-
-def region_buffer(region, bv = 0, pct = False):
-    '''return the region buffered by bv'''
-    if pct: bv = region_pct(region, bv)
-    return([region[0] - bv, region[1] + bv, region[2] - bv, region[3] + bv])
-
-def gdal_ogr_regions(src_ds):
-    '''return the region(s) of the ogr dataset'''
-    these_regions = []
-    if os.path.exists(src_ds):
-        poly = ogr.Open(src_ds)
-        if poly is not None:
-            p_layer = poly.GetLayer(0)
-            for pf in p_layer:
-                pgeom = pf.GetGeometryRef()
-                these_regions.append(pgeom.GetEnvelope())
-        poly = None
-    return(these_regions)
-
-def gdal_fext(src_drv_name):
-    '''return the common file extention given a GDAL driver name'''
-    fexts = None
-    try:
-        drv = gdal.GetDriverByName(src_drv_name)
-        if drv.GetMetadataItem(gdal.DCAP_RASTER): fexts = drv.GetMetadataItem(gdal.DMD_EXTENSIONS)
-        if fexts is not None: return(fexts.split()[0])
-        else: return(None)
-    except:
-        if src_drv_name == 'GTiff': fext = 'tif'
-        elif src_drv_name == 'HFA': fext = 'img'
-        elif src_drv_name == 'GMT': fext = 'grd'
-        elif src_drv_name.lower() == 'netcdf': fext = 'nc'
-        else: fext = 'gdal'
-        return(fext)
-
-def echo_error_msg2(msg, prefix = 'waffles'):
-    '''echo error msg to stderr'''
-    sys.stderr.write('\x1b[2K\r')
-    sys.stderr.flush()
-    sys.stderr.write('{}: error, {}\n'.format(prefix, msg))
-
-def echo_msg2(msg, prefix = 'waffles'):
-    '''echo msg to stderr'''
-    sys.stderr.write('\x1b[2K\r')
-    sys.stderr.flush()
-    sys.stderr.write('{}: {}\n'.format(prefix, msg))
-
-echo_msg = lambda m: echo_msg2(m, prefix = os.path.basename(sys.argv[0]))
-echo_error_msg = lambda m: echo_error_msg2(m, prefix = os.path.basename(sys.argv[0]))
+_version = '0.4.5'
 
 ## =============================================================================
 ##
@@ -169,7 +89,7 @@ def fetch_queue(q, p):
                     try:
                         os.makedirs(os.path.dirname(fetch_args[1]))
                     except: pass
-                echo_msg(fetch_args[1])
+                utils.echo_msg(fetch_args[1])
                 with open('.'.join(fetch_args[1].split('.')[:-1]) + '.xyz', 'w') as out_xyz:
                     p._dump_xyz([fetch_args[0], fetch_args[1], fetch_args[-1]], dst_port = out_xyz)
                     
@@ -181,7 +101,7 @@ def fetch_ftp_file(src_url, dst_fn, params = None, callback = None, datatype = N
     status = 0
     f = None
     halt = callback
-    echo_msg('fetching remote ftp file: {}...'.format(os.path.basename(src_url)))
+    utils.echo_msg('fetching remote ftp file: {}...'.format(os.path.basename(src_url)))
     if not os.path.exists(os.path.dirname(dst_fn)):
         try:
             os.makedirs(os.path.dirname(dst_fn))
@@ -193,7 +113,7 @@ def fetch_ftp_file(src_url, dst_fn, params = None, callback = None, datatype = N
     if f is not None:
         with open(dst_fn, 'wb') as local_file:
              local_file.write(f.read())
-    #echo_msg('fetched remote ftp file: {}.'.format(os.path.basename(src_url)))
+    #utils.echo_msg('fetched remote ftp file: {}.'.format(os.path.basename(src_url)))
     return(status)
 
 def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatype = None, overwrite = False, verbose = False):
@@ -201,7 +121,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
     status = 0
     req = None
     halt = callback
-    if verbose: echo_msg('fetching remote file: {}...'.format(os.path.basename(src_url)))
+    if verbose: utils.echo_msg('fetching remote file: {}...'.format(os.path.basename(src_url)))
     if not os.path.exists(os.path.dirname(dst_fn)):
         try:
             os.makedirs(os.path.dirname(dst_fn))
@@ -211,7 +131,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
         try:
             req = requests.get(src_url, stream = True, params = params, headers = r_headers, timeout=(25,60))
         except requests.ConnectionError as e:
-            echo_error_msg(e)
+            utils.echo_error_msg(e)
             status = -1
         if req is not None and req.status_code == 200:
             try:
@@ -222,13 +142,13 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
                                 status = -1
                                 break
                             local_file.write(chunk)
-            except Exception as e: echo_error_msg(e)
+            except Exception as e: utils.echo_error_msg(e)
             req.close()
     else:
         if os.path.exists(dst_fn): return(status)
         status = -1
     if not os.path.exists(dst_fn) or os.stat(dst_fn).st_size ==  0: status = -1
-    if verbose: echo_msg('fetched remote file: {}.'.format(os.path.basename(dst_fn)))
+    if verbose: utils.echo_msg('fetched remote file: {}.'.format(os.path.basename(dst_fn)))
     return(status)
 
 def fetch_req(src_url, params = None, tries = 5, timeout = 2):
@@ -244,7 +164,7 @@ def fetch_nos_xml(src_url):
     try:
         req = fetch_req(src_url, timeout = .25)
         results = lxml.etree.fromstring(req.text.encode('utf-8'))
-    except: echo_error_msg('could not access {}'.format(src_url))
+    except: utils.echo_error_msg('could not access {}'.format(src_url))
     return(results)
         
 def fetch_html(src_url):
@@ -370,11 +290,13 @@ def update_ref_vector(src_vec, surveys, update=True):
 class dc:
     '''Fetch elevation data from the Digital Coast'''
     def __init__(self, extent = None, filters = [], callback = None):
-        echo_msg('loading Digital Coast fetch module...')
+        utils.echo_msg('loading Digital Coast fetch module...')
         self._dc_htdata_url = 'https://coast.noaa.gov/htdata/'
         self._dc_dav_id = 'https://coast.noaa.gov/dataviewer/#/lidar/search/where:ID='
-        self._dc_dirs = ['lidar1_z', 'lidar2_z', 'raster2']
-        self._ref_vector = os.path.join(fetchdata, 'dc.gmt')
+        #self._dc_dirs = ['lidar1_z', 'lidar2_z', 'raster2']
+        self._dc_dirs = ['lidar2_z', 'raster2']
+        #self._ref_vector = os.path.join(fetchdata, 'dc.gmt')
+        self._ref_vector = os.path.join('.', 'dc.gmt')
         self._outdir = os.path.join(os.getcwd(), 'dc')
         self._status = 0
         self._surveys = []
@@ -382,6 +304,7 @@ class dc:
         self._index = False
         self._filters = filters
         self._has_vector = True if os.path.exists(self._ref_vector) else False
+        #self._has_vector = False
         self.stop = callback
         self.region = extent
         if self.region is not None: 
@@ -407,17 +330,23 @@ class dc:
     def _update(self):
         '''Update the DC reference vector after scanning
         the relevant metadata from Digital Coast.'''
+        utils.echo_msg('updating Digital Coast fetch module')
         for ld in self._dc_dirs:
+            utils.echo_msg('scanning {}'.format(ld))
             if self._has_vector:
-                gmt2 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
+                gmt2 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 1)
                 layer = gmt2.GetLayer()
+                layerDef = layer.GetLayerDefn()
+                print([layerDef.GetFieldDefn(i).GetName() for i in range(layerDef.GetFieldCount())])
             else: layer = []
             page = fetch_html(self._dc_htdata_url + ld)
             tables = page.xpath('//table')
             tr = tables[0].xpath('.//tr')
             if len(tr) <= 0: break
             cols = []
-            for i in tr[0]: cols.append(i.text_content())
+            [cols.append(i.text_content()) for i in tr[0]]
+            #for i in tr[0]: cols.append(i.text_content())
+
             ## ==============================================
             ## Collect relavant info from metadata
             ## ==============================================
@@ -433,8 +362,15 @@ class dc:
                                 dc['Metadata'] = cl[0].get('href')
                             else: dc[cols[j]] = cl[0].get('href')
                         else: dc[cols[j]] = cell.text_content()
-
-                    if self._has_vector: layer.SetAttributeFilter('ID = "%s"' %(dc['ID #']))
+                    #print(dc['ID #'])
+                    #if self._has_vector: layer.SetAttributeFilter('ID = "%s"' %(dc['ID #']))
+                    if self._has_vector:
+                        #print('ID = {}'.format(dc['ID #']))
+                        print(layer.SetAttributeFilter("ID = '{}'".format(dc['ID #'])))
+                        
+                    #for feature in layer:
+                    #    print('dcID - ' + feature.GetField('ID') + '-' + dc['ID #'])
+                    #print(len(layer))
                     if len(layer) == 0:
                         if 'Metadata' in dc.keys():
                             xml_doc = fetch_nos_xml(dc['Metadata'])
@@ -442,8 +378,10 @@ class dc:
                             el = xml_doc.find('.//gmd:eastBoundLongitude/gco:Decimal', namespaces = namespaces)
                             sl = xml_doc.find('.//gmd:southBoundLatitude/gco:Decimal', namespaces = namespaces)
                             nl = xml_doc.find('.//gmd:northBoundLatitude/gco:Decimal', namespaces = namespaces)
-                            this_region = [float(x) for x in [wl.text, el.text, sl.text, nl.text]]
-                            if region_valid_p(this_region):
+                            try:
+                                this_region = [float(x) for x in [wl.text, el.text, sl.text, nl.text]]
+                            except: this_region = None
+                            if regions.region_valid_p(this_region):
                                 obbox = bounds2geom(this_region)
                                 try: 
                                     odate = int(dc['Year'][:4])
@@ -459,14 +397,16 @@ class dc:
                                          dc['Metadata'], 
                                          dc['https'], 
                                          ld.split("_")[0]]
-                                print(out_s)
+                                #print(out_s)
                                 self._surveys.append(out_s)
 
             ## ==============================================
             ## Add matching surveys to reference vector
             ## ==============================================
+            #print(self._surveys)
             if len(self._surveys) > 0: update_ref_vector(self._ref_vector, self._surveys, self._has_vector)
             self._has_vector = True if os.path.exists(self._ref_vector) else False
+            #print(self._has_vector)
             self._surveys = []
             gmt2 = layer = None
 
@@ -475,7 +415,7 @@ class dc:
     ## ==============================================
     def _filter_reference_vector(self):
         '''Search for data in the reference vector file'''
-        echo_msg('filtering Digital Coast reference vector...')
+        utils.echo_msg('filtering Digital Coast reference vector...')
         gmt1 = ogr.Open(self._ref_vector)
         layer = gmt1.GetLayer(0)
         [layer.SetAttributeFilter('{}'.format(filt)) for filt in self._filters]
@@ -496,7 +436,7 @@ class dc:
                         next(layer, None)
                         continue
                 if self._index:
-                    echo_msg('{} ({}): {} ({}) - {}\
+                    utils.echo_msg('{} ({}): {} ({}) - {}\
                     '.format(feature1.GetField("ID"),feature1.GetField("Datatype"),
                              feature1.GetField("Name"),feature1.GetField("Date"),
                              feature1.GetField("Data")))
@@ -553,7 +493,7 @@ class dc:
                         
         if len(self._results) == 0: self._status = -1
         gmt1 = layer = None
-        echo_msg('filtered \033[1m{}\033[m data files from Digital Coast reference vector'.format(len(self._results)))
+        utils.echo_msg('filtered \033[1m{}\033[m data files from Digital Coast reference vector'.format(len(self._results)))
 
     ## ==============================================
     ## Process results to xyz
@@ -566,33 +506,36 @@ class dc:
         else: dt = None
         if dt == 'lidar':
             if fetch_file(entry[0], src_dc, callback = lambda: False, verbose = self._verbose) == 0:
-                xyz_dat = waffles.yield_cmd('las2txt -verbose -stdout -parse xyz -keep_xy {} -keep_class {} -i {}\
-                '.format(waffles.region_format(self.region, 'te'), '2 29', src_dc), verbose = False)
-                xyzc = copy.deepcopy(waffles._xyz_config)
+                xyz_dat = utils.yield_cmd('las2txt -verbose -stdout -parse xyz -keep_xy {} -keep_class {} -i {}\
+                '.format(regions.region_format(self.region, 'te'), '2 29', src_dc), verbose = False)
+                xyzc = copy.deepcopy(xyzfun._xyz_config)
                 xyzc['name'] = src_dc
-                for xyz in waffles.xyz_parse(xyz_dat, xyz_c = xyzc, verbose = self._verbose):
+                for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, verbose = self._verbose):
                     yield(xyz)
         elif dt == 'raster':
             try:
                 src_ds = gdal.Open(entry[0])
             except Exception as e:
                 fetch_file(entry[0], src_dc, callback = lambda: False, verbose = self._verbose)
-                src_ds = gdal.Open(src_dc)
+                try:
+                    src_ds = gdal.Open(src_dc)
+                except Exception as e:
+                    utils.echo_error_msg('could not read dc raster file: {}, {}'.format(entry[0], e))
+                    src_ds = None
             except Exception as e:
-                waffles.echo_error_msg('could not read dc raster file: {}, {}'.format(entry[0], e))
+                utils.echo_error_msg('could not read dc raster file: {}, {}'.format(entry[0], e))
                 src_ds = None
-                #continue
             
             if src_ds is not None:
-                srcwin = waffles.gdal_srcwin(src_ds, self.region)
-                for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, warp = 4326, verbose = self._verbose):
+                srcwin = gdalfun.gdal_srcwin(src_ds, self.region)
+                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = 4326, verbose = self._verbose):
                     yield(xyz)
             src_ds = None
-        waffles.remove_glob(src_dc)
+        utils.remove_glob(src_dc)
 
     def _dump_xyz(self, entry, datatype = None, dst_port = sys.stdout):
         for xyz in self._yield_xyz(entry, datatype):
-            waffles.xyz_line(xyz, dst_port, self._verbose)
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
             
     def _yield_results_to_xyz(self, datatype = None):
         if len(self._results) == 0: self.run(datatype)
@@ -602,7 +545,7 @@ class dc:
                 
     def _dump_results_to_xyz(self, datatype = None, dst_port = sys.stdout):
         for xyz in self._yield_results_to_xyz(datatype):
-            waffles.xyz_line(xyz, dst_port, self._verbose)
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
             
 ## =============================================================================
 ##
@@ -616,7 +559,7 @@ class dc:
 class nos:
     '''Fetch NOS BAG and XYZ sounding data from NOAA'''
     def __init__(self, extent = None, filters = [], callback = None):
-        echo_msg('loading NOS fetch module...')
+        utils.echo_msg('loading NOS fetch module...')
         self._nos_xml_url = lambda nd: 'https://data.noaa.gov/waf/NOAA/NESDIS/NGDC/MGG/NOS/%siso_u/xml/' %(nd)
         #self._nos_xml_url = lambda nd: 'https://data.noaa.gov/waf/NOAA/NESDIS/NGDC/MGG/NOS/%siso/xml/' %(nd)
         #self._nos_data_url = "https://data.ngdc.noaa.gov/platforms/ocean/nos/coast/"
@@ -755,7 +698,7 @@ class nos:
     def _filter_reference_vector(self):
         '''Search the NOS reference vector and append the results
         to the results list.'''
-        echo_msg('filtering NOS reference vector...')
+        utils.echo_msg('filtering NOS reference vector...')
         gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
         layer = gmt1.GetLayer()
         for filt in self._filters: layer.SetAttributeFilter('{}'.format(filt))
@@ -772,14 +715,14 @@ class nos:
                         else:
                             [self._results.append([i, i.split('/')[-1], feature.GetField('Datatype')]) for i in fldata]
         gmt1 = layer = None
-        echo_msg('filtered \033[1m{}\033[m data files from NOS reference vector'.format(len(self._results)))
+        utils.echo_msg('filtered \033[1m{}\033[m data files from NOS reference vector'.format(len(self._results)))
 
     ## ==============================================
     ## Process results to xyz
     ## ==============================================    
     def _yield_xyz(self, entry, datatype = None, vdc = None, xyzc = None):
-        if vdc is None: vdc = copy.deepcopy(waffles._vd_config)
-        if xyzc is None: xyzc = copy.deepcopy(waffles._xyz_config)
+        if vdc is None: vdc = copy.deepcopy(vdatumfun._vd_config)
+        if xyzc is None: xyzc = copy.deepcopy(xyzfun._xyz_config)
         src_nos = os.path.basename(entry[1])
         dt = None
         if fetch_file(entry[0], src_nos, callback = lambda: False, verbose = self._verbose) == 0:
@@ -794,14 +737,14 @@ class nos:
                 else: dt = None
             else: dt = None
             if dt == 'geodas_xyz':
-                nos_f, nos_zips = waffles.procs_unzip(src_nos, waffles._known_datalist_fmts[168])
+                nos_f, nos_zips = utils.procs_unzip(src_nos, ['xyz', 'dat'])
                 vdc['ivert'] = 'mllw:m:sounding'
                 vdc['overt'] = 'lmsl:m:height'
                 vdc['delim'] = 'comma'
                 vdc['xyzl'] = '2,1,3'
                 vdc['skip'] = '1'
                 vdc['region'] = '5'
-                #out, status = waffles.run_vdatum(nos_f, vdc)
+                #out, status = vdatumfun.run_vdatum(nos_f, vdc)
                 #nos_f_r = os.path.join('result', os.path.basename(nos_f))
                 nos_f_r = nos_f
 
@@ -810,14 +753,15 @@ class nos:
                 xyzc['xpos'] = 2
                 xyzc['ypos'] = 1
                 xyzc['zpos'] = 3
+                xyzc['z-scale'] = -1
                 xyzc['name'] = nos_f_r
                 if os.path.exists(nos_f_r):
                     with open(nos_f_r, 'r') as in_n:
-                        for xyz in waffles.xyz_parse(in_n, xyz_c = xyzc, region = self.region, verbose = self._verbose):
+                        for xyz in xyzfun.xyz_parse(in_n, xyz_c = xyzc, region = self.region, verbose = self._verbose):
                             yield(xyz)
                     
             elif dt == 'grid_bag':
-                src_bag, nos_zips = waffles.procs_unzip(src_nos, waffles._known_datalist_fmts[200])
+                src_bag, nos_zips = utils.procs_unzip(src_nos, ['gdal', 'tif', 'img', 'bag', 'asc'])
                 nos_f = '{}.tmp'.format(os.path.basename(src_bag).split('.')[0])
                 vdc['ivert'] = 'mllw:m:height'
                 vdc['overt'] = 'lmsl:m:height'
@@ -830,31 +774,32 @@ class nos:
                 xyzc['xpos'] = 0
                 xyzc['ypos'] = 1
                 xyzc['zpos'] = 2
+                xyzc['z-scale'] = 1
                 xyzc['name'] = src_bag
-                #, waffles.gdal_region(src_ds, warp = 4326):
+                #, gdalfun.gdal_region(src_ds, warp = 4326):
                 src_ds = gdal.Open(src_bag)
                 if src_ds is not None:
-                    srcwin = waffles.gdal_srcwin(src_ds, waffles.region_warp(self.region, s_warp = 4326, t_warp = waffles.gdal_getEPSG(src_ds)))
+                    srcwin = gdalfun.gdal_srcwin(src_ds, regions.region_warp(self.region, s_warp = 4326, t_warp = gdalfun.gdal_getEPSG(src_ds)))
                     with open(nos_f, 'w') as cx:
-                        for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, warp = 4326):
-                            waffles.xyz_line(xyz, cx)
+                        for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = 4326):
+                            xyzfun.xyz_line(xyz, cx)
                     src_ds = None
                     if os.stat(nos_f).st_size != 0:
-                        #out, status = waffles.run_vdatum(nos_f, vdc)
+                        #out, status = vdatumfun.run_vdatum(nos_f, vdc)
                         #src_r_bag = os.path.join('result', os.path.basename(nos_f))
                         src_r_bag = nos_f
                         if os.path.exists(src_r_bag):
                             with open(src_r_bag, 'r') as in_b:
-                                for xyz in waffles.xyz_parse(in_b, xyz_c = xyzc, verbose = self._verbose):
+                                for xyz in xyzfun.xyz_parse(in_b, xyz_c = xyzc, verbose = self._verbose):
                                     yield(xyz)
-                waffles.remove_glob(src_bag)
-            waffles.remove_glob(nos_f)
-        waffles.remove_glob(src_nos)
-        #waffles.vdatum_clean_result()
+                utils.remove_glob(src_bag)
+            utils.remove_glob(nos_f)
+        utils.remove_glob(src_nos)
+        #vdatumfun.vdatum_clean_result()
         
     def _dump_xyz(self, entry, dst_port = sys.stdout):
          for xyz in self._yield_xyz(entry):
-             waffles.xyz_line(xyz, dst_port, self._verbose)
+             xyzfun.xyz_line(xyz, dst_port, self._verbose)
 
     def _dump_xyz_entry(self, entry, dst_port = sys.stdout):
              
@@ -873,22 +818,22 @@ class nos:
             else: dt = None
 
             if dt == 'grid_bag':
-                waffles.gdal2xyz_chunks(src_nos, 2000, None, 4269, 'mllw,navd88', 'bags.datalist', True)
+                gdalfun.gdal2xyz_chunks(src_nos, 2000, None, 4269, 'mllw,navd88', 'bags.datalist', True)
             elif dt == 'geodas_xyz':
-                xyzc = copy.deepcopy(waffles._xyz_config)
+                xyzc = copy.deepcopy(xyzfun._xyz_config)
                 xyzc['delim'] = ','
                 xyzc['skip'] = 1
                 xyzc['xpos'] = 2
                 xyzc['ypos'] = 1
                 xyzc['zpos'] = 3
-                waffles.xyz_transform(src_nos, xyzc, None, 'mllw:m:sounding,navd88:m:height', self.region, 'hydronos.datalist', True)
-            waffles.remove_glob(src_nos)
+                gdalfun.xyz_transform(src_nos, xyzc, None, 'mllw:m:sounding,navd88:m:height', self.region, 'hydronos.datalist', True)
+            utils.remove_glob(src_nos)
             
     def _yield_results_to_xyz(self, datatype = None):
         self.run(datatype)
-        vdc = copy.deepcopy(waffles._vd_config)
-        xyzc = copy.deepcopy(waffles._xyz_config)
-        if vdc['jar'] is None: vdc['jar'] = waffles.vdatum_locate_jar()[0]
+        vdc = copy.deepcopy(vdatumfun._vd_config)
+        xyzc = copy.deepcopy(xyzfun._xyz_config)
+        if vdc['jar'] is None: vdc['jar'] = vdatumfun.vdatum_locate_jar()[0]
         
         for entry in self._results:
             for xyz in self._yield_xyz(entry, datatype, vdc, xyzc):
@@ -896,7 +841,7 @@ class nos:
 
     def _dump_results_to_xyz(self, datatype = None, dst_port = sys.stdout):
         for xyz in self._yield_results_to_xyz(datatype):
-            waffles.xyz_line(xyz, dst_port, self._verbose)
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
                 
 class cudem:
     def __init__(self, extent = None, filters = [], callback = None):
@@ -1011,7 +956,7 @@ class cudem:
     def _filter_reference_vector(self):
         '''Search for data in the reference vector file'''
 
-        echo_msg('filtering CUDEM reference vector...')
+        utils.echo_msg('filtering CUDEM reference vector...')
         ds = ogr.Open(self._ref_vector)
         layer = ds.GetLayer(0)
 
@@ -1021,14 +966,14 @@ class cudem:
         for feature1 in layer:
             geom = feature1.GetGeometryRef()
             if self._boundsGeom.Intersects(geom):
-                wcs_url_service = "{}?request=GetCoverage&version=1.0.0&service=WCS&coverage=z&bbox={}&format=NetCDF3".format(feature1.GetField("Data"), region_format(self.region, 'bbox'))
+                wcs_url_service = "{}?request=GetCoverage&version=1.0.0&service=WCS&coverage=z&bbox={}&format=NetCDF3".format(feature1.GetField("Data"), regions.region_format(self.region, 'bbox'))
                 if self.dt is not None:
                     if feature1.GetField('Datatype').lower() == self.dt.lower():
                         self._results.append([wcs_url_service, feature1.GetField('Data').split('/')[-1], feature1.GetField('Datatype')])
                 else: self._results.append([wcs_url_service, feature1.GetField('Data').split('/')[-1], feature1.GetField('Datatype')])
                 #print(self._results)
         ds = layer = None
-        echo_msg('filtered \033[1m{}\033[m data files from CUDEM reference vector.'.format(len(self._results)))
+        utils.echo_msg('filtered \033[1m{}\033[m data files from CUDEM reference vector.'.format(len(self._results)))
             
 ## =============================================================================
 ##
@@ -1040,7 +985,7 @@ class cudem:
 class charts():
     '''Fetch digital chart data from NOAA'''
     def __init__(self, extent = None, filters = [], callback = None):
-        echo_msg('loading CHARTS fetch module...')
+        utils.echo_msg('loading CHARTS fetch module...')
         self._enc_data_catalog = 'http://www.charts.noaa.gov/ENCs/ENCProdCat_19115.xml'
         self._rnc_data_catalog = 'http://www.charts.noaa.gov/RNCs/RNCProdCat_19115.xml'
         self._outdir = os.path.join(os.getcwd(), 'charts')
@@ -1110,9 +1055,9 @@ class charts():
 
     def _update(self):
         '''Update or create the reference vector file'''
-        echo_msg('updating reference vector: {}'.format(self._ref_vector))
+        utils.echo_msg('updating reference vector: {}'.format(self._ref_vector))
         for dt in self._dt_xml.keys():
-            echo_msg('updating {}'.format(dt))
+            utils.echo_msg('updating {}'.format(dt))
             self._checks = dt
             self.chart_xml = fetch_nos_xml(self._dt_xml[self._checks])
             self._parse_charts_xml(self._has_vector)
@@ -1126,7 +1071,7 @@ class charts():
     def _filter_reference_vector(self):
         '''Search for data in the reference vector file'''
 
-        echo_msg('filtering CHARTS reference vector...')
+        utils.echo_msg('filtering CHARTS reference vector...')
         ds = ogr.Open(self._ref_vector)
         layer = ds.GetLayer(0)
 
@@ -1142,19 +1087,19 @@ class charts():
                 else: self._results.append([feature1.GetField('Data'), feature1.GetField('Data').split('/')[-1], feature1.GetField('Datatype')])
 
         ds = layer = None
-        echo_msg('filtered \033[1m{}\033[m data files from CHARTS reference vector.'.format(len(self._results)))
+        utils.echo_msg('filtered \033[1m{}\033[m data files from CHARTS reference vector.'.format(len(self._results)))
 
     ## ==============================================
     ## Process results to xyz
     ## ==============================================
     def _yield_xyz(self, entry, datatype = None, vdc = None, xyzc = None):
-        if vdc is None: vdc = waffles._vd_config
-        if xyzc is None: xyzc = waffles._xyz_config
-
+        if vdc is None: vdc = vdatumfun._vd_config
+        if xyzc is None: xyzc = xyzfun._xyz_config
+        xyzc['z-scale'] = -1
         src_zip = os.path.basename(entry[1])
         if fetch_file(entry[0], src_zip, callback = lambda: False) == 0:
             if entry[-1].lower() == 'enc':
-                src_ch, src_zips = waffles.procs_unzip(src_zip, ['.000'])
+                src_ch, src_zips = utils.procs_unzip(src_zip, ['.000'])
                 dst_xyz = src_ch.split('.')[0] + '.xyz'
                 ds_ogr = ogr.Open(src_ch)
                 layer_s = ds_ogr.GetLayerByName('SOUNDG')
@@ -1163,44 +1108,46 @@ class charts():
                         for f in layer_s:
                             g = json.loads(f.GetGeometryRef().ExportToJson())
                             for xyz in g['coordinates']:
-                                waffles.xyz_line([float(x) for x in xyz], o_xyz, self._verbose)
+                                xyzfun.xyz_line([float(x) for x in xyz], o_xyz, self._verbose)
 
                 ds_ogr = layer_s = None
 
                 vdc['ivert'] = 'mllw:m:sounding'
-                vdc['overt'] = 'navd88:m:height'
+                vdc['overt'] = 'lmsl:m:height'
                 vdc['delim'] = 'space'
                 vdc['xyzl'] = '0,1,2'
                 vdc['skip'] = '0'
-                out, status = waffles.run_vdatum(dst_xyz, vdc)
-                ch_f_r = os.path.join('result', os.path.basename(dst_xyz))
+                vdc['region'] = '5'
+                #out, status = vdatumfun.run_vdatum(dst_xyz, vdc)
+                #ch_f_r = os.path.join('result', os.path.basename(dst_xyz))
+                ch_f_r = dst_xyz
 
                 if os.path.exists(ch_f_r):
                     with open(ch_f_r, 'r') as in_c:
-                        for xyz in waffles.xyz_parse(in_c, verbose = self._verbose):
+                        for xyz in xyzfun.xyz_parse(in_c, verbose = self._verbose):
                             yield(xyz)
 
-                waffles.remove_glob(src_ch)
-                waffles.remove_glob(dst_xyz)
-                waffles._clean_zips(src_zips)
-                waffles.vdatum_clean_result()
-        waffles.remove_glob(src_zip)
+                utils.remove_glob(src_ch)
+                utils.remove_glob(dst_xyz)
+                utils._clean_zips(src_zips)
+                vdatumfun.vdatum_clean_result()
+        utils.remove_glob(src_zip)
         
     def _dump_xyz(self, entry, datatype = None, dst_port = sys.stdout):
         for xyz in self._yield_xyz(entry):
-            waffles.xyz_line(xyz, dst_port, self._verbose)
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
         
     def _yield_results_to_xyz(self, datatype = None):
         if len(self._results) == 0: self.run(datatype)
-        vdc = copy.deepcopy(waffles._vd_config)            
-        if vdc['jar'] is None: vdc['jar'] = waffles.vdatum_locate_jar()[0]
+        vdc = copy.deepcopy(vdatumfun._vd_config)            
+        if vdc['jar'] is None: vdc['jar'] = vdatumfun.vdatum_locate_jar()[0]
         for entry in self._results:
             for xyz in self._yield_xyz(entry, datatype):
                 yield(xyz)
                 
     def _dump_results_to_xyz(self, datatype = None, dst_port = sys.stdout):
         for xyz in self._yield_results_to_xyz(datatype):
-            waffles.xyz_line(xyz, dst_port, self._verbose)
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
                 
 
 ## =============================================================================
@@ -1213,7 +1160,7 @@ class charts():
 class srtm_cgiar:
     '''Fetch SRTM data from CGIAR'''
     def __init__(self, extent = None, filters = [], callback = None):
-        echo_msg('loading SRTM (CGIAR) fetch module...')
+        utils.echo_msg('loading SRTM (CGIAR) fetch module...')
         self._srtm_url = 'http://srtm.csi.cgiar.org'
         self._srtm_dl_url = 'http://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/'
         self._status = 0
@@ -1238,7 +1185,7 @@ class srtm_cgiar:
     ## Filter for results
     ## ==============================================
     def _filter_reference_vector(self):
-        echo_msg('filtering SRTM reference vector...')
+        utils.echo_msg('filtering SRTM reference vector...')
         gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
         layer = gmt1.GetLayer()
         for filt in self._filters: layer.SetAttributeFilter('{}'.format(filt))
@@ -1250,33 +1197,33 @@ class srtm_cgiar:
                 srtm_lat = int(math.ceil(abs((60 - geo_env[3]) / 5)))
                 out_srtm = 'srtm_{:02}_{:02}.zip'.format(srtm_lon, srtm_lat)
                 self._results.append(['{}{}'.format(self._srtm_dl_url, out_srtm), out_srtm, 'srtm'])
-        echo_msg('filtered \033[1m{}\033[m data files from SRTM reference vector.'.format(len(self._results)))
+        utils.echo_msg('filtered \033[1m{}\033[m data files from SRTM reference vector.'.format(len(self._results)))
 
     ## ==============================================
     ## Process results to xyz
     ## ==============================================
     def _yield_xyz(self, entry):
         if fetch_file(entry[0], os.path.basename(entry[1]), callback = lambda: False, verbose = self._verbose) == 0:
-            src_srtm, src_zips = waffles.procs_unzip(os.path.basename(entry[1]), waffles._known_datalist_fmts[200])
+            src_srtm, src_zips = utils.procs_unzip(os.path.basename(entry[1]), ['tif', 'img', 'gdal', 'asc', 'bag'])
             try:
                 src_ds = gdal.Open(src_srtm)
             except:
-                waffles.echo_error_msg('could not read srtm data: {}'.format(src_srtm))
+                utils.echo_error_msg('could not read srtm data: {}'.format(src_srtm))
                 src_ds = None
 
             if src_ds is not None:
-                srcwin = waffles.gdal_srcwin(src_ds, self.region)
-                for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose):
+                srcwin = gdalfun.gdal_srcwin(src_ds, self.region)
+                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose):
                     yield(xyz)
                 src_ds = None
 
-            waffles.remove_glob(src_srtm)
-            waffles._clean_zips(src_zips)
-        waffles.remove_glob(entry[1])
+            utils.remove_glob(src_srtm)
+            utils._clean_zips(src_zips)
+        utils.remove_glob(entry[1])
     
     def _dump_xyz(self, entry, dst_port = sys.stdout):
         for xyz in self._yield_xyz(entry):
-            waffles.xyz_line(xyz, dst_port, self._verbose)
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
                     
     def _yield_results_to_xyz(self):
         if len(self._results) == 0: self.run()
@@ -1286,7 +1233,7 @@ class srtm_cgiar:
 
     def _dump_results_to_xyz(self, dst_port = sys.stdout):
         for xyz in self._yield_to_xyz():
-            waffles.xyz_line(xyz, dst_port, self._verbose)
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
             
 ## =============================================================================
 ##
@@ -1301,7 +1248,7 @@ class srtm_cgiar:
 class tnm:
     '''Fetch elevation data from The National Map'''
     def __init__(self, extent = None, filters = [], callback = None):
-        echo_msg('loading The National Map fetch module...')
+        utils.echo_msg('loading The National Map fetch module...')
         self._tnm_api_url = "http://viewer.nationalmap.gov/tnmaccess/"
         self._tnm_dataset_url = "http://viewer.nationalmap.gov/tnmaccess/api/datasets?"
         self._tnm_product_url = "http://viewer.nationalmap.gov/tnmaccess/api/products?"
@@ -1344,7 +1291,7 @@ class tnm:
 
     def filter_datasets(self):
         '''Filter TNM datasets.'''
-        echo_msg('filtering TNM dataset results...')
+        utils.echo_msg('filtering TNM dataset results...')
         sbDTags = []        
         for ds in self._tnm_ds:
             dtags = self._datasets[ds[0]]['tags']
@@ -1373,7 +1320,7 @@ class tnm:
 
         self.data = {
             'datasets': sbDTags,
-            'bbox': region_format(self.region, 'bbox'),
+            'bbox': regions.region_format(self.region, 'bbox'),
         }
         if len(self._tnm_df) > 0: self.data['prodFormats'] = ','.join(self._tnm_df)
         req = fetch_req(self._tnm_product_url, params = self.data)
@@ -1399,7 +1346,7 @@ class tnm:
                         f_url = item['downloadURL']
                         self._results.append([f_url, f_url.split('/')[-1], 'tnm'])
                     except: pass
-        echo_msg('filtered \033[1m{}\033[m data files from TNM dataset results.'.format(len(self._results)))
+        utils.echo_msg('filtered \033[1m{}\033[m data files from TNM dataset results.'.format(len(self._results)))
 
     def print_dataset_index(self):
         for i,j in enumerate(self._datasets):
@@ -1418,7 +1365,7 @@ class tnm:
 class mb:
     '''Fetch multibeam bathymetry from NOAA'''
     def __init__(self, extent = None, filters = [], callback = None):
-        echo_msg('loading Multibeam fetch module...')
+        utils.echo_msg('loading Multibeam fetch module...')
         self._mb_data_url = "https://data.ngdc.noaa.gov/platforms/"
         self._mb_search_url = "https://maps.ngdc.noaa.gov/mapviewer-support/multibeam/files.groovy?"
         self._outdir = os.path.join(os.getcwd(), 'mb')
@@ -1432,7 +1379,7 @@ class mb:
     def run(self):
         '''Run the MB (multibeam) fetching module.'''
         if self.region is None: return([])        
-        self.data = { 'geometry': region_format(self.region, 'bbox') }
+        self.data = { 'geometry': regions.region_format(self.region, 'bbox') }
         self._req = fetch_req(self._mb_search_url, params = self.data)
         if self._req is not None:
             survey_list = self._req.content.split('\n')[:-1]
@@ -1449,38 +1396,41 @@ class mb:
     ## Process results to xyz
     ## ==============================================    
     def _yield_xyz(self, entry, vdc = None, xyzc = None):
-        if vdc is None: vdc = waffles._vd_config
-        if xyzc is None: xyzc = waffles._xyz_config
+        if vdc is None: vdc = vdatumfun._vd_config
+        if xyzc is None: xyzc = copy.deepcopy(xyzfun._xyz_config)
         src_mb = os.path.basename(entry[1])
         
         if fetch_file(entry[0], src_mb, callback = lambda: False, verbose = self._verbose) == 0:
             src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
-            out, status = waffles.run_cmd('mblist -MX20 -OXYZ -I{} > {}'.format(src_mb, src_xyz), verbose = False)
+            out, status = utils.run_cmd('mblist -MX20 -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
             vdc['ivert'] = 'lmsl:m:height'
             vdc['overt'] = 'navd88:m:height'
             vdc['delim'] = 'tab'
             vdc['xyzl'] = '0,1,2'
             vdc['skip'] = '0'
-            out, status = waffles.run_vdatum(src_xyz, vdc)
-            mb_r = os.path.join('result', os.path.basename(src_xyz))
+            xyzc['delim'] = '\t'
+            xyzc['z-scale'] = 1
+            #out, status = vdatumfun.run_vdatum(src_xyz, vdc)
+            #mb_r = os.path.join('result', os.path.basename(src_xyz))
+            mb_r = src_xyz
 
             with open(mb_r, 'r') as in_m:
-                for xyz in waffles.xyz_parse(in_m, verbose = self._verbose):
+                for xyz in xyzfun.xyz_parse(in_m, xyz_c = xyzc, verbose = self._verbose):
                     yield(xyz)
-            waffles.remove_glob(src_xyz)
-            #waffles.vdatum_clean_result()
-        else: waffles.echo_error_msg('failed to fetch remote file, {}...'.format(src_mb))
-        waffles.remove_glob(src_mb)
+            utils.remove_glob(src_xyz)
+            #vdatumfun.vdatum_clean_result()
+        else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_mb))
+        utils.remove_glob(src_mb)
 
     def _dump_xyz(self, entry, dst_port = sys.stdout):
         for xyz in self._yield_xyz(entry):
-            waffles.xyz_line(xyz, dst_port, self._verbose)
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
     
     def _yield_results_to_xyz(self):
         if len(self._results) == 0: self.run()
-        vdc = copy.deepcopy(waffles._vd_config)
-        xyzc = copy.deepcopy(waffles._xyz_config)        
-        if vdc['jar'] is None: vdc['jar'] = waffles.vdatum_locate_jar()[0]
+        vdc = copy.deepcopy(vdatumfun._vd_config)
+        xyzc = copy.deepcopy(xyzfun._xyz_config)        
+        if vdc['jar'] is None: vdc['jar'] = vdatumfun.vdatum_locate_jar()[0]
         
         for entry in self._results:
             for xyz in self._yield_xyz(vdc, xyzc):
@@ -1488,7 +1438,7 @@ class mb:
 
     def _dump_results_to_xyz(self, dst_port = sys.stdout):
         for xyz in self._yield_to_xyz():
-            waffles.xyz_line(xyz, dst_port, self._verbose)
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
             
 ## =============================================================================
 ##
@@ -1500,7 +1450,7 @@ class mb:
 class usace:
     '''Fetch USACE bathymetric surveys'''
     def __init__(self, extent = None, filters = [], callback = None):
-        echo_msg('loading USACE fetch module...')
+        utils.echo_msg('loading USACE fetch module...')
         self._usace_gj_api_url = 'https://opendata.arcgis.com/datasets/80a394bae6b547f1b5788074261e11f1_0.geojson'
         self._usace_gs_api_url = 'https://services7.arcgis.com/n1YM8pTrFmm7L4hs/arcgis/rest/services/eHydro_Survey_Data/FeatureServer/0/query?outFields=*&where=1%3D1'
         self._outdir = os.path.join(os.getcwd(), 'usace')
@@ -1515,7 +1465,7 @@ class usace:
         '''Run the USACE fetching module'''
         if self.region is None: return([])
         self.data = {
-            'geometry': region_format(self.region, 'bbox'),
+            'geometry': regions.region_format(self.region, 'bbox'),
             'inSR':4326,
             'outSR':4326,
             'f':'pjson',
@@ -1542,7 +1492,7 @@ class usace:
 class gmrt:
     '''Fetch raster data from the GMRT'''
     def __init__(self, extent = None, filters = [], callback = None):
-        echo_msg('loading GMRT fetch module...')
+        utils.echo_msg('loading GMRT fetch module...')
         self._gmrt_grid_url = "https://www.gmrt.org:443/services/GridServer?"
         self._gmrt_grid_urls_url = "https://www.gmrt.org:443/services/GridServer/urls?"
         self._gmrt_grid_metadata_url = "https://www.gmrt.org/services/GridServer/metadata?"
@@ -1574,7 +1524,7 @@ class gmrt:
                     opt_kp = url_opt.split('=')
                     opts[opt_kp[0]] = opt_kp[1]
                 url_region = [float(opts['west']), float(opts['east']), float(opts['south']), float(opts['north'])]
-                outf = 'gmrt_{}_{}.{}'.format(opts['layer'], region_format(url_region, 'fn'), gdal_fext(opts['format']))
+                outf = 'gmrt_{}_{}.{}'.format(opts['layer'], regions.region_format(url_region, 'fn'), gdalfun.gdal_fext(opts['format']))
                 self._results.append([url, outf, 'gmrt'])
         return(self._results)
 
@@ -1582,23 +1532,23 @@ class gmrt:
     ## Process results to xyz
     ## ==============================================    
     def _yield_xyz(self, entry, res = 'max', fmt = 'geotiff'):
-        src_gmrt = 'gmrt_tmp.{}'.format(gdal_fext(fmt))
+        src_gmrt = 'gmrt_tmp.{}'.format(gdalfun.gdal_fext(fmt))
         print(entry)
         if fetch_file(entry[0], src_gmrt, callback = lambda: False, verbose = self._verbose) == 0:
             #try:
             src_ds = gdal.Open(src_gmrt)
             if src_ds is not None:
-                srcwin = waffles.gdal_srcwin(src_ds, self.region)
-                for xyz in waffles.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose):
+                srcwin = gdalfun.gdal_srcwin(src_ds, self.region)
+                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose):
                     yield(xyz)
             src_ds = None
-            #except: waffles.echo_error_msg('could not read gmrt data: {}'.format(src_gmrt))
-        else: waffles.echo_error_msg('failed to fetch remote file, {}...'.format(src_gmrt))
-        waffles.remove_glob(src_gmrt)
+            #except: utils.echo_error_msg('could not read gmrt data: {}'.format(src_gmrt))
+        else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_gmrt))
+        utils.remove_glob(src_gmrt)
 
     def _dump_xyz(self, src_gmrt, res = 'max', fmt = 'geotiff', dst_port = sys.stdout):
         for xyz in self._yield_xyz(src_gmrt, res, fmt):
-            waffles.xyz_line(xyz, dst_port, self._verbose)
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
             
     def _yield_results_to_xyz(self, res = 'max', fmt = 'geotiff'):
         self.run(res, fmt)
@@ -1608,7 +1558,7 @@ class gmrt:
                 
     def _dump_results_to_xyz(self, res = 'max', fmt = 'geotiff', dst_port = sys.stdout):
         for xyz in self._yield_to_xyz(res, fmt):
-            waffles.xyz_line(xyz, dst_port, self._verbose)
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
     
 ## =============================================================================
 ##
@@ -1620,7 +1570,7 @@ class gmrt:
 class ngs:
     '''Fetch NGS monuments from NOAA'''
     def __init__(self, extent = None, filters = [], callback = None):
-        echo_msg('loading NGS Monument fetch module...')
+        utils.echo_msg('loading NGS Monument fetch module...')
         self._ngs_search_url = 'http://geodesy.noaa.gov/api/nde/bounds?'
         self._outdir = os.path.join(os.getcwd(), 'ngs')
         self._status = 0
@@ -1639,7 +1589,7 @@ class ngs:
                       'minlat':self.region[2] }
 
         self._req = fetch_req(self._ngs_search_url, params = self.data)
-        if self._req is not None: self._results.append([self._req.url, 'ngs_results_{}.json'.format(region_format(self.region, 'fn')), 'ngs'])
+        if self._req is not None: self._results.append([self._req.url, 'ngs_results_{}.json'.format(regions.region_format(self.region, 'fn')), 'ngs'])
         return(self._results)
 
     def proc_ngs(self):
@@ -1654,6 +1604,48 @@ class ngs:
                 [outcsv.writerow(row.values()) for row in r]
                 outfile.close()
 
+## ==============================================
+## fetches processing (datalists fmt:400 - 499)
+## ==============================================
+def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, verbose = False):
+    '''yield the xyz data from the fetch module datalist entry
+
+    yields [x, y, z, <w, ...>]'''
+    
+    fetch_mod = entry[0].split(':')[0]
+    fetch_args = entry[0].split(':')[1:]
+    
+    fl = fetch_infos[fetch_mod][0](regions.region_buffer(region, 5, pct = True), [], lambda: False)
+    args_d = args2dict(fetch_args, {})
+    fl._verbose = verbose
+
+    for xyz in fl._yield_results_to_xyz(**args_d):
+        yield(xyz + [entry[2]] if entry[2] is not None else xyz)
+
+def fetch_dump_entry(entry = ['nos:datatype=nos'], dst_port = sys.stdout, region = None, verbose = False):
+    '''dump the xyz data from the fetch module datalist entry to dst_port'''
+    
+    for xyz in fetch_yield_entry(entry, region, verbose):
+        xyz_line(xyz, dst_port, True)
+        
+def fetch_module_yield_entry(entry, region = None, verbose = False, module = 'dc'):
+    '''yield the xyz data from the fetch module datalist entry
+
+    yields [x, y, z, <w, ...>]'''
+    
+    fl = fetch_infos[module][0](regions.region_buffer(region, 5, pct = True), [], lambda: False)
+    fl._verbose = verbose
+    fetch_entry = [entry[0], entry[0].split('/')[-1], module]
+    
+    for xyz in fl._yield_xyz(fetch_entry):
+        yield(xyz + [entry[2]] if entry[2] is not None else xyz)
+
+def fetch_dc_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, module = 'dc'):
+    '''dump the xyz data from the fetch module datalist entry to dst_port'''
+    
+    for xyz in fetch_module_yield_entry(entry, region, verbose, module):
+        xyz_line(xyz, dst_port, True)        
+                
 ## =============================================================================
 ##
 ## Run fetches from command-line
@@ -1782,12 +1774,12 @@ def fetches_cli(argv = sys.argv):
             opts = arg.split(':')
             if opts[0] in fetch_infos.keys():
                 mod_opts[opts[0]] = list(opts[1:])
-            else: echo_error_msg('invalid module name `{}`'.format(opts[0]))
+            else: utils.echo_error_msg('invalid module name `{}`'.format(opts[0]))
         i = i + 1
 
     if len(mod_opts) == 0:
         sys.stderr.write(_usage)
-        echo_error_msg('you must select a fetch module')
+        utils.echo_error_msg('you must select a fetch module')
         sys.exit(1)
         
     for key in mod_opts.keys():
@@ -1799,11 +1791,11 @@ def fetches_cli(argv = sys.argv):
     if extent is not None:
         try:
             these_regions = [[float(x) for x in extent.split('/')]]
-        except ValueError: these_regions = gdal_ogr_regions(extent)
+        except ValueError: these_regions = gdalfun.gdal_ogr_regions(extent)
         if len(these_regions) == 0: status = -1
         for this_region in these_regions:
-            if not region_valid_p(this_region): status = -1
-        echo_msg('loaded {} region(s)'.format(len(these_regions)))
+            if not regions.region_valid_p(this_region): status = -1
+        utils.echo_msg('loaded {} region(s)'.format(len(these_regions)))
     else: these_regions = [[-180, 180, 0, 90]]
 
     ## ==============================================
@@ -1818,20 +1810,20 @@ def fetches_cli(argv = sys.argv):
         for fetch_mod in mod_opts.keys():
             status = 0
             args = tuple(mod_opts[fetch_mod])
-            echo_msg('running fetch module {} on region {} ({}/{})...\
-            '.format(fetch_mod, region_format(this_region, 'str'), rn+1, len(these_regions)))
-            fl = fetch_infos[fetch_mod][0](region_buffer(this_region, 5, pct = True), f, lambda: stop_threads)
+            utils.echo_msg('running fetch module {} on region {} ({}/{})...\
+            '.format(fetch_mod, regions.region_format(this_region, 'str'), rn+1, len(these_regions)))
+            fl = fetch_infos[fetch_mod][0](regions.region_buffer(this_region, 5, pct = True), f, lambda: stop_threads)
             fl._verbose = True
-            args_d = args2dict(args)
-            #try:
-            r = fl.run(**args_d)
-            #except ValueError as e:
-            #    echo_error_msg('something went wrong, {}'.format(e))
-            #    sys.exit(-1)
-            #except Exception as e:
-            #    echo_error_msg('{}'.format(e))
-            #    sys.exit(-1)
-            echo_msg('found {} data files.'.format(len(r)))
+            args_d = utils.args2dict(args)
+            try:
+                r = fl.run(**args_d)
+            except ValueError as e:
+                utils.echo_error_msg('something went wrong, {}'.format(e))
+                sys.exit(-1)
+            except Exception as e:
+                utils.echo_error_msg('{}'.format(e))
+                sys.exit(-1)
+            utils.echo_msg('found {} data files.'.format(len(r)))
             
             if want_list:
                 for result in r:
@@ -1850,13 +1842,12 @@ def fetches_cli(argv = sys.argv):
                         if not fr.is_alive():
                             break
                 except (KeyboardInterrupt, SystemExit):
-                    echo_error_msg('user breakage...please wait for clean kill, ctl-c to force.')
+                    utils.echo_error_msg('user breakage...please wait for clean kill, ctl-c to force.')
                     fl._status = -1
                     stop_threads = True
                 fr.join()
-            echo_msg('ran fetch module {} on region {} ({}/{})...\
-            '.format(fetch_mod, region_format(this_region, 'str'), rn+1, len(these_regions)))
-            if want_proc: waffles.vdatum_clean_result()
+            utils.echo_msg('ran fetch module {} on region {} ({}/{})...\
+            '.format(fetch_mod, regions.region_format(this_region, 'str'), rn+1, len(these_regions)))
+            if want_proc: vdatumfun.vdatum_clean_result()
 
-if __name__ == '__main__':  fetches_cli(sys.argv)
 ### End
