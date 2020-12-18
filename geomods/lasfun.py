@@ -36,7 +36,7 @@ def las_inf(src_las):
     returns region [xmin, xmax, ymin, ymax, zmin, zmax] of the src_xyz file.'''
 
     minmax = []
-    out, status = run_cmd('lasinfo -nc -nv -stdout -i {}'.format(src_las), verbose = False)
+    out, status = utils.run_cmd('lasinfo -nc -nv -stdout -i {}'.format(src_las), verbose = False)
     for i in out.split('\n'):
         if 'min x y z' in i:
             xyz_min = [float(y) for y in [x.strip() for x in i.split(':')][1].split()]
@@ -69,7 +69,7 @@ def las_yield_entry(entry, region = None, verbose = False, z_region = None):
         max_z = None if z_region[1] is None else z_region[1]
         #z_region = ['-' if x is None else str(x) for x in z_region]
     else: min_z = max_z = None
-    #out, status = run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
+    #out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
     for line in utils.yield_cmd('las2txt -parse xyz -stdout -keep_class 2 29 -i {} {} {} {}\
     '.format(entry[0], '' if region is None else '-keep_xy {}'.format(regions.region_format(region, 'sstr')),\
              '' if min_z is None else '-drop_z_below {}'.format(min_z),\
