@@ -201,9 +201,9 @@ def regions_sort(trainers):
             train_d.append(train[0])
             train = train[1:]
             if len(train) == 0: break
-            dsts = [hav_dst(this_center, region_center(x[0])) for x in train]
+            dsts = [utils.hav_dst(this_center, region_center(x[0])) for x in train]
             min_dst = np.percentile(dsts, 50)
-            d_t = lambda t: hav_dst(this_center, region_center(t[0])) > min_dst
+            d_t = lambda t: utils.hav_dst(this_center, region_center(t[0])) > min_dst
             np.random.shuffle(train)
             train.sort(reverse=True, key=d_t)
         #echo_msg(' '.join([region_format(x[0], 'gmt') for x in train_d[:25]]))
