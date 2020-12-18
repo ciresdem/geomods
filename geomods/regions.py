@@ -26,6 +26,7 @@ import ogr
 import osr
 import numpy as np
 from geomods import gdalfun
+from geomods import utils
 
 ## ==============================================
 ## regions - regions are a bounding box list:
