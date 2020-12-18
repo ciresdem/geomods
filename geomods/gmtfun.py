@@ -30,6 +30,7 @@
 
 import os
 from geomods import utils
+from geomods import regions
 
 def gmt_inf(src_xyz):
     '''generate an info (.inf) file from a src_xyz file using GMT.
