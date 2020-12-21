@@ -21,6 +21,7 @@
 ### Code:
 
 import sys
+import copy
 
 from geomods import utils
 

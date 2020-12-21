@@ -62,7 +62,7 @@ def gmt_inc2inc(inc_str):
         try:
             inc = float(inc_str)
         except ValueError as e:
-            echo_error_msg('could not parse increment {}, {}'.format(inc_str, e))
+            utils.echo_error_msg('could not parse increment {}, {}'.format(inc_str, e))
             return(None)
     return(inc)
 

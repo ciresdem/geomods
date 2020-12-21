@@ -71,7 +71,7 @@ def las_yield_entry(entry, region = None, verbose = False, z_region = None):
     else: min_z = max_z = None
     #out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
     for line in utils.yield_cmd('las2txt -parse xyz -stdout -keep_class 2 29 -i {} {} {} {}\
-    '.format(entry[0], '' if region is None else '-keep_xy {}'.format(regions.region_format(region, 'sstr')),\
+    '.format(entry[0], '' if region is None else '-keep_xy {}'.format(regions.region_format(region, 'te')),\
              '' if min_z is None else '-drop_z_below {}'.format(min_z),\
              '' if max_z is None else '-drop_z_above {}'.format(max_z)), data_fun = None, verbose = False):
         ln += 1

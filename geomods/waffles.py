@@ -1390,7 +1390,7 @@ def waffles_run(wg = _waffles_grid_info):
     else:
         if os.path.exists(chunks[0]):
             gdalfun.gdal_gdal2gdal(chunks[0], dst_fmt = wg['fmt'], dst_gdal = dem)
-            print('removing {}'.format(chunks[0]))
+            #print('removing {}'.format(chunks[0]))
             utils.remove_glob(chunks[0])
 
     if wg['mask']:

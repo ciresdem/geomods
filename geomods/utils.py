@@ -243,11 +243,12 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
     max_int_dist = np.max(distance)
     nbins = 10
     n, _ = np.histogram(distance, bins = nbins)
-    #print(n)
+    print(n)
     # want at least 2 values in each bin?
-    while 0 and 1 in n:
+    #while 0 and 1 in n:
+    while 0 in n:
         nbins -= 1
-        #print(nbins)
+        print(nbins)
         n, _ = np.histogram(distance, bins = nbins)
     #print(0 in n)
     serror, _ = np.histogram(distance, bins = nbins, weights = error)
@@ -307,7 +308,7 @@ def yield_cmd(cmd, data_fun = None, verbose = False):
 
     returns [command-output, command-return-code]'''
     
-    #if verbose: echo_msg('running cmd: {}...'.format(cmd.rstrip()))    
+    if verbose: echo_msg('running cmd: {}...'.format(cmd.rstrip()))    
     #if data_fun is not None:
     #    pipe_stdin = subprocess.PIPE
     #else: pipe_stdin = None
@@ -323,7 +324,7 @@ def yield_cmd(cmd, data_fun = None, verbose = False):
         if not line: break
         else: yield(line)
     p.stdout.close()
-    #if verbose: echo_msg('ran cmd: {} and returned {}.'.format(cmd.rstrip(), p.returncode))
+    if verbose: echo_msg('ran cmd: {} and returned {}.'.format(cmd.rstrip(), p.returncode))
 
 def cmd_check(cmd_str, cmd_vers_str):
     '''check system for availability of 'cmd_str' 
