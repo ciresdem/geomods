@@ -52,10 +52,17 @@ _dl_inf_h = {
     201: lambda e: gdalfun.gdal_inf_entry(e, 4269),
     300: lambda e: lasfun.las_inf_entry(e)
 }
-_dl_pass_h = [lambda e: utils.path_exists_or_url(e[0])]
+_dl_pass_h = [lambda e: path_exists_or_url(e[0])]
+
+def path_exists_or_url(src_str):
+    if os.path.exists(src_str): return(True)
+    if src_str[:4] == 'http': return(True)
+    if src_str.split(':')[0] in _known_datalist_fmts[400]: return(True)
+    echo_error_msg('invalid datafile/datalist: {}'.format(src_str))
+    return(False)
 
 def datalist_default_hooks():
-    return([lambda e: utils.path_exists_or_url(e[0])])
+    return([lambda e: path_exists_or_url(e[0])])
 
 ## ==============================================
 ## inf files (data info) inf.py

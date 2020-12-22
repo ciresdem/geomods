@@ -1,6 +1,6 @@
 ### regions.py
 ##
-## Copyright (c) 2010 - 2020 CIRES Coastal DEM Team
+## Copyright (c) 2019 - 2020 CIRES Coastal DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -18,21 +18,22 @@
 ## ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ##
 ### Commentary:
+## regions - regions are a bounding box list: [w, e, s, n]
+##
 ### Code:
 
+## imports
 import os
 
+## import gdal/numpy
 import ogr
 import osr
 import numpy as np
+
+## import geomods
 from geomods import gdalfun
 from geomods import utils
 
-## ==============================================
-## regions - regions are a bounding box list:
-## [w, e, s, n]
-## -- regions.py --
-## ==============================================
 def region_valid_p(region):
     '''return True if `region` [xmin, xmax, ymin, ymax] appears to be valid'''
     

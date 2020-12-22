@@ -29,7 +29,6 @@ import sys
 import numpy as np
 
 from geomods import utils
-from geomods import xyzfun
 
 ## ==============================================
 ## GDAL Wrappers and Functions - gdalfun.py
@@ -171,7 +170,7 @@ def gdal_write (src_arr, dst_gdal, ds_config, dst_fmt = 'GTiff'):
             driver.Delete(dst_gdal)
         except Exception as e:
             utils.echo_error_msg(e)
-            remove_glob(dst_gdal)
+            utils.remove_glob(dst_gdal)
     ds = driver.Create(dst_gdal, ds_config['nx'], ds_config['ny'], 1, ds_config['dt'])
     if ds is not None:
         ds.SetGeoTransform(ds_config['geoT'])
@@ -226,7 +225,7 @@ def gdal_clip(src_gdal, src_ply = None, invert = False):
                  .format(gi['ndv'], gr_inv, os.path.basename(tmp_ply).split('.')[0], tmp_ply, src_gdal)
         out, status = utils.run_cmd(gr_cmd, verbose = True)
     else: return(None)
-    remove_glob('tmp_clp_ply.*')
+    utils.remove_glob('tmp_clp_ply.*')
     return(out, status)
 
 def gdal_query(src_xyz, src_grd, out_form):
@@ -793,7 +792,7 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format = 'GTiff', mode = '
     gdt = gdal.GDT_Float32
     #else: gdt = gdal.GDT_Int32
     ptArray = np.zeros((ycount, xcount))
-    if mode == 'w': ptArray[ptArray == 0] = np.nan
+    #if mode == 'w': ptArray[ptArray == 0] = np.nan
     ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(epsg), gdt, -9999, dst_format)
     for this_xyz in src_xyz:
         x = this_xyz[0]
@@ -914,9 +913,9 @@ def gdal_smooth(src_gdal, dst_gdal, fltr = 10, split_value = None, use_gmt = Fal
                     ds_arr[np.isnan(ds_arr)] = ds_config['ndv']
                     gdal_write(ds_arr, 'merged.tif', ds_config)
                     l_ds = None
-                    remove_glob(dem_l)
+                    utils.remove_glob(dem_l)
                 u_ds = None
-                remove_glob(dem_u)
+                utils.remove_glob(dem_u)
             os.rename('merged.tif', 'tmp_fltr.tif')
         os.rename('tmp_fltr.tif', dst_gdal)
         return(0)

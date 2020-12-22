@@ -108,13 +108,6 @@ def hav_dst(pnt0, pnt1):
     c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
     return(rad_m * c)
 
-def path_exists_or_url(src_str):
-    if os.path.exists(src_str): return(True)
-    if src_str[:4] == 'http': return(True)
-    if src_str.split(':')[0] in _known_datalist_fmts[400]: return(True)
-    echo_error_msg('invalid datafile/datalist: {}'.format(src_str))
-    return(False)
-
 def _clean_zips(zip_files):
     '''remove all files\directories in `zip_files`'''
 
@@ -262,6 +255,12 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
 
 ## ==============================================
 ## system cmd verification and configs.
+##
+## run_cmd - run a system command as a subprocess
+## and return the return code and output
+##
+## yield_cmd - run a system command as a subprocess
+## and yield the output
 ## ==============================================
 cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ['PATH'].split(os.pathsep))
 

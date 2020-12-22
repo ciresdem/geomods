@@ -24,6 +24,7 @@ import sys
 import copy
 
 from geomods import utils
+from geomods import regions
 
 ## ==============================================
 ## xyz processing (datalists fmt:168)
@@ -89,7 +90,7 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
                 if region is not None:
                     if not xyz_in_region_p(this_xyz, region): pass_d = False
                 if xyz_c['upper_limit'] is not None or xyz_c['lower_limit'] is not None:
-                    if not z_pass(this_xyz[2], upper_limit = xyz_c['upper_limit'], lower_limit = xyz_c['lower_limit']): pass_d = False
+                    if not regions.z_pass(this_xyz[2], upper_limit = xyz_c['upper_limit'], lower_limit = xyz_c['lower_limit']): pass_d = False
             else: pass_d = False
             if pass_d:
                 ln += 1
