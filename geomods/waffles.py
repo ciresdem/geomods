@@ -237,8 +237,8 @@ _waffles_modules = {
     'linear': [lambda args: waffles_linear(**args), '''LINEAR DEM via gdal_grid
     < linear:radius=0.01 >''', 'raster', True],
     'spat-meta': [lambda args: waffles_spatial_metadata(**args), '''generate SPATIAL-METADATA''', 'vector', True],
-    #'uncertainty': [lambda args: waffles_interpolation_uncertainty(**args), '''generate DEM UNCERTAINTY
-    #< uncertainty:mod=surface:dem=None:msk=None:prox=None:slp=None:sims=2 >''', 'raster', False],
+    'uncertainty': [lambda args: waffles_interpolation_uncertainty(**args), '''generate DEM UNCERTAINTY
+    < uncertainty:mod=surface:dem=None:msk=None:prox=None:slp=None:sims=2 >''', 'raster', False],
     'help': [lambda args: waffles_help(**args), '''display module info''', None, False],
     'coastline': [lambda args: waffles_coastline(**args), '''generate a coastline (landmask)''', 'vector', False],
     'data': [lambda args: waffles_datalists(**args), '''recurse the DATALIST
@@ -1032,16 +1032,16 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
 
         d_max = region_info[wg['name']][4]
         s_dp = s_dp[s_dp[:,3] < d_max,:]
-        #s_dp = s_dp[s_dp[:,3] > 0,:]
+        s_dp = s_dp[s_dp[:,3] > 0,:]
 
         prox_err = s_dp[:,[2,3]]
         slp_err = s_dp[:,[2,4]]
         
         np.savetxt('{}_prox.err'.format(wg['name']), prox_err, '%f', ' ')
-        #np.savetxt('{}_slp.err'.format(wg['name']), slp_err, '%f', ' ')
+        np.savetxt('{}_slp.err'.format(wg['name']), slp_err, '%f', ' ')
 
         ec_d = utils.err2coeff(prox_err[:50000000], dst_name = wg['name'] + '_prox', xa = 'distance')
-        #ec_s = utils.err2coeff(slp_err[:50000000], dst_name = wg['name'] + '_slp', xa = 'slope')
+        ec_s = utils.err2coeff(slp_err[:50000000], dst_name = wg['name'] + '_slp', xa = 'slope')
 
         ## ==============================================
         ## apply error coefficient to full proximity grid
@@ -1056,10 +1056,10 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
 
         #utils.remove_glob('_*.tif')
         
-        # math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
-        # # '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
-        # utils.run_cmd(math_cmd, verbose = wg['verbose'])
-        # utils.echo_msg('applied coefficient {} to slope grid'.format(ec_s))
+        math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
+        # '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
+        utils.run_cmd(math_cmd, verbose = wg['verbose'])
+        utils.echo_msg('applied coefficient {} to slope grid'.format(ec_s))
         
     return(ec_d, 0)
 

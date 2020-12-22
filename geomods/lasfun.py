@@ -75,7 +75,7 @@ def las_yield_entry(entry, region = None, verbose = False, z_region = None):
              '' if min_z is None else '-drop_z_below {}'.format(min_z),\
              '' if max_z is None else '-drop_z_above {}'.format(max_z)), data_fun = None, verbose = False):
         ln += 1
-        yield(line.split())
+        yield([float(x) for x in line.split()])
     if verbose: utils.echo_msg('read {} data points from {}'.format(ln, entry[0]))
 
 def las_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, z_region = None):

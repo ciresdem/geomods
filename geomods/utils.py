@@ -248,7 +248,7 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
     #while 0 and 1 in n:
     while 0 in n:
         nbins -= 1
-        print(nbins)
+        #print(nbins)
         n, _ = np.histogram(distance, bins = nbins)
     #print(0 in n)
     serror, _ = np.histogram(distance, bins = nbins, weights = error)
