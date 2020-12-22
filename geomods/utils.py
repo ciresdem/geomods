@@ -243,14 +243,9 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
     max_int_dist = np.max(distance)
     nbins = 10
     n, _ = np.histogram(distance, bins = nbins)
-    print(n)
-    # want at least 2 values in each bin?
-    #while 0 and 1 in n:
     while 0 in n:
         nbins -= 1
-        #print(nbins)
         n, _ = np.histogram(distance, bins = nbins)
-    #print(0 in n)
     serror, _ = np.histogram(distance, bins = nbins, weights = error)
     serror2, _ = np.histogram(distance, bins = nbins, weights = error**2)
     mean = serror / n
