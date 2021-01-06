@@ -25,6 +25,8 @@ import sys
 import subprocess
 import glob
 import math
+import zipfile
+import gzip
 import numpy as np
 
 ## ==============================================
@@ -128,7 +130,7 @@ def unzip(zip_file):
 
     return a list of extracted file names.'''
     
-    import zipfile
+    #import zipfile
     zip_ref = zipfile.ZipFile(zip_file)
     zip_files = zip_ref.namelist()
     zip_ref.extractall()
@@ -140,7 +142,7 @@ def gunzip(gz_file):
 
     return the extracted file name.'''
     
-    import gzip
+    #import gzip
     if os.path.exists(gz_file):
         gz_split = gz_file.split('.')[:-1]
         guz_file = '{}.{}'.format(gz_split[0], gz_split[1])
@@ -164,13 +166,23 @@ def procs_unzip(src_file, exts):
     zips = []
     src_proc = None
     if src_file.split('.')[-1] == 'zip':
-        zips = unzip(src_file)
-        for ext in exts:
-            for zf in zips:
-                if ext in zf:
-                    src_proc = zf
-                    break
-                #else: remove_glob(zf)
+        with zipfile.ZipFile(src_file) as z:
+            zfs = z.namelist()
+            for ext in exts:
+                for zf in zfs:
+                    if ext in zf:
+                        #src_proc = os.path.join(os.path.dirname(src_file), zf)
+                        src_proc = os.path.basename(zf)
+                        with open(src_proc, 'wb') as f:
+                            f.write(z.read(zf))
+                        break
+        #zips = unzip(src_file)
+        # for ext in exts:
+        #     for zf in zips:
+        #         if ext in zf:
+        #             src_proc = zf
+        #             break
+        #         #else: remove_glob(zf)
     elif src_file.split('.')[-1] == 'gz':
         tmp_proc = gunzip(src_file)
         if tmp_proc is not None:
@@ -361,8 +373,8 @@ def echo_error_msg2(msg, prefix = 'waffles'):
     >> echo_error_msg2('message', 'test')
     test: error, message'''
     
-    sys.stderr.write('\x1b[2K\r')
     sys.stderr.flush()
+    sys.stderr.write('\x1b[2K\r')
     sys.stderr.write('{}: error, {}\n'.format(prefix, msg))
 
 def echo_msg2(msg, prefix = 'waffles', nl = True):
@@ -370,8 +382,8 @@ def echo_msg2(msg, prefix = 'waffles', nl = True):
     >> echo_msg2('message', 'test')
     test: message'''
     
-    sys.stderr.write('\x1b[2K\r')
     sys.stderr.flush()
+    sys.stderr.write('\x1b[2K\r')
     sys.stderr.write('{}: {}{}'.format(prefix, msg, '\n' if nl else ''))
 
 ## ==============================================

@@ -78,7 +78,7 @@ def fetch_queue(q, p):
         this_region = fetch_args[2]
         this_dt = fetch_args[4].lower()
         fetch_args[2] = None
-        #print(fetch_args)
+        utils.echo_msg(fetch_args[-1])
         if not fetch_args[3]():
             if p is None:
                 if fetch_args[0].split(':')[0] == 'ftp':
@@ -89,9 +89,11 @@ def fetch_queue(q, p):
                     try:
                         os.makedirs(os.path.dirname(fetch_args[1]))
                     except: pass
-                utils.echo_msg(fetch_args[1])
-                with open('.'.join(fetch_args[1].split('.')[:-1]) + '.xyz', 'w') as out_xyz:
-                    p._dump_xyz([fetch_args[0], fetch_args[1], fetch_args[-1]], dst_port = out_xyz)
+                #utils.echo_msg(fetch_args[1])
+                o_x_fn = '.'.join(fetch_args[1].split('.')[:-1]) + '.xyz'
+                if not os.path.exists(o_x_fn):
+                    with open(o_x_fn, 'w') as out_xyz:
+                        p._dump_xyz([fetch_args[0], fetch_args[1], fetch_args[-1]], dst_port = out_xyz)
                     
         q.task_done()
 
@@ -122,6 +124,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
     req = None
     halt = callback
     if verbose: utils.echo_msg('fetching remote file: {}...'.format(os.path.basename(src_url)))
+
     if not os.path.exists(os.path.dirname(dst_fn)):
         try:
             os.makedirs(os.path.dirname(dst_fn))
@@ -129,14 +132,22 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
 
     if not os.path.exists(dst_fn) or overwrite:
         try:
-            req = requests.get(src_url, stream = True, params = params, headers = r_headers, timeout=(25,60))
+            req = requests.get(src_url, stream = True, params = params, headers = r_headers, timeout=(45,60))
+            req_h = req.headers
         except requests.ConnectionError as e:
             utils.echo_error_msg(e)
             status = -1
+        except Exception as e:
+            utils.echo_error_msg(e)
+            status = -1
         if req is not None and req.status_code == 200:
+            curr_chunk = 0
             try:
                 with open(dst_fn, 'wb') as local_file:
                     for chunk in req.iter_content(chunk_size = 8196):
+                        #curr_chunk += 8196
+                        #curr_perc = curr_chunk/float(req_h['Content-Length']) * 100
+                        #if int(curr_perc) % 2 == 0: utils.echo_msg_inline('{} - {}%'.format(dst_fn, int(curr_perc)))
                         if chunk:
                             if halt(): 
                                 status = -1
@@ -198,7 +209,9 @@ class fetch_results(threading.Thread):
             t = threading.Thread(target = fetch_queue, args = (self.fetch_q, self.proc))
             t.daemon = True
             t.start()
-
+            
+        fq = [[row[0], os.path.join(self._outdir, row[1]), self.region, self.stop_threads, row[2]] for row in self.results]
+        #print(fq)
         [self.fetch_q.put([row[0], os.path.join(self._outdir, row[1]), self.region, self.stop_threads, row[2]]) for row in self.results]
         self.fetch_q.join()
     
@@ -293,10 +306,10 @@ class dc:
         utils.echo_msg('loading Digital Coast fetch module...')
         self._dc_htdata_url = 'https://coast.noaa.gov/htdata/'
         self._dc_dav_id = 'https://coast.noaa.gov/dataviewer/#/lidar/search/where:ID='
-        #self._dc_dirs = ['lidar1_z', 'lidar2_z', 'raster2']
-        self._dc_dirs = ['lidar2_z', 'raster2']
-        #self._ref_vector = os.path.join(fetchdata, 'dc.gmt')
-        self._ref_vector = os.path.join('.', 'dc.gmt')
+        self._dc_dirs = ['lidar1_z', 'lidar2_z', 'raster2']
+        #self._dc_dirs = ['lidar2_z', 'raster2']
+        self._ref_vector = os.path.join(fetchdata, 'dc.gmt')
+        #self._ref_vector = os.path.join('.', 'dc.gmt')
         self._outdir = os.path.join(os.getcwd(), 'dc')
         self._status = 0
         self._surveys = []
@@ -1092,11 +1105,12 @@ class charts():
     ## ==============================================
     ## Process results to xyz
     ## ==============================================
-    def _yield_xyz(self, entry, datatype = None, vdc = None, xyzc = None):
+    def _yield_xyz(self, entry, vdc = None, xyzc = None):
         if vdc is None: vdc = vdatumfun._vd_config
         if xyzc is None: xyzc = xyzfun._xyz_config
         xyzc['z-scale'] = -1
         src_zip = os.path.basename(entry[1])
+        
         if fetch_file(entry[0], src_zip, callback = lambda: False) == 0:
             if entry[-1].lower() == 'enc':
                 src_ch, src_zips = utils.procs_unzip(src_zip, ['.000'])
@@ -1124,7 +1138,7 @@ class charts():
 
                 if os.path.exists(ch_f_r):
                     with open(ch_f_r, 'r') as in_c:
-                        for xyz in xyzfun.xyz_parse(in_c, verbose = self._verbose):
+                        for xyz in xyzfun.xyz_parse(in_c, xyz_c = xyzc, verbose = self._verbose):
                             yield(xyz)
 
                 utils.remove_glob(src_ch)
@@ -1133,7 +1147,7 @@ class charts():
                 vdatumfun.vdatum_clean_result()
         utils.remove_glob(src_zip)
         
-    def _dump_xyz(self, entry, datatype = None, dst_port = sys.stdout):
+    def _dump_xyz(self, entry, dst_port = sys.stdout):
         for xyz in self._yield_xyz(entry):
             xyzfun.xyz_line(xyz, dst_port, self._verbose)
         
@@ -1228,7 +1242,7 @@ class srtm_cgiar:
     def _yield_results_to_xyz(self):
         if len(self._results) == 0: self.run()
         for entry in self._results:
-            for xyz in self._yield_xyz(entry, datatype):
+            for xyz in self._yield_xyz(entry):
                 yield(xyz)            
 
     def _dump_results_to_xyz(self, dst_port = sys.stdout):
@@ -1248,7 +1262,6 @@ class srtm_cgiar:
 class tnm:
     '''Fetch elevation data from The National Map'''
     def __init__(self, extent = None, filters = [], callback = None):
-        utils.echo_msg('loading The National Map fetch module...')
         self._tnm_api_url = "http://viewer.nationalmap.gov/tnmaccess/"
         self._tnm_dataset_url = "http://viewer.nationalmap.gov/tnmaccess/api/datasets?"
         self._tnm_product_url = "http://viewer.nationalmap.gov/tnmaccess/api/products?"
@@ -1266,13 +1279,14 @@ class tnm:
 
     def run(self, index = False, ds = 3, sub_ds = None, formats = None, extent = None):
         '''Run the TNM (National Map) fetching module.'''
+        utils.echo_msg('loading The National Map fetch module...')
         if self.region is None: return([])
         self._req = fetch_req(self._tnm_dataset_url)
         if self._req is not None:
             try:
                 self._datasets = self._req.json()
             except Exception as e:
-                echo_error_msg('try again, {}'.format(e))
+                utils.echo_error_msg('try again, {}'.format(e))
                 self._status = -1
         else: self._status = -1
 
@@ -1329,22 +1343,37 @@ class tnm:
             try:
                 self._dataset_results = req.json()
             except ValueError:
-                echo_error_msg("tnm server error, try again")                
+                utils.echo_error_msg('tnm server error, try again')
+            except Exception as e:
+                utils.echo_error_msg('error, {}'.format(e))
+                
         else: self._status = -1
 
         if len(self._dataset_results) > 0:
             for item in self._dataset_results['items']:
+                #print(item)
                 if len(self._extents) > 0:
                     for extent in self._extents:
                         if item['extent'] == extent:
                             try:
                                 f_url = item['downloadURL']
-                                self._results.append([f_url, f_url.split('/')[-1], 'tnm'])
+                                #self._results.append([f_url, f_url.split('/')[-1], 'tnm'])
+                                if item['format'] == 'IMG' or item['format'] == 'GeoTIFF':
+                                    tnm_ds = 'ned'
+                                elif item['format'] == 'LAZ' or item['format'] == 'LAS':
+                                    tnm_ds = 'lidar'
+                                else: tnm_ds = 'tnm'
+                                self._results.append([f_url, os.path.join(item['datasets'][0].replace('/', '').replace(' ', '_'), f_url.split('/')[-1]), tnm_ds])
                             except: pass
                 else:
                     try:
                         f_url = item['downloadURL']
-                        self._results.append([f_url, f_url.split('/')[-1], 'tnm'])
+                        if item['format'] == 'IMG' or item['format'] == 'GeoTIFF':
+                            tnm_ds = 'ned'
+                        elif item['format'] == 'LAZ' or item['format'] == 'LAS':
+                            tnm_ds = 'lidar'
+                        else: tnm_ds = 'tnm'
+                        self._results.append([f_url, os.path.join(item['datasets'][0].replace('/', '').replace(' ', '_'), f_url.split('/')[-1]), tnm_ds])
                     except: pass
         utils.echo_msg('filtered \033[1m{}\033[m data files from TNM dataset results.'.format(len(self._results)))
 
@@ -1354,6 +1383,45 @@ class tnm:
             for m,n in enumerate(j['tags']):
                 print('\t%s: %s [ %s ]' %(m, n, ", ".join(j['tags'][n]['formats'])))
 
+    def _yield_xyz(self, entry):
+        '''yield the xyz data from the tnm fetch module'''
+        
+        if fetch_file(entry[0], entry[1], callback = lambda: False, verbose = self._verbose) == 0:
+            datatype = entry[-1]
+            if datatype == 'ned':
+                src_tnm, src_zips = utils.procs_unzip(entry[1], ['tif', 'img', 'gdal', 'asc', 'bag'])
+                try:
+                    src_ds = gdal.Open(src_tnm)
+                except:
+                    utils.echo_error_msg('could not read tnm data: {}'.format(src_tnm))
+                    src_ds = None
+
+                if src_ds is not None:
+                    srcwin = gdalfun.gdal_srcwin(src_ds, self.region)
+                    for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose):
+                        if xyz[2] != 0:
+                            yield(xyz)
+                    src_ds = None
+
+                utils.remove_glob(src_tnm)
+                utils._clean_zips(src_zips)
+        utils.remove_glob(entry[1])
+
+    def _dump_xyz(self, entry, dst_port = sys.stdout):
+        for xyz in self._yield_xyz(entry):
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
+    
+    def _yield_results_to_xyz(self, index = False, ds = 3, sub_ds = None, formats = None, extent = None):
+        if len(self._results) == 0: self.run(index, ds, sub_ds, formats, extent)
+        for entry in self._results:
+            for xyz in self._yield_xyz(entry):
+                yield(xyz)
+
+    def _dump_results_to_xyz(self, index = False, ds = 3, sub_ds = None, formats = None, extent = None, dst_port = sys.stdout):
+        if len(self._results) == 0: self.run(index, ds, sub_ds, formats, extent)
+        for xyz in self._yield_to_xyz():
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
+                
 ## =============================================================================
 ##
 ## MB Fetch
@@ -1375,6 +1443,7 @@ class mb:
         self.region = extent
         self._datalists_code = 406
         self._verbose = False
+        self._stop = callback
 
     def run(self):
         '''Run the MB (multibeam) fetching module.'''
@@ -1399,8 +1468,8 @@ class mb:
         if vdc is None: vdc = vdatumfun._vd_config
         if xyzc is None: xyzc = copy.deepcopy(xyzfun._xyz_config)
         src_mb = os.path.basename(entry[1])
-        
-        if fetch_file(entry[0], src_mb, callback = lambda: False, verbose = self._verbose) == 0:
+
+        if fetch_file(entry[0], src_mb, callback = self._stop, verbose = self._verbose) == 0:
             src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
             out, status = utils.run_cmd('mblist -MX20 -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
             vdc['ivert'] = 'lmsl:m:height'
@@ -1616,7 +1685,7 @@ def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, verbose = Fal
     fetch_args = entry[0].split(':')[1:]
     
     fl = fetch_infos[fetch_mod][0](regions.region_buffer(region, 5, pct = True), [], lambda: False)
-    args_d = args2dict(fetch_args, {})
+    args_d = utils.args2dict(fetch_args, {})
     fl._verbose = verbose
 
     for xyz in fl._yield_results_to_xyz(**args_d):
@@ -1632,7 +1701,7 @@ def fetch_module_yield_entry(entry, region = None, verbose = False, module = 'dc
     '''yield the xyz data from the fetch module datalist entry
 
     yields [x, y, z, <w, ...>]'''
-    
+
     fl = fetch_infos[module][0](regions.region_buffer(region, 5, pct = True), [], lambda: False)
     fl._verbose = verbose
     fetch_entry = [entry[0], entry[0].split('/')[-1], module]
@@ -1813,7 +1882,7 @@ def fetches_cli(argv = sys.argv):
             utils.echo_msg('running fetch module {} on region {} ({}/{})...\
             '.format(fetch_mod, regions.region_format(this_region, 'str'), rn+1, len(these_regions)))
             fl = fetch_infos[fetch_mod][0](regions.region_buffer(this_region, 5, pct = True), f, lambda: stop_threads)
-            fl._verbose = True
+            #fl._verbose = True
             args_d = utils.args2dict(args)
             try:
                 r = fl.run(**args_d)
@@ -1842,9 +1911,14 @@ def fetches_cli(argv = sys.argv):
                         if not fr.is_alive():
                             break
                 except (KeyboardInterrupt, SystemExit):
-                    utils.echo_error_msg('user breakage...please wait for clean kill, ctl-c to force.')
+                    utils.echo_error_msg('user breakage...please wait for while fetches exits.')
                     fl._status = -1
                     stop_threads = True
+                    while not fr.fetch_q.empty():
+                        try:
+                            fr.fetch_q.get(False)
+                        except Empty: continue
+                        fr.fetch_q.task_done()
                 fr.join()
             utils.echo_msg('ran fetch module {} on region {} ({}/{})...\
             '.format(fetch_mod, regions.region_format(this_region, 'str'), rn+1, len(these_regions)))

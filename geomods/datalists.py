@@ -29,6 +29,7 @@
 
 import os
 import sys
+import glob
 
 import gdal
 import osr
@@ -43,7 +44,14 @@ from geomods import lasfun
 from geomods import fetches
 
 _known_dl_delims = [' ']
-_known_datalist_fmts = {-1: ['datalist', 'mb-1'], 168: ['xyz', 'csv', 'dat', 'ascii'], 200: ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'], 300: ['las', 'laz'], 400: ['nos', 'dc', 'gmrt', 'srtm', 'charts', 'mb']}
+_known_datalist_fmts = {
+    -1: ['datalist', 'mb-1'],
+    168: ['xyz', 'csv', 'dat', 'ascii'],
+    200: ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'],
+    300: ['las', 'laz'],
+    400: ['nos', 'dc', 'gmrt', 'srtm', 'charts', 'mb', 'tnm'],
+    500: ['zip', 'gz'],
+}
 _known_datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, _known_datalist_fmts[key]) for key in _known_datalist_fmts])
 _dl_inf_h = {
     -1: lambda e: datalist_inf_entry(e),
@@ -58,7 +66,7 @@ def path_exists_or_url(src_str):
     if os.path.exists(src_str): return(True)
     if src_str[:4] == 'http': return(True)
     if src_str.split(':')[0] in _known_datalist_fmts[400]: return(True)
-    echo_error_msg('invalid datafile/datalist: {}'.format(src_str))
+    utils.echo_error_msg('invalid datafile/datalist: {}'.format(src_str))
     return(False)
 
 def datalist_default_hooks():
@@ -260,21 +268,21 @@ def datalist2py(dl, region = None):
                     if this_line[0] != '#' and this_line[0] != '\n' and this_line[0].rstrip() != '':
                         these_entries.append([os.path.join(this_dir, x) if n == 0 else x for n,x in enumerate(entry2py(this_line.rstrip()))])
         else: utils.echo_error_msg('could not open datalist/entry {}'.format(this_entry[0]))
-    elif this_entry[1] == 400:
-        fetch_mod = this_entry[0].split(':')[0]
-        fetch_args = this_entry[0].split(':')[1:]
-        if fetch_mod in fetches.fetch_infos.keys():
-            fl = fetches.fetch_infos[fetch_mod][0](regions.region_buffer(region, 5, pct = True), [], lambda: False)
-            args_d = utils.args2dict(fetch_args, {})
-            fl._verbose = True
+    # elif this_entry[1] == 400:
+    #     fetch_mod = this_entry[0].split(':')[0]
+    #     fetch_args = this_entry[0].split(':')[1:]
+    #     if fetch_mod in fetches.fetch_infos.keys():
+    #         fl = fetches.fetch_infos[fetch_mod][0](regions.region_buffer(region, 5, pct = True), [], lambda: False)
+    #         args_d = utils.args2dict(fetch_args, {})
+    #         fl._verbose = True
 
-            results = fl.run(**args_d)
-            if len(results) > 0:
-                with open('{}.datalist'.format(fetch_mod), 'w') as fdl:
-                    for r in results:
-                        e = [r[0], fl._datalists_code, 1]
-                        fdl.write('{} {} {}\n'.format(e[0], e[1], e[2]))
-                these_entries.append(['{}.datalist'.format(fetch_mod), -1, 1])
+    #         results = fl.run(**args_d)
+    #         if len(results) > 0:
+    #             with open('{}.datalist'.format(fetch_mod), 'w') as fdl:
+    #                 for r in results:
+    #                     e = [r[0], fl._datalists_code, 1]
+    #                     fdl.write('{} {} {}\n'.format(e[0], e[1], e[2]))
+    #             these_entries.append(['{}.datalist'.format(fetch_mod), -1, 1])
                 
     else: these_entries.append(this_entry)
     return(these_entries)
@@ -319,26 +327,29 @@ def datalist_yield_entry(this_entry, region = None, verbose = False, z_region = 
         for xyz in lasfun.las_yield_entry(this_entry, verbose = verbose, region = region, z_region = z_region):
             yield(xyz)
     elif this_entry[1] == 400:
-        for xyz in fetch_yield_entry(this_entry, region = region, verbose = verbose):
+        for xyz in fetches.fetch_yield_entry(this_entry, region = region, verbose = verbose):
             yield(xyz)
-    elif this_entry[1] == 401:
-        for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'nos'):
-            yield(xyz)
-    elif this_entry[1] == 402:
-        for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'dc'):
-            yield(xyz)
-    elif this_entry[1] == 403:
-        for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'charts'):
-            yield(xyz)
-    elif this_entry[1] == 404:
-        for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'srtm'):
-            yield(xyz)
-    elif this_entry[1] == 406:
-        for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'mb'):
-            yield(xyz)
-    elif this_entry[1] == 408:
-        for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'gmrt'):
-            yield(xyz)
+    # elif this_entry[1] == 401:
+    #     for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'nos'):
+    #         yield(xyz)
+    # elif this_entry[1] == 402:
+    #     for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'dc'):
+    #         yield(xyz)
+    # elif this_entry[1] == 403:
+    #     for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'charts'):
+    #         yield(xyz)
+    # elif this_entry[1] == 404:
+    #     for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'srtm'):
+    #         yield(xyz)
+    # elif this_entry[1] == 405:
+    #     for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'tnm'):
+    #         yield(xyz)
+    # elif this_entry[1] == 406:
+    #     for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'mb'):
+    #         yield(xyz)
+    # elif this_entry[1] == 408:
+    #     for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'gmrt'):
+    #         yield(xyz)
 
 def datalist_yield_queue(q):
     while True:
@@ -551,8 +562,13 @@ def datalists_cli(argv = sys.argv):
 
     if want_glob:
         if dl_fmt is None:
-            dl_fmts = list(_known_datalist_fmts.keys())[1:]
-        else: dl_fmts = [dl_fmt]
+            dl_fmts = list(_known_datalist_fmts.keys())
+            dl_fmts.remove(-1)
+        else:
+            dl_fmts = [dl_fmt]
+        # for f in _known_datalist_fmts[-1]:
+        #     globs = glob.glob('*.{}'.format(f))
+        #     [sys.stdout.write('{}\n'.format(' '.join([x, str(-1), '1']))) for x in globs]
         for key in dl_fmts:
             for f in _known_datalist_fmts[key]:
                 globs = glob.glob('*.{}'.format(f))
@@ -578,6 +594,7 @@ def datalists_cli(argv = sys.argv):
     if len(these_regions) == 0: utils.echo_error_msg('failed to parse region(s), {}'.format(i_region))
 
     for rn, this_region in enumerate(these_regions):
+        
         ## ==============================================
         ## Load the input datalist
         ## ==============================================

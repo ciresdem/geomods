@@ -38,7 +38,8 @@ _xyz_config = {
     'z-scale': 1,
     'name': '<xyz-data-stream>',
     'upper_limit': None,
-    'lower_limit': None}
+    'lower_limit': None,
+    'verbose': False}
 
 _known_delims = [',', ' ', '\t', '/', ':']
 
@@ -60,12 +61,12 @@ def xyz_parse_line(xyz, xyz_c = _xyz_config):
     try:
         o_xyz = [float(this_xyz[xyz_c['xpos']]), float(this_xyz[xyz_c['ypos']]), float(this_xyz[xyz_c['zpos']]) * float(xyz_c['z-scale'])]
     except IndexError as e:
-        print(this_xyz)
-        utils.echo_error_msg(e)
+        #print(this_xyz)
+        if xyz_c['verbose']: utils.echo_error_msg(e)
         return(None)
     except Exception as e:
-        print(this_xyz)
-        utils.echo_error_msg(e)
+        #print(this_xyz)
+        if xyz_c['verbose']: utils.echo_error_msg(e)
         return(None)
     return(o_xyz)
    

@@ -1,6 +1,6 @@
 ### gdalfun.py
 ##
-## Copyright (c) 2010 - 2020 CIRES Coastal DEM Team
+## Copyright (c) 2010 - 2021 CIRES Coastal DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -595,9 +595,15 @@ def gdal_ogr_regions(src_ds):
             p_layer = poly.GetLayer(0)
             for pf in p_layer:
                 pgeom = pf.GetGeometryRef()
-                these_regions.append(pgeom.GetEnvelope())
+                pwkt = pgeom.ExportToWkt()
+                penv = ogr.CreateGeometryFromWkt(pwkt).GetEnvelope()
+                these_regions.append(penv)
         poly = None
     return(these_regions)
+
+#def gdal_wkt2region(wkt):
+
+    
 
 def gdal_create_polygon(coords):
     '''convert coords to Wkt
@@ -807,7 +813,9 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format = 'GTiff', mode = '
                     if mode == 'n' or mode == 'm':
                         ptArray[ypos, xpos] += 1
                     else: ptArray[ypos, xpos] = 1
-                except Exception as e: utils.echo_error_msg(e)
+                except Exception as e:
+                    if verbose: utils.echo_error_msg(e)
+                    pass
     if mode == 'm' or mode == 'w':
         ptArray[ptArray == 0] = np.nan
         outarray = sumArray / ptArray
@@ -864,8 +872,11 @@ def np_gaussian_blur(in_array, size):
 def gdal_blur(src_gdal, dst_gdal, sf = 1):
     '''gaussian blur on src_gdal using a smooth-factor of `sf`
     runs np_gaussian_blur(ds.Array, sf)'''
+
+    try:
+        ds = gdal.Open(src_gdal)
+    except: ds = None
     
-    ds = gdal.Open(src_gdal)
     if ds is not None:
         ds_config = gdal_gather_infos(ds)
         ds_array = ds.GetRasterBand(1).ReadAsArray(0, 0, ds_config['nx'], ds_config['ny'])
@@ -930,13 +941,17 @@ def gdal_sample_inc(src_grd, inc = 1, verbose = False):
         
 def gdal_polygonize(src_gdal, dst_layer, verbose = False):
     '''run gdal.Polygonize on src_ds and add polygon to dst_layer'''
-    
-    ds = gdal.Open('{}'.format(src_gdal))
-    ds_arr = ds.GetRasterBand(1)
-    if verbose: utils.echo_msg('polygonizing {}'.format(src_gdal))
-    status = gdal.Polygonize(ds_arr, None, dst_layer, 0, callback = _gdal_progress if verbose else None)
-    ds = ds_arr = None
-    return(0, 0)
+
+    try:
+        ds = gdal.Open('{}'.format(src_gdal))
+    except: ds = None
+    if ds is not None:
+        ds_arr = ds.GetRasterBand(1)
+        if verbose: utils.echo_msg('polygonizing {}'.format(src_gdal))
+        status = gdal.Polygonize(ds_arr, None, dst_layer, 0, callback = _gdal_progress if verbose else None)
+        ds = ds_arr = None
+        return(0, 0)
+    else: return(-1, -1)
     
 def gdal_chunks(src_fn, n_chunk = 10):
     '''split `src_fn` GDAL file into chunks with `n_chunk` cells squared.
@@ -1246,24 +1261,31 @@ def gdal_inf_entry(entry, warp = None):
     ''' scan a gdal entry and find it's region
 
     returns the region [xmin, xmax, ymin, ymax] of the gdal entry'''
-    
-    ds = gdal.Open(entry[0])
-    minmax = gdal_inf(ds, warp)
-    ds = None
+
+    try:
+        ds = gdal.Open(entry[0])
+    except: ds = None
+    if ds is not None:
+        minmax = gdal_inf(ds, warp)
+        ds = None
+    else: minmax = None
     return(minmax)
 
 def gdal_yield_entry(entry, region = None, verbose = False, epsg = None, z_region = None):
     '''yield the xyz data from the datalist entry.
 
     yields [x, y, z, <w, ...>]'''
-    
-    ds = gdal.Open(entry[0])
-    if region is not None:
-        srcwin = gdal_srcwin(ds, region)
-    else: srcwin = None
-    for xyz in gdal_parse(ds, dump_nodata = False, srcwin = srcwin, warp = epsg, verbose = verbose, z_region = z_region):
-        yield(xyz + [entry[2]] if entry[2] is not None else xyz)
-    ds = None
+
+    try:
+        ds = gdal.Open(entry[0])
+    except: ds = None
+    if ds is not None:
+        if region is not None:
+            srcwin = gdal_srcwin(ds, region)
+        else: srcwin = None
+        for xyz in gdal_parse(ds, dump_nodata = False, srcwin = srcwin, warp = epsg, verbose = verbose, z_region = z_region):
+            yield(xyz + [entry[2]] if entry[2] is not None else xyz)
+        ds = None
     
 def gdal_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, epsg = None, z_region = None):
     '''dump the xyz data from the gdal entry to dst_port'''
