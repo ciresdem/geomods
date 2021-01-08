@@ -1,6 +1,6 @@
 ### gmtfun.py
 ##
-## Copyright (c) 2020 CIRES Coastal DEM Team
+## Copyright (c) 2020 - 2021 CIRES Coastal DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -31,6 +31,7 @@
 import os
 from geomods import utils
 from geomods import regions
+from geomods import gdalfun
 
 def gmt_inf(src_xyz):
     '''generate an info (.inf) file from a src_xyz file using GMT.
@@ -71,7 +72,7 @@ def gmt_grd2gdal(src_grd, dst_fmt = 'GTiff', epsg = 4326, verbose = False):
 
     returns the gdal file name or None'''
     
-    dst_gdal = '{}.{}'.format(os.path.basename(src_grd).split('.')[0], gdal_fext(dst_fmt))
+    dst_gdal = '{}.{}'.format(os.path.basename(src_grd).split('.')[0], gdalfun.gdal_fext(dst_fmt))
     grd2gdal_cmd = ('gmt grdconvert {} {}=gd+n-9999:{} -V\
     '.format(src_grd, dst_gdal, dst_fmt))
     out, status = utils.run_cmd(grd2gdal_cmd, verbose = verbose)

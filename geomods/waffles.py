@@ -65,8 +65,6 @@
 ### TODO:
 ## Add remove/replace module
 ## Add source uncertainty to uncertainty module
-## Add LAS/LAZ support to datalits
-## -W weight-range for datalist processing
 ## -B for 'breakline' (densify line/exract nodes/add to datalist)
 ##
 ### Code:
@@ -80,6 +78,7 @@ try:
     import Queue as queue
 except: import queue as queue
 import threading
+
 ## ==============================================
 ## import gdal, etc.
 ## ==============================================
@@ -99,7 +98,7 @@ from geomods import gmtfun
 from geomods import gdalfun
 from geomods import xyzfun
 
-_version = '0.6.2'
+_version = '0.6.3'
 
 ## ==============================================
 ## DEM module: generate a Digital Elevation Model using a variety of methods
@@ -586,8 +585,8 @@ def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, use_dat
     if len(dist.split('/')) == 1: dist = dist + '/2'
     mbgrid_cmd = ('mbgrid -I{} {} -D{}/{} -O{} -A2 -G100 -F1 -N -C{} -S0 -X0.1 -T{} {} \
     '.format(wg['datalist'], regions.region_format(region, 'gmt'), xsize, ysize, wg['name'], dist, tension, '-M' if wg['mask'] else ''))
-    #for out in yield_cmd(mbgrid_cmd, verbose = wg['verbose']): sys.stderr.write('{}'.format(out))
-    out, status = utils.run_cmd(mbgrid_cmd, verbose = wg['verbose'])
+    for out in utils.yield_cmd(mbgrid_cmd, verbose = wg['verbose']): sys.stderr.write('{}'.format(out))
+    #out, status = utils.run_cmd(mbgrid_cmd, verbose = wg['verbose'])
 
     utils.remove_glob('*.cmd')
     utils.remove_glob('*.mb-1')
@@ -651,12 +650,15 @@ def waffles_nearneighbor(wg = _waffles_grid_info, radius = None, use_gdal = Fals
 
 ## ==============================================
 ## Waffles 'NUM grid' module
+## Uninterpolated grdi from data;
+## num methods include: mask, mean, num, landmask and any gmt grd2xyz -A option.
 ## ==============================================
 def waffles_num(wg = _waffles_grid_info, mode = 'n'):
     '''Generate an uninterpolated num grid.
     mode of `k` generates a mask grid
     mode of `m` generates a mean grid
     mode of `n` generates a num grid
+    mode of `w` generates a landmask grid
     mode of `A<mode> ` generates grid using GMT xyz2grd'''
 
     if mode[0] == 'A':
