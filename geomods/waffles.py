@@ -671,7 +671,7 @@ def waffles_num(wg = _waffles_grid_info, mode = 'n'):
         return(utils.run_cmd(dem_xyz2grd_cmd, verbose = wg['verbose'], data_fun = waffles_dl_func(wg)))
     else:
         dly = waffles_yield_datalist(wg)
-        if wg['weights']: dly = xyz_block(dly, waffles_proc_region(wg), wg['inc'], weights = True)
+        if wg['weights']: dly = xyzfun.xyz_block(dly, waffles_proc_region(wg), wg['inc'], weights = True)
         return(gdalfun.gdal_xyz2gdal(dly, '{}.tif'.format(wg['name']), waffles_proc_region(wg), wg['inc'], dst_format = wg['fmt'], mode = mode, verbose = wg['verbose']))
 
 ## ==============================================
@@ -679,11 +679,11 @@ def waffles_num(wg = _waffles_grid_info, mode = 'n'):
 ## ==============================================
 def waffles_gdal_grid(wg = _waffles_grid_info, alg_str = 'linear:radius=1'):
     '''run gdal grid using alg_str
-    parse the data through xyz_block to get weighted mean before
+    parse the data through xyzfun.xyz_block to get weighted mean before
     building the GDAL dataset to pass into gdal_grid'''
 
     region = waffles_proc_region(wg)
-    dly = xyz_block(waffles_yield_datalist(wg), region, wg['inc'], weights = False if wg['weights'] is None else True)
+    dly = xyzfun.xyz_block(waffles_yield_datalist(wg), region, wg['inc'], weights = False if wg['weights'] is None else True)
     ds = gdalfun.xyz2gdal_ds(dly, '{}'.format(wg['name']))
     if ds.GetLayer().GetFeatureCount() == 0: return(-1,-1)
     xcount, ycount, dst_gt = gdalfun.gdal_region2gt(region, wg['inc'])
@@ -1079,7 +1079,7 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
         ## wet/dry datalist mask
         ## ==============================================
         dly = waffles_yield_datalist(wg)
-        if wg['weights']: dly = xyz_block(dly, waffles_dist_region(wg), wg['inc'], weights = True)
+        if wg['weights']: dly = xyzfun.xyz_block(dly, waffles_dist_region(wg), wg['inc'], weights = True)
         gdalfun.gdal_xyz2gdal(dly, w_mask, waffles_dist_region(wg), wg['inc'], dst_format = wg['fmt'], mode = 'w', verbose = wg['verbose'])
     else:
         ## ==============================================

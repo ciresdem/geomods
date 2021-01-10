@@ -22,9 +22,12 @@
 
 import sys
 import copy
+import numpy as np
+import gdal
 
 from geomods import utils
 from geomods import regions
+from geomods import gdalfun
 
 ## ==============================================
 ## xyz processing (datalists fmt:168)
@@ -110,7 +113,7 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False, verbo
 
     yields the xyz value for each block with data'''
     
-    xcount, ycount, dst_gt = gdal_region2gt(region, inc)
+    xcount, ycount, dst_gt = gdalfun.gdal_region2gt(region, inc)
     #xcount += 1
     #ycount += 1
     sumArray = np.zeros((ycount, xcount))
