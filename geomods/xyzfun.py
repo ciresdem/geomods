@@ -130,7 +130,7 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False, verbo
             z = z * w
         if x > region[0] and x < region[1]:
             if y > region[2] and y < region[3]:
-                xpos, ypos = _geo2pixel(x, y, dst_gt)
+                xpos, ypos = gdalfun._geo2pixel(x, y, dst_gt)
                 try:
                     sumArray[ypos, xpos] += z
                     ptArray[ypos, xpos] += 1
