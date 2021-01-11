@@ -140,6 +140,7 @@ def datalist_inf(dl, inf_file = True, overwrite = False):
     utils.echo_msg('generating inf for datalist {}'.format(dl))
     
     for entry in datalist(dl, pass_h = dp_h):
+        utils.echo_msg(entry)
         if entry[1] == 200:
             entry_inf = inf_entry(entry, True)
         else: entry_inf = inf_entry(entry)
