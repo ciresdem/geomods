@@ -51,7 +51,7 @@ from geomods import vdatumfun
 from geomods import gdalfun
 from geomods import xyzfun
 
-_version = '0.4.5'
+_version = '0.5.0'
 
 ## =============================================================================
 ##
@@ -1747,7 +1747,6 @@ class gmrt:
     ## ==============================================    
     def _yield_xyz(self, entry, res = 'max', fmt = 'geotiff'):
         src_gmrt = 'gmrt_tmp.{}'.format(gdalfun.gdal_fext(fmt))
-        print(entry)
         if fetch_file(entry[0], src_gmrt, callback = lambda: False, verbose = self._verbose) == 0:
             #try:
             src_ds = gdal.Open(src_gmrt)
@@ -1812,35 +1811,17 @@ class emodnet:
         g_bbox = desc_results.findall('.//{http://www.opengis.net/gml/3.2}Envelope')[0]
         lc = map(float, g_bbox.find('{http://www.opengis.net/gml/3.2}lowerCorner').text.split())
         uc = map(float, g_bbox.find('{http://www.opengis.net/gml/3.2}upperCorner').text.split())
+
+        ds_region = [lc[1], uc[1], lc[0], uc[0]]
         resx = (uc[1] - lc[1]) / hl[0]
         resy = (uc[0] - lc[0]) / hl[1]
-        
-        emodnet_wcs = '{}service=WCS&request=GetCoverage&version=1.0.0&Identifier=emodnet:mean&coverage=emodnet:mean&format=GeoTIFF&bbox={}&resx={}&resy={}&crs=EPSG:4326\
-        '.format(self._emodnet_grid_url, regions.region_format(self.region, 'bbox'), resx, resy)
-        outf = 'emodnet_{}.tif'.format(regions.region_format(self.region, 'fn'))
-        self._results.append([emodnet_wcs, outf, 'emodnet'])
-        
-        # self.data = {
-        #     'request': 'GetCoverage',
-        #     'format': 'GeoTIFF',
-        #     'version': '2.0.1',
-        #     'CoverageID': 'emodnet:mean',
-        #     'Service': 'WCS',
-        #     'resx': resx,
-        #     'resy': resy,
-        #     'crs': 'EPSG:4326',
-        #     'bbox': regions.region_format(self.region, 'bbox'),
-        # }
 
-        # self._req = fetch_req(self._emodnet_grid_url, params = self.data, tries = 10, timeout = 10, read_timeout = None)
-        # if self._req is not None:
-        #     req_txt = self._req.text
-        #     print(req_txt)
-        #     results = lxml.etree.fromstring(req_txt.encode('utf-8'))
-        #     url = results.findall('.//{http://www.opengis.net/ows/1.1}Reference')[0].attrib['{http://www.w3.org/1999/xlink}href']
-        #     print(url)
-        #     outf = 'emodnet_{}.tif'.format(regions.region_format(self.region, 'fn'))
-        #     self._results.append([url, outf, 'emodnet'])
+        if regions.regions_intersect_ogr_p(self.region, ds_region):
+            emodnet_wcs = '{}service=WCS&request=GetCoverage&version=1.0.0&Identifier=emodnet:mean&coverage=emodnet:mean&format=GeoTIFF&bbox={}&resx={}&resy={}&crs=EPSG:4326\
+            '.format(self._emodnet_grid_url, regions.region_format(self.region, 'bbox'), resx, resy)
+            outf = 'emodnet_{}.tif'.format(regions.region_format(self.region, 'fn'))
+            self._results.append([emodnet_wcs, outf, 'emodnet'])
+            
         return(self._results)
 
     ## ==============================================
@@ -1848,7 +1829,6 @@ class emodnet:
     ## ==============================================    
     def _yield_xyz(self, entry):
         src_emodnet = 'emodnet_tmp.tif'
-        print(entry)
         if fetch_file(entry[0], src_emodnet, callback = lambda: False, verbose = self._verbose) == 0:
             try:
                 src_ds = gdal.Open(src_emodnet)
@@ -2214,14 +2194,14 @@ def fetches_cli(argv = sys.argv):
             fl = fetch_infos[fetch_mod][0](regions.region_buffer(this_region, 5, pct = True), f, lambda: stop_threads)
             #fl._verbose = True
             args_d = utils.args2dict(args)
-            #try:
-            r = fl.run(**args_d)
-            #except ValueError as e:
-            #    utils.echo_error_msg('something went wrong, {}'.format(e))
-            #    sys.exit(-1)
-            #except Exception as e:
-            #    utils.echo_error_msg('{}'.format(e))
-            #    sys.exit(-1)
+            try:
+                r = fl.run(**args_d)
+            except ValueError as e:
+                utils.echo_error_msg('something went wrong, {}'.format(e))
+                sys.exit(-1)
+            except Exception as e:
+                utils.echo_error_msg('{}'.format(e))
+                sys.exit(-1)
             utils.echo_msg('found {} data files.'.format(len(r)))
             
             if want_list:
@@ -2237,7 +2217,6 @@ def fetches_cli(argv = sys.argv):
                         sys.stderr.write('\x1b[2K\r')
                         perc = float((len(r) - fr.fetch_q.qsize())) / len(r) * 100 if len(r) > 0 else 1
                         sys.stderr.write('fetches: fetching remote data files [{}%]'.format(perc))
-                        #sys.stderr.write('fetches: fetching remote data files [{:.3f}/{}]'.format(len(r), fr.fetch_q.qsize()))
                         sys.stderr.flush()
                         if not fr.is_alive():
                             break
