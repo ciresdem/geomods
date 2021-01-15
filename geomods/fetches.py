@@ -206,7 +206,7 @@ def fetch_csv(src_url):
     if req:
         return(csv.reader(req.text.split('\n'), delimiter = ','))
     else: return(None)
-
+    
 class fetch_results(threading.Thread):
     '''fetch results gathered from a fetch module.
     results is a list of URLs with data type'''
@@ -1983,6 +1983,9 @@ class ngs:
 ## ==============================================
 ## fetches processing (datalists fmt:400 - 499)
 ## ==============================================
+def fetch_inf_entry(entry = []):
+    return([-180,180,-90,90])
+
 def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, verbose = False):
     '''yield the xyz data from the fetch module datalist entry
 

@@ -385,7 +385,7 @@ def waffles_spatial_metadata(wg):
     else: layer = None
     defn = layer.GetLayerDefn()
 
-    for this_entry in datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = waffles_dlp_hooks(wg), yield_dl_entry = True, verbose = wg['verbose']):
+    for this_entry in datalists.datalist(wg['datalist'], wt = 1 if wg['weights'] else None, pass_h = waffles_dlp_hooks(wg), yield_dl_entry = True, verbose = wg['verbose']):
         if this_entry[1] == -1 or this_entry[-1] == wg['datalist'].split('.')[0]:
             utils.echo_msg(this_entry[0])
 
@@ -1293,14 +1293,14 @@ def waffles_run(wg = _waffles_grid_info):
         ## ==============================================
         ## gererate the DEM (run the module)
         ## ==============================================
-        try:
-            out, status = _waffles_modules[this_wg['mod']][0](args_d)
-        except KeyboardInterrupt as e:
-            utils.echo_error_msg('killed by user, {}'.format(e))
-            sys.exit(-1)
-        except Exception as e:
-            utils.echo_error_msg('{}'.format(e))
-            status = -1
+        #try:
+        out, status = _waffles_modules[this_wg['mod']][0](args_d)
+        #except KeyboardInterrupt as e:
+        #    utils.echo_error_msg('killed by user, {}'.format(e))
+        #    sys.exit(-1)
+        #except Exception as e:
+        #    utils.echo_error_msg('{}'.format(e))
+        #    status = -1
 
         if status != 0: utils.remove_glob(this_dem)
         if not os.path.exists(this_dem): continue

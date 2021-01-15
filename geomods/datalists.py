@@ -58,7 +58,8 @@ _dl_inf_h = {
     168: lambda e: xyzfun.xyz_inf_entry(e),
     200: lambda e: gdalfun.gdal_inf_entry(e),
     201: lambda e: gdalfun.gdal_inf_entry(e, 4269),
-    300: lambda e: lasfun.las_inf_entry(e)
+    300: lambda e: lasfun.las_inf_entry(e),
+    400: lambda e: fetches.fetch_inf_entry(e)
 }
 _dl_pass_h = [lambda e: path_exists_or_url(e[0])]
 
@@ -312,7 +313,6 @@ def datalist_yield_entry(this_entry, region = None, verbose = False, z_region = 
     '''yield the xyz data from the datalist entry [entry/path, entry-format, entry-weight]
 
     yields xyz line data [x, y, z, ...]'''
-
     if this_entry[1] == 168:
         for xyz in xyzfun.xyz_yield_entry(this_entry, region = region, verbose = verbose, z_region = z_region):
             #for xyz in gmt_yield_entry(this_entry, region = region, verbose = verbose, z_region = z_region):
