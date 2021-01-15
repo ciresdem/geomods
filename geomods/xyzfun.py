@@ -39,12 +39,15 @@ _xyz_config = {
     'zpos': 2,
     'skip': 0,
     'z-scale': 1,
+    'x-off': 0,
     'name': '<xyz-data-stream>',
     'upper_limit': None,
     'lower_limit': None,
-    'verbose': False}
+    'verbose': False,
+}
 
-_known_delims = [',', ' ', '\t', '/', ':']
+#_known_delims = [',', ' ', '\t', '/', ':']
+_known_delims = [',', '/', ':']
 
 def xyz_line_delim(xyz):
     for delim in _known_delims:
@@ -62,7 +65,7 @@ def xyz_parse_line(xyz, xyz_c = _xyz_config):
         xyz_c['delim'] = xyz_line_delim(this_line)
     this_xyz = this_line.split(xyz_c['delim'])
     try:
-        o_xyz = [float(this_xyz[xyz_c['xpos']]), float(this_xyz[xyz_c['ypos']]), float(this_xyz[xyz_c['zpos']]) * float(xyz_c['z-scale'])]
+        o_xyz = [float(this_xyz[xyz_c['xpos']]) + float(xyz_c['x-off']), float(this_xyz[xyz_c['ypos']]), float(this_xyz[xyz_c['zpos']]) * float(xyz_c['z-scale'])]
     except IndexError as e:
         #print(this_xyz)
         if xyz_c['verbose']: utils.echo_error_msg(e)

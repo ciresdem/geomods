@@ -162,12 +162,14 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
     if verbose: utils.echo_msg('fetched remote file: {}.'.format(os.path.basename(dst_fn)))
     return(status)
 
-def fetch_req(src_url, params = None, tries = 5, timeout = 2):
+def fetch_req(src_url, params = None, tries = 5, timeout = 2, read_timeout = 10):
     '''fetch src_url and return the requests object'''
-    if tries <= 0: return(None)
+    if tries <= 0:
+        utils.echo_error_msg('max-tries exhausted')
+        return(None)
     try:
-        return(requests.get(src_url, stream = True, params = params, timeout = (timeout,10), headers = r_headers))
-    except: return(fetch_req(src_url, params = params, tries = tries - 1, timeout = timeout + 1))
+        return(requests.get(src_url, stream = True, params = params, timeout = (timeout,read_timeout), headers = r_headers))
+    except: return(fetch_req(src_url, params = params, tries = tries - 1, timeout = timeout + 1, read_timeout = read_timeout + 10))
 
 def fetch_nos_xml(src_url):
     '''fetch src_url and return it as an XML object'''
@@ -1163,7 +1165,138 @@ class charts():
         for xyz in self._yield_results_to_xyz(datatype):
             xyzfun.xyz_line(xyz, dst_port, self._verbose)
                 
+## =============================================================================
+##
+## mar_grav - Sattelite Altimetry Topography from Scripps
+##
+## https://topex.ucsd.edu/WWW_html/mar_grav.html
+## ftp://topex.ucsd.edu/pub/global_grav_1min/
+## https://topex.ucsd.edu/marine_grav/explore_grav.html
+## https://topex.ucsd.edu/marine_grav/white_paper.pdf
+##
+## =============================================================================
+class mar_grav:
+    '''Fetch mar_grav sattelite altimetry topography'''
+    def __init__(self, extent = None, filters = [], callback = None):
+        utils.echo_msg('loading mar_grav fetch module...')
+        self._mar_grav_url = 'https://topex.ucsd.edu/cgi-bin/get_data.cgi'
+        self._outdir = os.path.join(os.getcwd(), 'mar_grav')
+        self._results = []
+        self.region = extent
+        self._datalists_code = 414
+        self._verbose = False
 
+    def run(self):
+        '''Run the mar_grav fetching module.'''
+        if self.region is None: return([])
+
+        self.data = {
+            'north':self.region[3],
+            'west':self.region[0],
+            'south':self.region[2],
+            'east':self.region[1],
+            'mag':1,
+        }
+
+        self._req = fetch_req(self._mar_grav_url, params = self.data, tries = 10, timeout = 2)
+        if self._req is not None:
+            url = self._req.url
+            outf = 'mar_grav_{}.xyz'.format(regions.region_format(self.region, 'fn'))
+            self._results.append([url, outf, 'mar_grav'])
+        return(self._results)
+        
+    ## ==============================================
+    ## Process results to xyz
+    ## ==============================================
+    def _yield_xyz(self, entry, xyzc = None):
+        if fetch_file(entry[0], os.path.basename(entry[1]), callback = lambda: False, verbose = self._verbose) == 0:
+            if xyzc is None: xyzc = copy.deepcopy(xyzfun._xyz_config)
+            xyzc['skip'] = 1
+            xyzc['x-off'] = -360
+            xyzc['verbose'] = True
+            with open(os.path.basename(entry[1]), 'r') as xyzf:
+                for xyz in xyzfun.xyz_parse(xyzf, xyz_c = xyzc, verbose = self._verbose):
+                    yield(xyz)
+        utils.remove_glob(os.path.basename(entry[1]))
+    
+    def _dump_xyz(self, entry, dst_port = sys.stdout):
+        for xyz in self._yield_xyz(entry):
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
+                    
+    def _yield_results_to_xyz(self):
+        if len(self._results) == 0: self.run()
+        for entry in self._results:
+            for xyz in self._yield_xyz(entry):
+                yield(xyz)            
+
+    def _dump_results_to_xyz(self, dst_port = sys.stdout):
+        for xyz in self._yield_to_xyz():
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
+            
+## =============================================================================
+##
+## SRTM Plus
+##
+## Fetch srtm+ data
+## https://topex.ucsd.edu/WWW_html/srtm15_plus.html
+## http://topex.ucsd.edu/sandwell/publications/180_Tozer_SRTM15+.pdf
+##
+## =============================================================================
+class srtm_plus:
+    '''Fetch SRTM+ data'''
+    def __init__(self, extent = None, filters = [], callback = None):
+        utils.echo_msg('loading SRTM+ fetch module...')
+        self._srtm_url = 'https://topex.ucsd.edu/cgi-bin/get_srtm15.cgi'
+        self._outdir = os.path.join(os.getcwd(), 'srtm_plus')
+        self._results = []
+        self.region = extent
+        self._datalists_code = 413
+        self._verbose = False
+
+    def run(self):
+        '''Run the SRTM fetching module.'''
+        if self.region is None: return([])
+
+        self.data = {
+            'north':self.region[3],
+            'west':self.region[0],
+            'south':self.region[2],
+            'east':self.region[1],
+        }
+
+        self._req = fetch_req(self._srtm_url, params = self.data, tries = 10, timeout = 2)
+        if self._req is not None:
+            url = self._req.url
+            outf = 'srtm_{}.xyz'.format(regions.region_format(self.region, 'fn'))
+            self._results.append([url, outf, 'srtm'])
+        return(self._results)
+        
+    ## ==============================================
+    ## Process results to xyz
+    ## ==============================================
+    def _yield_xyz(self, entry, xyzc = None):
+        if fetch_file(entry[0], os.path.basename(entry[1]), callback = lambda: False, verbose = self._verbose) == 0:
+            if xyzc is None: xyzc = copy.deepcopy(xyzfun._xyz_config)
+            xyzc['skip'] = 1
+            with open(os.path.basename(entry[1]), 'r') as xyzf:
+                for xyz in xyzfun.xyz_parse(xyzf, xyz_c = xyzc, verbose = self._verbose):
+                    yield(xyz)
+        utils.remove_glob(os.path.basename(entry[1]))
+    
+    def _dump_xyz(self, entry, dst_port = sys.stdout):
+        for xyz in self._yield_xyz(entry):
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
+                    
+    def _yield_results_to_xyz(self):
+        if len(self._results) == 0: self.run()
+        for entry in self._results:
+            for xyz in self._yield_xyz(entry):
+                yield(xyz)            
+
+    def _dump_results_to_xyz(self, dst_port = sys.stdout):
+        for xyz in self._yield_to_xyz():
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
+            
 ## =============================================================================
 ##
 ## SRTM Fetch (cgiar)
@@ -1177,8 +1310,7 @@ class srtm_cgiar:
         utils.echo_msg('loading SRTM (CGIAR) fetch module...')
         self._srtm_url = 'http://srtm.csi.cgiar.org'
         self._srtm_dl_url = 'http://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/'
-        self._status = 0
-        self._outdir = os.path.join(os.getcwd(), 'srtm')
+        self._outdir = os.path.join(os.getcwd(), 'srtm_cgiar')
         self._ref_vector = os.path.join(fetchdata, 'srtm.gmt')
         if not os.path.exists(self._ref_vector): self._status = -1
         self._results = []
@@ -1628,7 +1760,159 @@ class gmrt:
     def _dump_results_to_xyz(self, res = 'max', fmt = 'geotiff', dst_port = sys.stdout):
         for xyz in self._yield_to_xyz(res, fmt):
             xyzfun.xyz_line(xyz, dst_port, self._verbose)
-    
+
+
+## =============================================================================
+##
+## EMODNET Fetch
+##
+## fetch extracts of the EMOD DTM
+##
+## =============================================================================
+class emodnet:
+    '''Fetch raster data from the EMODNET DTM'''
+    def __init__(self, extent = None, filters = [], callback = None):
+        utils.echo_msg('loading EMODNET fetch module...')
+        self._emodnet_grid_url = 'https://ows.emodnet-bathymetry.eu/wcs?'
+        self._outdir = os.path.join(os.getcwd(), 'emodnet')
+        self._results = []
+        self.region = extent
+        self._datalists_code = 415
+        self._verbose = True
+
+    def run(self):
+        '''Run the GEBCO fetching module'''
+        if self.region is None: return([])
+
+        #emodnet_wcs = '{}service=WCS&request=GetCoverage&version=2.0.1&CoverageID=emodnet__mean&format=image/tiff&bbox={}'.format(self._emodnet_grid_url, regions.region_format(self.region, 'bbox'))
+        #outf = 'emodnet_{}.tif'.format(regions.region_format(self.region, 'fn'))
+        #self._results.append([emodnet_wcs, outf, 'emodnet'])
+        self.data = {
+            'request': 'GetCoverage',
+            'format': 'text/plain',
+            'version': '2.0.1',
+            'CoverageID': 'emodnet__mean',
+            'Service': 'WCS',
+            'bbox': regions.region_format(self.region, 'bbox'),
+        }
+
+        self._req = fetch_req(self._emodnet_grid_url, params = self.data, tries = 10, timeout = 10, read_timeout = None)
+        if self._req is not None:
+            req_txt = self._req.text
+            print(req_txt)
+            results = lxml.etree.fromstring(req_txt.encode('utf-8'))
+            url = results.findall('.//{http://www.opengis.net/ows/1.1}Reference')[0].attrib['{http://www.w3.org/1999/xlink}href']
+            print(url)
+            outf = 'emodnet_{}.tif'.format(regions.region_format(self.region, 'fn'))
+            self._results.append([url, outf, 'emodnet'])
+        return(self._results)
+
+    ## ==============================================
+    ## Process results to xyz
+    ## ==============================================    
+    def _yield_xyz(self, entry):
+        src_emodnet = 'emodnet_tmp.tif'
+        print(entry)
+        if fetch_file(entry[0], src_emodnet, callback = lambda: False, verbose = self._verbose) == 0:
+            try:
+                src_ds = gdal.Open(src_emodnet)
+            except: src_ds = None
+            if src_ds is not None:
+                srcwin = gdalfun.gdal_srcwin(src_ds, self.region)
+                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose):
+                    yield(xyz)
+                src_ds = None
+        else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_emodnet))
+        utils.remove_glob(src_emodnet)
+
+    def _dump_xyz(self, src_emodnet, dst_port = sys.stdout):
+        for xyz in self._yield_xyz(src_emodnet):
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
+            
+    def _yield_results_to_xyz(self):
+        self.run(res, fmt)
+        for entry in self._results:
+            for xyz in self._yield_xyz(entry, res, fmt):
+                yield(xyz)
+                
+    def _dump_results_to_xyz(self, dst_port = sys.stdout):
+        for xyz in self._yield_to_xyz(res, fmt):
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
+            
+## =============================================================================
+##
+## GEBCO Fetch
+##
+## fetch extracts of the GEBCO Bathymetry Grid.
+## https://www.gebco.net/
+##
+## =============================================================================
+class gebco:
+    '''Fetch raster data from the GEBCO Bathymetric Grid'''
+    def __init__(self, extent = None, filters = [], callback = None):
+        utils.echo_msg('loading GEBCO fetch module...')
+        self._gebco_grid_url = "https://www.gebco.net/data_and_products/gebco_web_services/2019/mapserv?"
+        self._outdir = os.path.join(os.getcwd(), 'gebco')
+        self._status = 0
+        self._results = []
+        self.region = extent
+        self._datalists_code = 412
+        self._verbose = False
+
+    def run(self, fmt = 'image/tiff'):
+        '''Run the GEBCO fetching module'''
+        if self.region is None: return([])
+
+        self.data = {
+            'request': 'getmap',
+            'service': 'wms',
+            'crs': 'EPSG:4326',
+            'format': fmt,
+            'layers': 'gebco_2019_grid',
+            'version': '1.3.0',
+            'BBOX': regions.region_format(self.region, 'bbox'),
+        }
+
+        self._req = fetch_req(self._gebco_grid_url, params = self.data, tries = 10, timeout = 2)
+        if self._req is not None:
+            #gebco_results = self._req.json()
+            url = self._req.url
+            outf = 'gebco_{}.tif'.format(regions.region_format(self.region, 'fn'))
+            self._results.append([url, outf, 'gebco'])
+        return(self._results)
+
+    # ## ==============================================
+    # ## Process results to xyz
+    # ## ==============================================    
+    # def _yield_xyz(self, entry, res = 'max', fmt = 'geotiff'):
+    #     src_gmrt = 'gmrt_tmp.{}'.format(gdalfun.gdal_fext(fmt))
+    #     print(entry)
+    #     if fetch_file(entry[0], src_gmrt, callback = lambda: False, verbose = self._verbose) == 0:
+    #         #try:
+    #         src_ds = gdal.Open(src_gmrt)
+    #         if src_ds is not None:
+    #             srcwin = gdalfun.gdal_srcwin(src_ds, self.region)
+    #             for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose):
+    #                 yield(xyz)
+    #         src_ds = None
+    #         #except: utils.echo_error_msg('could not read gmrt data: {}'.format(src_gmrt))
+    #     else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_gmrt))
+    #     utils.remove_glob(src_gmrt)
+
+    # def _dump_xyz(self, src_gmrt, res = 'max', fmt = 'geotiff', dst_port = sys.stdout):
+    #     for xyz in self._yield_xyz(src_gmrt, res, fmt):
+    #         xyzfun.xyz_line(xyz, dst_port, self._verbose)
+            
+    # def _yield_results_to_xyz(self, res = 'max', fmt = 'geotiff'):
+    #     self.run(res, fmt)
+    #     for entry in self._results:
+    #         for xyz in self._yield_xyz(entry, res, fmt):
+    #             yield(xyz)
+                
+    # def _dump_results_to_xyz(self, res = 'max', fmt = 'geotiff', dst_port = sys.stdout):
+    #     for xyz in self._yield_to_xyz(res, fmt):
+    #         xyzfun.xyz_line(xyz, dst_port, self._verbose)
+            
 ## =============================================================================
 ##
 ## National Geodetic Survey (NGS)
@@ -1734,7 +2018,8 @@ fetch_infos = {
     \t\t\t< charts:datatype=None:update=False >
     \t\t\t:dataype=[ENC/RNC] - Only fetch either ENC or RNC data.
     \t\t\t:update=[True/False] - True to update stored reference vector.'''],
-    'srtm':[lambda x, f, c: srtm_cgiar(x, f, c), '''SRTM elevation data from CGIAR'''],
+    'srtm_cgiar':[lambda x, f, c: srtm_cgiar(x, f, c), '''SRTM elevation data from CGIAR - 90m DEMs'''],
+    'srtm_plus':[lambda x, f, c: srtm_plus(x, f, c), '''SRTM15+ elevation data (Scripps) - Global Bathymetry and Topography at 15 Arc Sec:SRTM15+'''],
     'tnm':[lambda x, f, c: tnm(x, f, c), '''The National Map (TNM) from USGS
     \t\t\t< tnm:ds=1:sub_ds=None:formats=None:index=False >
     \t\t\t:index=[True/False] - True to display an index of available datasets.
@@ -1748,7 +2033,9 @@ fetch_infos = {
     \t\t\t:fmt=[netcdf/geotiff/esriascii/coards]'''],
     'cudem':[lambda x, f, c: cudem(x, f, c), '''ncei cudem thredds catalog'''],
     'usace':[lambda x, f, c: usace(x, f, c), '''USACE bathymetry surveys via eHydro'''],
-    'ngs':[lambda x, f, c: ngs(x, f, c), '''NOAA NGS monuments''']
+    'ngs':[lambda x, f, c: ngs(x, f, c), '''NOAA NGS monuments'''],
+    'mar_grav':[lambda x, f, c: mar_grav(x, f, c), '''Marine Gravity from Sattelite Altimetry topographic data.'''],
+    'emodnet':[lambda x, f, c: emodnet(x, f, c), '''EMODNET'''],
 }
 
 def fetch_desc(x):
@@ -1884,14 +2171,14 @@ def fetches_cli(argv = sys.argv):
             fl = fetch_infos[fetch_mod][0](regions.region_buffer(this_region, 5, pct = True), f, lambda: stop_threads)
             #fl._verbose = True
             args_d = utils.args2dict(args)
-            try:
-                r = fl.run(**args_d)
-            except ValueError as e:
-                utils.echo_error_msg('something went wrong, {}'.format(e))
-                sys.exit(-1)
-            except Exception as e:
-                utils.echo_error_msg('{}'.format(e))
-                sys.exit(-1)
+            #try:
+            r = fl.run(**args_d)
+            #except ValueError as e:
+            #    utils.echo_error_msg('something went wrong, {}'.format(e))
+            #    sys.exit(-1)
+            #except Exception as e:
+            #    utils.echo_error_msg('{}'.format(e))
+            #    sys.exit(-1)
             utils.echo_msg('found {} data files.'.format(len(r)))
             
             if want_list:

@@ -66,6 +66,7 @@
 ## Add remove/replace module
 ## Add source uncertainty to uncertainty module
 ## -B for 'breakline' (densify line/exract nodes/add to datalist)
+## update filters to do in series, add new ones, such as spike filter...
 ##
 ### Code:
 import sys
@@ -110,7 +111,7 @@ _waffles_grid_info = {
     'datalist': None,
     'data': [],
     'region': None,
-    'inc': None,
+    'inc': 1,
     'name': 'waffles_dem',
     'node': 'pixel',
     'fmt': 'GTiff',
@@ -1292,14 +1293,14 @@ def waffles_run(wg = _waffles_grid_info):
         ## ==============================================
         ## gererate the DEM (run the module)
         ## ==============================================
-        #try:
-        out, status = _waffles_modules[this_wg['mod']][0](args_d)
-        #except KeyboardInterrupt as e:
-        #    utils.echo_error_msg('killed by user, {}'.format(e))
-        #    sys.exit(-1)
-        #except Exception as e:
-        #    utils.echo_error_msg('{}'.format(e))
-        #    status = -1
+        try:
+            out, status = _waffles_modules[this_wg['mod']][0](args_d)
+        except KeyboardInterrupt as e:
+            utils.echo_error_msg('killed by user, {}'.format(e))
+            sys.exit(-1)
+        except Exception as e:
+            utils.echo_error_msg('{}'.format(e))
+            status = -1
 
         if status != 0: utils.remove_glob(this_dem)
         if not os.path.exists(this_dem): continue
@@ -1318,15 +1319,16 @@ def waffles_run(wg = _waffles_grid_info):
         ## optionally filter the DEM 
         ## ==============================================
         if this_wg['fltr'] is not None:
-            if this_wg['verbose']: utils.echo_msg('filtering {}...'.format(this_dem))
             fltr_args = {}
             fltr = this_wg['fltr'].split(':')
             fltr_args['fltr'] = gmtfun.gmt_inc2inc(fltr[0])
             fltr_args['use_gmt'] = True
             fltr_args = utils.args2dict(fltr[1:], fltr_args)        
+
+            if this_wg['verbose']: utils.echo_msg('filtering {}...'.format(this_dem))
             if fltr_args['use_gmt']: fltr_args['use_gmt'] = True if this_wg['gc']['GMT'] is not None else False
             try:
-                gdalfun.gdal_smooth(this_dem, 'tmp_s.tif', **fltr_args)
+                gdalfun.gdal_filter(this_dem, 'tmp_s.tif', **fltr_args)
                 os.rename('tmp_s.tif', this_dem)
             except TypeError as e: utils.echo_error_msg('{}'.format(e))
 

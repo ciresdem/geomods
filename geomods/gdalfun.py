@@ -892,19 +892,31 @@ def gdal_blur(src_gdal, dst_gdal, sf = 1):
         return(gdal_write(smooth_array, dst_gdal, ds_config))
     else: return([], -1)
 
-def gdal_smooth(src_gdal, dst_gdal, fltr = 10, split_value = None, use_gmt = False):
+def gdal_filter(src_gdal, dst_gdal, fltr = 10, split_value = None, use_gmt = False):
     '''smooth `src_gdal` using smoothing factor `fltr`; optionally
-    only smooth bathymetry (sub-zero)
+    only smooth bathymetry (sub-zero) using a split_value of 0.
 
     return 0 for success or -1 for failure'''
     
     if os.path.exists(src_gdal):
+
+        ## ==============================================
+        ## split the dem by `split_value`
+        ## ==============================================
         if split_value is not None:
             dem_u, dem_l = gdal_split(src_gdal, split_value)
         else: dem_l = src_gdal
+        
+        ## ==============================================
+        ## filter the possibly split DEM
+        ## ==============================================
         if use_gmt:
             out, status = gmt_grdfilter(dem_l, 'tmp_fltr.tif=gd+n-9999:GTiff', dist = fltr, verbose = True)
         else: out, status = gdal_blur(dem_l, 'tmp_fltr.tif', fltr)
+
+        ## ==============================================
+        ## merge the split filtered and non filtered DEMs
+        ## ==============================================
         if split_value is not None:
             ds = gdal.Open(src_gdal)
             ds_config = gdal_gather_infos(ds)
