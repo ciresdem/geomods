@@ -123,6 +123,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
     status = 0
     req = None
     halt = callback
+
     if verbose: utils.echo_msg('fetching remote file: {}...'.format(os.path.basename(src_url)))
 
     if not os.path.exists(os.path.dirname(dst_fn)):
@@ -132,29 +133,41 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
 
     if not os.path.exists(dst_fn) or overwrite:
         try:
-            req = requests.get(src_url, stream = True, params = params, headers = r_headers, timeout=(45,60))
-            req_h = req.headers
-        except requests.ConnectionError as e:
-            utils.echo_error_msg(e)
-            status = -1
+            with requests.get(src_url, stream = True, params = params, headers = r_headers, timeout=(45,320)) as req:
+                req_h = req.headers
+                if req.status_code == 200:
+                    curr_chunk = 0
+                    try:
+                        with open(dst_fn, 'wb') as local_file:
+                            for chunk in req.iter_content(chunk_size = 8196):
+                                if chunk:
+                                    if halt(): 
+                                        status = -1
+                                        break
+                                    local_file.write(chunk)
+                    except Exception as e: utils.echo_error_msg(e)
+                else: utils.echo_error_msg('server returned: {}'.format(req.status_code))
+                
         except Exception as e:
             utils.echo_error_msg(e)
             status = -1
-        if req is not None and req.status_code == 200:
-            curr_chunk = 0
-            try:
-                with open(dst_fn, 'wb') as local_file:
-                    for chunk in req.iter_content(chunk_size = 8196):
-                        #curr_chunk += 8196
-                        #curr_perc = curr_chunk/float(req_h['Content-Length']) * 100
-                        #if int(curr_perc) % 2 == 0: utils.echo_msg_inline('{} - {}%'.format(dst_fn, int(curr_perc)))
-                        if chunk:
-                            if halt(): 
-                                status = -1
-                                break
-                            local_file.write(chunk)
-            except Exception as e: utils.echo_error_msg(e)
-            req.close()
+        # if req is None: return(-1)
+        # if req.status_code == 200:
+        #     curr_chunk = 0
+        #     try:
+        #         with open(dst_fn, 'wb') as local_file:
+        #             for chunk in req.iter_content(chunk_size = 8196):
+        #                 #curr_chunk += 8196
+        #                 #curr_perc = curr_chunk/float(req_h['Content-Length']) * 100
+        #                 #if int(curr_perc) % 2 == 0: utils.echo_msg_inline('{} - {}%'.format(dst_fn, int(curr_perc)))
+        #                 if chunk:
+        #                     if halt(): 
+        #                         status = -1
+        #                         break
+        #                     local_file.write(chunk)
+        #     except Exception as e: utils.echo_error_msg(e)
+        #     req.close()
+        # else: utils.echo_error_msg('server returned: {}'.format(req.status_code))
     else:
         if os.path.exists(dst_fn): return(status)
         status = -1
@@ -1784,27 +1797,50 @@ class emodnet:
         '''Run the GEBCO fetching module'''
         if self.region is None: return([])
 
-        #emodnet_wcs = '{}service=WCS&request=GetCoverage&version=2.0.1&CoverageID=emodnet__mean&format=image/tiff&bbox={}'.format(self._emodnet_grid_url, regions.region_format(self.region, 'bbox'))
-        #outf = 'emodnet_{}.tif'.format(regions.region_format(self.region, 'fn'))
-        #self._results.append([emodnet_wcs, outf, 'emodnet'])
-        self.data = {
-            'request': 'GetCoverage',
-            'format': 'text/plain',
+        desc_data = {
+            'request': 'DescribeCoverage',
             'version': '2.0.1',
-            'CoverageID': 'emodnet__mean',
-            'Service': 'WCS',
-            'bbox': regions.region_format(self.region, 'bbox'),
-        }
+            'CoverageID': 'emodnet:mean',
+            'service': 'WCS',
+            }
 
-        self._req = fetch_req(self._emodnet_grid_url, params = self.data, tries = 10, timeout = 10, read_timeout = None)
-        if self._req is not None:
-            req_txt = self._req.text
-            print(req_txt)
-            results = lxml.etree.fromstring(req_txt.encode('utf-8'))
-            url = results.findall('.//{http://www.opengis.net/ows/1.1}Reference')[0].attrib['{http://www.w3.org/1999/xlink}href']
-            print(url)
-            outf = 'emodnet_{}.tif'.format(regions.region_format(self.region, 'fn'))
-            self._results.append([url, outf, 'emodnet'])
+        desc_req = fetch_req(self._emodnet_grid_url, params = desc_data)
+        desc_results = lxml.etree.fromstring(desc_req.text.encode('utf-8'))
+        g_env = desc_results.findall('.//{http://www.opengis.net/gml/3.2}GridEnvelope', namespaces = namespaces)[0]
+        hl = map(float, g_env.find('{http://www.opengis.net/gml/3.2}high').text.split())
+
+        g_bbox = desc_results.findall('.//{http://www.opengis.net/gml/3.2}Envelope')[0]
+        lc = map(float, g_bbox.find('{http://www.opengis.net/gml/3.2}lowerCorner').text.split())
+        uc = map(float, g_bbox.find('{http://www.opengis.net/gml/3.2}upperCorner').text.split())
+        resx = (uc[1] - lc[1]) / hl[0]
+        resy = (uc[0] - lc[0]) / hl[1]
+        
+        emodnet_wcs = '{}service=WCS&request=GetCoverage&version=1.0.0&Identifier=emodnet:mean&coverage=emodnet:mean&format=GeoTIFF&bbox={}&resx={}&resy={}&crs=EPSG:4326\
+        '.format(self._emodnet_grid_url, regions.region_format(self.region, 'bbox'), resx, resy)
+        outf = 'emodnet_{}.tif'.format(regions.region_format(self.region, 'fn'))
+        self._results.append([emodnet_wcs, outf, 'emodnet'])
+        
+        # self.data = {
+        #     'request': 'GetCoverage',
+        #     'format': 'GeoTIFF',
+        #     'version': '2.0.1',
+        #     'CoverageID': 'emodnet:mean',
+        #     'Service': 'WCS',
+        #     'resx': resx,
+        #     'resy': resy,
+        #     'crs': 'EPSG:4326',
+        #     'bbox': regions.region_format(self.region, 'bbox'),
+        # }
+
+        # self._req = fetch_req(self._emodnet_grid_url, params = self.data, tries = 10, timeout = 10, read_timeout = None)
+        # if self._req is not None:
+        #     req_txt = self._req.text
+        #     print(req_txt)
+        #     results = lxml.etree.fromstring(req_txt.encode('utf-8'))
+        #     url = results.findall('.//{http://www.opengis.net/ows/1.1}Reference')[0].attrib['{http://www.w3.org/1999/xlink}href']
+        #     print(url)
+        #     outf = 'emodnet_{}.tif'.format(regions.region_format(self.region, 'fn'))
+        #     self._results.append([url, outf, 'emodnet'])
         return(self._results)
 
     ## ==============================================
@@ -1932,6 +1968,13 @@ class ngs:
         self.region = extent
         self._datalists_code = 409
         self._verbose = False
+
+        self._desc = '''
+        National Geodetic Service (NGS) Monuments 
+
+        options:
+         <csv=False>
+        '''
 
     def run(self, csv = False):
         '''Run the NGS (monuments) fetching module.'''
@@ -2193,7 +2236,8 @@ def fetches_cli(argv = sys.argv):
                         time.sleep(2)
                         sys.stderr.write('\x1b[2K\r')
                         perc = float((len(r) - fr.fetch_q.qsize())) / len(r) * 100 if len(r) > 0 else 1
-                        sys.stderr.write('fetches: fetching remote data files [{:.3f}%]'.format(perc))
+                        sys.stderr.write('fetches: fetching remote data files [{}%]'.format(perc))
+                        #sys.stderr.write('fetches: fetching remote data files [{:.3f}/{}]'.format(len(r), fr.fetch_q.qsize()))
                         sys.stderr.flush()
                         if not fr.is_alive():
                             break
