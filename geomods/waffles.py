@@ -403,23 +403,25 @@ def waffles_spatial_metadata(wg):
             else: o_v_fields = [twg['name'], 'Unknown', '0', 'xyz_elevation', 'Unknown', 'WGS84', 'NAVD88', 'URL']
 
             out, status = waffles_num(twg, mode='k')
-            waffles_gdal_md(twg)
-            ng = '{}.tif'.format(twg['name'])
-            if gdalfun.gdal_infos(ng, True)['zr'][1] == 1:
-                tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(twg['name']))
-                if tmp_ds is not None:
-                    tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(twg['name']), None, ogr.wkbMultiPolygon)
-                    tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
-                    gdalfun.gdal_polygonize(ng, tmp_layer, verbose = twg['verbose'])
+            print(out, status)
+            if status == 0:
+                waffles_gdal_md(twg)
+                ng = '{}.tif'.format(twg['name'])
+                if gdalfun.gdal_infos(ng, True)['zr'][1] == 1:
+                    tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}_poly.shp'.format(twg['name']))
+                    if tmp_ds is not None:
+                        tmp_layer = tmp_ds.CreateLayer('{}_poly'.format(twg['name']), None, ogr.wkbMultiPolygon)
+                        tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
+                        gdalfun.gdal_polygonize(ng, tmp_layer, verbose = twg['verbose'])
 
-                    if len(tmp_layer) > 1:
-                        if defn is None: defn = tmp_layer.GetLayerDefn()
-                        out_feat = gdalfun.gdal_ogr_mask_union(tmp_layer, 'DN', defn)
-                        [out_feat.SetField(f, o_v_fields[i]) for i, f in enumerate(v_fields)]
-                        layer.CreateFeature(out_feat)
-                tmp_ds = None
-                utils.remove_glob('{}_poly.*'.format(twg['name']))
-            utils.remove_glob(ng)
+                        if len(tmp_layer) > 1:
+                            if defn is None: defn = tmp_layer.GetLayerDefn()
+                            out_feat = gdalfun.gdal_ogr_mask_union(tmp_layer, 'DN', defn)
+                            [out_feat.SetField(f, o_v_fields[i]) for i, f in enumerate(v_fields)]
+                            layer.CreateFeature(out_feat)
+                    tmp_ds = None
+                    utils.remove_glob('{}_poly.*'.format(twg['name']))
+                utils.remove_glob(ng)
     ds = None
     return(0, 0)
     
