@@ -392,10 +392,11 @@ def waffles_spatial_metadata(wg):
             defn = None if layer is None else layer.GetLayerDefn()            
             twg = waffles_config_copy(wg)
             twg['datalist'] = this_entry[0]
-            twg['name'] = '{}_{}_msk'.format(os.path.basename(this_entry[0]).split('.')[0], regions.region_format(twg['region'], 'fn'))
+            twg['name'] = '{}_{}_msk'.format(os.path.basename(this_entry[0]).split('.')[0].split(':')[0], regions.region_format(twg['region'], 'fn'))
             if twg['inc'] < gmtfun.gmt_inc2inc('.3333333s'):
                 twg['inc'] = gmtfun.gmt_inc2inc('.3333333s')
                 twg['extend'] = twg['extend'] / 3
+            twg['verbose'] = False
             twg = waffles_config(**twg)
 
             if len(this_entry[3]) == 8:
