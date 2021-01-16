@@ -1827,13 +1827,13 @@ class emodnet:
             xyzfun.xyz_line(xyz, dst_port, self._verbose)
             
     def _yield_results_to_xyz(self):
-        self.run(res, fmt)
+        self.run()
         for entry in self._results:
-            for xyz in self._yield_xyz(entry, res, fmt):
+            for xyz in self._yield_xyz(entry):
                 yield(xyz)
                 
     def _dump_results_to_xyz(self, dst_port = sys.stdout):
-        for xyz in self._yield_to_xyz(res, fmt):
+        for xyz in self._yield_results_to_xyz():
             xyzfun.xyz_line(xyz, dst_port, self._verbose)
 
 ## =============================================================================
@@ -1909,13 +1909,13 @@ class chs:
             xyzfun.xyz_line(xyz, dst_port, self._verbose)
             
     def _yield_results_to_xyz(self):
-        self.run(res, fmt)
+        self.run()
         for entry in self._results:
-            for xyz in self._yield_xyz(entry, res, fmt):
+            for xyz in self._yield_xyz(entry):
                 yield(xyz)
                 
     def _dump_results_to_xyz(self, dst_port = sys.stdout):
-        for xyz in self._yield_to_xyz(res, fmt):
+        for xyz in self._yield_results_to_xyz():
             xyzfun.xyz_line(xyz, dst_port, self._verbose)
             
 ## =============================================================================
