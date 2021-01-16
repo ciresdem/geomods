@@ -1894,15 +1894,15 @@ class chs:
         src_chs = 'chs_tmp.tif'
         if fetch_file(entry[0], src_chs, callback = lambda: False, verbose = self._verbose) == 0:
             try:
-                src_ds = gdal.Open(src_emodnet)
+                src_ds = gdal.Open(src_chs)
             except: src_ds = None
             if src_ds is not None:
                 srcwin = gdalfun.gdal_srcwin(src_ds, self.region)
                 for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose):
                     yield(xyz)
                 src_ds = None
-        else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_emodnet))
-        utils.remove_glob(src_emodnet)
+        else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_chs))
+        utils.remove_glob(src_chs)
 
     def _dump_xyz(self, src_chs, dst_port = sys.stdout):
         for xyz in self._yield_xyz(src_chs):
