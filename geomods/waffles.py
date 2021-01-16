@@ -423,7 +423,7 @@ def waffles_spatial_metadata(wg):
                     utils.remove_glob('{}_poly.*'.format(twg['name']))
                 utils.remove_glob(ng)
     ds = None
-    return(0, 0)
+    return(dst_vector, 0)
     
 ## ==============================================
 ## Waffles CUDEM generation module
@@ -1263,7 +1263,10 @@ def waffles_run(wg = _waffles_grid_info):
     dem = '{}.tif'.format(wg['name'])
     vect = True if _waffles_modules[wg['mod']][2] == 'vector' else False
     if wg['mask']: dem_msk = '{}_msk.tif'.format(wg['name'])
-    if vect: dem_vect = '{}.shp'.format(wg['name'])
+    if vect:
+        if wg['mod'] == 'spat-meta':
+            dem_vect = '{}_sm.shp'.format(wg['name'])
+        else: dem_vect = '{}.shp'.format(wg['name'])
     wg['region'] = waffles_grid_node_region(wg) if wg['node'] == 'grid' else wg['region']
     
     ## ==============================================
@@ -1289,20 +1292,23 @@ def waffles_run(wg = _waffles_grid_info):
         if this_wg['mask']:
             this_dem_msk = this_wg['name'] + '_msk.tif'
             chunks_msk.append(this_dem_msk)
-        if vect: chunks_vect.append('{}.shp'.format(this_wg['name']))
+        if vect:
+            if this_wg['mod'] == 'spat-meta':
+                chunks_vect.append('{}_sm.shp'.format(this_wg['name']))
+            else: chunks_vect.append('{}.shp'.format(this_wg['name']))
         args_d['wg'] = this_wg
 
         ## ==============================================
         ## gererate the DEM (run the module)
         ## ==============================================
-        #try:
-        out, status = _waffles_modules[this_wg['mod']][0](args_d)
-        #except KeyboardInterrupt as e:
-        #    utils.echo_error_msg('killed by user, {}'.format(e))
-        #    sys.exit(-1)
-        #except Exception as e:
-        #    utils.echo_error_msg('{}'.format(e))
-        #    status = -1
+        try:
+            out, status = _waffles_modules[this_wg['mod']][0](args_d)
+        except KeyboardInterrupt as e:
+            utils.echo_error_msg('killed by user, {}'.format(e))
+            sys.exit(-1)
+        except Exception as e:
+            utils.echo_error_msg('{}'.format(e))
+            status = -1
 
         if status != 0: utils.remove_glob(this_dem)
         if not os.path.exists(this_dem): continue
@@ -1393,6 +1399,7 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     ## merge the chunks and remove
     ## ==============================================
+
     if len(chunks) > 1:
         out, status = utils.run_cmd('gdal_merge.py -n -9999 -a_nodata -9999 -ps {} -{} -ul_lr {} -o {} {} -co TILED=YES -co COMPRESS=DEFLATE -co PREDICTOR=3\
         '.format(wg['inc'], wg['inc'], waffles_dist_ul_lr(wg), dem, ' '.join(chunks)), verbose = True)
@@ -1418,9 +1425,10 @@ def waffles_run(wg = _waffles_grid_info):
             [utils.remove_glob('{}*'.format(x.split('.')[0])) for x in chunks_vect]
         else:
             utils.remove_glob('{}*'.format(dem_vect.split('.')[0]))
+            out, status = utils.run_cmd('ogr2ogr {} {}'.format(dem_vect, chunks_vect[0]), verbose = True)
             #gdalfun.ogr_clip(chunks_vect[0], dem_vect, clip_region = wg['region'], dn = "ESRI Shapefile")
             #out, status = utils.run_cmd('ogr2ogr -clipsrc {} {} {}'.format(regions.region_format(wg['region'], 'te'), dem_vect, chunks_vect[0]), verbose = True)
-            out, status = utils.run_cmd('ogr2ogr {} {}'.format(dem_vect, chunks_vect[0]), verbose = True)
+            
             utils.remove_glob('{}*'.format(chunks_vect[0].split('.')[0]))
 
     if os.path.exists(dem):
@@ -1476,8 +1484,8 @@ def waffles_run(wg = _waffles_grid_info):
     utils.remove_glob(wg['datalist'])
 
     if vect:
-        if gdalfun.ogr_empty_p('{}.shp'.format(wg['name'])):
-            utils.remove_glob('{}*'.format(wg['name']))
+        if gdalfun.ogr_empty_p(dem_vect):
+            utils.remove_glob('{}.*'.format(dem_vect.split('.')[0]))
             return(None)
         
     return(dem)
