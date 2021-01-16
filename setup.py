@@ -42,6 +42,7 @@ setuptools.setup(
     install_requires = [
         'GDAL',
         'numpy',
+        'scipy',
         'requests',
         'lxml',
     ], 

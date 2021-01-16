@@ -1,6 +1,6 @@
 ### fetches.py
 ##
-## Copyright (c) 2012 - 2020 CIRES Coastal DEM Team
+## Copyright (c) 2012 - 2021 CIRES Coastal DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -19,7 +19,7 @@
 ##
 ### Commentary:
 ##
-## current fetch modules: dc, nos, mb, charts, usace, srtm, tnm, gmrt
+## current fetch modules: dc, nos, mb, charts, usace, srtm_cgiar, srtm_plus, tnm, gmrt, emodnet, mar_grav
 ##
 ## Possible BAG errors with GDAL >= 3
 ##
@@ -137,37 +137,18 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
                 req_h = req.headers
                 if req.status_code == 200:
                     curr_chunk = 0
-                    try:
-                        with open(dst_fn, 'wb') as local_file:
-                            for chunk in req.iter_content(chunk_size = 8196):
-                                if chunk:
-                                    if halt(): 
-                                        status = -1
-                                        break
-                                    local_file.write(chunk)
-                    except Exception as e: utils.echo_error_msg(e)
+                    with open(dst_fn, 'wb') as local_file:
+                        for chunk in req.iter_content(chunk_size = 8196):
+                            if chunk:
+                                if halt(): 
+                                    status = -1
+                                    break
+                                local_file.write(chunk)
                 else: utils.echo_error_msg('server returned: {}'.format(req.status_code))
                 
         except Exception as e:
             utils.echo_error_msg(e)
             status = -1
-        # if req is None: return(-1)
-        # if req.status_code == 200:
-        #     curr_chunk = 0
-        #     try:
-        #         with open(dst_fn, 'wb') as local_file:
-        #             for chunk in req.iter_content(chunk_size = 8196):
-        #                 #curr_chunk += 8196
-        #                 #curr_perc = curr_chunk/float(req_h['Content-Length']) * 100
-        #                 #if int(curr_perc) % 2 == 0: utils.echo_msg_inline('{} - {}%'.format(dst_fn, int(curr_perc)))
-        #                 if chunk:
-        #                     if halt(): 
-        #                         status = -1
-        #                         break
-        #                     local_file.write(chunk)
-        #     except Exception as e: utils.echo_error_msg(e)
-        #     req.close()
-        # else: utils.echo_error_msg('server returned: {}'.format(req.status_code))
     else:
         if os.path.exists(dst_fn): return(status)
         status = -1
@@ -226,7 +207,6 @@ class fetch_results(threading.Thread):
             t.start()
             
         fq = [[row[0], os.path.join(self._outdir, row[1]), self.region, self.stop_threads, row[2]] for row in self.results]
-        #print(fq)
         [self.fetch_q.put([row[0], os.path.join(self._outdir, row[1]), self.region, self.stop_threads, row[2]]) for row in self.results]
         self.fetch_q.join()
     
@@ -1699,7 +1679,7 @@ class usace:
 ##
 ## GMRT Fetch
 ##
-## fetch extracts of the GMRT.
+## fetch extracts of the GMRT. - Global Extents
 ## https://www.gmrt.org/index.php
 ##
 ## =============================================================================
@@ -1778,7 +1758,8 @@ class gmrt:
 ##
 ## EMODNET Fetch
 ##
-## fetch extracts of the EMOD DTM
+## fetch extracts of the EMOD DTM - Mostly European extents
+## https://portal.emodnet-bathymetry.eu/
 ##
 ## =============================================================================
 class emodnet:
@@ -1793,7 +1774,7 @@ class emodnet:
         self._verbose = True
 
     def run(self):
-        '''Run the GEBCO fetching module'''
+        '''Run the EMODNET fetching module'''
         if self.region is None: return([])
 
         desc_data = {
@@ -1817,10 +1798,92 @@ class emodnet:
         resy = (uc[0] - lc[0]) / hl[1]
 
         if regions.regions_intersect_ogr_p(self.region, ds_region):
-            emodnet_wcs = '{}service=WCS&request=GetCoverage&version=1.0.0&Identifier=emodnet:mean&coverage=emodnet:mean&format=GeoTIFF&bbox={}&resx={}&resy={}&crs=EPSG:4326\
-            '.format(self._emodnet_grid_url, regions.region_format(self.region, 'bbox'), resx, resy)
+            emodnet_wcs = '{}service=WCS&request=GetCoverage&version=1.0.0&Identifier=emodnet:mean&coverage=emodnet:mean&format=GeoTIFF&bbox={}&resx={}&resy={}&crs=EPSG:4326'\
+                                      .format(self._emodnet_grid_url, regions.region_format(self.region, 'bbox'), resx, resy)
             outf = 'emodnet_{}.tif'.format(regions.region_format(self.region, 'fn'))
             self._results.append([emodnet_wcs, outf, 'emodnet'])
+            
+        return(self._results)
+
+    ## ==============================================
+    ## Process results to xyz
+    ## ==============================================    
+    def _yield_xyz(self, entry):
+        src_emodnet = 'emodnet_tmp.tif'
+        if fetch_file(entry[0], src_emodnet, callback = lambda: False, verbose = self._verbose) == 0:
+            try:
+                src_ds = gdal.Open(src_emodnet)
+            except: src_ds = None
+            if src_ds is not None:
+                srcwin = gdalfun.gdal_srcwin(src_ds, self.region)
+                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose):
+                    yield(xyz)
+                src_ds = None
+        else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_emodnet))
+        utils.remove_glob(src_emodnet)
+
+    def _dump_xyz(self, src_emodnet, dst_port = sys.stdout):
+        for xyz in self._yield_xyz(src_emodnet):
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
+            
+    def _yield_results_to_xyz(self):
+        self.run(res, fmt)
+        for entry in self._results:
+            for xyz in self._yield_xyz(entry, res, fmt):
+                yield(xyz)
+                
+    def _dump_results_to_xyz(self, dst_port = sys.stdout):
+        for xyz in self._yield_to_xyz(res, fmt):
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
+
+## =============================================================================
+##
+## CHS Fetch
+##
+## fetch bathymetric soundings from the Canadian Hydrographic Service (CHS) - Canada Only
+##
+## =============================================================================
+class chs:
+    '''Fetch bathymetric soundings from the CHS'''
+    def __init__(self, extent = None, filters = [], callback = None):
+        utils.echo_msg('loading CHS fetch module...')
+        #self._chs_api_url = "https://geoportal.gc.ca/arcgis/rest/services/FGP/CHS_NONNA_100/MapServer/0/query?"
+        self._chs_url = 'https://data.chs-shc.ca/geoserver/wcs?'
+        self._outdir = os.path.join(os.getcwd(), 'chs')
+        self._results = []
+        self.region = extent
+        self._datalists_code = 418
+        self._verbose = True
+
+    def run(self):
+        '''Run the CHS fetching module'''
+        if self.region is None: return([])
+
+        desc_data = {
+            'request': 'DescribeCoverage',
+            'version': '2.0.1',
+            'CoverageID': 'caris:NONNA 100',
+            'service': 'WCS',
+            }
+        desc_req = fetch_req(self._chs_url, params = desc_data)
+
+        desc_results = lxml.etree.fromstring(desc_req.text.encode('utf-8'))
+        g_env = desc_results.findall('.//{http://www.opengis.net/gml/3.2}GridEnvelope', namespaces = namespaces)[0]
+        hl = map(float, g_env.find('{http://www.opengis.net/gml/3.2}high').text.split())
+
+        g_bbox = desc_results.findall('.//{http://www.opengis.net/gml/3.2}Envelope')[0]
+        lc = map(float, g_bbox.find('{http://www.opengis.net/gml/3.2}lowerCorner').text.split())
+        uc = map(float, g_bbox.find('{http://www.opengis.net/gml/3.2}upperCorner').text.split())
+
+        ds_region = [lc[1], uc[1], lc[0], uc[0]]
+        resx = (uc[1] - lc[1]) / hl[0]
+        resy = (uc[0] - lc[0]) / hl[1]
+
+        if regions.regions_intersect_ogr_p(self.region, ds_region):
+            chs_wcs = '{}service=WCS&request=GetCoverage&version=1.0.0&Identifier=caris:NONNA+100&coverage=caris:NONNA+100&format=GeoTIFF&bbox={}&resx={}&resy={}&crs=EPSG:4326'\
+                                  .format(self._chs_url, regions.region_format(self.region, 'bbox'), resx, resy)
+            outf = 'chs_{}.tif'.format(regions.region_format(self.region, 'fn'))
+            self._results.append([chs_wcs, outf, 'chs'])
             
         return(self._results)
 
@@ -1859,7 +1922,7 @@ class emodnet:
 ##
 ## GEBCO Fetch
 ##
-## fetch extracts of the GEBCO Bathymetry Grid.
+## fetch extracts of the GEBCO Bathymetry Grid. - Global Extents
 ## https://www.gebco.net/
 ##
 ## =============================================================================
@@ -1933,7 +1996,7 @@ class gebco:
 ##
 ## National Geodetic Survey (NGS)
 ##
-## Fetch NGS monuments from NGS
+## Fetch NGS monuments from NGS - US Only
 ##
 ## =============================================================================
 class ngs:
@@ -2062,6 +2125,7 @@ fetch_infos = {
     'ngs':[lambda x, f, c: ngs(x, f, c), '''NOAA NGS monuments'''],
     'mar_grav':[lambda x, f, c: mar_grav(x, f, c), '''Marine Gravity from Sattelite Altimetry topographic data.'''],
     'emodnet':[lambda x, f, c: emodnet(x, f, c), '''EMODNET'''],
+    'chs':[lambda x, f, c: chs(x, f, c), '''CHS'''],
 }
 
 def fetch_desc(x):
@@ -2114,7 +2178,6 @@ def fetches_cli(argv = sys.argv):
     status = 0
     extent = None
     want_list = False
-    want_update = False
     want_proc = False
     stop_threads = False
     f = []
@@ -2141,8 +2204,6 @@ def fetches_cli(argv = sys.argv):
             i = i + 1
         elif arg == '--process' or arg == '-p':
             want_proc = True
-        elif arg == '--update' or arg == '-u':
-            want_update = True
         elif arg == '--help' or arg == '-h':
             sys.stderr.write(_usage)
             sys.exit(1)
