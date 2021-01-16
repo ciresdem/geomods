@@ -2094,38 +2094,72 @@ def fetch_dc_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = F
 ##
 ## =============================================================================
 fetch_infos = { 
-    'dc':[lambda x, f, c: dc(x, f, c), '''NOAA Digital Coast access
-    \t\t\t< dc:datatype=None:index=False:update=False >
-    \t\t\t:datatype=[lidar/raster] - Only fetch lidar or raster data.
-    \t\t\t:index=[True/False] - True to display indexed results.
-    \t\t\t:update=[True/False] - True to update stored reference vector.'''],
-    'nos':[lambda x, f, c: nos(x, f, c), '''NOAA NOS bathymetry surveys and data (hydro & BAG)
-    \t\t\t< nos:datatype=None:update=False >
-    \t\t\t:datatype=[bag/xyz] - Only fetch BAG or Hydro-XYZ data.
-    \t\t\t:update=[True/False] - True to update stored reference vector.'''],
-    'charts':[lambda x, f, c: charts(x, f, c), '''NOAA Nautical CHARTS (RNC & ENC)
-    \t\t\t< charts:datatype=None:update=False >
-    \t\t\t:dataype=[ENC/RNC] - Only fetch either ENC or RNC data.
-    \t\t\t:update=[True/False] - True to update stored reference vector.'''],
-    'srtm_cgiar':[lambda x, f, c: srtm_cgiar(x, f, c), '''SRTM elevation data from CGIAR - 90m DEMs'''],
-    'srtm_plus':[lambda x, f, c: srtm_plus(x, f, c), '''SRTM15+ elevation data (Scripps) - Global Bathymetry and Topography at 15 Arc Sec:SRTM15+'''],
+    'dc':[lambda x, f, c: dc(x, f, c), '''NOAA Digital Coast
+    Lidar and Raster data from NOAA's Digital Coast
+
+    < dc:datatype=None:index=False:update=False >
+     :datatype=[lidar/raster] - Only fetch lidar or raster data.
+     :index=[True/False] - True to display indexed results.
+     :update=[True/False] - True to update stored reference vector.'''],
+     'nos':[lambda x, f, c: nos(x, f, c), '''NOAA NOS Bathymetric Data
+    Bathymetry surveys and data (xyz & BAG)
+
+    < nos:datatype=None:update=False >
+     :datatype=[bag/xyz] - Only fetch BAG or Hydro-XYZ data.
+     :update=[True/False] - True to update stored reference vector.'''],
+     'charts':[lambda x, f, c: charts(x, f, c), '''NOAA Nautical CHARTS (RNC & ENC)
+    Raster and Vector U.S. Nautical Charts
+
+    < charts:datatype=None:update=False >
+     :dataype=[ENC/RNC] - Only fetch either ENC or RNC data.
+     :update=[True/False] - True to update stored reference vector.'''],
+    'srtm_cgiar':[lambda x, f, c: srtm_cgiar(x, f, c), '''SRTM elevation data (CGIAR)
+    Global Topography at 90m DEMs
+
+    < srtm_cgiar >'''],
+    'srtm_plus':[lambda x, f, c: srtm_plus(x, f, c), '''SRTM15+ elevation data (Scripps)
+    Global Bathymetry and Topography at 15 Arc Sec:SRTM15+
+    
+    < srtm_plus >'''],
     'tnm':[lambda x, f, c: tnm(x, f, c), '''The National Map (TNM) from USGS
-    \t\t\t< tnm:ds=1:sub_ds=None:formats=None:index=False >
-    \t\t\t:index=[True/False] - True to display an index of available datasets.
-    \t\t\t:ds=[dataset index value (0-15)] - see :index=True for dataset index values.
-    \t\t\t:sub_ds=[sub-dataset index value (0-x)] - see :index=True for sub-dataset index values.
-    \t\t\t:formats=[data-set format] - see :index=True for dataset format options.'''],
-    'mb':[lambda x, f, c: mb(x, f, c), '''NOAA MULTIBEAM survey data'''],
+    Various datasets from USGS's National Map.
+
+    < tnm:ds=1:sub_ds=None:formats=None:index=False >
+     :index=[True/False] - True to display an index of available datasets.
+     :ds=[dataset index value (0-15)] - see :index=True for dataset index values.
+     :sub_ds=[sub-dataset index value (0-x)] - see :index=True for sub-dataset index values.
+     :formats=[data-set format] - see :index=True for dataset format options.'''],
+    'mb':[lambda x, f, c: mb(x, f, c), '''NOAA MULTIBEAM survey data
+    Multibeam bathymetric data from NOAA
+
+    < mb >'''],
     'gmrt':[lambda x, f, c: gmrt(x, f, c), '''The Global Multi-Reosolution Topography Data Synthesis (GMRT) 
-    \t\t\t< gmrt:res=max:fmt=geotiff >
-    \t\t\t:res=[an Integer power of 2 zoom level (<=1024)]
-    \t\t\t:fmt=[netcdf/geotiff/esriascii/coards]'''],
+    Global Elevation raster dataset via GMRT.
+
+    < gmrt:res=max:fmt=geotiff >
+     :res=[an Integer power of 2 zoom level (<=1024)]
+     :fmt=[netcdf/geotiff/esriascii/coards]'''],
     'cudem':[lambda x, f, c: cudem(x, f, c), '''ncei cudem thredds catalog'''],
-    'usace':[lambda x, f, c: usace(x, f, c), '''USACE bathymetry surveys via eHydro'''],
-    'ngs':[lambda x, f, c: ngs(x, f, c), '''NOAA NGS monuments'''],
-    'mar_grav':[lambda x, f, c: mar_grav(x, f, c), '''Marine Gravity from Sattelite Altimetry topographic data.'''],
-    'emodnet':[lambda x, f, c: emodnet(x, f, c), '''EMODNET'''],
-    'chs':[lambda x, f, c: chs(x, f, c), '''CHS'''],
+    'usace':[lambda x, f, c: usace(x, f, c), '''USACE bathymetry surveys via eHydro
+    Bathymetric Channel surveys from USACE - U.S. only.
+
+    < usace >'''],
+    'ngs':[lambda x, f, c: ngs(x, f, c), '''NOAA NGS Monument Data
+    Monument data from NOAA's Nagional Geodetic Survey (NGS) monument dataset
+
+    < ngs >'''],
+    'mar_grav':[lambda x, f, c: mar_grav(x, f, c), '''Marine Gravity from Sattelite Altimetry topographic data.
+    Elevation data from Scripps Marine Gravity dataset.
+
+    < mar_grav >'''],
+    'emodnet':[lambda x, f, c: emodnet(x, f, c), '''EMODNET Elevation Data
+    European Bathymetry/Topographic data from EMODNET
+
+    < emodnet >'''],
+    'chs':[lambda x, f, c: chs(x, f, c), '''CHS Bathymetry
+    CHS NONNA 100m bathymetric survey grids
+
+    < chs >'''],
 }
 
 def fetch_desc(x):
@@ -2150,12 +2184,13 @@ General Options:
   -f, --filter\t\tSQL style filters for certain datasets.
 \t\t\tFields to filter include: 'Name', 'Date' and 'Datatype'
   -p, --process\t\tProcess fetched data to ASCII XYZ format. <beta>
-\t\t\tRequires external data processing programs (GMT/GDAL/MBSYSTEM/LASTOOLS/VDATUM)
+\t\t\tRequires external data processing programs for some datasets. 
+\t\t\t(e.g. GMT,GDAL,MBSYSTEM,LASTOOLS,VDATUM )
 
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
 
-Modules (see fetches --modules for more info):
+Modules (see fetches --modules <module-name> for more info):
   {}
 
 Examples:
@@ -2211,7 +2246,11 @@ def fetches_cli(argv = sys.argv):
             sys.stdout.write('{}\n'.format( _version))
             sys.exit(0)
         elif arg == '--modules' or arg == '-m':
-            sys.stderr.write(_fetch_long_desc(fetch_infos))
+            try:
+                if argv[i + 1] in fetch_infos.keys():
+                    sys.stderr.write(_fetch_long_desc({k: fetch_infos[k] for k in (argv[i + 1],)}))
+                else: sys.stderr.write(_fetch_long_desc(fetch_infos))
+            except: sys.stderr.write(_fetch_long_desc(fetch_infos))
             sys.exit(0)
         else: 
             opts = arg.split(':')

@@ -1,6 +1,6 @@
 ### datalists.py
 ##
-## Copyright (c) 2010 - 2020 CIRES Coastal DEM Team
+## Copyright (c) 2010 - 2021 CIRES Coastal DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -437,6 +437,9 @@ Options:
   --version\t\tPrint the version information
   --verbose\t\tIncrease the verbosity
 
+Supported datalist formats: 
+  {}
+
  Examples:
  % {} my_data.datalist -R -90/-89/30/31 -g -i
 
@@ -444,7 +447,7 @@ CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
 '''.format( os.path.basename(sys.argv[0]), 
             datalists_version, 
             os.path.basename(sys.argv[0]),
-            os.path.basename(sys.argv[0]),
+            _known_datalist_fmts_short_desc(),
             os.path.basename(sys.argv[0]))
 
 def datalists_cli(argv = sys.argv):

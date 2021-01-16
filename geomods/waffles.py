@@ -207,46 +207,74 @@ def waffles_config(datalist = None, data = [], region = None, inc = None, name =
 ## ==============================================
 _waffles_modules = {
     'surface': [lambda args: waffles_gmt_surface(**args), '''SPLINE DEM via GMT surface
+    Generate a DEM using GMT's surface command
+
     < surface:tension=.35:relaxation=1.2:lower_limit=d:upper_limit=d >
      :tension=[0-1] - Spline tension.''', 'raster', True],
-    'triangulate': [lambda args: waffles_gmt_triangulate(**args), '''TRIANGULATION DEM via GMT triangulate''', 'raster', True],
+    'triangulate': [lambda args: waffles_gmt_triangulate(**args), '''TRIANGULATION DEM via GMT triangulate
+    Generate a DEM using GMT's triangulate command
+
+    < triangulate >''', 'raster', True],
     'cudem': [lambda args: waffles_cudem(**args), '''Generate a CUDEM Bathy/Topo DEM <beta>''', 'raster', True],
     'update': [lambda args: waffles_update_dem(**args), '''Update a CUDEM DEM with data from datalist <beta>''', 'raster', True],
     'nearest': [lambda args: waffles_nearneighbor(**args), '''NEAREST NEIGHBOR DEM via GMT or gdal_grid
+    Generate a DEM using GDAL's gdal_grid command or GMT's nearest command
+
     < nearest:radius=6s:use_gdal=False >
      :radius=[value] - Nearest Neighbor search radius
      :use_gdal=[True/False] - use gdal grid nearest algorithm''', 'raster', True],
     'num': [lambda args: waffles_num(**args), '''Uninterpolated DEM populated by <mode>.
+    Generate an uninterpolated DEM using <mode> option.
+    Using mode of 'A<mode>' uses GMT's xyz2grd command, see gmt xyz2grd --help for more info.
+
     < num:mode=n >
      :mode=[key] - specify mode of grid population: k (mask), m (mean) or n (num)''', 'raster', True],
     'vdatum': [lambda args: waffles_vdatum(**args), '''VDATUM transformation grid
+    Generate a VDatum based vertical datum transformation grid.
+
     < vdatum:ivert=navd88:overt=mhw:region=3:jar=None >
      :ivert=[vdatum] - Input VDatum vertical datum.
      :overt=[vdatum] - Output VDatum vertical datum.
      :region=[0-10] - VDatum region (3 is CONUS).
      :jar=[/path/to/vdatum.jar] - VDatum jar path - (auto-locates by default)''', 'raster', False],
     'mbgrid': [lambda args: waffles_mbgrid(**args), '''Weighted SPLINE DEM via mbgrid
+    Generate a DEM using MBSystem's mbgrid command.
+
     < mbgrid:tension=35:dist=10/3:use_datalists=False >
      :tension=[0-100] - Spline tension.
      :dist=[value] - MBgrid -C switch (distance to fill nodata with spline)
      :use_datalists=[True/False] - use waffles built-in datalists''', 'raster', True],
     'invdst': [lambda args: waffles_invdst(**args), '''INVERSE DISTANCE DEM via gdal_grid
+    Generate a DEM using GDAL's gdal_grid command.
+
     < invdst:power=2.0:smoothing=0.0:radus1=0.1:radius2:0.1 >''', 'raster', True],
     'average': [lambda args: waffles_moving_average(**args), '''Moving AVERAGE DEM via gdal_grid
+    Generate a DEM using GDAL's gdal_grid command.
+
     < average:radius1=0.01:radius2=0.01 >''', 'raster', True],
     'linear': [lambda args: waffles_linear(**args), '''LINEAR DEM via gdal_grid
+    Generate a DEM using GDAL's gdal_grid command.
+
     < linear:radius=0.01 >''', 'raster', True],
-    'spat-meta': [lambda args: waffles_spatial_metadata(**args), '''generate SPATIAL-METADATA''', 'vector', True],
+    'spat-meta': [lambda args: waffles_spatial_metadata(**args), '''generate SPATIAL-METADATA
+    Generate spatial metadata based on the data in the datalist.
+
+    < spat-meta >''', 'vector', True],
+        'coastline': [lambda args: waffles_coastline(**args), '''generate a coastline (landmask)
+    Generate a land/sea mask (coastline) based on various datasets.
+
+    < coastline >''', 'raster', False],
     #'uncertainty': [lambda args: waffles_interpolation_uncertainty(**args), '''generate DEM UNCERTAINTY
     #< uncertainty:mod=surface:dem=None:msk=None:prox=None:slp=None:sims=2 >''', 'raster', False],
-    'help': [lambda args: waffles_help(**args), '''display module info''', None, False],
-    'coastline': [lambda args: waffles_coastline(**args), '''generate a coastline (landmask)''', 'raster', False],
-    'data': [lambda args: waffles_datalists(**args), '''recurse the DATALIST
-    < datalists:dump=False:echo=False:infos=False:recurse=True >
-     :dump=[True/False] - dump the data from the datalist(s)
-     :echo=[True/False] - echo the data entries from the datalist(s)
-     :infos=[True/False] - generate inf files for the datalists datalist entries.
-     :recurse=[True/False] - recurse the datalist (default = True)''', None, True],
+    # 'help': [lambda args: waffles_help(**args), '''display module info''', None, False],
+    # 'data': [lambda args: waffles_datalists(**args), '''recurse the DATALIST
+    
+
+    # < datalists:dump=False:echo=False:infos=False:recurse=True >
+    #  :dump=[True/False] - dump the data from the datalist(s)
+    #  :echo=[True/False] - echo the data entries from the datalist(s)
+    #  :infos=[True/False] - generate inf files for the datalists datalist entries.
+    #  :recurse=[True/False] - recurse the datalist (default = True)''', None, True],
 }
 
 ## ==============================================
@@ -1552,7 +1580,7 @@ Datalists and data formats:
 Supported datalist formats: 
   {}
 
-Modules (see waffles --modules for more info):
+Modules (see waffles --modules <module-name> for more info):
   {}
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
@@ -1665,7 +1693,11 @@ def waffles_cli(argv = sys.argv):
         elif arg == '--verbose' or arg == '-V': wg['verbose'] = True
         elif arg == '--config': want_config = True
         elif arg == '--modules' or arg == '-m':
-            sys.stderr.write(_waffles_module_long_desc(_waffles_modules))
+            try:
+                if argv[i + 1] in _waffles_modules.keys():
+                    sys.stderr.write(_waffles_module_long_desc({k: _waffles_modules[k] for k in (argv[i + 1],)}))
+                else: sys.stderr.write(_waffles_module_long_desc(_waffles_modules))
+            except: sys.stderr.write(_waffles_module_long_desc(_waffles_modules))
             sys.exit(0)
         elif arg == '--help' or arg == '-h':
             sys.stderr.write(waffles_cli_usage)
