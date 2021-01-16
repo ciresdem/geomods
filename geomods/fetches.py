@@ -1891,8 +1891,8 @@ class chs:
     ## Process results to xyz
     ## ==============================================    
     def _yield_xyz(self, entry):
-        src_emodnet = 'emodnet_tmp.tif'
-        if fetch_file(entry[0], src_emodnet, callback = lambda: False, verbose = self._verbose) == 0:
+        src_chs = 'chs_tmp.tif'
+        if fetch_file(entry[0], src_chs, callback = lambda: False, verbose = self._verbose) == 0:
             try:
                 src_ds = gdal.Open(src_emodnet)
             except: src_ds = None
@@ -1904,8 +1904,8 @@ class chs:
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_emodnet))
         utils.remove_glob(src_emodnet)
 
-    def _dump_xyz(self, src_emodnet, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(src_emodnet):
+    def _dump_xyz(self, src_chs, dst_port = sys.stdout):
+        for xyz in self._yield_xyz(src_chs):
             xyzfun.xyz_line(xyz, dst_port, self._verbose)
             
     def _yield_results_to_xyz(self):
