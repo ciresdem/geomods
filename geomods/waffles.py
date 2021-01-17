@@ -28,19 +28,14 @@
 ## - VDatum (US/NOAA)
 ## - LASTools (Non-Free) - data processing
 ##
-## see/set `_waffles_grid_info` dictionary to run a grid.
+## see/set `_waffles_grid_info` dictionary to run a grid, or run waffles_config()
 ##
 ## Current DEM modules:
-## surface (GMT), triangulate (GMT/GDAL), nearneighbor (GMT/GDAL), mbgrid (MBSYSTEM), num (waffles), average (GDAL)
+## surface (GMT), triangulate (GMT/GDAL), nearest (GMT/GDAL), mbgrid (MBSYSTEM), num (waffles), average (GDAL), invdst (GDAL), linear (GDAL), spat-meta, vdatum, coastline
 ##
 ## optionally, clip, filter, buffer the resulting DEM.
 ##
-## find data to grid with GEOMODS' fetch.py
-##
-## DATALIST and REGION functions - datalists.py
-##
-## MBSystem/Waffles style datalists.
-## Recurse through a datalist file and process the results.
+## find data to grid with GEOMODS' fetch.py or use fetch modules as datalist entries in waffles.
 ##
 ## a datalist '*.datalist' file should be formatted as in MBSystem:
 ## ~path ~format ~weight ~metadata,list ~etc
@@ -55,12 +50,9 @@
 ## for faster processing
 ##
 ## 'inf' files can be generated using 'mbdatalist -O -V -I~datalist.datalist'
-## or via `waffles -M datalists:infos=True`
+## or via `datalists -i ~datalist.datalist`
 ##
-## GDAL/LIDAR/FETCHES data don't need inf files.
-##
-## if 'region' is specified, will only process data that falls within
-## the given region
+## GDAL/LIDAR/FETCHES data don't need inf files; but they may be generated anyway.
 ##
 ### TODO:
 ## Add remove/replace module
@@ -99,11 +91,11 @@ from geomods import gmtfun
 from geomods import gdalfun
 from geomods import xyzfun
 
-_version = '0.6.3'
+_version = '0.6.4'
 
 ## ==============================================
 ## DEM module: generate a Digital Elevation Model using a variety of methods
-## dem modules include: 'mbgrid', 'surface', 'num', 'mean'
+## dem modules include: 'mbgrid', 'surface', 'num', 'mean', etc.
 ##
 ## Requires MBSystem, GMT, GDAL and VDatum for full functionality
 ## ==============================================
@@ -268,15 +260,6 @@ _waffles_modules = {
     < coastline >''', 'raster', False],
     #'uncertainty': [lambda args: waffles_interpolation_uncertainty(**args), '''generate DEM UNCERTAINTY
     #< uncertainty:mod=surface:dem=None:msk=None:prox=None:slp=None:sims=2 >''', 'raster', False],
-    # 'help': [lambda args: waffles_help(**args), '''display module info''', None, False],
-    # 'data': [lambda args: waffles_datalists(**args), '''recurse the DATALIST
-    
-
-    # < datalists:dump=False:echo=False:infos=False:recurse=True >
-    #  :dump=[True/False] - dump the data from the datalist(s)
-    #  :echo=[True/False] - echo the data entries from the datalist(s)
-    #  :infos=[True/False] - generate inf files for the datalists datalist entries.
-    #  :recurse=[True/False] - recurse the datalist (default = True)''', None, True],
 }
 
 ## ==============================================
@@ -322,16 +305,18 @@ waffles_append_fn = lambda bn, region, inc: '{}{}_{}_{}v1'.format(bn, utils.inc2
 
 def waffles_wg_valid_p(wg = _waffles_grid_info):
     '''return True if wg_config appears valid'''
-    
-    if wg['data'] is None: return(False)
-    if wg['mod'] is None: return(False)
-    else: return(True)
 
-def waffles_help(wg = _waffles_grid_info):
-    sys.stderr.write(_waffles_module_long_desc(_waffles_modules))
-    return(0, 0)
+    try:
+        if wg['data'] is None: return(False)
+        if wg['mod'] is None: return(False)
+        else: return(True)
+    except: return(False)
 
 def waffles_dlp_hooks(wg = _waffles_grid_info):
+    '''the deafult datalist pass hooks.
+    checks for region intersection and possibly z and/or weight range.
+
+    returns a list of hooks'''
     
     region = waffles_proc_region(wg)
     dlp_hooks = datalists.datalist_default_hooks()
@@ -368,7 +353,7 @@ def waffles_yield_datalist(wg = _waffles_grid_info):
                     datalists.datalist_append_entry([rel_file, -1, 1], a_dl)
 
 def waffles_dump_datalist(wg = _waffles_grid_info, dst_port = sys.stdout):
-    '''dump the xyz data from datalist.'''
+    '''dump the xyz data from datalist to `dst_port`.'''
 
     for xyz in waffles_yield_datalist(wg):
         xyzfun.xyz_line(xyz, dst_port, True)
@@ -398,7 +383,9 @@ def waffles_datalists(wg = _waffles_grid_info, dump = False, echo = False, infos
 ## Polygonize each datalist entry into vector data source
 ## ==============================================
 def waffles_spatial_metadata(wg):
-    '''generate spatial-metadata'''
+    '''generate spatial-metadata
+
+    returns [output vector fn, status]'''
 
     dst_vector = '{}_sm.shp'.format(wg['name'])
     dst_layer = '{}_sm'.format(wg['name'])
@@ -460,7 +447,7 @@ def waffles_spatial_metadata(wg):
 ## Waffles CUDEM generation module
 ## ==============================================
 def waffles_cudem(wg = _waffles_grid_info, coastline = None):
-    '''generate bathy/topo DEM'''
+    '''generate bathy/topo DEM suitable for CUDEM project'''
     
     if wg['gc']['GMT'] is None:
         utils.echo_error_msg('GMT must be installed to use the CUDEM module')
@@ -500,6 +487,7 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     utils.echo_msg('----------------------------')
     utils.echo_msg('generating bathy surface')
     utils.echo_msg('----------------------------')
+    
     b_wg['z_region'] = [None, ul + .5]
     b_wg['name'] = 'bathy_{}'.format(wg['name'])
     b_wg['spat'] = False
@@ -524,6 +512,7 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     utils.echo_msg('----------------------------')
     utils.echo_msg('generating integrated bathy-topo surface')
     utils.echo_msg('----------------------------')
+    
     ## ==============================================
     ## append the bathy-surface to the datalist and
     ## generate final DEM using 'surface'
@@ -595,7 +584,9 @@ def waffles_update_dem(wg = _waffles_grid_info, dem = None):
 def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, use_datalists = False):
     '''Generate a DEM with MBSystem's mbgrid program.
     if `use_datalists` is True, will parse the datalist through
-    waffles instead of mbsystem.'''
+    waffles instead of mbsystem.
+
+    Note: without `use_datalists` as True, only mbsystem supported data formats may be used.'''
     
     if wg['gc']['MBGRID'] is None:
         utils.echo_error_msg('MBSystem must be installed to use the MBGRID module')
@@ -636,7 +627,7 @@ def waffles_mbgrid(wg = _waffles_grid_info, dist = '10/3', tension = 35, use_dat
     if not use_datalists:
         if wg['spat'] or wg['archive']:
             for xyz in waffles_yield_datalist(wg): pass
-    return(0, 0)
+    return('{}.tif'.format(wg['name']), 0)
 
 ## ==============================================
 ## Waffles GMT surface module
@@ -727,7 +718,7 @@ def waffles_gdal_grid(wg = _waffles_grid_info, alg_str = 'linear:radius=1'):
     gdal.Grid('{}.tif'.format(wg['name']), ds, options = gd_opts)
     ds = None
     gdalfun.gdal_set_nodata('{}.tif'.format(wg['name']), -9999)
-    return(0, 0)
+    return('{}.tif'.format(wg['name']), 0)
 
 ## ==============================================
 ## Waffles GDAL_GRID invdist module
@@ -1793,8 +1784,8 @@ def waffles_cli(argv = sys.argv):
         if want_config:
             this_wg = waffles_config_copy(twg)
             if this_wg is not None:
-                #utils.echo_msg(json.dumps(this_wg, indent = 4, sort_keys = True))
-                utils.echo_msg(this_wg)
+                utils.echo_msg(json.dumps(this_wg, indent = 4, sort_keys = True))
+                #utils.echo_msg(this_wg)
                 with open('{}.json'.format(this_wg['name']), 'w') as wg_json:
                     utils.echo_msg('generating waffles config file: {}.json'.format(this_wg['name']))
                     utils.echo_msg('generating major datalist: {}_mjr.datalist'.format(this_wg['name']))
