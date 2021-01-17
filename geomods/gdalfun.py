@@ -559,6 +559,27 @@ def gdal_region2gt(region, inc):
     
     return(this_size[0], this_size[1], dst_gt)
 
+def gdal_region_warp(region, s_warp = 4326, t_warp = 4326):
+    '''warp region from source `s_warp` to target `t_warp`, using EPSG keys
+
+    returns the warped region'''
+
+    if s_warp is None or s_warp == t_warp: return(region)
+    
+    src_srs = osr.SpatialReference()
+    src_srs.ImportFromEPSG(int(s_warp))
+
+    if t_warp is not None:
+        dst_srs = osr.SpatialReference()
+        dst_srs.ImportFromEPSG(int(t_warp))
+        dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)        
+        pointA = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(region[0], region[2]))
+        pointB = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(region[1], region[3]))
+        pointA.Transform(dst_trans)
+        pointB.Transform(dst_trans)
+        region = [pointA.GetX(), pointB.GetX(), pointA.GetY(), pointB.GetY()]
+    return(region)
+
 def gdal_ogr_mask_union(src_layer, src_field, dst_defn = None):
     '''`union` a `src_layer`'s features based on `src_field` where
     `src_field` holds a value of 0 or 1. optionally, specify
@@ -604,7 +625,6 @@ def gdal_ogr_regions(src_ds):
 #def gdal_wkt2region(wkt):
 
     
-
 def gdal_create_polygon(coords):
     '''convert coords to Wkt
 
@@ -740,10 +760,12 @@ def gdal_srcwin(src_ds, region):
     output the appropriate gdal srcwin.
 
     returns the gdal srcwin'''
-    
+
     ds_config = gdal_gather_infos(src_ds)
-    this_origin = [0 if x < 0 else x for x in _geo2pixel(region[0], region[3], ds_config['geoT'])]
-    this_end = [0 if x < 0 else x for x in _geo2pixel(region[1], region[2], ds_config['geoT'])]
+    geoT = ds_config['geoT']
+    
+    this_origin = [0 if x < 0 else x for x in _geo2pixel(region[0], region[3], geoT)]
+    this_end = [0 if x < 0 else x for x in _geo2pixel(region[1], region[2], geoT)]
     this_size = [0 if x < 0 else x for x in ((this_end[0] - this_origin[0]), (this_end[1] - this_origin[1]))]
     if this_size[0] > ds_config['nx'] - this_origin[0]: this_size[0] = ds_config['nx'] - this_origin[0]
     if this_size[1] > ds_config['ny'] - this_origin[1]: this_size[1] = ds_config['ny'] - this_origin[1]
@@ -1293,7 +1315,7 @@ def gdal_yield_entry(entry, region = None, verbose = False, epsg = None, z_regio
     except: ds = None
     if ds is not None:
         if region is not None:
-            srcwin = gdal_srcwin(ds, region)
+            srcwin = gdal_srcwin(ds, gdal_region_warp(region, s_warp = epsg, t_warp = gdal_getEPSG(ds)))
         else: srcwin = None
         for xyz in gdal_parse(ds, dump_nodata = False, srcwin = srcwin, warp = epsg, verbose = verbose, z_region = z_region):
             yield(xyz + [entry[2]] if entry[2] is not None else xyz)

@@ -78,7 +78,7 @@ def fetch_queue(q, p):
         this_region = fetch_args[2]
         this_dt = fetch_args[4].lower()
         fetch_args[2] = None
-        utils.echo_msg(fetch_args[-1])
+        #utils.echo_msg(fetch_args[-1])
         if not fetch_args[3]():
             if p is None:
                 if fetch_args[0].split(':')[0] == 'ftp':
@@ -535,7 +535,7 @@ class dc:
                 src_ds = None
             
             if src_ds is not None:
-                srcwin = gdalfun.gdal_srcwin(src_ds, self.region)
+                srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.region_warp(self.region, s_warp = 4326, t_warp = gdalfun.gdal_getEPSG(src_ds)))
                 for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = 4326, verbose = self._verbose):
                     yield(xyz)
             src_ds = None
@@ -787,7 +787,7 @@ class nos:
                 #, gdalfun.gdal_region(src_ds, warp = 4326):
                 src_ds = gdal.Open(src_bag)
                 if src_ds is not None:
-                    srcwin = gdalfun.gdal_srcwin(src_ds, regions.region_warp(self.region, s_warp = 4326, t_warp = gdalfun.gdal_getEPSG(src_ds)))
+                    srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.region_warp(self.region, s_warp = 4326, t_warp = gdalfun.gdal_getEPSG(src_ds)))
                     with open(nos_f, 'w') as cx:
                         for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = 4326):
                             xyzfun.xyz_line(xyz, cx)
@@ -982,7 +982,102 @@ class cudem:
                 #print(self._results)
         ds = layer = None
         utils.echo_msg('filtered \033[1m{}\033[m data files from CUDEM reference vector.'.format(len(self._results)))
+
+## =============================================================================
+##
+## HRDEM Fetch - Canada High Resolution DEM dataset
+##
+## Fetch Canadian HRDEM data.
+## https://open.canada.ca/data/en/dataset/957782bf-847c-4644-a757-e383c0057995#wb-auto-6
+##
+## =============================================================================
+class hrdem():
+    '''Fetch HRDEM data from Canada'''
+    def __init__(self, extent = None, filters = [], callback = None):
+        utils.echo_msg('loading HRDEM fetch module...')
+        self._hrdem_footprints_url = 'https://ftp.maps.canada.ca/pub/elevation/dem_mne/highresolution_hauteresolution/Datasets_Footprints.zip'
+        self._outdir = os.path.join(os.getcwd(), 'hrdem')
+        self._ref_vector = os.path.join(fetchdata, 'hrdem.gmt')
+        self._has_vector = True if os.path.exists(self._ref_vector) else False
+        self._results = []
+        self.stop = callback
+        self._filters = filters
+        self.region = extent
+        self._boundsGeom = None
+        self._datalists_code = 420
+        self._verbose = False
+
+    def run(self):
+        '''Run the hrdem fetching module.'''
+
+        if self.region is None: return([])
+        self._boundsGeom = bounds2geom(self.region)
+        self._filter_reference_vector()
+        return(self._results)
+
+    ## ==============================================
+    ## Filter for results
+    ## ==============================================
+    def _filter_reference_vector(self):
+        '''Search for data in the reference vector file'''
+
+        utils.echo_msg('filtering HRDEM reference vector...')
+        ds = ogr.Open(self._ref_vector)
+        layer = ds.GetLayer(0)
+
+        for filt in self._filters:
+            layer.SetAttributeFilter('{}'.format(filt))
+
+        for feature1 in layer:
+            geom = feature1.GetGeometryRef()
+            if self._boundsGeom.Intersects(geom):
+                ftp_url = feature1.GetField('Ftp_dtm').replace('http', 'ftp')
+                self._results.append([ftp_url, ftp_url.split('/')[-1], 'hrdem'])
+
+        ds = layer = None
+        utils.echo_msg('filtered \033[1m{}\033[m data files from HRDEM reference vector.'.format(len(self._results)))
+
+    ## ==============================================
+    ## Process results to xyz
+    ## ==============================================    
+    def _yield_xyz(self, entry):
+        src_dc = os.path.basename(entry[1])
+        src_ext = src_dc.split('.')[-1]
+        try:
+            src_ds = gdal.Open(entry[0])
+        except Exception as e:
+            fetch_file(entry[0], src_dc, callback = lambda: False, verbose = True)
+            try:
+                src_ds = gdal.Open(src_dc)
+            except Exception as e:
+                utils.echo_error_msg('could not read hrdem raster file: {}, {}'.format(entry[0], e))
+                src_ds = None
+        except Exception as e:
+            utils.echo_error_msg('could not read hrdem raster file: {}, {}'.format(entry[0], e))
+            src_ds = None
+
+        if src_ds is not None:
+            srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.region_warp(self.region, s_warp = 4326, t_warp = gdalfun.gdal_getEPSG(src_ds)))
+            for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = 4326, verbose = True):
+                yield(xyz)
+        src_ds = None
+        utils.remove_glob(src_dc)
+
+    def _dump_xyz(self, entry, dst_port = sys.stdout):
+        for xyz in self._yield_xyz(entry):
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
             
+    def _yield_results_to_xyz(self, datatype = None):
+        if len(self._results) == 0: self.run()
+        for entry in self._results:
+            for xyz in self._yield_xyz(entry):
+                yield(xyz)
+                
+    def _dump_results_to_xyz(self, dst_port = sys.stdout):
+        for xyz in self._yield_results_to_xyz():
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
+        
+        
 ## =============================================================================
 ##
 ## Chart Fetch - ENC & RNC
@@ -1562,7 +1657,6 @@ class mb:
         self._mb_data_url = "https://data.ngdc.noaa.gov/platforms/"
         self._mb_search_url = "https://maps.ngdc.noaa.gov/mapviewer-support/multibeam/files.groovy?"
         self._outdir = os.path.join(os.getcwd(), 'mb')
-        self._status = 0
         self._req = None
         self._results = []
         self.region = extent
@@ -1841,6 +1935,7 @@ class emodnet:
 ## CHS Fetch
 ##
 ## fetch bathymetric soundings from the Canadian Hydrographic Service (CHS) - Canada Only
+## https://open.canada.ca/data/en/dataset/d3881c4c-650d-4070-bf9b-1e00aabf0a1d
 ##
 ## =============================================================================
 class chs:
@@ -2130,7 +2225,10 @@ fetch_infos = {
      :sub_ds=[sub-dataset index value (0-x)] - see :index=True for sub-dataset index values.
      :formats=[data-set format] - see :index=True for dataset format options.'''],
     'mb':[lambda x, f, c: mb(x, f, c), '''NOAA MULTIBEAM survey data
-    Multibeam bathymetric data from NOAA
+    Multibeam Bathymetric Data from NOAA.
+    In addition to deepwater data, the Multibeam Bathymetry Database (MBBDB) includes hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).
+
+    https://www.ngdc.noaa.gov/mgg/bathymetry/multibeam.html
 
     < mb >'''],
     'gmrt':[lambda x, f, c: gmrt(x, f, c), '''The Global Multi-Reosolution Topography Data Synthesis (GMRT) 
@@ -2139,13 +2237,20 @@ fetch_infos = {
     < gmrt:res=max:fmt=geotiff >
      :res=[an Integer power of 2 zoom level (<=1024)]
      :fmt=[netcdf/geotiff/esriascii/coards]'''],
-    'cudem':[lambda x, f, c: cudem(x, f, c), '''ncei cudem thredds catalog'''],
+    'cudem':[lambda x, f, c: cudem(x, f, c), '''ncei cudem thredds catalog
+    NOAA NCEI THREDDS DEM Catalog Access
+
+    < cudem >'''],
     'usace':[lambda x, f, c: usace(x, f, c), '''USACE bathymetry surveys via eHydro
     Bathymetric Channel surveys from USACE - U.S. only.
+    The hydrographic surveys provided by this application are to be used for informational purposes only and should not be used as a navigational aid. 
+    Channel conditions can change rapidly and the surveys may or may not be accurate.
+
+    https://navigation.usace.army.mil/Survey/Hydro
 
     < usace >'''],
     'ngs':[lambda x, f, c: ngs(x, f, c), '''NOAA NGS Monument Data
-    Monument data from NOAA's Nagional Geodetic Survey (NGS) monument dataset
+    Monument data from NOAA's Nagional Geodetic Survey (NGS) monument dataset.
 
     < ngs >'''],
     'mar_grav':[lambda x, f, c: mar_grav(x, f, c), '''Marine Gravity from Sattelite Altimetry topographic data.
@@ -2155,11 +2260,23 @@ fetch_infos = {
     'emodnet':[lambda x, f, c: emodnet(x, f, c), '''EMODNET Elevation Data
     European Bathymetry/Topographic data from EMODNET
 
+    https://portal.emodnet-bathymetry.eu/help/help.html
+
     < emodnet >'''],
     'chs':[lambda x, f, c: chs(x, f, c), '''CHS Bathymetry
-    CHS NONNA 100m bathymetric survey grids
+    CHS NONNA 100m Bathymetric Survey Grids
+    Non-Navigational gridded bathymetric data based on charts and soundings.
+
+    https://open.canada.ca/data/en/dataset/d3881c4c-650d-4070-bf9b-1e00aabf0a1d
 
     < chs >'''],
+    'hrdem':[lambda x, f, c: hrdem(x, f, c), '''Canada HRDEM Elevation Data
+    Canada High-Resolution Digital Elevation Model (HRDEM).
+    Collection of lidar-derived DTMs across Canada.
+
+    https://open.canada.ca/data/en/dataset/957782bf-847c-4644-a757-e383c0057995
+
+    < hredem >'''],
 }
 
 def fetch_desc(x):

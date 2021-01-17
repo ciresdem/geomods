@@ -49,17 +49,16 @@ _known_datalist_fmts = {
     168: ['xyz', 'csv', 'dat', 'ascii'],
     200: ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'],
     300: ['las', 'laz'],
-    400: ['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs'],
+    400: ['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs', 'hrdem'],
     500: ['zip', 'gz'],
 }
 _known_datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, _known_datalist_fmts[key]) for key in _known_datalist_fmts])
 _dl_inf_h = {
-    -1: lambda e: datalist_inf_entry(e),
-    168: lambda e: xyzfun.xyz_inf_entry(e),
-    200: lambda e: gdalfun.gdal_inf_entry(e),
-    201: lambda e: gdalfun.gdal_inf_entry(e, 4269),
-    300: lambda e: lasfun.las_inf_entry(e),
-    400: lambda e: fetches.fetch_inf_entry(e)
+    -1: lambda e, p: datalist_inf_entry(e),
+    168: lambda e, p: xyzfun.xyz_inf_entry(e),
+    200: lambda e, p: gdalfun.gdal_inf_entry(e, p),
+    300: lambda e, p: lasfun.las_inf_entry(e),
+    400: lambda e, p: fetches.fetch_inf_entry(e)
 }
 _dl_pass_h = [lambda e: path_exists_or_url(e[0])]
 
@@ -110,7 +109,7 @@ def inf_parse(src_inf):
                             minmax[5] = float(til[2])*-1
     return([float(x) for x in minmax])
 
-def inf_entry(src_entry, overwrite = False):
+def inf_entry(src_entry, overwrite = False, epsg = None):
     '''Read .inf file and extract minmax info.
     the .inf file can either be an MBSystem style inf file or the 
     result of `gmt gmtinfo file.xyz -C`, which is a 6 column line 
@@ -122,7 +121,7 @@ def inf_entry(src_entry, overwrite = False):
     if os.path.exists(src_entry[0]):
         path_i = src_entry[0] + '.inf'
         if not os.path.exists(path_i) or overwrite:
-            minmax = _dl_inf_h[src_entry[1]](src_entry)
+            minmax = _dl_inf_h[src_entry[1]](src_entry, epsg)
         else: minmax = inf_parse(path_i)
     if not regions.region_valid_p(minmax): minmax = None
     return(minmax)
@@ -175,7 +174,7 @@ def datalist_append_entry(entry, datalist):
     with open(datalist, 'a') as outfile:
         outfile.write('{}\n'.format(' '.join([str(x) for x in entry])))
 
-def datalist_archive_yield_entry(entry, dirname = 'archive', region = None, inc = 1, weight = None, verbose = None, z_region = None):
+def datalist_archive_yield_entry(entry, dirname = 'archive', region = None, inc = 1, weight = None, verbose = None, z_region = None, epsg = None):
     '''archive a datalist entry.
     a datalist entry is [path, format, weight, ...]
 
@@ -197,7 +196,7 @@ def datalist_archive_yield_entry(entry, dirname = 'archive', region = None, inc 
     if not os.path.exists(a_xyz_dir): os.makedirs(a_xyz_dir)
 
     with open(a_xyz, 'w') as fob:
-        for xyz in datalist_yield_entry(entry, region = region, verbose = verbose, z_region = z_region):
+        for xyz in datalist_yield_entry(entry, region = region, verbose = verbose, z_region = z_region, epsg = epsg):
             xyzfun.xyz_line(xyz, fob)
             yield(xyz)
             
@@ -309,7 +308,7 @@ def datalist(dl, wt = None, pass_h = _dl_pass_h,
                         yield(entry)
                 else: yield(this_entry)
 
-def datalist_yield_entry(this_entry, region = None, verbose = False, z_region = None, w_region = None):
+def datalist_yield_entry(this_entry, region = None, verbose = False, z_region = None, w_region = None, epsg = None):
     '''yield the xyz data from the datalist entry [entry/path, entry-format, entry-weight]
 
     yields xyz line data [x, y, z, ...]'''
@@ -318,10 +317,7 @@ def datalist_yield_entry(this_entry, region = None, verbose = False, z_region = 
             #for xyz in gmt_yield_entry(this_entry, region = region, verbose = verbose, z_region = z_region):
             yield(xyz)
     elif this_entry[1] == 200:
-        for xyz in gdalfun.gdal_yield_entry(this_entry, region = region, verbose = verbose, z_region = z_region):
-            yield(xyz)
-    elif this_entry[1] == 201:
-        for xyz in gdalfun.gdal_yield_entry(this_entry, verbose = verbose, z_region = z_region, epsg = 4269):
+        for xyz in gdalfun.gdal_yield_entry(this_entry, region = region, verbose = verbose, z_region = z_region, epsg = epsg):
             yield(xyz)
     elif this_entry[1] == 300:
         for xyz in lasfun.las_yield_entry(this_entry, verbose = verbose, region = region, z_region = z_region):
@@ -329,27 +325,6 @@ def datalist_yield_entry(this_entry, region = None, verbose = False, z_region = 
     elif this_entry[1] == 400:
         for xyz in fetches.fetch_yield_entry(this_entry, region = region, verbose = verbose):
             yield(xyz)
-    # elif this_entry[1] == 401:
-    #     for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'nos'):
-    #         yield(xyz)
-    # elif this_entry[1] == 402:
-    #     for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'dc'):
-    #         yield(xyz)
-    # elif this_entry[1] == 403:
-    #     for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'charts'):
-    #         yield(xyz)
-    # elif this_entry[1] == 404:
-    #     for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'srtm'):
-    #         yield(xyz)
-    # elif this_entry[1] == 405:
-    #     for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'tnm'):
-    #         yield(xyz)
-    # elif this_entry[1] == 406:
-    #     for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'mb'):
-    #         yield(xyz)
-    # elif this_entry[1] == 408:
-    #     for xyz in fetches.fetch_module_yield_entry(this_entry, region, verbose, 'gmrt'):
-    #         yield(xyz)
 
 def datalist_yield_queue(q):
     while True:
@@ -390,26 +365,26 @@ def datalist_yield_xyz_queue(dl, wt = None, pass_h = _dl_pass_h,
         
 def datalist_yield_xyz(dl, wt = None, pass_h = _dl_pass_h,
                        region = None, archive = False,
-                       mask = False, verbose = False, z_region = None):
+                       mask = False, verbose = False, z_region = None, epsg = None):
     '''parse out the xyz data from the datalist
     for xyz in datalist_yield_xyz(dl): xyz_line(xyz)
 
     yields xyz line data [x, y, z, ...]'''
     for this_entry in datalist(dl, wt = wt, pass_h = pass_h, verbose = verbose):
-        dly = datalist_yield_entry(this_entry, region, verbose = verbose, z_region = z_region)
-        if archive: dly = datalist_archive_yield_entry(this_entry, dirname = 'archive', region = region, weight = wt, verbose = verbose, z_region = z_region)
+        dly = datalist_yield_entry(this_entry, region, verbose = verbose, z_region = z_region, epsg = epsg)
+        if archive: dly = datalist_archive_yield_entry(this_entry, dirname = 'archive', region = region, weight = wt, verbose = verbose, z_region = z_region, epsg = None)
         for xyz in dly:
             yield(xyz)
 
 def datalist_dump_xyz(dl, wt = None,  pass_h = _dl_pass_h,
                       region = None, archive = False, mask = False,
-                      verbose = False, dst_port = sys.stdout, z_region = None):
+                      verbose = False, dst_port = sys.stdout, z_region = None, epsg = None):
     '''parse out the xyz data from the datalist
     for xyz in datalist_yield_xyz(dl): xyz_line(xyz)
 
     yields xyz line data [x, y, z, ...]'''
 
-    for xyz in datalist_yield_xyz(dl, wt, pass_h, region, archive, mask, verbose, z_region):
+    for xyz in datalist_yield_xyz(dl, wt, pass_h, region, archive, mask, verbose, z_region, epsg):
         xyzfun.xyz_line(xyz, dst_port, verbose)
 
 ## ==============================================
@@ -457,7 +432,7 @@ def datalists_cli(argv = sys.argv):
     i_region = None
     i_inc = 0.000277777
     o_bn = None
-    epsg = '4326'
+    epsg = None
     these_regions = []
     want_verbose = False
     want_inf = False
@@ -605,7 +580,7 @@ def datalists_cli(argv = sys.argv):
         utils.echo_msg('processed datalist')
         dlp_hooks = datalist_default_hooks()
         if regions.region_valid_p(this_region):
-            dlp_hooks.append(lambda e: regions.regions_intersect_ogr_p(this_region, inf_entry(e)))
+            dlp_hooks.append(lambda e: regions.regions_intersect_ogr_p(this_region, inf_entry(e, epsg = epsg)))
         if z_region is not None:
             dlp_hooks.append(lambda e: regions.z_region_pass(inf_entry(e), upper_limit = z_region[1], lower_limit = z_region[0]))
         if w_region is not None:
@@ -620,7 +595,7 @@ def datalists_cli(argv = sys.argv):
                 print(' '.join([','.join(x) if i == 3 else os.path.abspath(str(x)) if i == 0 else str(x) for i,x in enumerate(this_entry[:-1])]))
         elif want_mask: pass
         else:
-            datalist_dump_xyz(dl_m, wt = 1 if want_weights else None, pass_h = dlp_hooks, region = this_region)
+            datalist_dump_xyz(dl_m, wt = 1 if want_weights else None, pass_h = dlp_hooks, region = this_region, epsg = epsg)
         utils.remove_glob(dl_m)
         
 ### End

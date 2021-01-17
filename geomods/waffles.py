@@ -351,7 +351,7 @@ def waffles_yield_datalist(wg = _waffles_grid_info):
     region = waffles_proc_region(wg)
     dlp_hooks = waffles_dlp_hooks(wg)
     
-    dly = datalists.datalist_yield_xyz(wg['datalist'], pass_h = dlp_hooks, wt = 1 if wg['weights'] else None, region = region, archive = wg['archive'], verbose = wg['verbose'], z_region = wg['z_region'])
+    dly = datalists.datalist_yield_xyz(wg['datalist'], pass_h = dlp_hooks, wt = 1 if wg['weights'] else None, region = region, archive = wg['archive'], verbose = wg['verbose'], z_region = wg['z_region'], epsg = wg['epsg'])
     if wg['mask']: dly = gdalfun.gdal_xyz_mask(dly, '{}_msk.tif'.format(wg['name']), region, wg['inc'], dst_format = wg['fmt'])
     for xyz in dly: yield(xyz)
     

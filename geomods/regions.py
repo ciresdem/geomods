@@ -27,7 +27,6 @@ import os
 
 ## import gdal/numpy
 import ogr
-import osr
 import numpy as np
 
 ## import geomods
@@ -211,25 +210,6 @@ def regions_sort(trainers):
         #echo_msg(' '.join([region_format(x[0], 'gmt') for x in train_d[:25]]))
         train_sorted.append(train_d)
     return(train_sorted)
-
-def region_warp(region, s_warp = 4326, t_warp = 4326):
-    '''warp region from source `s_warp` to target `t_warp`, using EPSG keys
-
-    returns the warped region'''
-    
-    src_srs = osr.SpatialReference()
-    src_srs.ImportFromEPSG(int(s_warp))
-
-    if t_warp is not None:
-        dst_srs = osr.SpatialReference()
-        dst_srs.ImportFromEPSG(int(t_warp))
-        dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)        
-        pointA = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(region[0], region[2]))
-        pointB = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(region[1], region[3]))
-        pointA.Transform(dst_trans)
-        pointB.Transform(dst_trans)
-        region = [pointA.GetX(), pointB.GetX(), pointA.GetY(), pointB.GetY()]
-    return(region)
 
 def z_region_valid_p(z_region):
     '''return True if z_region appears to be valid'''
