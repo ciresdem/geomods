@@ -132,6 +132,7 @@ _waffles_grid_info = {
     'spat': False,
     'mask': False,
     'unc': False,
+    'overwrite': True,
     'gc': utils.config_check()
 }
 
@@ -146,7 +147,7 @@ def waffles_config(datalist = None, data = [], region = None, inc = None, name =
                    node = 'pixel', fmt = 'GTiff', extend = 0, extend_proc = 20, weights = None,
                    z_region = None, w_region = None, fltr = None, sample = None, clip = None, chunk = None, epsg = 4326,
                    mod = 'help', mod_args = (), verbose = False, archive = False, spat = False, mask = False,
-                   unc = False, gc = None):
+                   unc = False, gc = None, overwrite = True):
     wg = waffles_config_copy(_waffles_grid_info)
     wg['datalist'] = datalist
     wg['data'] = data
@@ -172,6 +173,7 @@ def waffles_config(datalist = None, data = [], region = None, inc = None, name =
     wg['spat'] = spat
     wg['mask'] = mask
     wg['unc'] = unc
+    wg['overwrite'] = overwrite
     wg['gc'] = utils.config_check()
 
     if wg['data'] is None:
@@ -1296,6 +1298,10 @@ def waffles_run(wg = _waffles_grid_info):
         if wg['mod'] == 'spat-meta':
             dem_vect = '{}_sm.shp'.format(wg['name'])
         else: dem_vect = '{}.shp'.format(wg['name'])
+        if os.path.exists(dem_vect) and not wg['overwrite']: return(dem_vect)
+    else:
+        if os.path.exists(dem) and not wg['overwrite']: return(dem)
+    
     wg['region'] = waffles_grid_node_region(wg) if wg['node'] == 'grid' else wg['region']
     
     ## ==============================================
@@ -1566,6 +1572,7 @@ General Options:
   -a, --archive\t\tArchive the datalist to the given region.
   -m, --mask\t\tGenerate a data mask raster.
   -u, --uncert\t\tGenerate an associated uncertainty grid.
+  -c, --continue\tDon't clobber existing files.
 
   --help\t\tPrint the usage text
   --config\t\tSave the waffles config JSON and major datalist
@@ -1688,6 +1695,7 @@ def waffles_cli(argv = sys.argv):
         elif arg == '-u' or arg == '--uncert':
             wg['mask'] = True
             wg['unc'] = True
+        elif arg == '-c' or arg == '--continue': wg['overwrite'] = False
         #elif arg == '-s' or arg == 'spat-meta': wg['spat'] = True
         elif arg == '-r' or arg == '--grid-node': wg['node'] = 'grid'
         elif arg == '--verbose' or arg == '-V': wg['verbose'] = True

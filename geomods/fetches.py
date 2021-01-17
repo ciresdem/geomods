@@ -2300,9 +2300,7 @@ General Options:
   -l, --list\t\tReturn a list of fetch URLs in the given region.
   -f, --filter\t\tSQL style filters for certain datasets.
 \t\t\tFields to filter include: 'Name', 'Date' and 'Datatype'
-  -p, --process\t\tProcess fetched data to ASCII XYZ format. <beta>
-\t\t\tRequires external data processing programs for some datasets. 
-\t\t\t(e.g. GMT,GDAL,MBSYSTEM,LASTOOLS,VDATUM )
+  -p, --process\t\tProcess fetched data to ASCII XYZ format in WGS84. <beta>
 
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
