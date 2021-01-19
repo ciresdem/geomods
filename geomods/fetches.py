@@ -579,12 +579,24 @@ class nos:
             "T00001-T02000/", "W00001-W02000/" \
         ]
 
+        ## ==============================================
+        ## NOS data comes as xyz or bag, sometimes gzipped
+        ## ==============================================
         self._nos_fmts = ['.xyz.gz', '.bag.gz', '.bag']
 
-        self._outdir = os.path.join(os.getcwd(), 'nos')
-        self._ref_vector = os.path.join(fetchdata, 'nos.gmt')
+        ## ==============================================
+        ## Reference vector
+        ## ==============================================
         self._local_ref_vector = 'nos.gmt'
-        self._has_vector = True if os.path.exists(self._ref_vector) else False
+        if not os.path.exists(self._local_ref_vector):
+            self._ref_vector = os.path.join(fetchdata, 'nos.gmt')
+        else: self._ref_vector = self._local_ref_vector
+
+        #self._has_vector = True if os.path.exists(self._ref_vector) else False
+        #if not self._has_vector: self._ref_vector = 'nos.gmt'
+        
+        self._outdir = os.path.join(os.getcwd(), 'nos')
+        
         self._status = 0
         self._surveys = []
         self._results = []
@@ -692,12 +704,12 @@ class nos:
         sys.stderr.flush()
 
     def _update(self):
-        '''Crawl the NOS database and update the NOS reference vector.'''
+        '''Crawl the NOS database and update/generate the NOS reference vector.'''
         for j in self._nos_directories:
             if self.stop(): break
-            self._has_vector = True if os.path.exists(self._local_ref_vector) else False
+            #self._has_vector = True if os.path.exists(self._local_ref_vector) else self._has_vector
             self._scan_directory(j)
-            update_ref_vector(self._local_ref_vector, self._surveys, self._has_vector)
+            update_ref_vector(self._local_ref_vector, self._surveys, False)
             self._surveys = []
 
     ## ==============================================
@@ -2218,6 +2230,10 @@ fetch_infos = {
     < srtm_plus >'''],
     'tnm':[lambda x, f, c: tnm(x, f, c), '''The National Map (TNM) from USGS
     Various datasets from USGS's National Map.
+    The National Map is a collaborative effort among the USGS and other Federal, State, and local partners to improve and deliver topographic information for the Nation.
+
+    https://www.usgs.gov/core-science-systems/national-geospatial-program/national-map
+    https://viewer.nationalmap.gov/advanced-viewer/
 
     < tnm:ds=1:sub_ds=None:formats=None:index=False >
      :index=[True/False] - True to display an index of available datasets.

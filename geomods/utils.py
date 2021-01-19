@@ -206,15 +206,16 @@ def err_fit_plot(xdata, ydata, out, fitfunc, dst_name = 'unc', xa = 'distance'):
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
         from matplotlib.offsetbox import AnchoredText
+
+        plt.plot(xdata, ydata, 'o')
+        plt.plot(xdata, fitfunc(out, xdata), '-')
+        plt.xlabel(xa)
+        plt.ylabel('error (m)')
+        out_png = '{}_bf.png'.format(dst_name)
+        plt.savefig(out_png)
+        plt.close()
+        
     except: echo_error_msg('you need to install matplotlib to run uncertainty plots...')
-    
-    plt.plot(xdata, ydata, 'o')
-    plt.plot(xdata, fitfunc(out, xdata), '-')
-    plt.xlabel(xa)
-    plt.ylabel('error (m)')
-    out_png = '{}_bf.png'.format(dst_name)
-    plt.savefig(out_png)
-    plt.close()
 
 def err_scatter_plot(error_arr, dist_arr, dst_name = 'unc', xa = 'distance'):
     '''plot a scatter plot'''
@@ -224,15 +225,16 @@ def err_scatter_plot(error_arr, dist_arr, dst_name = 'unc', xa = 'distance'):
         matplotlib.use('Agg')
         import matplotlib.pyplot as plt
         from matplotlib.offsetbox import AnchoredText
-    except: echo_error_msg('you need to install matplotlib to run uncertainty plots...')
 
-    plt.scatter(dist_arr, error_arr)
-    #plt.title('Scatter')
-    plt.xlabel(xa)
-    plt.ylabel('error (m)')
-    out_png = '{}_scatter.png'.format(dst_name)
-    plt.savefig(out_png)
-    plt.close()
+        plt.scatter(dist_arr, error_arr)
+        #plt.title('Scatter')
+        plt.xlabel(xa)
+        plt.ylabel('error (m)')
+        out_png = '{}_scatter.png'.format(dst_name)
+        plt.savefig(out_png)
+        plt.close()
+        
+    except: echo_error_msg('you need to install matplotlib to run uncertainty plots...')
 
 def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'distance'):
     '''calculate and plot the error coefficient given err_arr which is 
@@ -261,8 +263,10 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
     fitfunc = lambda p, x: p[0] + p[1] * (abs(x) ** abs(p[2]))
     errfunc = lambda p, x, y: y - fitfunc(p, x)
     out, cov, infodict, mesg, ier = optimize.leastsq(errfunc, coeff_guess, args = (xdata, ydata), full_output = True)
-    err_fit_plot(xdata, ydata, out, fitfunc, dst_name, xa)
-    err_scatter_plot(error, distance, dst_name, xa)
+    try:
+        err_fit_plot(xdata, ydata, out, fitfunc, dst_name, xa)
+        err_scatter_plot(error, distance, dst_name, xa)
+    except: echo_error_msg('unable to generate error plots, please check configs.')
     return(out)
 
 ## ==============================================
