@@ -45,6 +45,7 @@ setuptools.setup(
         'scipy',
         'requests',
         'lxml',
+        'matplotlib',
     ], 
     entry_points = {
         'console_scripts': [

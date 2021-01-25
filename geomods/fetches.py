@@ -30,6 +30,7 @@ import sys
 import time
 import math
 import requests
+import ftplib
 import lxml.html as lh
 import lxml.etree
 import zipfile
@@ -165,13 +166,14 @@ def fetch_req(src_url, params = None, tries = 5, timeout = 2, read_timeout = 10)
         return(requests.get(src_url, stream = True, params = params, timeout = (timeout,read_timeout), headers = r_headers))
     except: return(fetch_req(src_url, params = params, tries = tries - 1, timeout = timeout + 1, read_timeout = read_timeout + 10))
 
-def fetch_nos_xml(src_url):
+def fetch_nos_xml(src_url, verbose = False):
     '''fetch src_url and return it as an XML object'''
     results = lxml.etree.fromstring('<?xml version="1.0"?><!DOCTYPE _[<!ELEMENT _ EMPTY>]><_/>'.encode('utf-8'))
     try:
         req = fetch_req(src_url, timeout = .25)
         results = lxml.etree.fromstring(req.text.encode('utf-8'))
-    except: utils.echo_error_msg('could not access {}'.format(src_url))
+    except:
+        if verbose: utils.echo_error_msg('could not access {}'.format(src_url))
     return(results)
         
 def fetch_html(src_url):
@@ -295,39 +297,100 @@ def update_ref_vector(src_vec, surveys, update=True):
 ## such as lastools or liblas, etc.
 ##
 ## =============================================================================
+class dc_ftp:
+    def __init__(self):
+        self._dc_ftp_url = 'ftp.coast.noaa.gov'
+        self.ftp = ftplib.FTP(self._dc_ftp_url)
+        self.ftp.login()
+        self.ftp.cwd("/pub/DigitalCoast")
+        self.parent = self.ftp.pwd()
+
+    def _home(self):
+        self.ftp.cwd(self.parent)
+
+    def _list(self):
+        self.ftp.retrlines("LIST")
+
+    def fetch_file(self, filename, full=True):
+        if full:
+            dirname = "." + self.ftp.pwd()
+            if not os.path.exists(dirname):
+                os.makedirs(dirname)
+        else: dirname = "."
+            
+        with open(dirname + "/" + os.path.basename(filename), "wb") as local_file:
+            self.ftp.retrbinary('RETR {}'.format(filename), local_file.write)
+
+    def fetch_res(self, fn):
+        response = []
+        self.ftp.retrbinary('RETR {}'.format(fn), lambda d: response.append(d))
+        return(''.join(response))
+    
 class dc:
     '''Fetch elevation data from the Digital Coast'''
     def __init__(self, extent = None, filters = [], callback = None):
         utils.echo_msg('loading Digital Coast fetch module...')
+
+        ## ==============================================
+        ## URLs and directories
+        ## ==============================================
         self._dc_htdata_url = 'https://coast.noaa.gov/htdata/'
+        self._dc_ftp_url = 'ftp://ftp.coast.noaa.gov/pub/DigitalCoast'
+        self._dc_ftp_url_full = "ftp://ftp.coast.noaa.gov"
         self._dc_dav_id = 'https://coast.noaa.gov/dataviewer/#/lidar/search/where:ID='
-        self._dc_dirs = ['lidar1_z', 'lidar2_z', 'raster2']
-        #self._dc_dirs = ['lidar2_z', 'raster2']
-        self._ref_vector = os.path.join(fetchdata, 'dc.gmt')
-        #self._ref_vector = os.path.join('.', 'dc.gmt')
+        self._dc_dirs = ['lidar1_z', 'lidar2_z', 'lidar3_z', 'lidar4_z', 'raster1', 'raster2', 'raster5']
+        #self._dc_dirs = ['raster1', 'raster2', 'raster5']
+        self._dc_subdirs = ['geoid12a', 'geoid12b', 'geoid18', 'elevation']
+
+        ## ==============================================
+        ## Reference vector
+        ## ==============================================
+        self._local_ref_vector = 'dc.gmt'
+        if not os.path.exists(self._local_ref_vector):
+            self._ref_vector = os.path.join(fetchdata, 'dc.gmt')
+        else: self._ref_vector = self._local_ref_vector
+
+        self._has_vector = True if os.path.exists(self._ref_vector) else False
+        if not self._has_vector: self._ref_vector = 'nos.gmt'
+        
         self._outdir = os.path.join(os.getcwd(), 'dc')
-        self._status = 0
+
+        ## ==============================================
+        ## _surveys holds the survey info for reference vector updates
+        ## _results holds the survey info for reference vector filtering
+        ## ==============================================
         self._surveys = []
         self._results = []
+        
         self._index = False
         self._filters = filters
-        self._has_vector = True if os.path.exists(self._ref_vector) else False
         #self._has_vector = False
-        self.stop = callback
+
+        ## ==============================================
+        ## region of insterest.
+        ## ==============================================
         self.region = extent
         if self.region is not None: 
             self._boundsGeom = bounds2geom(self.region)
         else: self._status = -1
-        self._datalists_code = 402
+
+        self._status = 0
+        self.stop = callback
         self._verbose = False
+
+        self.dcftp = dc_ftp()
         
     def run(self, datatype = None, index = False, update = False):
         '''Run the Digital Coast fetching module'''
         self._index = index
         self._want_update = update
         if self._want_update:
-            self._update()
-            return([])
+            #self._ref_vector = self._local_ref_vector
+            #self._has_vector = False
+            self._update_from_ftp()
+            
+        utils.echo_msg('using reference vector: {}'.format(self._ref_vector))
+            
         self.datatype = datatype
         self._filter_reference_vector()
         return(self._results)
@@ -335,6 +398,121 @@ class dc:
     ## ==============================================
     ## Reference Vector Generation
     ## ==============================================
+
+    def _fetch_res(self, url):
+        import urllib2
+        
+        response = urllib2.urlopen(url)
+        results = response.read()
+        response.close()
+        return(results)
+
+    def _fetch_xml(self, url):
+        try:
+            return lxml.etree.fromstring(self._fetch_res(url).encode('utf-8'))
+        except: return(None)
+        
+    def _update_directory(self, s_dtype):
+
+        # if self._has_vector:
+        #     gmt2 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
+        #     layer = gmt2.GetLayer()
+        #     layerDef = layer.GetLayerDefn()
+        # else: layer = []
+        layer = []
+        
+        pdir = self.dcftp.ftp.pwd()
+        if s_dtype == 'lidar': self.dcftp.ftp.cwd("data")
+        data_dir = self.dcftp.ftp.pwd()
+        data_list = self.dcftp.ftp.nlst()
+        utils.echo_msg(data_dir)
+        utils.echo_msg_inline('scanning {} surveys in {} [    ].'.format(len(data_list), data_dir))
+        
+        for it, dataset in enumerate(data_list):
+            try: did = int(dataset.split("_")[-1])
+            except: did = None
+            perc = int((float(it)/len(data_list)) * 100)
+            utils.echo_msg_inline('scanning {} surveys in {} [{:3}%] - {}.'.format(len(data_list), data_dir, perc, did))
+            if did is not None:
+                #if self._has_vector: layer.SetAttributeFilter('ID = "{}"'.format(did))
+                #if self._has_vector: layer.SetAttributeFilter('ID = "%s"' %(did))
+                if len(layer) == 0:
+                    self.dcftp.ftp.cwd(dataset)
+                    dc_files = self.dcftp.ftp.nlst()
+                    for dc_file in dc_files:
+                        if "metadata.xml" in dc_file or 'met.xml' in dc_file:
+                            xml_url = self._dc_ftp_url + "/" + dataset + "/" + dc_file
+                            ds_url = self._dc_ftp_url + "/" + dataset + "/"
+                            xml_res = self.dcftp.fetch_res(dc_file)
+                            if len(xml_res) == 0:
+                                utils.echo_error_msg('xml_doc is none')
+                                break
+                            
+                            xml_doc = lxml.etree.fromstring(xml_res)
+
+                            wl = xml_doc.find('.//gmd:westBoundLongitude/gco:Decimal', namespaces = namespaces)
+                            el = xml_doc.find('.//gmd:eastBoundLongitude/gco:Decimal', namespaces = namespaces)
+                            sl = xml_doc.find('.//gmd:southBoundLatitude/gco:Decimal', namespaces = namespaces)
+                            nl = xml_doc.find('.//gmd:northBoundLatitude/gco:Decimal', namespaces = namespaces)
+                            try:
+                                this_region = [float(x) for x in [wl.text, el.text, sl.text, nl.text]]
+                            except: this_region = None
+
+                            if regions.region_valid_p(this_region):
+                                obbox = bounds2geom(this_region)
+                                try:
+                                    odate = int(xml_doc.find('.//gco:Date', namespaces = namespaces).text[:4])
+                                except: odate = 1900
+
+                                try:
+                                    otitle = xml_doc.find('.//gmd:identificationInfo/gmd:MD_DataIdentification/gmd:citation/gmd:CI_Citation/gmd:title/gco:CharacterString', namespaces = namespaces).text
+                                except: otitle = 'UNKNOWN DATASET'
+                                
+                                ds_urls = xml_doc.findall('.//gmd:CI_OnlineResource', namespaces=namespaces)
+                                for i in ds_urls:
+                                    i_name = i.find('.//gmd:name/gco:CharacterString',namespaces=namespaces)
+                                    if i_name is not None:
+                                        if i_name.text == 'Bulk Download':
+                                            ds_url = i.find('.//gmd:linkage/gmd:URL', namespaces=namespaces).text
+                                        
+                                utils.echo_msg(ds_url)
+                                ## ==============================================
+                                ## Append survey to surveys list
+                                ## ==============================================
+                                out_s = [obbox, otitle, did, odate, xml_url, ds_url, s_dtype]
+                                self._surveys.append(out_s)
+
+            self.dcftp.ftp.cwd(data_dir)
+        self.dcftp.ftp.cwd(pdir)
+        utils.echo_msg_inline('scanning {} surveys in {} [ OK ].\n'.format(len(data_list), data_dir))
+        gmt2 = layer = None
+
+    def _update_from_ftp(self):
+        file_list = self.dcftp.ftp.nlst()
+        for this_dir in self._dc_dirs:
+            utils.echo_msg('scanning {}'.format(this_dir))
+            s_dtype = 'lidar' if 'lidar' in this_dir else 'raster' if 'raster' in this_dir else None
+            self.dcftp.ftp.cwd(this_dir)
+            sub_dir = self.dcftp.ftp.pwd()
+            for this_sub_dir in self._dc_subdirs:
+                try:
+                    self.dcftp.ftp.cwd(this_sub_dir)
+                    #utils.echo_msg('scanning {}'.format(self.dcftp.ftp.pwd()))
+                    self._update_directory(s_dtype)
+                    #except error_perm: pass
+                except Exception as e:
+                    pass
+                self.dcftp.ftp.cwd(sub_dir)
+            self.dcftp._home()
+                
+            ## ==============================================
+            ## Add matching surveys to reference vector
+            ## ==============================================
+            if len(self._surveys) > 0: update_ref_vector(self._local_vector, self._surveys, False)
+            self._has_vector = True if os.path.exists(self._local_vector) else False
+            self._surveys = []
+            gmt2 = layer = None
+    
     def _update(self):
         '''Update the DC reference vector after scanning
         the relevant metadata from Digital Coast.'''
@@ -345,7 +523,7 @@ class dc:
                 gmt2 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 1)
                 layer = gmt2.GetLayer()
                 layerDef = layer.GetLayerDefn()
-                print([layerDef.GetFieldDefn(i).GetName() for i in range(layerDef.GetFieldCount())])
+                #print([layerDef.GetFieldDefn(i).GetName() for i in range(layerDef.GetFieldCount())])
             else: layer = []
             page = fetch_html(self._dc_htdata_url + ld)
             tables = page.xpath('//table')
@@ -354,7 +532,9 @@ class dc:
             cols = []
             [cols.append(i.text_content()) for i in tr[0]]
             #for i in tr[0]: cols.append(i.text_content())
-
+            #sys.stderr.write('fetches: scanning {} surveys in {} [    ].'.format(len(tr), ld))
+            utils.echo_msg_inline('scanning {} surveys in {} [    ].'.format(len(tr), ld))
+            
             ## ==============================================
             ## Collect relavant info from metadata
             ## ==============================================
@@ -370,18 +550,21 @@ class dc:
                                 dc['Metadata'] = cl[0].get('href')
                             else: dc[cols[j]] = cl[0].get('href')
                         else: dc[cols[j]] = cell.text_content()
+                    perc = int((float(i)/len(tr)) * 100)
+                    #sys.stderr.write('\x1b[2K\rfetches: scanning {} surveys in {} [{:3}%] - {}.'.format(len(tr), ld, perc, dc['ID #']))
+                    utils.echo_msg_inline('scanning {} surveys in {} [{:3}%] - {}.'.format(len(tr), ld, perc, dc['ID #']))
                     #print(dc['ID #'])
-                    #if self._has_vector: layer.SetAttributeFilter('ID = "%s"' %(dc['ID #']))
-                    if self._has_vector:
+                    if self._has_vector: layer.SetAttributeFilter('ID = "%s"' %(dc['ID #']))
+                    #if self._has_vector:
                         #print('ID = {}'.format(dc['ID #']))
-                        print(layer.SetAttributeFilter("ID = '{}'".format(dc['ID #'])))
+                    #    print(layer.SetAttributeFilter("ID = '{}'".format(dc['ID #'])))
                         
                     #for feature in layer:
-                    #    print('dcID - ' + feature.GetField('ID') + '-' + dc['ID #'])
+                     #   print('dcID - ' + feature.GetField('ID') + '-' + dc['ID #'])
                     #print(len(layer))
                     if len(layer) == 0:
                         if 'Metadata' in dc.keys():
-                            xml_doc = fetch_nos_xml(dc['Metadata'])
+                            xml_doc = fetch_nos_xml(dc['Metadata'], verbose = False)
                             wl = xml_doc.find('.//gmd:westBoundLongitude/gco:Decimal', namespaces = namespaces)
                             el = xml_doc.find('.//gmd:eastBoundLongitude/gco:Decimal', namespaces = namespaces)
                             sl = xml_doc.find('.//gmd:southBoundLatitude/gco:Decimal', namespaces = namespaces)
@@ -412,6 +595,7 @@ class dc:
             ## Add matching surveys to reference vector
             ## ==============================================
             #print(self._surveys)
+            utils.echo_msg_inline('scanning {} surveys in {} [ OK ].\n'.format(len(tr), ld))
             if len(self._surveys) > 0: update_ref_vector(self._ref_vector, self._surveys, self._has_vector)
             self._has_vector = True if os.path.exists(self._ref_vector) else False
             #print(self._has_vector)
@@ -419,7 +603,7 @@ class dc:
             gmt2 = layer = None
 
     ## ==============================================
-    ## Filter for results
+    ## Filter reference vector for results
     ## ==============================================
     def _filter_reference_vector(self):
         '''Search for data in the reference vector file'''
@@ -459,7 +643,7 @@ class dc:
                         ## for each survey file.
                         ## ==============================================
                         scsv = suh.xpath('//a[contains(@href, ".csv")]/@href')[0]
-                        dc_csv = fetch_csv(surv_url + scsv)
+                        dc_csv = fetch_csv(surv_url + "/" + scsv)
                         next(dc_csv, None)
                         for tile in dc_csv:
                             if len(tile) > 3:
@@ -563,14 +747,18 @@ class dc:
 ## BAG data is in projected units and MLLW (height)
 ## XYZ data is CSV in MLLW (Sounding)
 ##
+## https://www.ngdc.noaa.gov/mgg/bathymetry/hydro.html
+##
 ## =============================================================================
 class nos:
     '''Fetch NOS BAG and XYZ sounding data from NOAA'''
     def __init__(self, extent = None, filters = [], callback = None):
         utils.echo_msg('loading NOS fetch module...')
+
+        ## ==============================================
+        ## NOS urls and directories
+        ## ==============================================
         self._nos_xml_url = lambda nd: 'https://data.noaa.gov/waf/NOAA/NESDIS/NGDC/MGG/NOS/%siso_u/xml/' %(nd)
-        #self._nos_xml_url = lambda nd: 'https://data.noaa.gov/waf/NOAA/NESDIS/NGDC/MGG/NOS/%siso/xml/' %(nd)
-        #self._nos_data_url = "https://data.ngdc.noaa.gov/platforms/ocean/nos/coast/"
         self._nos_directories = [
             "B00001-B02000/", "D00001-D02000/", "F00001-F02000/", \
             "H00001-H02000/", "H02001-H04000/", "H04001-H06000/", \
@@ -592,11 +780,14 @@ class nos:
             self._ref_vector = os.path.join(fetchdata, 'nos.gmt')
         else: self._ref_vector = self._local_ref_vector
 
-        #self._has_vector = True if os.path.exists(self._ref_vector) else False
-        #if not self._has_vector: self._ref_vector = 'nos.gmt'
-        
+        self._has_vector = True if os.path.exists(self._ref_vector) else False
+        if not self._has_vector: self._ref_vector = 'nos.gmt'
+                
         self._outdir = os.path.join(os.getcwd(), 'nos')
-        
+
+        ## ==============================================
+        ## misc. variables
+        ## ==============================================
         self._status = 0
         self._surveys = []
         self._results = []
@@ -610,15 +801,23 @@ class nos:
 
     def run(self, datatype = None, update = False):
         '''Run the NOS fetching module.'''
+
+        ## ==============================================
+        ## update/generate the reference vector
+        ## ==============================================
         if update:
             if str(update).lower() == 'false':
                 update = False
-        
+                
         self._want_update = update                
         if self._want_update:
             self._update()
-            return([])
-
+        
+        ## ==============================================
+        ## filter the reference vector and return a
+        ## list of survey results
+        ## ==============================================
+        utils.echo_msg('using reference vector: {}'.format(self._ref_vector))
         if self.region is None: return([])
         self._bounds = bounds2geom(self.region)
         if datatype is not None:
@@ -658,8 +857,7 @@ class nos:
         
         ## ==============================================
         ## Get all the data URLs
-        ## ==============================================
-        
+        ## ==============================================        
         dfs = xml_doc.findall('.//gmd:MD_Format/gmd:name/gco:CharacterString', namespaces = namespaces)
         dus = xml_doc.findall('.//gmd:onLine/gmd:CI_OnlineResource/gmd:linkage/gmd:URL', namespaces = namespaces)
         if dus is not None:
@@ -674,16 +872,20 @@ class nos:
 
     def _scan_directory(self, nosdir):
         '''Scan an NOS directory and parse the XML for each survey.'''
-        #if self._has_vector:
-        #    gmt1 = ogr.GetDriverByName('GMT').Open(self._local_ref_vector, 0)
-        #    layer = gmt1.GetLayer()
-        #else:
-        layer = []
+        ## ==============================================
+        ## load the reference vector if it exists and
+        ## scan the remote nos directories
+        ## ==============================================
+        if self._has_vector:
+            gmt1 = ogr.GetDriverByName('GMT').Open(self._local_ref_vector, 0)
+            layer = gmt1.GetLayer()
+        else: layer = []
+        
         xml_catalog = self._nos_xml_url(nosdir)
         page = fetch_html(xml_catalog)
         rows = page.xpath('//a[contains(@href, ".xml")]/@href')
-        sys.stderr.write('fetches: scanning {} surveys in {} [    ].'.format(len(rows), nosdir))
-        sys.stderr.flush()
+        utils.echo_msg_inline('scanning {} surveys in {} [    ].'.format(len(rows), nosdir))
+        
         ## ==============================================
         ## Parse each survey found in the directory
         ## and append it to the surveys list
@@ -692,16 +894,15 @@ class nos:
             if self.stop(): break
             sid = survey[:-4]
             perc = int((float(i)/len(rows)) * 100)
-            sys.stderr.write('\x1b[2K\rfetches: scanning {} surveys in {} [{:3}%] - {}.'.format(len(rows), nosdir, perc, sid))
-            sys.stderr.flush()
+            utils.echo_msg_inline('scanning {} surveys in {} [{:3}%] - {}.'.format(len(rows), nosdir, perc, sid))
+
             #if self._has_vector: layer.SetAttributeFilter('ID = "{}"'.format(sid))
             if len(layer) == 0:
                 xml_url = xml_catalog + survey
                 s_entry = self._parse_nos_xml(xml_url, sid, nosdir)
                 if s_entry[0]: self._surveys.append(s_entry)
         gmt1 = layer = None
-        sys.stderr.write('\x1b[2K\rfetches: scanning {} surveys in {} [ OK ].\n'.format(len(rows), nosdir))
-        sys.stderr.flush()
+        utils.echo_msg_inline('scanning {} surveys in {} [ OK ].\n'.format(len(rows), nosdir))
 
     def _update(self):
         '''Crawl the NOS database and update/generate the NOS reference vector.'''
@@ -868,32 +1069,43 @@ class cudem:
 
         self._cudem_catalog = "https://www.ngdc.noaa.gov/thredds/demCatalog.xml"
         self._ngdc_url = "https://www.ngdc.noaa.gov"
+
+        ## ==============================================
+        ## Reference vector
+        ## ==============================================
+        self._local_ref_vector = 'cudem.gmt'
+        if not os.path.exists(self._local_ref_vector):
+            self._ref_vector = os.path.join(fetchdata, 'cudem.gmt')
+        else: self._ref_vector = self._local_ref_vector
+
+        self._has_vector = True if os.path.exists(self._ref_vector) else False
+        if not self._has_vector: self._ref_vector = 'cudem.gmt'
+
+        self._outdir = os.path.join(os.getcwd(), 'cudem')
+
         self._surveys = []
         self._results = []
         self._wcs_results = []
-        self._ref_vector = os.path.join(fetchdata, 'cudem.gmt')
-        self._local_ref_vector = 'cudem.gmt'
-        self._has_vector = True if os.path.exists(self._ref_vector) else False
-        self._outdir = os.path.join(os.getcwd(), 'cudem')
+        
         self._status = 0
-        self.stop = callback
         self._filters = filters
         self.region = extent
         self._boundsGeom = None
-        self._datalists_code = 410
         self._verbose = False
+        self.stop = callback
 
     def run(self, datatype = None, update = False):
         '''Run the cudem fetching module.'''
         self._want_update = update
         if self._want_update:
             self._update()
-            return([])
-        else:
-            if self.region is None: return([])
-            self.dt = datatype
-            self._boundsGeom = bounds2geom(self.region)
-            self._filter_reference_vector()
+            
+        utils.echo_msg('using reference vector: {}'.format(self._ref_vector))
+
+        if self.region is None: return([])
+        self.dt = datatype
+        self._boundsGeom = bounds2geom(self.region)
+        self._filter_reference_vector()
         return(self._results)
 
     ## ==============================================
@@ -901,7 +1113,7 @@ class cudem:
     ## ==============================================
 
     def _parse_ds_catalog(self, ds_xml, ds_url, want_update = False):
-        print("cudemfetch: scanning %s" %(ds_url))
+        utils.echo_msg('scanning {}'.format(ds_url))
         #if want_update:
         #    gmt1 = ogr.GetDriverByName('GMT').Open(fetchdata + "cudem.gmt", 0)
         #    layer = gmt1.GetLayer()
@@ -949,10 +1161,15 @@ class cudem:
                         dt = iso_xml.find('.//gmd:date/gco:Date', namespaces = namespaces)
                         odt = dt.text[:4] if dt is not None else '0000'
 
-                        survey = [obbox, ds_name, ds_id, odt, iso_url, wcs_url, ds_id.split('/')[:-1]]
-                        print(survey)
+                        zv = iso_xml.find('.//gmd:dimension/gmd:MD_Band/gmd:sequenceIdentifier/gco:MemberName/gco:aName/gco:CharacterString', namespaces = namespaces)
+                        if zv is not None:
+                            zvar = zv.text
+                        else: zvar = 'z'
+
+                        survey = [obbox, ds_name, ds_id, odt, iso_url, wcs_url, zvar]
+                        #print(survey)
                         self._surveys.append(survey)
-        print("cudemfetch: found %s dems in %s" %(len(self._surveys), ds_url))
+        utils.echo_msg('found {} dems in {}'.format(len(self._surveys), ds_url))
     
     def _parse_catalog(self, catalog_xml, catalog_url, want_update = False):
 
@@ -968,7 +1185,7 @@ class cudem:
     def _update(self):
         cudem_cat_xml = fetch_nos_xml(self._cudem_catalog)
         self._parse_catalog(cudem_cat_xml, self._cudem_catalog, True)
-        update_ref_vector(self._local_ref_vector, self._surveys, self._has_vector)
+        update_ref_vector(self._local_ref_vector, self._surveys, False)
 
     ## ==============================================
     ## Filter for results
@@ -986,12 +1203,12 @@ class cudem:
         for feature1 in layer:
             geom = feature1.GetGeometryRef()
             if self._boundsGeom.Intersects(geom):
-                wcs_url_service = "{}?request=GetCoverage&version=1.0.0&service=WCS&coverage=z&bbox={}&format=NetCDF3".format(feature1.GetField("Data"), regions.region_format(self.region, 'bbox'))
+                wcs_url_service = "{}?request=GetCoverage&version=1.0.0&service=WCS&coverage={}&bbox={}&format=NetCDF3"\
+                                               .format(feature1.GetField("Data"), feature1.GetField("Datatype"), regions.region_format(self.region, 'bbox'))
                 if self.dt is not None:
                     if feature1.GetField('Datatype').lower() == self.dt.lower():
                         self._results.append([wcs_url_service, feature1.GetField('Data').split('/')[-1], feature1.GetField('Datatype')])
                 else: self._results.append([wcs_url_service, feature1.GetField('Data').split('/')[-1], feature1.GetField('Datatype')])
-                #print(self._results)
         ds = layer = None
         utils.echo_msg('filtered \033[1m{}\033[m data files from CUDEM reference vector.'.format(len(self._results)))
 
@@ -1007,26 +1224,52 @@ class hrdem():
     '''Fetch HRDEM data from Canada'''
     def __init__(self, extent = None, filters = [], callback = None):
         utils.echo_msg('loading HRDEM fetch module...')
-        self._hrdem_footprints_url = 'https://ftp.maps.canada.ca/pub/elevation/dem_mne/highresolution_hauteresolution/Datasets_Footprints.zip'
-        self._outdir = os.path.join(os.getcwd(), 'hrdem')
-        self._ref_vector = os.path.join(fetchdata, 'hrdem.gmt')
+
+        ## ==============================================
+        ## Reference vector
+        ## ==============================================
+        self._hrdem_footprints_url = 'ftp://ftp.maps.canada.ca/pub/elevation/dem_mne/highresolution_hauteresolution/Datasets_Footprints.zip'
+        self._local_ref_vector = 'hrdem.gmt'
+        if not os.path.exists(self._local_ref_vector):
+            self._ref_vector = os.path.join(fetchdata, 'hrdem.gmt')
+        else: self._ref_vector = self._local_ref_vector
+
         self._has_vector = True if os.path.exists(self._ref_vector) else False
+        if not self._has_vector: self._ref_vector = 'hrdem.gmt'
+
+        self._outdir = os.path.join(os.getcwd(), 'hrdem')
+
         self._results = []
-        self.stop = callback
+        
         self._filters = filters
         self.region = extent
         self._boundsGeom = None
-        self._datalists_code = 420
         self._verbose = False
-
-    def run(self):
+        self.stop = callback
+        
+    def run(self, update = False):
         '''Run the hrdem fetching module.'''
 
         if self.region is None: return([])
         self._boundsGeom = bounds2geom(self.region)
+        if update:
+            utils.echo_msg('updating')
+            self._update()
+            self._ref_vector = self._local_ref_vector
+            
+        utils.echo_msg('using reference vector: {}'.format(self._ref_vector))
         self._filter_reference_vector()
         return(self._results)
 
+    def _update(self):
+        v_zip = os.path.basename(self._hrdem_footprints_url)
+        fetch_ftp_file(self._hrdem_footprints_url, v_zip)
+        v_files = utils.unzip(v_zip)
+        v_shp = [s for s  in v_files if '.shp' in s]
+        utils.run_cmd('ogr2ogr {} {} -f GMT'.format(self._local_ref_vector, v_shp[0], verbose = True))
+        utils._clean_zips(v_files)
+        utils.remove_glob(v_zip)
+    
     ## ==============================================
     ## Filter for results
     ## ==============================================
@@ -1103,32 +1346,46 @@ class charts():
         utils.echo_msg('loading CHARTS fetch module...')
         self._enc_data_catalog = 'http://www.charts.noaa.gov/ENCs/ENCProdCat_19115.xml'
         self._rnc_data_catalog = 'http://www.charts.noaa.gov/RNCs/RNCProdCat_19115.xml'
-        self._outdir = os.path.join(os.getcwd(), 'charts')
-        self._ref_vector = os.path.join(fetchdata, 'charts.gmt')
+
+        ## ==============================================
+        ## Reference vector
+        ## ==============================================
+        self._local_ref_vector = 'charts.gmt'
+        if not os.path.exists(self._local_ref_vector):
+            self._ref_vector = os.path.join(fetchdata, 'charts.gmt')
+        else: self._ref_vector = self._local_ref_vector
+
         self._has_vector = True if os.path.exists(self._ref_vector) else False
+        if not self._has_vector: self._ref_vector = 'charts.gmt'
+
+        self._outdir = os.path.join(os.getcwd(), 'charts')
+        
         self._dt_xml = { 'ENC':self._enc_data_catalog,
                          'RNC':self._rnc_data_catalog }
         self._checks = self._dt_xml.keys()[0]
-        self._status = 0
+        
         self._results = []
         self._chart_feats = []
-        self.stop = callback
+        
         self._filters = filters
         self.region = extent
         self._boundsGeom = None
-        self._datalists_code = 403
         self._verbose = False
+        self._status = 0
+        self.stop = callback
 
     def run(self, datatype = None, update = False):
         '''Run the charts fetching module.'''
         self._want_update = update
         if self._want_update:
             self._update()
-        else:
-            if self.region is None: return([])
-            self.dt = datatype
-            self._boundsGeom = bounds2geom(self.region)
-            self._filter_reference_vector()
+            
+        utils.echo_msg('using reference vector: {}'.format(self._ref_vector))
+        
+        if self.region is None: return([])
+        self.dt = datatype
+        self._boundsGeom = bounds2geom(self.region)
+        self._filter_reference_vector()
         return(self._results)
       
     ## ==============================================
@@ -1176,7 +1433,7 @@ class charts():
             self._checks = dt
             self.chart_xml = fetch_nos_xml(self._dt_xml[self._checks])
             self._parse_charts_xml(self._has_vector)
-            if len(self._chart_feats) > 0: update_ref_vector(self._ref_vector, self._chart_feats, self._has_vector)
+            if len(self._chart_feats) > 0: update_ref_vector(self._local_vector, self._chart_feats, False)
             self._has_vector = True if os.path.exists(self._ref_vector) else False
             self._chart_feats = []
 
@@ -2428,14 +2685,14 @@ def fetches_cli(argv = sys.argv):
             fl = fetch_infos[fetch_mod][0](regions.region_buffer(this_region, 5, pct = True), f, lambda: stop_threads)
             #fl._verbose = True
             args_d = utils.args2dict(args)
-            try:
-                r = fl.run(**args_d)
-            except ValueError as e:
-                utils.echo_error_msg('something went wrong, {}'.format(e))
-                sys.exit(-1)
-            except Exception as e:
-                utils.echo_error_msg('{}'.format(e))
-                sys.exit(-1)
+            #try:
+            r = fl.run(**args_d)
+            #except ValueError as e:
+            #    utils.echo_error_msg('something went wrong, {}'.format(e))
+            #    sys.exit(-1)
+            #except Exception as e:
+            #    utils.echo_error_msg('{}'.format(e))
+            #    sys.exit(-1)
             utils.echo_msg('found {} data files.'.format(len(r)))
             
             if want_list:
