@@ -1214,6 +1214,46 @@ class cudem:
         ds = layer = None
         utils.echo_msg('filtered \033[1m{}\033[m data files from CUDEM reference vector.'.format(len(self._results)))
 
+    ## ==============================================
+    ## Process results to xyz
+    ## ==============================================    
+    def _yield_xyz(self, entry):
+        src_dc = os.path.basename(entry[1])
+        src_ext = src_dc.split('.')[-1]
+        try:
+            src_ds = gdal.Open(entry[0])
+        except Exception as e:
+            fetch_file(entry[0], src_dc, callback = lambda: False, verbose = True)
+            try:
+                src_ds = gdal.Open(src_dc)
+            except Exception as e:
+                utils.echo_error_msg('could not read CUDEM raster file: {}, {}'.format(entry[0], e))
+                src_ds = None
+        except Exception as e:
+            utils.echo_error_msg('could not read CUDEM raster file: {}, {}'.format(entry[0], e))
+            src_ds = None
+
+        if src_ds is not None:
+            srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = 4326, t_warp = gdalfun.gdal_getEPSG(src_ds)))
+            for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = 4326, verbose = True):
+                yield(xyz)
+        src_ds = None
+        utils.remove_glob(src_dc)
+
+    def _dump_xyz(self, entry, dst_port = sys.stdout):
+        for xyz in self._yield_xyz(entry):
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
+            
+    def _yield_results_to_xyz(self):
+        if len(self._results) == 0: self.run()
+        for entry in self._results:
+            for xyz in self._yield_xyz(entry):
+                yield(xyz)
+                
+    def _dump_results_to_xyz(self, dst_port = sys.stdout):
+        for xyz in self._yield_results_to_xyz():
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
+        
 ## =============================================================================
 ##
 ## HRDEM Fetch - Canada High Resolution DEM dataset
@@ -1314,7 +1354,7 @@ class hrdem():
             src_ds = None
 
         if src_ds is not None:
-            srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.region_warp(self.region, s_warp = 4326, t_warp = gdalfun.gdal_getEPSG(src_ds)))
+            srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = 4326, t_warp = gdalfun.gdal_getEPSG(src_ds)))
             for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = 4326, verbose = True):
                 yield(xyz)
         src_ds = None
@@ -1333,8 +1373,7 @@ class hrdem():
     def _dump_results_to_xyz(self, dst_port = sys.stdout):
         for xyz in self._yield_results_to_xyz():
             xyzfun.xyz_line(xyz, dst_port, self._verbose)
-        
-        
+                
 ## =============================================================================
 ##
 ## Chart Fetch - ENC & RNC

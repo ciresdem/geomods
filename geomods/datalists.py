@@ -49,7 +49,7 @@ _known_datalist_fmts = {
     168: ['xyz', 'csv', 'dat', 'ascii'],
     200: ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'],
     300: ['las', 'laz'],
-    400: ['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs', 'hrdem'],
+    400: ['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs', 'hrdem', 'cudem'],
 }
 _known_datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, _known_datalist_fmts[key]) for key in _known_datalist_fmts])
 _dl_inf_h = {
