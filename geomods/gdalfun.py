@@ -914,58 +914,6 @@ def gdal_blur(src_gdal, dst_gdal, sf = 1):
         return(gdal_write(smooth_array, dst_gdal, ds_config))
     else: return([], -1)
 
-def gdal_filter(src_gdal, dst_gdal, fltr = 10, split_value = None, use_gmt = False):
-    '''smooth `src_gdal` using smoothing factor `fltr`; optionally
-    only smooth bathymetry (sub-zero) using a split_value of 0.
-
-    return 0 for success or -1 for failure'''
-    
-    if os.path.exists(src_gdal):
-
-        ## ==============================================
-        ## split the dem by `split_value`
-        ## ==============================================
-        if split_value is not None:
-            dem_u, dem_l = gdal_split(src_gdal, split_value)
-        else: dem_l = src_gdal
-        
-        ## ==============================================
-        ## filter the possibly split DEM
-        ## ==============================================
-        if use_gmt:
-            out, status = gmt_grdfilter(dem_l, 'tmp_fltr.tif=gd+n-9999:GTiff', dist = fltr, verbose = True)
-        else: out, status = gdal_blur(dem_l, 'tmp_fltr.tif', fltr)
-
-        ## ==============================================
-        ## merge the split filtered and non filtered DEMs
-        ## ==============================================
-        if split_value is not None:
-            ds = gdal.Open(src_gdal)
-            ds_config = gdal_gather_infos(ds)
-            msk_arr = ds.GetRasterBand(1).ReadAsArray()
-            msk_arr[msk_arr != ds_config['ndv']] = 1
-            msk_arr[msk_arr == ds_config['ndv']] = np.nan
-            ds = None
-            u_ds = gdal.Open(dem_u)
-            if u_ds is not None:
-                l_ds = gdal.Open('tmp_fltr.tif')
-                if l_ds is not None:
-                    u_arr = u_ds.GetRasterBand(1).ReadAsArray()
-                    l_arr = l_ds.GetRasterBand(1).ReadAsArray()
-                    u_arr[u_arr == ds_config['ndv']] = 0
-                    l_arr[l_arr == ds_config['ndv']] = 0
-                    ds_arr = (u_arr + l_arr) * msk_arr
-                    ds_arr[np.isnan(ds_arr)] = ds_config['ndv']
-                    gdal_write(ds_arr, 'merged.tif', ds_config)
-                    l_ds = None
-                    utils.remove_glob(dem_l)
-                u_ds = None
-                utils.remove_glob(dem_u)
-            os.rename('merged.tif', 'tmp_fltr.tif')
-        os.rename('tmp_fltr.tif', dst_gdal)
-        return(0)
-    else: return(-1)
-
 def gdal_sample_inc(src_grd, inc = 1, verbose = False):
     '''resamele src_grd to toggle between grid-node and pixel-node grid registration.'''
     

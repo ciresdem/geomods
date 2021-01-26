@@ -519,12 +519,13 @@ class dc:
         utils.echo_msg('updating Digital Coast fetch module')
         for ld in self._dc_dirs:
             utils.echo_msg('scanning {}'.format(ld))
-            if self._has_vector:
-                gmt2 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 1)
-                layer = gmt2.GetLayer()
-                layerDef = layer.GetLayerDefn()
-                #print([layerDef.GetFieldDefn(i).GetName() for i in range(layerDef.GetFieldCount())])
-            else: layer = []
+            #if self._has_vector:
+            #    gmt2 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 1)
+            #    layer = gmt2.GetLayer()
+            #    layerDef = layer.GetLayerDefn()
+            #    #print([layerDef.GetFieldDefn(i).GetName() for i in range(layerDef.GetFieldCount())])
+            #else: layer = []
+            layer = []
             page = fetch_html(self._dc_htdata_url + ld)
             tables = page.xpath('//table')
             tr = tables[0].xpath('.//tr')
@@ -596,11 +597,11 @@ class dc:
             ## ==============================================
             #print(self._surveys)
             utils.echo_msg_inline('scanning {} surveys in {} [ OK ].\n'.format(len(tr), ld))
-            if len(self._surveys) > 0: update_ref_vector(self._ref_vector, self._surveys, self._has_vector)
-            self._has_vector = True if os.path.exists(self._ref_vector) else False
-            #print(self._has_vector)
-            self._surveys = []
             gmt2 = layer = None
+        if len(self._surveys) > 0: update_ref_vector(self._ref_vector, self._surveys, self._has_vector)
+        #self._has_vector = True if os.path.exists(self._ref_vector) else False
+        #print(self._has_vector)
+        #self._surveys = []
 
     ## ==============================================
     ## Filter reference vector for results
@@ -876,10 +877,11 @@ class nos:
         ## load the reference vector if it exists and
         ## scan the remote nos directories
         ## ==============================================
-        if self._has_vector:
-            gmt1 = ogr.GetDriverByName('GMT').Open(self._local_ref_vector, 0)
-            layer = gmt1.GetLayer()
-        else: layer = []
+        #if self._has_vector:
+        #    gmt1 = ogr.GetDriverByName('GMT').Open(self._local_ref_vector, 0)
+        #    layer = gmt1.GetLayer()
+        #else: layer = []
+        layer = []
         
         xml_catalog = self._nos_xml_url(nosdir)
         page = fetch_html(xml_catalog)
@@ -910,8 +912,8 @@ class nos:
             if self.stop(): break
             #self._has_vector = True if os.path.exists(self._local_ref_vector) else self._has_vector
             self._scan_directory(j)
-            update_ref_vector(self._local_ref_vector, self._surveys, False)
-            self._surveys = []
+        update_ref_vector(self._local_ref_vector, self._surveys, False)
+        #self._surveys = []
 
     ## ==============================================
     ## Filter for results
@@ -1255,7 +1257,7 @@ class hrdem():
         if update:
             utils.echo_msg('updating')
             self._update()
-            self._ref_vector = self._local_ref_vector
+            #self._ref_vector = self._local_ref_vector
             
         utils.echo_msg('using reference vector: {}'.format(self._ref_vector))
         self._filter_reference_vector()
@@ -1391,13 +1393,13 @@ class charts():
     ## ==============================================
     ## Reference Vector Generation
     ## ==============================================
-    def _parse_charts_xml(self, update = True):
+    def _parse_charts_xml(self, update=True):
         '''parse the charts XML and extract the survey results'''
-        if update:
-            ds = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
-            layer = ds.GetLayer()
-        else: layer = []
-
+        # if update:
+        #     ds = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
+        #     layer = ds.GetLayer()
+        # else: layer = []
+        layer = []
         namespaces = {
             'gmd': 'http://www.isotc211.org/2005/gmd', 
             'gco': 'http://www.isotc211.org/2005/gco',
@@ -1412,7 +1414,7 @@ class charts():
             id = titles[1].find('gco:CharacterString', namespaces = namespaces).text
             cd = chart.find('.//gmd:date/gco:Date', namespaces = namespaces)
             if cd is not None: cd = cd.text
-            if update: layer.SetAttributeFilter('Name = "{}"'.format(title))
+            #if update: layer.SetAttributeFilter('Name = "{}"'.format(title))
             if len(layer) == 0:
                 polygon = chart.find('.//{*}Polygon', namespaces = namespaces)
                 if polygon is not None:
@@ -1421,21 +1423,21 @@ class charts():
                     linkage = chart.find('.//{*}linkage/{*}URL', namespaces = namespaces)
                     if linkage is not None: linkage = linkage.text
                     if self._checks == 'RNC': opoly.append(opoly[0])
-                    geom = ogr.CreateGeometryFromWkt(create_polygon(opoly))
+                    geom = ogr.CreateGeometryFromWkt(_ogr_create_polygon(opoly))
                     self._chart_feats.append([geom, title, id, cd[:4], self._dt_xml[self._checks], linkage, self._checks])
         ds = layer = None
 
     def _update(self):
         '''Update or create the reference vector file'''
-        utils.echo_msg('updating reference vector: {}'.format(self._ref_vector))
+        utils.echo_msg('updating reference vector: {}'.format(self._local_ref_vector))
         for dt in self._dt_xml.keys():
             utils.echo_msg('updating {}'.format(dt))
             self._checks = dt
             self.chart_xml = fetch_nos_xml(self._dt_xml[self._checks])
             self._parse_charts_xml(self._has_vector)
-            if len(self._chart_feats) > 0: update_ref_vector(self._local_vector, self._chart_feats, False)
-            self._has_vector = True if os.path.exists(self._ref_vector) else False
-            self._chart_feats = []
+        if len(self._chart_feats) > 0: update_ref_vector(self._local_ref_vector, self._chart_feats, False)
+        #self._has_vector = True if os.path.exists(self._local_ref_vector) else False
+        #self._chart_feats = []
 
     ## ==============================================
     ## Filter for results
@@ -1521,7 +1523,101 @@ class charts():
     def _dump_results_to_xyz(self, datatype = None, dst_port = sys.stdout):
         for xyz in self._yield_results_to_xyz(datatype):
             xyzfun.xyz_line(xyz, dst_port, self._verbose)
-                
+
+## =============================================================================
+##
+## SRTM Fetch (cgiar)
+##
+## Fetch srtm tiles from cgiar.
+##
+## =============================================================================
+class srtm_cgiar:
+    '''Fetch SRTM data from CGIAR'''
+    def __init__(self, extent = None, filters = [], callback = None):
+        utils.echo_msg('loading SRTM (CGIAR) fetch module...')
+        self._srtm_url = 'http://srtm.csi.cgiar.org'
+        self._srtm_dl_url = 'http://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/'
+
+        ## ==============================================
+        ## Reference vector
+        ## ==============================================
+        self._local_ref_vector = 'srtm.gmt'
+        if not os.path.exists(self._local_ref_vector):
+            self._ref_vector = os.path.join(fetchdata, 'srtm.gmt')
+        else: self._ref_vector = self._local_ref_vector
+
+        self._has_vector = True if os.path.exists(self._ref_vector) else False
+        if not self._has_vector: self._ref_vector = 'srtm.gmt'
+
+        self._outdir = os.path.join(os.getcwd(), 'srtm_cgiar')
+        
+        self._results = []
+        self._filters = filters
+        self._boundsGeom = None
+        self.region = extent
+        self._verbose = False
+
+    def run(self):
+        '''Run the SRTM fetching module.'''
+        if self.region is None: return([])
+        self._boundsGeom = bounds2geom(self.region)
+        self._filter_reference_vector()
+        return(self._results)
+
+    ## ==============================================
+    ## Filter for results
+    ## ==============================================
+    def _filter_reference_vector(self):
+        utils.echo_msg('filtering SRTM reference vector...')
+        gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
+        layer = gmt1.GetLayer()
+        for filt in self._filters: layer.SetAttributeFilter('{}'.format(filt))
+        for feature in layer:
+            geom = feature.GetGeometryRef()
+            if geom.Intersects(self._boundsGeom):
+                geo_env = geom.GetEnvelope()
+                srtm_lon = int(math.ceil(abs((-180 - geo_env[1]) / 5)))
+                srtm_lat = int(math.ceil(abs((60 - geo_env[3]) / 5)))
+                out_srtm = 'srtm_{:02}_{:02}.zip'.format(srtm_lon, srtm_lat)
+                self._results.append(['{}{}'.format(self._srtm_dl_url, out_srtm), out_srtm, 'srtm'])
+        utils.echo_msg('filtered \033[1m{}\033[m data files from SRTM reference vector.'.format(len(self._results)))
+
+    ## ==============================================
+    ## Process results to xyz
+    ## ==============================================
+    def _yield_xyz(self, entry):
+        if fetch_file(entry[0], os.path.basename(entry[1]), callback = lambda: False, verbose = self._verbose) == 0:
+            src_srtm, src_zips = utils.procs_unzip(os.path.basename(entry[1]), ['tif', 'img', 'gdal', 'asc', 'bag'])
+            try:
+                src_ds = gdal.Open(src_srtm)
+            except:
+                utils.echo_error_msg('could not read srtm data: {}'.format(src_srtm))
+                src_ds = None
+
+            if src_ds is not None:
+                srcwin = gdalfun.gdal_srcwin(src_ds, self.region)
+                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose):
+                    yield(xyz)
+                src_ds = None
+
+            utils.remove_glob(src_srtm)
+            utils._clean_zips(src_zips)
+        utils.remove_glob(entry[1])
+    
+    def _dump_xyz(self, entry, dst_port = sys.stdout):
+        for xyz in self._yield_xyz(entry):
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
+                    
+    def _yield_results_to_xyz(self):
+        if len(self._results) == 0: self.run()
+        for entry in self._results:
+            for xyz in self._yield_xyz(entry):
+                yield(xyz)            
+
+    def _dump_results_to_xyz(self, dst_port = sys.stdout):
+        for xyz in self._yield_to_xyz():
+            xyzfun.xyz_line(xyz, dst_port, self._verbose)
+            
 ## =============================================================================
 ##
 ## mar_grav - Sattelite Altimetry Topography from Scripps
@@ -1653,91 +1749,7 @@ class srtm_plus:
     def _dump_results_to_xyz(self, dst_port = sys.stdout):
         for xyz in self._yield_to_xyz():
             xyzfun.xyz_line(xyz, dst_port, self._verbose)
-            
-## =============================================================================
-##
-## SRTM Fetch (cgiar)
-##
-## Fetch srtm tiles from cgiar.
-##
-## =============================================================================
-class srtm_cgiar:
-    '''Fetch SRTM data from CGIAR'''
-    def __init__(self, extent = None, filters = [], callback = None):
-        utils.echo_msg('loading SRTM (CGIAR) fetch module...')
-        self._srtm_url = 'http://srtm.csi.cgiar.org'
-        self._srtm_dl_url = 'http://srtm.csi.cgiar.org/wp-content/uploads/files/srtm_5x5/TIFF/'
-        self._outdir = os.path.join(os.getcwd(), 'srtm_cgiar')
-        self._ref_vector = os.path.join(fetchdata, 'srtm.gmt')
-        if not os.path.exists(self._ref_vector): self._status = -1
-        self._results = []
-        self._filters = filters
-        self._boundsGeom = None
-        self.region = extent
-        self._datalists_code = 404
-        self._verbose = False
-
-    def run(self):
-        '''Run the SRTM fetching module.'''
-        if self.region is None: return([])
-        self._boundsGeom = bounds2geom(self.region)
-        self._filter_reference_vector()
-        return(self._results)
-
-    ## ==============================================
-    ## Filter for results
-    ## ==============================================
-    def _filter_reference_vector(self):
-        utils.echo_msg('filtering SRTM reference vector...')
-        gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 0)
-        layer = gmt1.GetLayer()
-        for filt in self._filters: layer.SetAttributeFilter('{}'.format(filt))
-        for feature in layer:
-            geom = feature.GetGeometryRef()
-            if geom.Intersects(self._boundsGeom):
-                geo_env = geom.GetEnvelope()
-                srtm_lon = int(math.ceil(abs((-180 - geo_env[1]) / 5)))
-                srtm_lat = int(math.ceil(abs((60 - geo_env[3]) / 5)))
-                out_srtm = 'srtm_{:02}_{:02}.zip'.format(srtm_lon, srtm_lat)
-                self._results.append(['{}{}'.format(self._srtm_dl_url, out_srtm), out_srtm, 'srtm'])
-        utils.echo_msg('filtered \033[1m{}\033[m data files from SRTM reference vector.'.format(len(self._results)))
-
-    ## ==============================================
-    ## Process results to xyz
-    ## ==============================================
-    def _yield_xyz(self, entry):
-        if fetch_file(entry[0], os.path.basename(entry[1]), callback = lambda: False, verbose = self._verbose) == 0:
-            src_srtm, src_zips = utils.procs_unzip(os.path.basename(entry[1]), ['tif', 'img', 'gdal', 'asc', 'bag'])
-            try:
-                src_ds = gdal.Open(src_srtm)
-            except:
-                utils.echo_error_msg('could not read srtm data: {}'.format(src_srtm))
-                src_ds = None
-
-            if src_ds is not None:
-                srcwin = gdalfun.gdal_srcwin(src_ds, self.region)
-                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose):
-                    yield(xyz)
-                src_ds = None
-
-            utils.remove_glob(src_srtm)
-            utils._clean_zips(src_zips)
-        utils.remove_glob(entry[1])
-    
-    def _dump_xyz(self, entry, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(entry):
-            xyzfun.xyz_line(xyz, dst_port, self._verbose)
-                    
-    def _yield_results_to_xyz(self):
-        if len(self._results) == 0: self.run()
-        for entry in self._results:
-            for xyz in self._yield_xyz(entry):
-                yield(xyz)            
-
-    def _dump_results_to_xyz(self, dst_port = sys.stdout):
-        for xyz in self._yield_to_xyz():
-            xyzfun.xyz_line(xyz, dst_port, self._verbose)
-            
+                        
 ## =============================================================================
 ##
 ## The National Map (TNM) - USGS
@@ -2685,14 +2697,14 @@ def fetches_cli(argv = sys.argv):
             fl = fetch_infos[fetch_mod][0](regions.region_buffer(this_region, 5, pct = True), f, lambda: stop_threads)
             #fl._verbose = True
             args_d = utils.args2dict(args)
-            #try:
-            r = fl.run(**args_d)
-            #except ValueError as e:
-            #    utils.echo_error_msg('something went wrong, {}'.format(e))
-            #    sys.exit(-1)
-            #except Exception as e:
-            #    utils.echo_error_msg('{}'.format(e))
-            #    sys.exit(-1)
+            try:
+                r = fl.run(**args_d)
+            except ValueError as e:
+                utils.echo_error_msg('something went wrong, {}'.format(e))
+                sys.exit(-1)
+            except Exception as e:
+                utils.echo_error_msg('{}'.format(e))
+                sys.exit(-1)
             utils.echo_msg('found {} data files.'.format(len(r)))
             
             if want_list:

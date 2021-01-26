@@ -112,7 +112,7 @@ _waffles_grid_info = {
     'weights': None,
     'z_region': None,
     'w_region': None,
-    'fltr': None,
+    'fltr': [],
     'sample': None,
     'clip': None,
     'chunk': None,
@@ -137,7 +137,7 @@ waffles_config_copy = lambda wg: copy.deepcopy(wg)
 
 def waffles_config(datalist = None, data = [], region = None, inc = None, name = 'waffles_dem',
                    node = 'pixel', fmt = 'GTiff', extend = 0, extend_proc = 20, weights = None,
-                   z_region = None, w_region = None, fltr = None, sample = None, clip = None, chunk = None, epsg = 4326,
+                   z_region = None, w_region = None, fltr = [], sample = None, clip = None, chunk = None, epsg = 4326,
                    mod = 'help', mod_args = (), verbose = False, archive = False, spat = False, mask = False,
                    unc = False, gc = None, overwrite = True):
     wg = waffles_config_copy(_waffles_grid_info)
@@ -153,7 +153,6 @@ def waffles_config(datalist = None, data = [], region = None, inc = None, name =
     wg['weights'] = weights
     wg['z_region'] = z_region
     wg['w_region'] = w_region
-    wg['fltr'] = fltr
     wg['sample'] = gmtfun.gmt_inc2inc(str(sample))
     wg['clip'] = clip
     wg['chunk'] = chunk
@@ -168,6 +167,8 @@ def waffles_config(datalist = None, data = [], region = None, inc = None, name =
     wg['overwrite'] = overwrite
     wg['gc'] = utils.config_check()
 
+    wg['fltr'] = fltr
+    
     if wg['data'] is None:
         if wg['datalist'] is not None:
             wg['data'] = [x[0] for x in datalist2py(wg['datalist'])]
@@ -379,6 +380,65 @@ def waffles_datalists(wg = _waffles_grid_info, dump = False, echo = False, infos
     return(0,0)
 
 ## ==============================================
+## Waffles Filter; filters a DEM
+## optionally split by split_value (z) and only filter lt
+## 1 = gdalfun.gdalblur (default filter_val = 10)
+## 2 = gmt grdfilter (default filter_val = 1s)
+## 3 = ?
+## ==============================================
+def waffles_filter(src_gdal, dst_gdal, fltr = 1, fltr_val = None, split_value = None):
+    '''filter `src_gdal` using smoothing factor `fltr`; optionally
+    only smooth bathymetry (sub-zero) using a split_value of 0.
+
+    return 0 for success or -1 for failure'''
+    
+    if os.path.exists(src_gdal):
+
+        ## ==============================================
+        ## split the dem by `split_value`
+        ## ==============================================
+        if split_value is not None:
+            dem_u, dem_l = gdal_split(src_gdal, split_value)
+        else: dem_l = src_gdal
+        
+        ## ==============================================
+        ## filter the possibly split DEM
+        ## ==============================================
+        if int(fltr) == 1: out, status = gdalfun.gdal_blur(dem_l, 'tmp_fltr.tif', fltr_val if fltr_val is not None else 10)
+        elif int(fltr) == 2: out, status = gmtfun.gmt_grdfilter(dem_l, 'tmp_fltr.tif=gd+n-9999:GTiff', dist = fltr_val if fltr_val is not None else '1s', verbose = True)
+        else: out, status = gdalfun.gdal_blur(dem_l, 'tmp_fltr.tif', fltr_val if fltr_val is not None else 10)
+
+        ## ==============================================
+        ## merge the split filtered and non filtered DEMs
+        ## ==============================================
+        if split_value is not None:
+            ds = gdal.Open(src_gdal)
+            ds_config = gdalfun.gdal_gather_infos(ds)
+            msk_arr = ds.GetRasterBand(1).ReadAsArray()
+            msk_arr[msk_arr != ds_config['ndv']] = 1
+            msk_arr[msk_arr == ds_config['ndv']] = np.nan
+            ds = None
+            u_ds = gdal.Open(dem_u)
+            if u_ds is not None:
+                l_ds = gdal.Open('tmp_fltr.tif')
+                if l_ds is not None:
+                    u_arr = u_ds.GetRasterBand(1).ReadAsArray()
+                    l_arr = l_ds.GetRasterBand(1).ReadAsArray()
+                    u_arr[u_arr == ds_config['ndv']] = 0
+                    l_arr[l_arr == ds_config['ndv']] = 0
+                    ds_arr = (u_arr + l_arr) * msk_arr
+                    ds_arr[np.isnan(ds_arr)] = ds_config['ndv']
+                    gdalfun.gdal_write(ds_arr, 'merged.tif', ds_config)
+                    l_ds = None
+                    utils.remove_glob(dem_l)
+                u_ds = None
+                utils.remove_glob(dem_u)
+            os.rename('merged.tif', 'tmp_fltr.tif')
+        os.rename('tmp_fltr.tif', dst_gdal)
+        return(0)
+    else: return(-1)
+
+## ==============================================
 ## Waffles Spatial Metadata
 ## Polygonize each datalist entry into vector data source
 ## ==============================================
@@ -453,15 +513,12 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
         utils.echo_error_msg('GMT must be installed to use the CUDEM module')
         return(None, -1)
 
-    ## ==============================================
-    ## generate the bathy-surface
-    ## using 'surface' with upper_limit of -0.1
-    ## at 1 arc-second spacing
-    ## ==============================================
     b_wg = waffles_config_copy(wg)
     ul = -0.1
 
+    ## ==============================================
     ## generate coastline
+    ## ==============================================
     if coastline is None:
         utils.echo_msg('----------------------------')
         utils.echo_msg('generating coastline')
@@ -484,6 +541,11 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     coast_xyz = '{}_coast.xyz'.format(b_wg['name'])
     coast_region = datalists.inf_entry([coast_xyz, 168, 1])
 
+    ## ==============================================
+    ## generate the bathy-surface
+    ## using 'surface' with upper_limit of -0.1
+    ## at 1 arc-second spacing
+    ## ==============================================
     utils.echo_msg('----------------------------')
     utils.echo_msg('generating bathy surface')
     utils.echo_msg('----------------------------')
@@ -508,15 +570,15 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     
     bathy_surf = waffles_run(b_wg)
     utils.remove_glob(coast_xyz)
-
-    utils.echo_msg('----------------------------')
-    utils.echo_msg('generating integrated bathy-topo surface')
-    utils.echo_msg('----------------------------')
     
     ## ==============================================
     ## append the bathy-surface to the datalist and
     ## generate final DEM using 'surface'
     ## ==============================================
+    utils.echo_msg('----------------------------')
+    utils.echo_msg('generating integrated bathy-topo surface')
+    utils.echo_msg('----------------------------')
+
     wg['datalist'] = None
     wg['data'].append('{} 200 .5'.format(bathy_surf))
     wg['w_region'] = [.4, None]
@@ -1350,21 +1412,26 @@ def waffles_run(wg = _waffles_grid_info):
         waffles_gdal_md(this_wg)
                 
         ## ==============================================
-        ## optionally filter the DEM 
+        ## optionally filter the DEM
+        ## this_wg['fltr'] should hold a list of filters
+        ## and optional arguments; e.g. = ['1:10', '2:1s']
         ## ==============================================
         if this_wg['fltr'] is not None:
-            fltr_args = {}
-            fltr = this_wg['fltr'].split(':')
-            fltr_args['fltr'] = gmtfun.gmt_inc2inc(fltr[0])
-            fltr_args['use_gmt'] = True
-            fltr_args = utils.args2dict(fltr[1:], fltr_args)        
+            for fltr in this_wg['fltr']:
+                fltr_args = {}
+                fltrs = fltr.split(':')
+                fltr_args['fltr'] = fltrs[0]
+                fltr_args['fltr_val'] = gmtfun.gmt_inc2inc(fltrs[1])
+                fltr_args = utils.args2dict(fltrs[2:], fltr_args)        
 
-            if this_wg['verbose']: utils.echo_msg('filtering {}...'.format(this_dem))
-            if fltr_args['use_gmt']: fltr_args['use_gmt'] = True if this_wg['gc']['GMT'] is not None else False
-            try:
-                gdalfun.gdal_filter(this_dem, 'tmp_s.tif', **fltr_args)
-                os.rename('tmp_s.tif', this_dem)
-            except TypeError as e: utils.echo_error_msg('{}'.format(e))
+                if this_wg['verbose']: utils.echo_msg('filtering {} using filter {}@{}...'.format(this_dem, fltr_args['fltr'], fltr_args['fltr_val']))
+                if fltr_args['fltr'] == 2:
+                    if this_wg['gc']['GMT'] is None:
+                        continue
+                try:
+                    waffles_filter(this_dem, 'tmp_s.tif', **fltr_args)
+                    os.rename('tmp_s.tif', this_dem)
+                except TypeError as e: utils.echo_error_msg('{}'.format(e))
 
         ## ==============================================
         ## optionally resample the DEM 
@@ -1541,10 +1608,13 @@ General Options:
   -P, --epsg\t\tHorizontal projection of data as EPSG code [4326]
   -X, --extend\t\tNumber of cells with which to EXTEND the REGION.
 \t\t\tappend :<num> to extend the processing region: -X6:12
-  -T, --filter\t\tFILTER the output using a Cosine Arch Filter at -T<dist(km)> search distance.
-\t\t\tIf GMT is not available, or if :use_gmt=False, perform a Gaussian filter at -T<factor>. 
-\t\t\tAppend :split_value=<num> to only filter values below <num>.
-\t\t\te.g. -T10:split_value=0:use_gmt=False to smooth bathymetry using Gaussian filter
+  -T, --filter\t\tFILTER the output DEM using one or multiple filters. <fltr:fltr_val:split_value=z>
+\t\t\tAvailable filters:
+\t\t\t1: perform a Gaussian filter at -T1:<factor>.
+\t\t\t2: use a Cosine Arch Filter at -T2:<dist(km)> search distance.
+\t\t\tThe -T switch may be set multiple times to perform multiple filters.
+\t\t\tAppend :split_value=<num> to only filter values below z-value <num>.
+\t\t\te.g. -T1:10:split_value=0 to smooth bathymetry using Gaussian filter
   -Z --z-region\t\tRestrict data processing to records that fall within the z-region
 \t\t\tUse '-' to indicate no bounding range; e.g. -Z-/0 will restrict processing to data
 \t\t\trecords whose z value is below zero.
@@ -1632,9 +1702,9 @@ def waffles_cli(argv = sys.argv):
             i += 1
         elif arg[:2] == '-F': wg['fmt'] = arg[2:]
         elif arg == '--filter' or arg == '-T':
-            wg['fltr'] = argv[i + 1]
+            wg['fltr'].append(argv[i + 1])
             i += 1
-        elif arg[:2] == '-T': wg['fltr'] = arg[2:]
+        elif arg[:2] == '-T': wg['fltr'].append(arg[2:])
         elif arg == '--extend' or arg == '-X':
             exts = argv[i + 1].split(':')
             wg['extend'] = utils.int_or(exts[0], 0)

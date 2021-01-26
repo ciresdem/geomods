@@ -4,8 +4,12 @@ Geomods is a set of Python modules and console scripts for utilizing elevation d
 
 Python Dependencies:
  - GDAL
- - NumPy
-
+ - numpy
+ - scipy
+ - lxml
+ - requests
+ - matplotlib
+ 
 External Dependencies for DEM generation and data processing:
  - GDAL
  - GMT
@@ -19,6 +23,8 @@ Install via git:
  % cd geomods
  % python setup.py build
  % sudo python setup.py install --record geomods.install
+
+Install via pip:
 
 Install via zip:
 
@@ -44,7 +50,9 @@ Update:
 Python Modules:
 
  - fetches - Data fetching
- - waffles - DEM generation, raster, datalist, region processing
+ - waffles - DEM generation and processing
+ - datalists - datalist processing
+ - regions - region processing
 
 Console Scripts:
  
@@ -63,11 +71,11 @@ Examples:
  - list all the NOS hydrographic data urls in the given region
    % fetches nos -R -90/-89/29/30 -l > nos.urls
 
- - generate a DEM for each region found in tiles.shp using GMT surface
+ - generate a DEM for each region found in tiles.shp using GMT surface and the data found in input_data.datalist
    % waffles -M surface -R tiles.shp -E .00000925925 input_data.datalist --verbose
 
  - generate spatial-metadata from the datalist input_data.datalist
-   % waffles -R tiles.shp -E .00000925925 input_data.datalist --verbose -s
+   % waffles -R tiles.shp -E .00000925925 input_data.datalist --verbose -M spat-meta
 
  - generate a vertical datum conversion grid:
    % waffles -R -90/-89/29/30 -E 0.00083333 -M vdatum:ivert=navd88:o_vert=mhw
@@ -84,8 +92,6 @@ Examples:
  - transform the vertical datum of an xyz data file:
    % vdatum_cmd.py elev_data.xyz -i lmsl:ft:sounding -o navd88:ft:height
 
-
-Waffles Usage:
 waffles [OPTIONS] <datalist/entry>
 
 Generate DEMs and derivatives and process datalists.
@@ -105,28 +111,51 @@ General Options:
   -P, --epsg		Horizontal projection of data as EPSG code [4326]
   -X, --extend		Number of cells with which to EXTEND the REGION.
 			append :<num> to extend the processing region: -X6:12
-  -T, --filter		FILTER the output using a Cosine Arch Filter at -T<dist(km)> search distance.
-			If GMT is not available, or if :use_gmt=False, perform a Gaussian filter at -T<factor>. 
-			Append :split_value=<num> to only filter values below <num>.
-			e.g. -T10:split_value=0:use_gmt=False to smooth bathymetry using Gaussian filter
+  -T, --filter		FILTER the output DEM using one or multiple filters. <fltr:fltr_val:split_value=z>
+			Available filters:
+			1: perform a Gaussian filter at -T1:<factor>.
+			2: use a Cosine Arch Filter at -T2:<dist(km)> search distance.
+			The -T switch may be set multiple times to perform multiple filters.
+			Append :split_value=<num> to only filter values below z-value <num>.
+			e.g. -T1:10:split_value=0 to smooth bathymetry using Gaussian filter
+  -Z --z-region		Restrict data processing to records that fall within the z-region
+			Use '-' to indicate no bounding range; e.g. -Z-/0 will restrict processing to data
+			records whose z value is below zero.
   -C, --clip		CLIP the output to the clip polygon -C<clip_ply.shp:invert=False>
   -K, --chunk		Process the region in CHUNKs. -K<chunk-level>
-  -W, --wg-config	A waffles config JSON file. If supplied, will overwrite all other options.
+  -W, --w-region	Restrict data processing to records that fall within the w-region (weight).
+			Use '-' to indicate no bounding range; e.g. -W1/- will restrict processing to data
+			records whose weight value is at least 1.
+  -G, --wg-config	A waffles config JSON file. If supplied, will overwrite all other options.
 			generate a waffles_config JSON file using the --config flag.
 
   -p, --prefix		Set BASENAME to PREFIX (append inc/region/year info to output BASENAME).
-  -r, --grid-node	use grid-node registration, default is pixel-node
+  -r, --grid-node	Use grid-node registration, default is pixel-node
+  -w, --weights		Use weights provided in the datalist to weight overlapping data.
 
   -a, --archive		Archive the datalist to the given region.
-  -s, --spat-meta	Generate spatial-metadata.
+  -m, --mask		Generate a data mask raster.
+  -u, --uncert		Generate an associated uncertainty grid.
+  -c, --continue	Don't clobber existing files.
 
   --help		Print the usage text
-  --config		Save the waffles config JSON and master datalist
+  --config		Save the waffles config JSON and major datalist
   --modules		Disply the module descriptions and usage
   --version		Print the version information
   --verbose		Increase the verbosity
 
-Modules (see waffles --modules for more info):
-  nearest, num, mbgrid, invdst, average, triangulate, surface, vdatum
+Datalists and data formats:
+  A datalist is a file that contains a number of datalist entries, while an entry is a space-delineated line:
+  `/path/to/data format weight data,meta,data`
+
+Supported datalist formats: 
+  168	['xyz', 'csv', 'dat', 'ascii']
+  200	['tif', 'img', 'grd', 'nc', 'vrt', 'bag']
+  400	['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs', 'hrdem']
+  300	['las', 'laz']
+  -1	['datalist', 'mb-1']
+
+Modules (see waffles --modules <module-name> for more info):
+  nearest, linear, update, surface, num, coastline, invdst, spat-meta, mbgrid, average, triangulate, cudem, vdatum
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
