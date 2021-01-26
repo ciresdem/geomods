@@ -23,9 +23,10 @@
 import os
 import sys
 
-import geomods
+from geomods import utils
+from geomods import vdatumfun
 
-_version = '0.0.2'
+_version = '0.0.3'
 
 _usage = '''vdatum_cmd.py ({}): run NOAAs vdatum
 
@@ -94,7 +95,7 @@ def main():
             print(_usage)
             sys.exit(1)
         elif arg == '-version' or arg == '--version':
-            print('vdatum_cmd.py, version {}\nVDatum, version {}\n{}'.format(_version, geomods.utils.vdatum()._version, geomods._license))
+            print('vdatum_cmd.py, version {}\nVDatum, version {}'.format(_version, utils.vdatum()._version))
             sys.exit(1)
         elif src_fn is None:
             src_fn = arg
@@ -110,13 +111,13 @@ def main():
     if not os.path.exists(src_fn):
         print('Error: {} is not a valid file'.format(src_fn))
     else: 
-        vd = geomods.waffles._vd_config
+        vd = vdatumfun._vd_config
         vd['ivert'] = ivert
         vd['overt'] = overt
         vd['ihorz'] = ihorz
         vd['ohorz'] = ohorz
         vd['delim'] = delim
-        geomods.waffles.run_vdatum(src_fn, vd)
+        vdatumfun.run_vdatum(src_fn, vd)
         
 if __name__ == '__main__':
     main()
