@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 ### gdal_crop.py
 ##
-## Copyright (c) 2018 - 2020 CIRES Coastal DEM Team
+## Copyright (c) 2018 - 2021 CIRES Coastal DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -27,9 +27,11 @@
 import os
 import sys
 import gdal
-from geomods import waffles
 
-_version = '0.0.5'
+from geomods import utils
+from geomods import gdalfun
+
+_version = '0.0.6'
 _usage = '''gdal_crop.py ({}): crop a gdal grid by the nodata value
 
 usage: gdal_crop.py [ file ]
@@ -65,14 +67,17 @@ if __name__ == '__main__':
 
     if elev is None:
         sys.stderr.write(_usage)
-        waffles.echo_error_msg('you must enter an input file')
+        utils.echo_error_msg('you must enter an input file')
         sys.exit(1)
 
     if os.path.exists(elev):
         output_name = elev[:-4] + '_crop.tif'
-        ds = gdal.Open(elev)
-        out_array, out_config = waffles.gdal_crop(ds)
-        ds = None
-        waffles.write_gdal(out_array, output_name, out_config)
-    else: waffles.echo_error_msg('{} is not a valid file'.format(elev))
+        try:
+            ds = gdal.Open(elev)
+        except: ds = None
+        if ds is not None:
+            out_array, out_config = gdalfun.gdal_crop(ds)
+            ds = None
+            gdalfun.write_gdal(out_array, output_name, out_config)
+    else: utils.echo_error_msg('{} is not a valid file'.format(elev))
 ### End

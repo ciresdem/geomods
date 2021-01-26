@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 ### gdal_chunk.py
 ##
-## Copyright (c) 2019 - 2020 CIRES Coastal DEM Team
+## Copyright (c) 2019 - 2021 CIRES Coastal DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -26,9 +26,11 @@
 
 import os
 import sys
-from geomods import waffles
 
-_version = '0.0.3'
+from geomods import utils
+from geomods import gdalfun
+
+_version = '0.0.4'
 _usage = '''gdal_chunk.py ({}): chunk a gdal grid
 
 usage: gdal_chunk.py [ file ]
@@ -72,11 +74,11 @@ if __name__ == '__main__':
         i = i + 1
 
     if src_fn is None:
-        waffles.echo_error_msg('you must enter an input file')
+        utils.echo_error_msg('you must enter an input file')
         sys.stderr.write(_usage)
         sys.exit(1)
 
     if not os.path.exists(src_fn):
-        waffles.echo_error_msg('{} is not valid'.format(src_fn))
-    else: waffles.gdal_chunks(src_fn, chunk_value)
+        utils.echo_error_msg('{} is not valid'.format(src_fn))
+    else: gdalfun.gdal_chunks(src_fn, chunk_value)
 ### End
