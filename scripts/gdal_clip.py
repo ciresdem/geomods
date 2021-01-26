@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 ### gdal_clip.py
 ##
-## Copyright (c) 2018 - 2020 CIRES Coastal DEM Team
+## Copyright (c) 2018 - 2021 CIRES Coastal DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -27,9 +27,11 @@
 import os
 import sys
 import gdal
-from geomods import waffles
 
-_version = '0.0.5'
+from geomods import utils
+from geomods import gdalfun
+
+_version = '0.0.6'
 _usage = '''gdal_clip.py ({}): clip a gdal grid using vector file.
 
 usage: gdal_clip.py [ src_gdal src_ogr [ OPTIONS ] ]
@@ -75,17 +77,18 @@ if __name__ == '__main__':
 
     if elev is None or not os.path.exists(elev):
         sys.stderr.write(_usage)
-        waffles.echo_error_msg('you must enter a valid input raster file')
+        utils.echo_error_msg('you must enter a valid input raster file')
         sys.exit(1)
 
     if src_ply is None or not os.path.exists(src_ply):
         sys.stderr.write(_usage)
-        waffles.echo_error_msg('you must enter a valid input vector file')
+        utils.echo_error_msg('you must enter a valid input vector file')
         sys.exit(1)
 
     if want_output:
         elev2 = elev.split('.')[0] + '_clip.tif'
-        out, status = waffles.run_cmd('gdal_translate {} {}'.format(elev, elev2), verbose = True)
+        out, status = utils.run_cmd('gdal_translate {} {}'.format(elev, elev2), verbose = True)
     else: elev2 = elev
-    out, status = waffles.gdal_clip(elev2, src_ply, want_invert)
+    out, status = gdalfun.gdal_clip(elev2, src_ply, want_invert)
+    
 ### End
