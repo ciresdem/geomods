@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 ### gdal_split.py
 ##
-## Copyright (c) 2018 - 2020 Matthew Love <matthew.love@colorado.edu>
+## Copyright (c) 2018 - 2021 CIRES DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -31,9 +31,10 @@ from gdalconst import *
 from osgeo import osr
 from osgeo import gdal
 
-from geomods import waffles
+from geomods import utils
+from geomods import gdalfun
 
-_version = "0.0.9"
+_version = "0.1.0"
 
 _usage = '''gdal_split.py: Split the topo from a gdal file (>0)
 
@@ -81,11 +82,11 @@ if __name__ == '__main__':
 
     if elev is None:
         sys.stderr.write(_usage)
-        waffles.echo_error_msg('you must enter an input file')
+        utils.echo_error_msg('you must enter an input file')
         sys.exit(1)
 
     if not os.path.exists(elev):
-        waffles.echo_error_msg("{} is not a valid file".format(elev))
-    else: waffles.gdal_split(elev, split_value)
+        utils.echo_error_msg("{} is not a valid file".format(elev))
+    else: gdalfun.gdal_split(elev, split_value)
 
 ### End

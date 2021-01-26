@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 ### gdal_query.py
 ##
-## Copyright (c) 2011 - 2019 Matthew Love <matthew.love@colorado.edu>
+## Copyright (c) 2011 - 2021 CIRES DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -36,7 +36,7 @@ import numpy as np
 import osgeo.gdal as gdal
 #--
 
-gq_version = '1.8.6'
+gq_version = '1.8.7'
 
 def con_dec(x, dec):
     '''Return a float string with n decimals

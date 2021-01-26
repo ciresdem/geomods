@@ -1,7 +1,7 @@
 #!/bin/env python
 ### gdal_gquery.py
 ##
-## Copyright (c) 2018 - 2020 CIRES Coastal DEM Team
+## Copyright (c) 2018 - 2021 CIRES Coastal DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -27,9 +27,11 @@
 import os
 import sys
 import gdal
-from geomods import waffles
 
-_version = '0.0.1'
+from geomods import utils
+from geomods import gdalfun
+
+_version = '0.0.2'
 _usage = '''gdal_gquery.py ({}): transform band data
 
 usage: gdal_gquery.py [ src_gdal src_trans [ OPTIONS ] ]
@@ -75,25 +77,25 @@ if __name__ == '__main__':
         
     if i_ds is None or not os.path.exists(i_ds):
         sys.stderr.write(_usage)
-        waffles.echo_error_msg('you must enter a valid input raster file')
+        utils.echo_error_msg('you must enter a valid input raster file')
         sys.exit(1)
 
     if t_ds is None or not os.path.exists(t_ds):
         sys.stderr.write(_usage)
-        waffles.echo_error_msg('you must enter a valid input raster file')
+        utils.echo_error_msg('you must enter a valid input raster file')
         sys.exit(1)
 
     if d_ds is None:
         d_ds = i_ds.split('.')[0] + '_trans.' + i_ds.split('.')[-1]
 
     ds = gdal.Open(i_ds)
-    ds_config = waffles.gdal_gather_infos(ds)
-    ds_region = waffles.gdal_gt2region(ds_config)
+    ds_config = gdalfun.gdal_gather_infos(ds)
+    ds_region = gdalfun.gdal_gt2region(ds_config)
     ds_inc = ds_config['geoT'][1]
 
-    gp = waffles.gdal_parse(ds)
-    gq = waffles.gdal_query2(gp, t_ds, d_form)
-    out, status = waffles.gdal_xyz2gdal(gq, d_ds, ds_region, ds_inc, mode='m')
+    gp = gdalfun.gdal_parse(ds)
+    gq = gdalfun.gdal_query2(gp, t_ds, d_form)
+    out, status = gdalfun.gdal_xyz2gdal(gq, d_ds, ds_region, ds_inc, mode='m')
     
     ds = None
 ## End

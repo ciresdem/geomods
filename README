@@ -63,6 +63,9 @@ Console Scripts:
  - gdal_crop.py - Crop a gdal grid by it's nodata value.
  - gdal_clip.py - Clip a gdal grid to an ogr vector.
  - gdal_null.py - Generate a null gdal grid.
+ - gdal_mask.py - Apply a raster mask to a gdal grid.
+ - gdal_split.py - Split a gdal grid based on z value.
+ - gdal_query.py - Query the z value of a gdal grid with x/y coordinates.
  - vdatum_cmd.py - Use NOAA's VDatum via command-line.
 
 Examples:
