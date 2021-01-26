@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 ### gdal_null.py
 ##
-## Copyright (c) 2018, 2019 Matthew Love <matthew.love@colorado.edu>
+## Copyright (c) 2018 - 2021 CIRES DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -28,9 +28,11 @@ import sys
 import os
 import numpy as np
 import gdal
-from geomods import waffles
 
-_version = '0.1.8'
+from geomods import utils
+from geomods import gdalfun
+
+_version = '0.1.9'
 _usage = '''gdal_null.py ({}): generate a null grid
 usage: gdal_null.py [-region xmin xmax ymin ymax] [-cell_size value]
                     [-t_nodata value] [-d_format grid-format] [-overwrite]
@@ -50,7 +52,7 @@ def verbosePrint(xcount, ycount, extent, cellsize, outf):
 def createNullCopy(srcfile, outfile, nodata, outformat, verbose, overwrite):
     '''copy a gdal grid and make a nodata grid'''
     ds = gdal.Open(srcfile)
-    ds_config = waffles.gdal_gather_infos(ds)
+    ds_config = gdalfun.gdal_gather_infos(ds)
     gt = ds_config['geoT']
 
     if nodata is None: nodata = ds_config['ndv']
@@ -60,15 +62,15 @@ def createNullCopy(srcfile, outfile, nodata, outformat, verbose, overwrite):
     ds = None
     dsArray = np.zeros([ds_config['ny'],ds_config['nx']])
     dsArray[:] = float(nodata)
-    waffles.gdal_write(dsArray, outf, ds_config)
+    gdalfun.gdal_write(dsArray, outf, ds_config)
     
 def createGrid(outfile, extent, cellsize, nodata, outformat, verbose, overwrite):
     '''create a nodata grid'''
-    xcount, ycount, gt = waffles.gdal_region2gt(extent, cellsize)
-    ds_config = waffles.gdal_set_infos(xcount, ycount, xcount * ycount, gt, waffles.gdal_sr_wkt(4326), gdal.GDT_Float32, nodata, outformat)
+    xcount, ycount, gt = gdalfun.gdal_region2gt(extent, cellsize)
+    ds_config = gdalfun.gdal_set_infos(xcount, ycount, xcount * ycount, gt, gdalfun.gdal_sr_wkt(4326), gdal.GDT_Float32, nodata, outformat)
     nullArray = np.zeros( (ycount, xcount) )
     nullArray[nullArray==0]=nodata
-    waffles.gdal_write(nullArray, outfile, ds_config)
+    gdalfun.gdal_write(nullArray, outfile, ds_config)
 
 if __name__ == '__main__':
 
@@ -117,7 +119,7 @@ if __name__ == '__main__':
 
     if output is None:
         sys.stderr.write(_usage)
-        waffles.echo_error_msg('you must enter an output file name')
+        utils.echo_error_msg('you must enter an output file name')
         sys.exit(0)
         
     if extent == None:  extent = '1'

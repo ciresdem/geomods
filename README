@@ -62,7 +62,8 @@ Console Scripts:
  - gdal_chunk.py - Split a gdal grid into chunks.
  - gdal_crop.py - Crop a gdal grid by it's nodata value.
  - gdal_clip.py - Clip a gdal grid to an ogr vector.
- - vdatum_cmd.py - Use NOAA's VDatum via command-line
+ - gdal_null.py - Generate a null gdal grid.
+ - vdatum_cmd.py - Use NOAA's VDatum via command-line.
 
 Examples:
 
