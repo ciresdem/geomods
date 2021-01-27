@@ -1575,7 +1575,7 @@ def waffles_run(wg = _waffles_grid_info):
     ## ==============================================
     ## optionally generate uncertainty grid
     ## ==============================================
-    if wg['unc'] and not vect:
+    if wg['unc'] and not vect and wg['mod'] != 'uncertainty':
         try:
             if os.path.exists(dem) and os.path.exists(dem_msk):
                 utils.echo_msg('generating uncertainty')
