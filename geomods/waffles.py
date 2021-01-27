@@ -1153,16 +1153,27 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         utils.run_cmd(math_cmd, verbose = wg['verbose'])
         if wg['epsg'] is not None: gdalfun.gdal_set_epsg('{}_prox_unc.tif'.format(wg['name'], wg['epsg']))
         utils.echo_msg('applied coefficient {} to proximity grid'.format(ec_d))
-
-        #utils.remove_glob('_*.tif')
         
         math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
         # '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
         utils.run_cmd(math_cmd, verbose = wg['verbose'])
-        if wg['epsg'] is not None: gdalfun.gdal_set_epsg('{}_prox_unc.tif'.format(wg['name'], wg['epsg']))
+        if wg['epsg'] is not None: gdalfun.gdal_set_epsg('{}_slp_unc.tif'.format(wg['name'], wg['epsg']))
         utils.echo_msg('applied coefficient {} to slope grid'.format(ec_s))
+
+        utils.remove_glob('_*.tif')
         
-    return(ec_d, 0)
+    return(
+        {'prox_unc': '{}_prox_unc.tif'.format(wg['name']),
+         'slp_unc': '{}_slp_unc.tif'.format(wg['name']),
+         'prox_err': '{}_prox.err'.format(wg['name']),
+         'slp_err': '{}_prox.err'.format(wg['name']),
+         'prox_bf': '{}_prox_bf.png'.format(wg['name']),
+         'prox_scatter': '{}_prox_scatter.png'.format(wg['name']),
+         'slp_bf': '{}_slp_bf.png'.format(wg['name']),
+         'slp_scatter': '{}_slp_scatter.png'.format(wg['name']),
+         'prox_coeff': ec_d,
+         'slp_coeff': ec_s,
+        }, 0)
 
 ## ==============================================
 ## Waffles Coastline module
@@ -1350,7 +1361,6 @@ def waffles_run(wg = _waffles_grid_info):
     returns dem-fn'''
 
     out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
-
     no_clobber = False
     
     ## ==============================================
@@ -1418,7 +1428,7 @@ def waffles_run(wg = _waffles_grid_info):
             ## gererate the DEM (run the module)
             ## ==============================================
             try:
-                out, status = _waffles_modules[this_wg['mod']][0](args_d)
+                waffles_out, status = _waffles_modules[this_wg['mod']][0](args_d)
             except KeyboardInterrupt as e:
                 utils.echo_error_msg('killed by user, {}'.format(e))
                 sys.exit(-1)
@@ -1600,6 +1610,16 @@ def waffles_run(wg = _waffles_grid_info):
                 waffles_interpolation_uncertainty(**uc)
         except Exception as e:
             utils.echo_error_msg('failed to calculate uncertainty, {}'.format(e))
+
+    if wg['mod'] == 'uncertainty':
+        os.rename(waffles_out['prox_unc'], '{}_prox_unc.tif'.format(wg['name']))
+        os.rename(waffles_out['slp_unc'], '{}_slp_unc.tif'.format(wg['name']))
+        os.rename(waffles_out['prox_err'], '{}_prox.err'.format(wg['name']))
+        os.rename(waffles_out['slp_err'], '{}_slp.err'.format(wg['name']))
+        os.rename(waffles_out['prox_bf'], '{}_prox_bf.png'.format(wg['name']))
+        os.rename(waffles_out['slp_bf'], '{}_slp_bf.png'.format(wg['name']))
+        os.rename(waffles_out['prox_scatter'], '{}_prox_scatter.png'.format(wg['name']))
+        os.rename(waffles_out['slp_scatter'], '{}_slp_scatter.png'.format(wg['name']))
 
     ## ==============================================
     ## if dem has data, return
