@@ -9,7 +9,9 @@ import os
 import struct
 import numpy as np
 from osgeo import gdal
-from geomods import waffles
+
+from geomods import utils
+from geomods import gdalfun
 
 gfr_version = 0.3
 def isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
@@ -73,7 +75,7 @@ if __name__ == "__main__":
         sys.exit(0)
 
     ds = gdal.Open(ingrd)
-    ds_config = waffles.gdal_gather_infos(ds)
+    ds_config = gdalfun.gdal_gather_infos(ds)
     
     band = ds.GetRasterBand(1)
     in_ndata = band.GetNoDataValue()
@@ -92,9 +94,9 @@ if __name__ == "__main__":
     # Create the output GDAL Raster
     if np.any(t):
         outarray[t]=float(rdata)
-        dst_ds = waffles.gdal_cpy_infos(ds_config)
+        dst_ds = gdalfun.gdal_cpy_infos(ds_config)
         if mk_ndata is True: dst_ds['ndv'] = float(ndata)
-        waffles.gdal_write(outarray, outgrd, dst_ds)
+        gdalfun.gdal_write(outarray, outgrd, dst_ds)
         
     ds = None
 #--END

@@ -255,10 +255,10 @@ _waffles_modules = {
     Generate spatial metadata based on the data in the datalist.
 
     < spat-meta >''', 'vector', True],
-        'coastline': [lambda args: waffles_coastline(**args), '''generate a coastline (landmask)
+    'coastline': [lambda args: waffles_coastline(**args), '''generate a coastline (landmask)
     Generate a land/sea mask (coastline) based on various datasets.
 
-    < coastline >''', 'raster', False],
+    < coastline >''', 'vector', False],
     #'uncertainty': [lambda args: waffles_interpolation_uncertainty(**args), '''generate DEM UNCERTAINTY
     #< uncertainty:mod=surface:dem=None:msk=None:prox=None:slp=None:sims=2 >''', 'raster', False],
 }
@@ -1161,6 +1161,10 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         
     return(ec_d, 0)
 
+## ==============================================
+## Waffles Coastline module
+## generate a coastline (wet/dry mask)
+## ==============================================
 def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
     '''Generate a coastline polygon from various sources.'''
     
@@ -1221,13 +1225,13 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
                     gdb_bn = os.path.basename('.'.join(gdb_zip.split('.')[:-1]))
                     gdb = gdb_bn + '.gdb'
 
-                    utils.run_cmd('ogr2ogr {}_NHDArea.shp {} NHDArea -overwrite'.format(gdb_bn, gdb), verbose = True)
+                    utils.run_cmd('ogr2ogr {}_NHDArea.shp {} NHDArea -overwrite'.format(gdb_bn, gdb), verbose = False)
                     r_shp.append('{}_NHDArea.shp'.format(gdb_bn))
-                    utils.run_cmd('ogr2ogr {}_NHDPlusBurnWaterBody.shp {} NHDPlusBurnWaterBody -overwrite'.format(gdb_bn, gdb), verbose = True)
+                    utils.run_cmd('ogr2ogr {}_NHDPlusBurnWaterBody.shp {} NHDPlusBurnWaterBody -overwrite'.format(gdb_bn, gdb), verbose = False)
                     r_shp.append('{}_NHDPlusBurnWaterBody.shp'.format(gdb_bn))
                 else: utils.echo_error_msg('unable to fetch {}'.format(result))
 
-            [utils.run_cmd('ogr2ogr -skipfailures -update -append nhdArea_merge.shp {}'.format(shp), verbose = True) for shp in r_shp]
+            [utils.run_cmd('ogr2ogr -skipfailures -update -append nhdArea_merge.shp {}'.format(shp), verbose = False) for shp in r_shp]
             utils.run_cmd('gdal_rasterize -burn 1 nhdArea_merge.shp {}'\
                     .format(u_mask), verbose = True)
             utils.remove_glob(gdb_zip)
@@ -1275,21 +1279,30 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
         except: pass
     c_ds = None
     utils.remove_glob('{}*'.format(g_mask))
+
+    ## ==============================================
+    ## write coast_array to file
+    ## 1 = land
+    ## 0 = water
+    ## ==============================================
+    #coast_array[coast_array == 0] = ds_config['ndv']
     gdalfun.gdal_write(coast_array, '{}.tif'.format(wg['name']), ds_config)
 
     #utils.run_cmd('gdal_polygonize.py -8 {}.tif {}.shp'.format(wg['name'], wg['name']), verbose = True)
 
-    # ## ==============================================
-    # ## convert to vector
-    # ## ==============================================
-    # tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('{}.shp'.format(wg['name']))
-    # if tmp_ds is not None:
-    #     tmp_layer = tmp_ds.CreateLayer('{}'.format(wg['name']), None, ogr.wkbMultiPolygon)
-    #     tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
-    #     gdalfun.gdal_polygonize('{}.tif'.format(wg['name']), tmp_layer, verbose = wg['verbose'])
-        
-    #tmp_ds = None
+    ## ==============================================
+    ## convert to vector
+    ## ==============================================
+    tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('tmp_c_{}.shp'.format(wg['name']))
+    if tmp_ds is not None:
+        tmp_layer = tmp_ds.CreateLayer('tmp_c_{}'.format(wg['name']), None, ogr.wkbMultiPolygon)
+        tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
+        gdalfun.gdal_polygonize('{}.tif'.format(wg['name']), tmp_layer, verbose = wg['verbose'])        
+        tmp_ds = None
 
+    utils.run_cmd('ogr2ogr -dialect SQLITE -sql "SELECT * FROM tmp_c_{} WHERE DN=0 order by ST_AREA(geometry) desc limit 8" {}.shp tmp_c_{}.shp'\
+                  .format(wg['name'], wg['name'], wg['name']), verbose = False)
+        
     return(0, 0)
 
 def waffles_gdal_md(wg, cudem = False):
@@ -1353,6 +1366,7 @@ def waffles_run(wg = _waffles_grid_info):
 
     dem = '{}.tif'.format(wg['name'])
     vect = True if _waffles_modules[wg['mod']][2] == 'vector' else False
+    rast = True if _waffles_modules[wg['mod']][2] == 'raster' else False
     if wg['mask']:
         dem_msk = '{}_msk.tif'.format(wg['name'])
         if os.path.exists(dem_msk) and not wg['overwrite']: no_clobber = True
@@ -1361,8 +1375,8 @@ def waffles_run(wg = _waffles_grid_info):
             dem_vect = '{}_sm.shp'.format(wg['name'])
         else: dem_vect = '{}.shp'.format(wg['name'])
         if os.path.exists(dem_vect) and not wg['overwrite']: no_clobber = True
-    else:
-        if os.path.exists(dem) and not wg['overwrite']: no_clobber = True
+    #if rast:
+    if os.path.exists(dem) and not wg['overwrite']: no_clobber = True
         
     wg['region'] = waffles_grid_node_region(wg) if wg['node'] == 'grid' else wg['region']
 
