@@ -1161,19 +1161,23 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         utils.echo_msg('applied coefficient {} to slope grid'.format(ec_s))
 
         utils.remove_glob('_*.tif')
-        
-    return(
-        {'prox_unc': '{}_prox_unc.tif'.format(wg['name']),
-         'slp_unc': '{}_slp_unc.tif'.format(wg['name']),
-         'prox_err': '{}_prox.err'.format(wg['name']),
-         'slp_err': '{}_prox.err'.format(wg['name']),
-         'prox_bf': '{}_prox_bf.png'.format(wg['name']),
-         'prox_scatter': '{}_prox_scatter.png'.format(wg['name']),
-         'slp_bf': '{}_slp_bf.png'.format(wg['name']),
-         'slp_scatter': '{}_slp_scatter.png'.format(wg['name']),
-         'prox_coeff': ec_d,
-         'slp_coeff': ec_s,
-        }, 0)
+
+        unc_out = {
+            'prox_unc': '{}_prox_unc.tif'.format(wg['name']),
+            'slp_unc': '{}_slp_unc.tif'.format(wg['name']),
+            'prox_err': '{}_prox.err'.format(wg['name']),
+            'slp_err': '{}_prox.err'.format(wg['name']),
+            'prox_bf': '{}_prox_bf.png'.format(wg['name']),
+            'prox_scatter': '{}_prox_scatter.png'.format(wg['name']),
+            'slp_bf': '{}_slp_bf.png'.format(wg['name']),
+            'slp_scatter': '{}_slp_scatter.png'.format(wg['name']),
+            'prox_coeff': ec_d,
+            'slp_coeff': ec_s,
+        }
+
+        # for key in unc_out.keys():
+        #     if not os.path.exists(unc_out[key]
+    return(unc_out, 0)
 
 ## ==============================================
 ## Waffles Coastline module
