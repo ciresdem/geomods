@@ -259,8 +259,10 @@ _waffles_modules = {
     Generate a land/sea mask (coastline) based on various datasets.
 
     < coastline >''', 'vector', False],
-    #'uncertainty': [lambda args: waffles_interpolation_uncertainty(**args), '''generate DEM UNCERTAINTY
-    #< uncertainty:mod=surface:dem=None:msk=None:prox=None:slp=None:sims=2 >''', 'raster', False],
+    'uncertainty': [lambda args: waffles_interpolation_uncertainty(**args), '''generate DEM UNCERTAINTY
+    Calculate the interpolation uncertainty in relation to distance to nearest measurement
+
+    < uncertainty:mod=surface:dem=None:msk=None:prox=None:slp=None:sims=2 >''', 'raster', False],
 }
 
 ## ==============================================
@@ -887,7 +889,7 @@ waffles_unc_config_copy = lambda uc: copy.deepcopy(uc)
 def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', mod_args = (), \
                                       dem = None, msk = None, prox = None, slp = None, \
                                       percentile = 95, zones = ['bathy', 'bathy-topo', 'topo'], \
-                                      sims = 10, chnk_lvl = 4):
+                                      sims = 10, chnk_lvl = 6):
     '''calculate the interpolation uncertainty
     - as related to distance to nearest measurement.
 
@@ -910,32 +912,32 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     utils.echo_msg('running INTERPOLATION uncertainty module using {}...'.format(wg['mod']))
     out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
 
-    # if dem is None or not os.path.exists(dem):
-    #     if dem is None: dem = '{}.tif'.format(wg['name'])
-    #     tmp_wg = waffles_config_copy(wg)
-    #     if dem is None:
-    #         dem = '{}.tif'.format(wg['name'])
-    #         tmp_wg['name'] = '_{}'.format(wg['name'])
-    #     if msk is None or not os.path.exists(msk):
-    #         if msk is None: msk = '{}_msk.tif'.format(tmp_wg['name'])
-    #         tmp_wg['mask'] = True
-    #     else: tmp_wg['mask'] = False
-    #     waffles_run(tmp_wg)
+    if dem is None or not os.path.exists(dem):
+        if dem is None: dem = '{}.tif'.format(wg['name'])
+        tmp_wg = waffles_config_copy(wg)
+        if dem is None:
+            dem = '{}.tif'.format(wg['name'])
+            tmp_wg['name'] = '_{}'.format(wg['name'])
+        if msk is None or not os.path.exists(msk):
+            if msk is None: msk = '{}_msk.tif'.format(tmp_wg['name'])
+            tmp_wg['mask'] = True
+        else: tmp_wg['mask'] = False
+        waffles_run(tmp_wg)
 
-    # if msk is None or not os.path.exists(msk):
-    #     if msk is None: msk = '_{}_msk.tif'.format(wg['name'])
-    #     tmp_wg = waffles_config_copy(wg)
-    #     tmp_wg['name'] = '_{}_msk'.format(wg['name'])
-    #     tmp_wg['mod'] = 'num'
-    #     tmp_wg['mod_args'] = ('mode=k',)
-    #     waffles_run(tmp_wg)
+    if msk is None or not os.path.exists(msk):
+        if msk is None: msk = '_{}_msk.tif'.format(wg['name'])
+        tmp_wg = waffles_config_copy(wg)
+        tmp_wg['name'] = '_{}_msk'.format(wg['name'])
+        tmp_wg['mod'] = 'num'
+        tmp_wg['mod_args'] = ('mode=k',)
+        waffles_run(tmp_wg)
         
-    # if prox is None or not os.path.exists(prox):
-    #     if prox is None: prox = '_{}_prox.tif'.format(wg['name'])
-    #     gdal_proximity(msk, prox)
-    # if slp is None or not os.path.exists(slp):
-    #     if slp is None: slp = '_{}_slp.tif'.format(wg['name'])
-    #     gdal_slope(dem, slp)
+    if prox is None or not os.path.exists(prox):
+        if prox is None: prox = '_{}_prox.tif'.format(wg['name'])
+        gdalfun.gdal_proximity(msk, prox)
+    if slp is None or not os.path.exists(slp):
+        if slp is None: slp = '_{}_slp.tif'.format(wg['name'])
+        gdalfun.gdal_slope(dem, slp)
 
     ## ==============================================
     ## region analysis
@@ -968,8 +970,8 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     utils.echo_msg('analyzing {} sub-regions...'.format(len(sub_regions)))
     sub_zones = {}    
     for sc, sub_region in enumerate(sub_regions):
-        utils.echo_msg_inline('analyzing sub-regions [{}%]'.format(float(sc / len(sub_regions)) * 100))
-        #utils.echo_msg_inline('analyzing sub-regions [{}]'.format(sc))
+        #utils.echo_msg_inline('analyzing sub-regions [{}%]'.format(float(sc / len(sub_regions)) * 100))
+        utils.echo_msg_inline('analyzing sub-regions [{}]'.format(sc))
         try:
             gdalfun.gdal_cut(msk, sub_region, 'tmp_msk.tif')
             gdalfun.gdal_cut(dem, sub_region, 'tmp_dem.tif')
@@ -1009,14 +1011,14 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         utils.echo_msg('possible {} training zones: {}'.format(zones[z].upper(), len(t_trainers)))
         trainers.append(t_trainers)
     utils.echo_msg('sorting training tiles by distance...')
-    trains = regions.regions_sort(trainers)
+    trains = regions.regions_sort(trainers, verbose = wg['verbose'])
     utils.echo_msg('sorted training tiles.')
     utils.echo_msg('analyzed {} sub-regions.'.format(len(sub_regions)))
 
     ## ==============================================
     ## split-sample simulations and error calculations
     ## ==============================================
-    for sim in range(0, sims):
+    for sim in range(0, int(sims)):
         utils.echo_msg_inline('performing SPLIT-SAMPLE simulation {} out of {} [{:3}%]'.format(sim + 1, sims, 0))
         status = 0
         for z, train in enumerate(trains):
@@ -1072,6 +1074,7 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
                                         verbose = False,
                                         mod_args = wg['mod_args'],
                                         mask = True,
+                                        overwrite = True,
                                         )
                     sub_dem = waffles_run(wc)
                     sub_msk = '{}_msk.tif'.format(wc['name'])
@@ -1563,9 +1566,11 @@ def waffles_run(wg = _waffles_grid_info):
         ## ==============================================
         ## set the projection and other metadata
         ## ==============================================
-        gdalfun.gdal_set_epsg(dem, wg['epsg'])
-        waffles_gdal_md(wg, True if wg['mod'] == 'cudem' else False)
-        if wg['mask']: gdalfun.gdal_set_epsg(dem_msk, wg['epsg'])
+        try:
+            gdalfun.gdal_set_epsg(dem, wg['epsg'])
+            waffles_gdal_md(wg, True if wg['mod'] == 'cudem' else False)
+            if wg['mask']: gdalfun.gdal_set_epsg(dem_msk, wg['epsg'])
+        except: pass
 
     ## ==============================================
     ## optionally generate uncertainty grid
