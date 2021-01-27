@@ -1163,9 +1163,12 @@ class cudem:
                         dt = iso_xml.find('.//gmd:date/gco:Date', namespaces = namespaces)
                         odt = dt.text[:4] if dt is not None else '0000'
 
-                        zv = iso_xml.find('.//gmd:dimension/gmd:MD_Band/gmd:sequenceIdentifier/gco:MemberName/gco:aName/gco:CharacterString', namespaces = namespaces)
+                        zv = iso_xml.findall('.//gmd:dimension/gmd:MD_Band/gmd:sequenceIdentifier/gco:MemberName/gco:aName/gco:CharacterString', namespaces = namespaces)
+                        #[utils.echo_msg(x.text) for x in zv]
                         if zv is not None:
-                            zvar = zv.text
+                            for zvs in zv:
+                                if zvs.text == 'bathy' or zvs.text == 'Band1' or zvs.text == 'z':
+                                    zvar = zvs.text
                         else: zvar = 'z'
 
                         survey = [obbox, ds_name, ds_id, odt, iso_url, wcs_url, zvar]

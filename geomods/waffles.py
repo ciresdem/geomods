@@ -138,7 +138,7 @@ waffles_config_copy = lambda wg: copy.deepcopy(wg)
 def waffles_config(datalist = None, data = [], region = None, inc = None, name = 'waffles_dem',
                    node = 'pixel', fmt = 'GTiff', extend = 0, extend_proc = 20, weights = None,
                    z_region = None, w_region = None, fltr = [], sample = None, clip = None, chunk = None, epsg = 4326,
-                   mod = 'help', mod_args = (), verbose = False, archive = False, spat = False, mask = False,
+                   mod = 'surface', mod_args = (), verbose = False, archive = False, spat = False, mask = False,
                    unc = False, gc = None, overwrite = True):
     wg = waffles_config_copy(_waffles_grid_info)
     wg['datalist'] = datalist
@@ -903,7 +903,7 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         utils.echo_error_msg('invalid module name `{}`; reverting to `surface`'.format(mod))
         mod = 'surface'
         mod_args = ()
-        
+
     wg['mod'] = mod
     wg['mod_args'] = mod_args
     
@@ -968,14 +968,20 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     utils.echo_msg('analyzing {} sub-regions...'.format(len(sub_regions)))
     sub_zones = {}    
     for sc, sub_region in enumerate(sub_regions):
-        gdalfun.gdal_cut(msk, sub_region, 'tmp_msk.tif')
-        gdalfun.gdal_cut(dem, sub_region, 'tmp_dem.tif')
+        #utils.echo_msg_inline('analyzing sub-regions [{:.10f}%]'.format(sc/len(sub_regions) * 100))
+        utils.echo_msg_inline('analyzing sub-regions [{}]'.format(sc))
+        try:
+            gdalfun.gdal_cut(msk, sub_region, 'tmp_msk.tif')
+            gdalfun.gdal_cut(dem, sub_region, 'tmp_dem.tif')
+        except: continue
+        #utils.echo_error_msg('sub region is too small, please increase the increment or chnk_lvl')
+        #sys.exit(-1)
         s_sum, s_g_max, s_perc = gdalfun.gdal_mask_analysis('tmp_msk.tif')
         s_dc = gdalfun.gdal_infos('tmp_dem.tif', True)
         zone = 'Bathy' if s_dc['zr'][1] < 0 else 'Topo' if s_dc['zr'][0] > 0 else 'BathyTopo'
         sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, s_dc['zr'][0], s_dc['zr'][1], zone]
         utils.remove_glob('tmp_*.tif')
-        
+    utils.echo_msg_inline('analyzing sub-regions [OK]\n')
     s_dens = np.array([sub_zones[x][3] for x in sub_zones.keys()])
     s_5perc = np.percentile(s_dens, 5)
     s_dens = None
@@ -1002,6 +1008,7 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         t_trainers = [x for x in tile_set if x[3] > t_50perc]
         utils.echo_msg('possible {} training zones: {}'.format(zones[z].upper(), len(t_trainers)))
         trainers.append(t_trainers)
+    utils.echo_msg('sorting training tiles by distance...')
     trains = regions.regions_sort(trainers)
     utils.echo_msg('sorted training tiles.')
     utils.echo_msg('analyzed {} sub-regions.'.format(len(sub_regions)))
@@ -1329,6 +1336,8 @@ def waffles_run(wg = _waffles_grid_info):
     returns dem-fn'''
 
     out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
+
+    no_clobber = False
     
     ## ==============================================
     ## validate and/or set the waffles_config
@@ -1346,183 +1355,187 @@ def waffles_run(wg = _waffles_grid_info):
 
     dem = '{}.tif'.format(wg['name'])
     vect = True if _waffles_modules[wg['mod']][2] == 'vector' else False
-    if wg['mask']: dem_msk = '{}_msk.tif'.format(wg['name'])
+    if wg['mask']:
+        dem_msk = '{}_msk.tif'.format(wg['name'])
+        if os.path.exists(dem_msk) and not wg['overwrite']: no_clobber = True
     if vect:
         if wg['mod'] == 'spat-meta':
             dem_vect = '{}_sm.shp'.format(wg['name'])
         else: dem_vect = '{}.shp'.format(wg['name'])
-        if os.path.exists(dem_vect) and not wg['overwrite']: return(dem_vect)
+        if os.path.exists(dem_vect) and not wg['overwrite']: no_clobber = True
     else:
-        if os.path.exists(dem) and not wg['overwrite']: return(dem)
-    
+        if os.path.exists(dem) and not wg['overwrite']: no_clobber = True
+        
     wg['region'] = waffles_grid_node_region(wg) if wg['node'] == 'grid' else wg['region']
-    
+
     ## ==============================================
     ## optionally generate the DEM in chunks
+    ## skip if wg['overwrite'] is False and file exists
     ## ==============================================
-    if wg['chunk'] is not None:
-        xcount, ycount, dst_gt = gdalfun.gdal_region2gt(wg['region'], wg['inc'])
-        s_regions = regions.region_chunk(wg['region'], wg['inc'], (xcount/wg['chunk'])+1)
+    if not no_clobber:
+        if wg['chunk'] is not None:
+            xcount, ycount, dst_gt = gdalfun.gdal_region2gt(wg['region'], wg['inc'])
+            s_regions = regions.region_chunk(wg['region'], wg['inc'], (xcount/wg['chunk'])+1)
 
-    else: s_regions = [wg['region']]
+        else: s_regions = [wg['region']]
 
-    chunks = []
-    if wg['mask']: chunks_msk = []
-    if vect: chunks_vect = []
-    for region in s_regions:
-        this_wg = waffles_config_copy(wg)
-        this_wg['region'] = region
-        this_wg['extend'] = wg['extend'] + 5
-        #this_wg['region'] = waffles_grid_node_region(this_wg) if this_wg['node'] == 'grid' else this_wg['region']
-        this_wg['name'] = 'chunk_{}'.format(regions.region_format(region, 'fn'))
-        this_dem = this_wg['name'] + '.tif'
-        chunks.append(this_dem)
-        if this_wg['mask']:
-            this_dem_msk = this_wg['name'] + '_msk.tif'
-            chunks_msk.append(this_dem_msk)
-        if vect:
-            if this_wg['mod'] == 'spat-meta':
-                chunks_vect.append('{}_sm.shp'.format(this_wg['name']))
-            else: chunks_vect.append('{}.shp'.format(this_wg['name']))
-        args_d['wg'] = this_wg
+        chunks = []
+        if wg['mask']: chunks_msk = []
+        if vect: chunks_vect = []
+        for region in s_regions:
+            this_wg = waffles_config_copy(wg)
+            this_wg['region'] = region
+            this_wg['extend'] = wg['extend'] + 5
+            #this_wg['region'] = waffles_grid_node_region(this_wg) if this_wg['node'] == 'grid' else this_wg['region']
+            this_wg['name'] = 'chunk_{}'.format(regions.region_format(region, 'fn'))
+            this_dem = this_wg['name'] + '.tif'
+            chunks.append(this_dem)
+            if this_wg['mask']:
+                this_dem_msk = this_wg['name'] + '_msk.tif'
+                chunks_msk.append(this_dem_msk)
+            if vect:
+                if this_wg['mod'] == 'spat-meta':
+                    chunks_vect.append('{}_sm.shp'.format(this_wg['name']))
+                else: chunks_vect.append('{}.shp'.format(this_wg['name']))
+            args_d['wg'] = this_wg
 
-        ## ==============================================
-        ## gererate the DEM (run the module)
-        ## ==============================================
-        try:
-            out, status = _waffles_modules[this_wg['mod']][0](args_d)
-        except KeyboardInterrupt as e:
-            utils.echo_error_msg('killed by user, {}'.format(e))
-            sys.exit(-1)
-        except Exception as e:
-            utils.echo_error_msg('{}'.format(e))
-            status = -1
+            ## ==============================================
+            ## gererate the DEM (run the module)
+            ## ==============================================
+            try:
+                out, status = _waffles_modules[this_wg['mod']][0](args_d)
+            except KeyboardInterrupt as e:
+                utils.echo_error_msg('killed by user, {}'.format(e))
+                sys.exit(-1)
+            except Exception as e:
+                utils.echo_error_msg('{}'.format(e))
+                status = -1
 
-        if status != 0: utils.remove_glob(this_dem)
-        if not os.path.exists(this_dem): continue
-        gdi = gdalfun.gdal_infos(this_dem, scan = True)
-        if gdi is not None:
-            if np.isnan(gdi['zr'][0]):
-                utils.remove_glob(this_dem)
-                if this_wg['mask']: utils.remove_glob(this_dem_msk)
-                continue
-        else: continue
+            if status != 0: utils.remove_glob(this_dem)
+            if not os.path.exists(this_dem): continue
+            gdi = gdalfun.gdal_infos(this_dem, scan = True)
+            if gdi is not None:
+                if np.isnan(gdi['zr'][0]):
+                    utils.remove_glob(this_dem)
+                    if this_wg['mask']: utils.remove_glob(this_dem_msk)
+                    continue
+            else: continue
 
-        gdalfun.gdal_set_epsg(this_dem, this_wg['epsg'])
-        waffles_gdal_md(this_wg)
-                
-        ## ==============================================
-        ## optionally filter the DEM
-        ## this_wg['fltr'] should hold a list of filters
-        ## and optional arguments; e.g. = ['1:10', '2:1s']
-        ## ==============================================
-        if this_wg['fltr'] is not None:
-            for fltr in this_wg['fltr']:
-                fltr_args = {}
-                fltrs = fltr.split(':')
-                fltr_args['fltr'] = fltrs[0]
-                fltr_args['fltr_val'] = gmtfun.gmt_inc2inc(fltrs[1])
-                fltr_args = utils.args2dict(fltrs[2:], fltr_args)        
+            gdalfun.gdal_set_epsg(this_dem, this_wg['epsg'])
+            waffles_gdal_md(this_wg)
 
-                if this_wg['verbose']: utils.echo_msg('filtering {} using filter {}@{}...'.format(this_dem, fltr_args['fltr'], fltr_args['fltr_val']))
-                if fltr_args['fltr'] == 2:
-                    if this_wg['gc']['GMT'] is None:
-                        continue
-                try:
-                    waffles_filter(this_dem, 'tmp_s.tif', **fltr_args)
-                    os.rename('tmp_s.tif', this_dem)
-                except TypeError as e: utils.echo_error_msg('{}'.format(e))
+            ## ==============================================
+            ## optionally filter the DEM
+            ## this_wg['fltr'] should hold a list of filters
+            ## and optional arguments; e.g. = ['1:10', '2:1s']
+            ## ==============================================
+            if this_wg['fltr'] is not None:
+                for fltr in this_wg['fltr']:
+                    fltr_args = {}
+                    fltrs = fltr.split(':')
+                    fltr_args['fltr'] = fltrs[0]
+                    fltr_args['fltr_val'] = gmtfun.gmt_inc2inc(fltrs[1])
+                    fltr_args = utils.args2dict(fltrs[2:], fltr_args)        
 
-        ## ==============================================
-        ## optionally resample the DEM 
-        ## ==============================================
-        if this_wg['sample'] is not None:
-            if this_wg['verbose']: utils.echo_msg('resampling {}...'.format(this_dem))
-            if this_wg['gc']['GMT'] is not None:
-                gmtfun.gmt_sample_inc(this_dem, inc = this_wg['sample'], verbose = this_wg['verbose'])
+                    if this_wg['verbose']: utils.echo_msg('filtering {} using filter {}@{}...'.format(this_dem, fltr_args['fltr'], fltr_args['fltr_val']))
+                    if fltr_args['fltr'] == 2:
+                        if this_wg['gc']['GMT'] is None:
+                            continue
+                    try:
+                        waffles_filter(this_dem, 'tmp_s.tif', **fltr_args)
+                        os.rename('tmp_s.tif', this_dem)
+                    except TypeError as e: utils.echo_error_msg('{}'.format(e))
+
+            ## ==============================================
+            ## optionally resample the DEM 
+            ## ==============================================
+            if this_wg['sample'] is not None:
+                if this_wg['verbose']: utils.echo_msg('resampling {}...'.format(this_dem))
+                if this_wg['gc']['GMT'] is not None:
+                    gmtfun.gmt_sample_inc(this_dem, inc = this_wg['sample'], verbose = this_wg['verbose'])
+                    if this_wg['mask']:
+                        if this_wg['verbose']: utils.echo_msg('resampling {}...'.format(this_dem_msk))
+                        gmtfun.gmt_sample_inc(this_dem_msk, inc = this_wg['sample'], verbose = this_wg['verbose'])
+                else:
+                    out, status = utils.run_cmd('gdalwarp -tr {:.10f} {:.10f} {} -r bilinear -te {} tmp.tif\
+                    '.format(inc, inc, src_grd, regions.region_format(waffles_proc_region(this_wg)), verbose = verbose))
+                    if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
+
+            gdalfun.gdal_set_epsg(this_dem, this_wg['epsg'])
+
+            ## ==============================================
+            ## optionally clip the DEM to polygon
+            ## ==============================================
+            if this_wg['clip'] is not None:
+                if this_wg['verbose']: utils.echo_msg('clipping {}...'.format(this_dem))
+                clip_args = {}
+                cp = this_wg['clip'].split(':')
+                clip_args['src_ply'] = cp[0]
+                clip_args = utils.args2dict(cp[1:], clip_args)
+                print(clip_args)
+                gdalfun.gdal_clip(this_dem, **clip_args)
                 if this_wg['mask']:
-                    if this_wg['verbose']: utils.echo_msg('resampling {}...'.format(this_dem_msk))
-                    gmtfun.gmt_sample_inc(this_dem_msk, inc = this_wg['sample'], verbose = this_wg['verbose'])
+                    if this_wg['verbose']: utils.echo_msg('clipping {}...'.format(this_dem_msk))
+                    gdalfun.gdal_clip(this_dem_msk, **clip_args)
+
+            if not os.path.exists(this_dem): continue
+            gdi = gdalfun.gdal_infos(this_dem, scan = True)
+            if gdi is not None:
+                if np.isnan(gdi['zr'][0]):
+                    utils.remove_glob(this_dem)
+                    if this_wg['mask']: utils.remove_glob(this_dem_msk)
+                    continue
+            else: continue
+
+            ## ==============================================
+            ## cut dem to final size -
+            ## region buffered by (inc * extend) or
+            ## sample * extend) if sample if specified
+            ## ==============================================
+            try:
+                out = gdalfun.gdal_cut(this_dem, waffles_dist_region(this_wg), 'tmp_cut.tif')
+                if out is not None: os.rename('tmp_cut.tif', this_dem)
+                if this_wg['mask']:
+                    out = gdalfun.gdal_cut(this_dem_msk, waffles_dist_region(this_wg), 'tmp_cut.tif')
+                    if out is not None: os.rename('tmp_cut.tif', this_dem_msk)
+            except OSError as e:
+                utils.remove_glob('tmp_cut.tif')
+                utils.echo_error_msg('cut failed, is the dem open somewhere, {}'.format(e)) 
+
+        ## ==============================================
+        ## merge the chunks and remove
+        ## ==============================================
+
+        if len(chunks) > 1:
+            out, status = utils.run_cmd('gdal_merge.py -n -9999 -a_nodata -9999 -ps {} -{} -ul_lr {} -o {} {} -co TILED=YES -co COMPRESS=DEFLATE -co PREDICTOR=3\
+            '.format(wg['inc'], wg['inc'], waffles_dist_ul_lr(wg), dem, ' '.join(chunks)), verbose = True)
+            [utils.remove_glob(x) for x in chunks]            
+        else:
+            if os.path.exists(chunks[0]):
+                gdalfun.gdal_gdal2gdal(chunks[0], dst_fmt = wg['fmt'], dst_gdal = dem)
+                utils.remove_glob(chunks[0])
+
+        if wg['mask']:
+            if len(chunks_msk) > 1:
+                out, status = utils.run_cmd('gdal_merge.py -n -9999 -a_nodata -9999 -ps {} -{} -ul_lr {} -o {} {}\
+                '.format(wg['inc'], wg['inc'], waffles_dist_ul_lr(wg), dem_msk, ' '.join(chunks_msk)), verbose = True)
+                [utils.remove_glob(x) for x in chunks_msk]
             else:
-                out, status = utils.run_cmd('gdalwarp -tr {:.10f} {:.10f} {} -r bilinear -te {} tmp.tif\
-                '.format(inc, inc, src_grd, regions.region_format(waffles_proc_region(this_wg)), verbose = verbose))
-                if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
+                if os.path.exists(chunks_msk[0]):
+                    gdalfun.gdal_gdal2gdal(chunks_msk[0], dst_fmt = wg['fmt'], dst_gdal = dem_msk, co = False)
+                    utils.remove_glob(chunks_msk[0])
 
-        gdalfun.gdal_set_epsg(this_dem, this_wg['epsg'])
-        
-        ## ==============================================
-        ## optionally clip the DEM to polygon
-        ## ==============================================
-        if this_wg['clip'] is not None:
-            if this_wg['verbose']: utils.echo_msg('clipping {}...'.format(this_dem))
-            clip_args = {}
-            cp = this_wg['clip'].split(':')
-            clip_args['src_ply'] = cp[0]
-            clip_args = utils.args2dict(cp[1:], clip_args)
-            print(clip_args)
-            gdalfun.gdal_clip(this_dem, **clip_args)
-            if this_wg['mask']:
-                if this_wg['verbose']: utils.echo_msg('clipping {}...'.format(this_dem_msk))
-                gdalfun.gdal_clip(this_dem_msk, **clip_args)
+        if vect:
+            if len(chunks_vect) > 1:
+                out, status = utils.run_cmd('ogrmerge.py {} {}'.format(dem_vect, ' '.join(chunks_vect)))
+                [utils.remove_glob('{}*'.format(x.split('.')[0])) for x in chunks_vect]
+            else:
+                utils.remove_glob('{}*'.format(dem_vect.split('.')[0]))
+                out, status = utils.run_cmd('ogr2ogr {} {}'.format(dem_vect, chunks_vect[0]), verbose = True)
+                #gdalfun.ogr_clip(chunks_vect[0], dem_vect, clip_region = wg['region'], dn = "ESRI Shapefile")
+                #out, status = utils.run_cmd('ogr2ogr -clipsrc {} {} {}'.format(regions.region_format(wg['region'], 'te'), dem_vect, chunks_vect[0]), verbose = True)
 
-        if not os.path.exists(this_dem): continue
-        gdi = gdalfun.gdal_infos(this_dem, scan = True)
-        if gdi is not None:
-            if np.isnan(gdi['zr'][0]):
-                utils.remove_glob(this_dem)
-                if this_wg['mask']: utils.remove_glob(this_dem_msk)
-                continue
-        else: continue
-                
-        ## ==============================================
-        ## cut dem to final size -
-        ## region buffered by (inc * extend) or
-        ## sample * extend) if sample if specified
-        ## ==============================================
-        try:
-            out = gdalfun.gdal_cut(this_dem, waffles_dist_region(this_wg), 'tmp_cut.tif')
-            if out is not None: os.rename('tmp_cut.tif', this_dem)
-            if this_wg['mask']:
-                out = gdalfun.gdal_cut(this_dem_msk, waffles_dist_region(this_wg), 'tmp_cut.tif')
-                if out is not None: os.rename('tmp_cut.tif', this_dem_msk)
-        except OSError as e:
-            utils.remove_glob('tmp_cut.tif')
-            utils.echo_error_msg('cut failed, is the dem open somewhere, {}'.format(e)) 
-                
-    ## ==============================================
-    ## merge the chunks and remove
-    ## ==============================================
-
-    if len(chunks) > 1:
-        out, status = utils.run_cmd('gdal_merge.py -n -9999 -a_nodata -9999 -ps {} -{} -ul_lr {} -o {} {} -co TILED=YES -co COMPRESS=DEFLATE -co PREDICTOR=3\
-        '.format(wg['inc'], wg['inc'], waffles_dist_ul_lr(wg), dem, ' '.join(chunks)), verbose = True)
-        [utils.remove_glob(x) for x in chunks]            
-    else:
-        if os.path.exists(chunks[0]):
-            gdalfun.gdal_gdal2gdal(chunks[0], dst_fmt = wg['fmt'], dst_gdal = dem)
-            utils.remove_glob(chunks[0])
-
-    if wg['mask']:
-        if len(chunks_msk) > 1:
-            out, status = utils.run_cmd('gdal_merge.py -n -9999 -a_nodata -9999 -ps {} -{} -ul_lr {} -o {} {}\
-            '.format(wg['inc'], wg['inc'], waffles_dist_ul_lr(wg), dem_msk, ' '.join(chunks_msk)), verbose = True)
-            [utils.remove_glob(x) for x in chunks_msk]
-        else:
-            if os.path.exists(chunks_msk[0]):
-                gdalfun.gdal_gdal2gdal(chunks_msk[0], dst_fmt = wg['fmt'], dst_gdal = dem_msk, co = False)
-                utils.remove_glob(chunks_msk[0])
-
-    if vect:
-        if len(chunks_vect) > 1:
-            out, status = utils.run_cmd('ogrmerge.py {} {}'.format(dem_vect, ' '.join(chunks_vect)))
-            [utils.remove_glob('{}*'.format(x.split('.')[0])) for x in chunks_vect]
-        else:
-            utils.remove_glob('{}*'.format(dem_vect.split('.')[0]))
-            out, status = utils.run_cmd('ogr2ogr {} {}'.format(dem_vect, chunks_vect[0]), verbose = True)
-            #gdalfun.ogr_clip(chunks_vect[0], dem_vect, clip_region = wg['region'], dn = "ESRI Shapefile")
-            #out, status = utils.run_cmd('ogr2ogr -clipsrc {} {} {}'.format(regions.region_format(wg['region'], 'te'), dem_vect, chunks_vect[0]), verbose = True)
-            
-            utils.remove_glob('{}*'.format(chunks_vect[0].split('.')[0]))
+                utils.remove_glob('{}*'.format(chunks_vect[0].split('.')[0]))
 
     if os.path.exists(dem):
         ## ==============================================
@@ -1556,6 +1569,7 @@ def waffles_run(wg = _waffles_grid_info):
                 uc['mod_args'] = wg['mod_args']
                 uc['dem'] = dem
                 uc['msk'] = dem_msk
+                uc['chnk_lvl'] = 6
 
                 dem_prox = '{}_prox.tif'.format(wg['name'])
                 gdalfun.gdal_proximity(dem_msk, dem_prox)

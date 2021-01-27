@@ -127,6 +127,7 @@ def region_format(region, t = 'gmt'):
     t = 'sstr': xmin xmax ymin ymax
     t = 'gmt': -Rxmin/xmax/ymin/ymax
     t = 'bbox': xmin,ymin,xmax,ymax
+    t = 'osm_bbox': ymin,xmin,ymax,xmax
     t = 'te': xmin ymin xmax ymax
     t = 'ul_lr': xmin ymax xmax ymin
     t = 'fn': ymax_xmin
@@ -137,6 +138,7 @@ def region_format(region, t = 'gmt'):
     elif t == 'sstr': return(' '.join([str(x) for x in region[:4]]))
     elif t == 'gmt': return('-R' + '/'.join([str(x) for x in region[:4]]))
     elif t == 'bbox': return(','.join([str(region[0]), str(region[2]), str(region[1]), str(region[3])]))
+    elif t == 'osm_bbox': return(','.join([str(region[2]), str(region[0]), str(region[3]), str(region[1])]))
     elif t == 'te': return(' '.join([str(region[0]), str(region[2]), str(region[1]), str(region[3])]))
     elif t == 'ul_lr': return(' '.join([str(region[0]), str(region[3]), str(region[1]), str(region[2])]))
     elif t == 'fn':
@@ -187,7 +189,7 @@ def region_chunk(region, inc, n_chunk = 10):
         else: break
     return(o_chunks)
 
-def regions_sort(trainers):
+def regions_sort(trainers, verbose = False):
     '''sort regions by distance; regions is a list of regions [xmin, xmax, ymin, ymax].
 
     returns the sorted region-list'''
@@ -196,6 +198,7 @@ def regions_sort(trainers):
     for z, train in enumerate(trainers):
         train_d = []
         np.random.shuffle(train)
+        if verbose: utils.echo_msg_inline('sorting {} training tiles [{}]'.format(len(trainers), z))
         while True:
             if len(train) == 0: break
             this_center = region_center(train[0][0])
@@ -209,6 +212,7 @@ def regions_sort(trainers):
             train.sort(reverse=True, key=d_t)
         #echo_msg(' '.join([region_format(x[0], 'gmt') for x in train_d[:25]]))
         train_sorted.append(train_d)
+    if verbose: utils.echo_msg_inline('sorting training tiles [OK]\n')
     return(train_sorted)
 
 def z_region_valid_p(z_region):
