@@ -1118,7 +1118,6 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
                 utils.remove_glob('sub_{}*'.format(n))
     utils.echo_msg('ran INTERPOLATION uncertainty module using {}.'.format(wg['mod']))
 
-    #if s_dp is not None and len(s_dp) > 0:
     if len(s_dp) > 0:
         ## ==============================================
         ## save err dist data files
@@ -1132,13 +1131,13 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         s_dp = s_dp[s_dp[:,3] > 0,:]
 
         prox_err = s_dp[:,[2,3]]
-        #slp_err = s_dp[:,[2,4]]
+        slp_err = s_dp[:,[2,4]]
         
         np.savetxt('{}_prox.err'.format(wg['name']), prox_err, '%f', ' ')
-        #np.savetxt('{}_slp.err'.format(wg['name']), slp_err, '%f', ' ')
+        np.savetxt('{}_slp.err'.format(wg['name']), slp_err, '%f', ' ')
 
         ec_d = utils.err2coeff(prox_err[:50000000], dst_name = wg['name'] + '_prox', xa = 'distance')
-        #ec_s = utils.err2coeff(slp_err[:50000000], dst_name = wg['name'] + '_slp', xa = 'slope')
+        ec_s = utils.err2coeff(slp_err[:50000000], dst_name = wg['name'] + '_slp', xa = 'slope')
 
         ## ==============================================
         ## apply error coefficient to full proximity grid
@@ -1149,17 +1148,16 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_prox_unc.tif=gd+n-9999:GTiff\
         '.format(prox, ec_d[2], ec_d[1], 0, wg['name'])
         utils.run_cmd(math_cmd, verbose = wg['verbose'])
+        if wg['epsg'] is not None: gdalfun.gdal_set_epsg('{}_prox_unc.tif'.format(wg['name'], wg['epsg']))
         utils.echo_msg('applied coefficient {} to proximity grid'.format(ec_d))
 
         #utils.remove_glob('_*.tif')
         
-        # math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
-        # # '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
-        # utils.run_cmd(math_cmd, verbose = wg['verbose'])
-        # utils.echo_msg('applied coefficient {} to slope grid'.format(ec_s))
-    #else:
-    #    echo_error_msg('failed to calculate uncertainty')
-    #    ec_d = [0,.1,.2]
+        math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
+        # '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
+        utils.run_cmd(math_cmd, verbose = wg['verbose'])
+        if wg['epsg'] is not None: gdalfun.gdal_set_epsg('{}_prox_unc.tif'.format(wg['name'], wg['epsg']))
+        utils.echo_msg('applied coefficient {} to slope grid'.format(ec_s))
         
     return(ec_d, 0)
 

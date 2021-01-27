@@ -385,7 +385,7 @@ class dc:
         self._index = index
         self._want_update = update
         if self._want_update:
-            #self._ref_vector = self._local_ref_vector
+            self._ref_vector = self._local_ref_vector
             #self._has_vector = False
             self._update_from_ftp()
             
@@ -812,6 +812,7 @@ class nos:
                 
         self._want_update = update                
         if self._want_update:
+            self._ref_vector = self._local_ref_vector
             self._update()
         
         ## ==============================================
@@ -1100,6 +1101,7 @@ class cudem:
         '''Run the cudem fetching module.'''
         self._want_update = update
         if self._want_update:
+            self._ref_vector = self._local_ref_vector
             self._update()
             
         utils.echo_msg('using reference vector: {}'.format(self._ref_vector))
@@ -1299,6 +1301,7 @@ class hrdem():
         self._boundsGeom = bounds2geom(self.region)
         if update:
             utils.echo_msg('updating')
+            self._ref_vector = self._local_ref_vector
             self._update()
             #self._ref_vector = self._local_ref_vector
             
@@ -1422,6 +1425,7 @@ class charts():
         '''Run the charts fetching module.'''
         self._want_update = update
         if self._want_update:
+            self._ref_vector = self._local_ref_vector
             self._update()
             
         utils.echo_msg('using reference vector: {}'.format(self._ref_vector))
@@ -2567,7 +2571,7 @@ class osm:
         
         if proc:
             dst_gmt.close()
-            utils.run_cmd('ogr2ogr {}.shp {}.gmt'.format(os.path.join(self._outdir, out_fn), os.path.join(self._outdir, out_fn)))
+            utils.run_cmd('ogr2ogr {}.shp {}.gmt'.format(os.path.join(self._outdir, out_fn), os.path.join(self._outdir, out_fn)), verbose = False)
 
 ## ==============================================
 ## fetches processing (datalists fmt:400 - 499)
@@ -2712,12 +2716,12 @@ fetch_infos = {
     https://open.canada.ca/data/en/dataset/957782bf-847c-4644-a757-e383c0057995
 
     < hredem >'''],
-    'osm':[lambda x, f, c: osm(x, f, c), '''Open Street Map (OSM) data
+    'osm':[lambda x, f, c: osm(x, f, c), '''Open Street Map (OSM) data <beta>
     various datasets via OSM OverPass
-    
+    currently, either 'highway, waterway, building'
+
     < osm:osm_type='all' >
-     :osm_type=[data-type] - currently, either 'highway, waterway, building'; use 'all' to get all
-    '''],
+     :osm_type=[data-type] - use 'all' to fetch all available datasets.'''],
 }
 
 def fetch_desc(x):

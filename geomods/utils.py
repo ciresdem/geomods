@@ -299,8 +299,8 @@ def run_cmd(cmd, data_fun = None, verbose = False):
         p.stdin.close()
     
     while p.poll() is None:
+        rl = p.stderr.readline()
         if verbose:
-            rl = p.stderr.readline()
             sys.stderr.write('\x1b[2K\r')
             sys.stderr.write(rl.decode('utf-8'))
     if verbose: sys.stderr.write(p.stderr.read().decode('utf-8'))
