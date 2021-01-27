@@ -2461,6 +2461,114 @@ class ngs:
                 [outcsv.writerow(row.values()) for row in r]
                 outfile.close()
 
+## =============================================================================
+##
+## Opens Street Map data (OSM)
+##
+## Fetch various datasets from OSM/Overpass
+##
+## =============================================================================
+class osm:
+
+    '''Fetch OSM data'''
+    def __init__(self, extent = None, filters = [], callback = None):
+        utils.echo_msg('loading OSM fetch module...')
+        self._osm_api = 'https://lz4.overpass-api.de/api/interpreter'
+        self._outdir = os.path.join(os.getcwd(), 'osm')
+
+        self._req = None
+        self._results = []
+        self.region = extent
+        self._verbose = False
+
+        self.osm_types = {
+            'highway': ['LINESTRING'],
+            'waterway': ['LINESTRING'],
+            'building': ['POLYGON'],
+        }
+        
+        self._desc = '''
+        Open Street Map (OSM) data
+
+        options:
+         <csv=False>
+        '''
+
+    def run(self, osm_type = 'all', proc = False):
+        '''Run the OSM fetching module.'''
+        if self.region is None: return([])
+
+        if osm_type == 'all':
+            for key in self.osm_types.keys():
+                self._fetch_results(osm_type = key, proc = proc)
+        else:
+            if osm_type in self.osm_types.keys():
+                self._fetch_results(osm_type = osm_type, proc = proc)
+                
+        return(self._results)
+        
+    def _fetch_results(self, osm_type = 'highway', proc = False):
+        
+        c_bbox = regions.region_format(self.region, 'osm_bbox')
+        out_fn = 'osm_{}_{}'.format(osm_type, regions.region_format(self.region, 'fn'))
+        
+        osm_q = '''
+        [out:json];
+        (
+        way['{}']({});
+        );
+        out body;
+        '''.format(osm_type, c_bbox)
+
+        osm_data = fetch_req(self._osm_api, params = {'data': osm_q}, timeout=3600)
+        osm_json = osm_data.json()
+
+        utils.echo_msg('found {} {} elements'.format(len(osm_json['elements']), osm_type))
+        
+        if proc:
+            if not os.path.exists(self._outdir):
+                try:
+                    os.makedirs(self._outdir)
+                except: pass 
+
+            dst_gmt = open('{}.gmt'.format(os.path.join(self._outdir, out_fn)), 'w')
+            dst_gmt.write('# @VGMT1.0 @G{} @Nid\n'.format(self.osm_types[osm_type][0]))
+            dst_gmt.write('# @Tdouble\n')
+            dst_gmt.write('# @R{}\n'.format(regions.region_format(self.region, 'str')))
+            dst_gmt.write('# FEATURE_DATA\n')
+
+        for el_n, el in enumerate(osm_json['elements']):
+            utils.echo_msg_inline('fetching osm {} data [{}%]'.format(osm_type, float(el_n) / len(osm_json['elements']) * 100))
+            if el['type'] == 'way':
+
+                osm_node_q = '''
+                [out:json];
+                (
+                node(id:{});
+                );
+                out body;
+                '''.format(','.join([str(n) for n in el['nodes']]))
+
+                node_data = fetch_req(self._osm_api, params = {'data': osm_node_q})
+                if node_data.status_code == 200:
+                    self._results.append([node_data.url, '{}.json'.format(out_fn), 'osm'])
+                    
+                    if proc:
+                        node_json = node_data.json()
+
+                        dst_gmt.write('>\n# @D{}\n'.format(el['id']))
+
+                        for node in el['nodes']:
+                            for el_node in node_json['elements']:
+                                if el_node['id'] == node:
+                                    xyzfun.xyz_line([el_node['lon'], el_node['lat']], dst_gmt)
+
+        utils.echo_msg_inline('fetching osm {} data [OK]\n'.format(osm_type))
+        
+        if proc:
+            dst_gmt.close()
+            utils.run_cmd('ogr2ogr {}.shp {}.gmt'.format(os.path.join(self._outdir, out_fn), os.path.join(self._outdir, out_fn)))
+
 ## ==============================================
 ## fetches processing (datalists fmt:400 - 499)
 ## ==============================================
@@ -2604,6 +2712,12 @@ fetch_infos = {
     https://open.canada.ca/data/en/dataset/957782bf-847c-4644-a757-e383c0057995
 
     < hredem >'''],
+    'osm':[lambda x, f, c: osm(x, f, c), '''Open Street Map (OSM) data
+    various datasets via OSM OverPass
+    
+    < osm:osm_type='all' >
+     :osm_type=[data-type] - currently, either 'highway, waterway, building'; use 'all' to get all
+    '''],
 }
 
 def fetch_desc(x):
@@ -2627,7 +2741,7 @@ General Options:
   -l, --list\t\tReturn a list of fetch URLs in the given region.
   -f, --filter\t\tSQL style filters for certain datasets.
 \t\t\tFields to filter include: 'Name', 'Date' and 'Datatype'
-  -p, --process\t\tProcess fetched data to ASCII XYZ format in WGS84. <beta>
+  -p, --process\t\tProcess fetched elevation data to ASCII XYZ format in WGS84. <beta>
 
   --help\t\tPrint the usage text
   --version\t\tPrint the version information

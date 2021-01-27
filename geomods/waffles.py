@@ -968,18 +968,18 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     utils.echo_msg('analyzing {} sub-regions...'.format(len(sub_regions)))
     sub_zones = {}    
     for sc, sub_region in enumerate(sub_regions):
-        #utils.echo_msg_inline('analyzing sub-regions [{:.10f}%]'.format(sc/len(sub_regions) * 100))
-        utils.echo_msg_inline('analyzing sub-regions [{}]'.format(sc))
+        utils.echo_msg_inline('analyzing sub-regions [{}%]'.format(float(sc / len(sub_regions)) * 100))
+        #utils.echo_msg_inline('analyzing sub-regions [{}]'.format(sc))
         try:
             gdalfun.gdal_cut(msk, sub_region, 'tmp_msk.tif')
             gdalfun.gdal_cut(dem, sub_region, 'tmp_dem.tif')
+            #utils.echo_error_msg('sub region is too small, please increase the increment or chnk_lvl')
+            #sys.exit(-1)
+            s_sum, s_g_max, s_perc = gdalfun.gdal_mask_analysis('tmp_msk.tif')
+            s_dc = gdalfun.gdal_infos('tmp_dem.tif', True)
+            zone = 'Bathy' if s_dc['zr'][1] < 0 else 'Topo' if s_dc['zr'][0] > 0 else 'BathyTopo'
+            sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, s_dc['zr'][0], s_dc['zr'][1], zone]
         except: continue
-        #utils.echo_error_msg('sub region is too small, please increase the increment or chnk_lvl')
-        #sys.exit(-1)
-        s_sum, s_g_max, s_perc = gdalfun.gdal_mask_analysis('tmp_msk.tif')
-        s_dc = gdalfun.gdal_infos('tmp_dem.tif', True)
-        zone = 'Bathy' if s_dc['zr'][1] < 0 else 'Topo' if s_dc['zr'][0] > 0 else 'BathyTopo'
-        sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, s_dc['zr'][0], s_dc['zr'][1], zone]
         utils.remove_glob('tmp_*.tif')
     utils.echo_msg_inline('analyzing sub-regions [OK]\n')
     s_dens = np.array([sub_zones[x][3] for x in sub_zones.keys()])
