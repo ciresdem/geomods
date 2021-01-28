@@ -1158,7 +1158,7 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         utils.echo_msg('applied coefficient {} to proximity grid'.format(ec_d))
         
         math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
-        # '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
+        '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
         utils.run_cmd(math_cmd, verbose = wg['verbose'])
         if wg['epsg'] is not None: gdalfun.gdal_set_epsg('{}_slp_unc.tif'.format(wg['name']), epsg = wg['epsg'])
         utils.echo_msg('applied coefficient {} to slope grid'.format(ec_s))
