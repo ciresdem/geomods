@@ -918,17 +918,17 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     if dem is None:
         if dem is None: dem = '{}.tif'.format(wg['name'])
         tmp_wg = waffles_config_copy(wg)
-        if dem is None:
+        if not os.path.exists(dem):
             dem = '{}.tif'.format(wg['name'])
             tmp_wg['name'] = '{}'.format(wg['name'])
         if msk is None:
-            if msk is None: msk = '{}_msk.tif'.format(tmp_wg['name'])
+            msk = '{}_msk.tif'.format(tmp_wg['name'])
             tmp_wg['mask'] = True
         else: tmp_wg['mask'] = False
         waffles_run(tmp_wg)
 
     if msk is None:
-        if msk is None: msk = '_{}_msk.tif'.format(wg['name'])
+        if msk is None: msk = '{}_msk.tif'.format(wg['name'])
         tmp_wg = waffles_config_copy(wg)
         tmp_wg['name'] = '{}_msk'.format(wg['name'])
         tmp_wg['mod'] = 'num'
