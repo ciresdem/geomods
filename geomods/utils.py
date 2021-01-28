@@ -365,7 +365,7 @@ def config_check(chk_vdatum = False, verbose = False):
     _waff_co['GDAL'] = cmd_check('gdal_grid{}'.format(ae), 'gdal_grid --version')
     _waff_co['GMT'] = cmd_check('gmt{}'.format(ae), 'gmt --version')
     _waff_co['MBGRID'] = cmd_check('mbgrid{}'.format(ae), 'mbgrid -version | grep Version')
-    _waff_co['LASTOOLS'] = cmd_check('las2txt{}'.format(ae), 'las2txt -version | awk \'{print $5}\'')
+    _waff_co['LASTOOLS'] = cmd_check('las2txt{}'.format(ae), 'las2txt -version 2>&1 | awk \'{print $5}\'')
     _waff_co['GEOMODS'] = str(_version)
     return(_waff_co)
     
