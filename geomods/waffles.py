@@ -1424,7 +1424,7 @@ def waffles_run(wg = _waffles_grid_info):
         for region in s_regions:
             this_wg = waffles_config_copy(wg)
             this_wg['region'] = region
-            this_wg['extend'] = wg['extend'] + 5
+            #this_wg['extend'] = wg['extend'] + 5
             #this_wg['region'] = waffles_grid_node_region(this_wg) if this_wg['node'] == 'grid' else this_wg['region']
             this_wg['name'] = 'chunk_{}'.format(regions.region_format(region, 'fn'))
             this_dem = this_wg['name'] + '.tif'
