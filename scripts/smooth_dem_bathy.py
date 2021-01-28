@@ -1,7 +1,7 @@
 #!/usr/bin/env python
-### gdalfun.py
+### smooth_dem_bathy.py
 ##
-## Copyright (c) 2012 - 2020 CIRES Coastal DEM Team
+## Copyright (c) 2012 - 2021 CIRES Coastal DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -29,9 +29,10 @@ import scipy.fftpack._fftpack as sff
 from gdalconst import *
 from osgeo import osr
 from osgeo import gdal
-from geomods import waffles
 
-_version = '0.0.6'
+from geomods import gdalfun
+
+_version = '0.0.7'
 _usage = '''smooth_dem_bathy.py ({}): smooth the bathymetry in a DEM
 smooth_dem_bathy.py: A script that smooths the bathy areas of DEM (below 0) and merges back with original, unsmoothed topo.
 
@@ -223,6 +224,6 @@ if __name__ == '__main__':
             proc_elev(lf, smooth_factor)
     else:
         #proc_elev(elev, smooth_factor)
-        waffles.gdal_smooth(elev, elev[:-4] + '_smooth.tif')
+        gdalfun.gdal_blur(elev, elev[:-4] + '_smooth.tif', smooth_factor)
 
 ### End

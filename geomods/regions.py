@@ -198,7 +198,6 @@ def regions_sort(trainers, verbose = False):
     for z, train in enumerate(trainers):
         train_d = []
         np.random.shuffle(train)
-        if verbose: utils.echo_msg_inline('sorting {} training tiles [{}]'.format(len(trainers), z))
         while True:
             if len(train) == 0: break
             this_center = region_center(train[0][0])
@@ -210,7 +209,7 @@ def regions_sort(trainers, verbose = False):
             d_t = lambda t: utils.hav_dst(this_center, region_center(t[0])) > min_dst
             np.random.shuffle(train)
             train.sort(reverse=True, key=d_t)
-        #echo_msg(' '.join([region_format(x[0], 'gmt') for x in train_d[:25]]))
+        utils.echo_msg(' '.join([region_format(x[0], 'gmt') for x in train_d[:25]]))
         train_sorted.append(train_d)
     if verbose: utils.echo_msg_inline('sorting training tiles [OK]\n')
     return(train_sorted)
