@@ -916,13 +916,12 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
 
     if dem is None:
-        if dem is None: dem = '{}.tif'.format(wg['name'])
+        dem = 'dem_{}.tif'.format(wg['mod'])
         tmp_wg = waffles_config_copy(wg)
-        if not os.path.exists(dem):
-            dem = '{}.tif'.format(wg['name'])
-            tmp_wg['name'] = '{}'.format(wg['name'])
+        tmp_wg['name'] = '{}'.format(wg['mod'])
+        
         if msk is None:
-            msk = '{}_msk.tif'.format(tmp_wg['name'])
+            msk = 'dem_{}_msk.tif'.format(tmp_wg['mod'])
             tmp_wg['mask'] = True
         else: tmp_wg['mask'] = False
         waffles_run(tmp_wg)
