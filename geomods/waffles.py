@@ -918,12 +918,14 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     if dem is None:
         dem = 'dem_{}.tif'.format(wg['mod'])
         tmp_wg = waffles_config_copy(wg)
-        tmp_wg['name'] = '{}'.format(wg['mod'])
+        tmp_wg['datalist'] = None
+        tmp_wg['name'] = 'dem_{}'.format(wg['mod'])
         
         if msk is None:
             msk = 'dem_{}_msk.tif'.format(tmp_wg['mod'])
             tmp_wg['mask'] = True
         else: tmp_wg['mask'] = False
+        tmp_wg = waffles_config(**tmp_wg)
         waffles_run(tmp_wg)
 
     if msk is None:
@@ -932,6 +934,8 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         tmp_wg['name'] = '{}_msk'.format(wg['name'])
         tmp_wg['mod'] = 'num'
         tmp_wg['mod_args'] = ('mode=k',)
+        tmp_wg['datalist'] = None
+        tmp_wg = waffles_config(**tmp_wg)
         waffles_run(tmp_wg)
         
     if prox is None:
