@@ -262,7 +262,7 @@ _waffles_modules = {
     'uncertainty': [lambda args: waffles_interpolation_uncertainty(**args), '''generate DEM UNCERTAINTY
     Calculate the interpolation uncertainty in relation to distance to nearest measurement
 
-    < uncertainty:mod=surface:dem=None:msk=None:prox=None:slp=None:sims=2 >''', 'raster', False],
+    < uncertainty:mod=surface:dem=None:msk=None:prox=None:slp=None:sims=10:chnk_lvl=6 >''', 'raster', False],
 }
 
 ## ==============================================
@@ -935,9 +935,11 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     if prox is None or not os.path.exists(prox):
         if prox is None: prox = '_{}_prox.tif'.format(wg['name'])
         gdalfun.gdal_proximity(msk, prox)
+        if wg['epsg'] is not None: gdalfun.gdal_set_epsg(prox, wg['epsg'])
     if slp is None or not os.path.exists(slp):
         if slp is None: slp = '_{}_slp.tif'.format(wg['name'])
         gdalfun.gdal_slope(dem, slp)
+        if wg['epsg'] is not None: gdalfun.gdal_set_epsg(slp, wg['epsg'])
 
     ## ==============================================
     ## region analysis
@@ -1075,6 +1077,7 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
                                         mod_args = wg['mod_args'],
                                         mask = True,
                                         overwrite = True,
+                                        epsg = wg['epsg'],
                                         )
                     sub_dem = waffles_run(wc)
                     sub_msk = '{}_msk.tif'.format(wc['name'])
@@ -1151,15 +1154,15 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_prox_unc.tif=gd+n-9999:GTiff\
         '.format(prox, ec_d[2], ec_d[1], 0, wg['name'])
         utils.run_cmd(math_cmd, verbose = wg['verbose'])
-        if wg['epsg'] is not None: gdalfun.gdal_set_epsg('{}_prox_unc.tif'.format(wg['name'], wg['epsg']))
+        if wg['epsg'] is not None: status = gdalfun.gdal_set_epsg('{}_prox_unc.tif'.format(wg['name']), epsg = wg['epsg'])
         utils.echo_msg('applied coefficient {} to proximity grid'.format(ec_d))
         
         math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
         # '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
         utils.run_cmd(math_cmd, verbose = wg['verbose'])
-        if wg['epsg'] is not None: gdalfun.gdal_set_epsg('{}_slp_unc.tif'.format(wg['name'], wg['epsg']))
+        if wg['epsg'] is not None: gdalfun.gdal_set_epsg('{}_slp_unc.tif'.format(wg['name']), epsg = wg['epsg'])
         utils.echo_msg('applied coefficient {} to slope grid'.format(ec_s))
-
+        
         utils.remove_glob('_*.tif')
 
         unc_out = {
@@ -1378,7 +1381,7 @@ def waffles_run(wg = _waffles_grid_info):
     args_d = utils.args2dict(wg['mod_args'], args_d)
     
     if wg['verbose']:
-        utils.echo_msg(wg)
+        utils.echo_msg(json.dumps(wg, indent=4))
         utils.echo_msg('running module {} with {} [{}]...'.format(wg['mod'], wg['mod_args'], args_d))
 
     dem = '{}.tif'.format(wg['name'])
