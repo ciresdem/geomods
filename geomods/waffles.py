@@ -91,7 +91,7 @@ from geomods import gmtfun
 from geomods import gdalfun
 from geomods import xyzfun
 
-_version = '0.6.4'
+_version = '0.6.5'
 
 ## ==============================================
 ## DEM module: generate a Digital Elevation Model using a variety of methods
@@ -175,6 +175,9 @@ def waffles_config(datalist = None, data = [], region = None, inc = None, name =
         else: wg['data'] = None
     
     if wg['datalist'] is None and len(wg['data']) > 0:
+        wg['datalist'] = datalists.datalist_major(wg['data'], region = wg['region'], major = '{}_major.datalist'.format(wg['name']))
+        
+    if not os.path.exists(wg['datalist']):
         wg['datalist'] = datalists.datalist_major(wg['data'], region = wg['region'], major = '{}_major.datalist'.format(wg['name']))
         
     #if wg['mod'].lower() != 'vdatum' and wg['mod'].lower() != 'coastline':
@@ -912,19 +915,19 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     utils.echo_msg('running INTERPOLATION uncertainty module using {}...'.format(wg['mod']))
     out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
 
-    if dem is None or not os.path.exists(dem):
+    if dem is None:
         if dem is None: dem = '{}.tif'.format(wg['name'])
         tmp_wg = waffles_config_copy(wg)
         if dem is None:
             dem = '{}.tif'.format(wg['name'])
             tmp_wg['name'] = '_{}'.format(wg['name'])
-        if msk is None or not os.path.exists(msk):
+        if msk is None:
             if msk is None: msk = '{}_msk.tif'.format(tmp_wg['name'])
             tmp_wg['mask'] = True
         else: tmp_wg['mask'] = False
         waffles_run(tmp_wg)
 
-    if msk is None or not os.path.exists(msk):
+    if msk is None:
         if msk is None: msk = '_{}_msk.tif'.format(wg['name'])
         tmp_wg = waffles_config_copy(wg)
         tmp_wg['name'] = '_{}_msk'.format(wg['name'])
@@ -932,11 +935,11 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         tmp_wg['mod_args'] = ('mode=k',)
         waffles_run(tmp_wg)
         
-    if prox is None or not os.path.exists(prox):
+    if prox is None:
         if prox is None: prox = '_{}_prox.tif'.format(wg['name'])
         gdalfun.gdal_proximity(msk, prox)
         if wg['epsg'] is not None: gdalfun.gdal_set_epsg(prox, wg['epsg'])
-    if slp is None or not os.path.exists(slp):
+    if slp is None:
         if slp is None: slp = '_{}_slp.tif'.format(wg['name'])
         gdalfun.gdal_slope(dem, slp)
         if wg['epsg'] is not None: gdalfun.gdal_set_epsg(slp, wg['epsg'])
@@ -1150,16 +1153,17 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         ## ==============================================
         utils.echo_msg('applying coefficient to proximity grid')
         ## USE numpy/gdal instead
-        #utils.run_cmd('gdal_calc.py -A {} --outfile {}.tif --calc {}+({}*(A**{}))'.format(prox, ec_d[0], ec_d[1], ec_d[2], wg['name']), verbose = True)
-        math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_prox_unc.tif=gd+n-9999:GTiff\
-        '.format(prox, ec_d[2], ec_d[1], 0, wg['name'])
-        utils.run_cmd(math_cmd, verbose = wg['verbose'])
+        utils.run_cmd('gdal_calc.py -A {} --outfile {}_prox_unc.tif --calc "{}+({}*(A**{}))"'.format(prox, wg['name'], 0, ec_d[1], abs(ec_d[2])), verbose = True)
+        #math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_prox_unc.tif=gd+n-9999:GTiff\
+        #'.format(prox, ec_d[2], ec_d[1], 0, wg['name'])
+        #utils.run_cmd(math_cmd, verbose = wg['verbose'])
         if wg['epsg'] is not None: status = gdalfun.gdal_set_epsg('{}_prox_unc.tif'.format(wg['name']), epsg = wg['epsg'])
         utils.echo_msg('applied coefficient {} to proximity grid'.format(ec_d))
-        
-        math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
-        '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
-        utils.run_cmd(math_cmd, verbose = wg['verbose'])
+
+        utils.run_cmd('gdal_calc.py -A {} --outfile {}_slp_unc.tif --calc "{}+({}*(A**{}))"'.format(slp, wg['name'], 0, ec_s[1], abs(ec_s[2])), verbose = True)
+        #math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
+        #'.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
+        #utils.run_cmd(math_cmd, verbose = wg['verbose'])
         if wg['epsg'] is not None: gdalfun.gdal_set_epsg('{}_slp_unc.tif'.format(wg['name']), epsg = wg['epsg'])
         utils.echo_msg('applied coefficient {} to slope grid'.format(ec_s))
         
