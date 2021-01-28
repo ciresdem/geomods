@@ -942,10 +942,10 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         if prox is None: prox = '_{}_prox.tif'.format(wg['name'])
         gdalfun.gdal_proximity(msk, prox)
         if wg['epsg'] is not None: gdalfun.gdal_set_epsg(prox, wg['epsg'])
-    if slp is None:
-        if slp is None: slp = '_{}_slp.tif'.format(wg['name'])
-        gdalfun.gdal_slope(dem, slp)
-        if wg['epsg'] is not None: gdalfun.gdal_set_epsg(slp, wg['epsg'])
+    # if slp is None:
+    #     if slp is None: slp = '_{}_slp.tif'.format(wg['name'])
+    #     gdalfun.gdal_slope(dem, slp)
+    #     if wg['epsg'] is not None: gdalfun.gdal_set_epsg(slp, wg['epsg'])
 
     ## ==============================================
     ## region analysis
@@ -1095,28 +1095,28 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
                         sub_prox = '{}_prox.tif'.format(wc['name'])
                         gdalfun.gdal_proximity(sub_msk, sub_prox)
 
-                        sub_slp = '{}_slp.tif'.format(wc['name'])
-                        gdalfun.gdal_slope(sub_dem, sub_slp)
-
+                        #sub_slp = '{}_slp.tif'.format(wc['name'])
+                        #gdalfun.gdal_slope(sub_dem, sub_slp)
+                        
                         ## ==============================================
                         ## Calculate the random-sample errors
                         ## ==============================================
                         sub_xyd = gdalfun.gdal_query(sub_xyz[sx_cnt:], sub_dem, 'xyd')
                         #sub_dp = gdalfun.gdal_query(sub_xyd, sub_prox, 'zg')
                         sub_dp = gdalfun.gdal_query(sub_xyd, sub_prox, 'xyzg')
-                        sub_ds = gdalfun.gdal_query(sub_dp, slp, 'g')
+                        #sub_ds = gdalfun.gdal_query(sub_dp, slp, 'g')
  
-                        if len(sub_dp) > 0:
-                            if sub_dp.shape[0] == sub_ds.shape[0]:
-                                sub_dp = np.append(sub_dp, sub_ds, 1)
-                            else:
-                                print(n)
-                                print(sub_dp.shape)
-                                print(sub_dp)
-                                #print(sub_ds.shape)
-                                #print(sub_ds)
-                                #sys.exit()
-                                sub_dp = []
+                        # if len(sub_dp) > 0:
+                        #     if sub_dp.shape[0] == sub_ds.shape[0]:
+                        #         sub_dp = np.append(sub_dp, sub_ds, 1)
+                        #     else:
+                        #         print(n)
+                        #         print(sub_dp.shape)
+                        #         print(sub_dp)
+                        #         #print(sub_ds.shape)
+                        #         #print(sub_ds)
+                        #         #sys.exit()
+                        #         sub_dp = []
                     else: sub_dp = None
                     utils.remove_glob(sub_xyz_head)
 
@@ -1143,13 +1143,13 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         s_dp = s_dp[s_dp[:,3] > 0,:]
 
         prox_err = s_dp[:,[2,3]]
-        slp_err = s_dp[:,[2,4]]
+        #slp_err = s_dp[:,[2,4]]
         
         np.savetxt('{}_prox.err'.format(wg['name']), prox_err, '%f', ' ')
-        np.savetxt('{}_slp.err'.format(wg['name']), slp_err, '%f', ' ')
+        #np.savetxt('{}_slp.err'.format(wg['name']), slp_err, '%f', ' ')
 
         ec_d = utils.err2coeff(prox_err[:50000000], dst_name = wg['name'] + '_prox', xa = 'distance')
-        ec_s = utils.err2coeff(slp_err[:50000000], dst_name = wg['name'] + '_slp', xa = 'slope')
+        #ec_s = utils.err2coeff(slp_err[:50000000], dst_name = wg['name'] + '_slp', xa = 'slope')
 
         ## ==============================================
         ## apply error coefficient to full proximity grid
@@ -1163,26 +1163,33 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         if wg['epsg'] is not None: status = gdalfun.gdal_set_epsg('{}_prox_unc.tif'.format(wg['name']), epsg = wg['epsg'])
         utils.echo_msg('applied coefficient {} to proximity grid'.format(ec_d))
 
-        utils.run_cmd('gdal_calc.py -A {} --outfile {}_slp_unc.tif --calc "{}+({}*(A**{}))"'.format(slp, wg['name'], 0, ec_s[1], abs(ec_s[2])), verbose = True)
+        #utils.run_cmd('gdal_calc.py -A {} --outfile {}_slp_unc.tif --calc "{}+({}*(A**{}))"'.format(slp, wg['name'], 0, ec_s[1], abs(ec_s[2])), verbose = True)
         #math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
         #'.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
         #utils.run_cmd(math_cmd, verbose = wg['verbose'])
-        if wg['epsg'] is not None: gdalfun.gdal_set_epsg('{}_slp_unc.tif'.format(wg['name']), epsg = wg['epsg'])
-        utils.echo_msg('applied coefficient {} to slope grid'.format(ec_s))
+        #if wg['epsg'] is not None: gdalfun.gdal_set_epsg('{}_slp_unc.tif'.format(wg['name']), epsg = wg['epsg'])
+        #utils.echo_msg('applied coefficient {} to slope grid'.format(ec_s))
         
         utils.remove_glob('_*.tif')
 
+        # unc_out = {
+        #     'prox_unc': '{}_prox_unc.tif'.format(wg['name']),
+        #     'slp_unc': '{}_slp_unc.tif'.format(wg['name']),
+        #     'prox_err': '{}_prox.err'.format(wg['name']),
+        #     'slp_err': '{}_slp.err'.format(wg['name']),
+        #     'prox_bf': '{}_prox_bf.png'.format(wg['name']),
+        #     'prox_scatter': '{}_prox_scatter.png'.format(wg['name']),
+        #     'slp_bf': '{}_slp_bf.png'.format(wg['name']),
+        #     'slp_scatter': '{}_slp_scatter.png'.format(wg['name']),
+        #     'prox_coeff': ec_d,
+        #     'slp_coeff': ec_s,
+        # }
         unc_out = {
             'prox_unc': '{}_prox_unc.tif'.format(wg['name']),
-            'slp_unc': '{}_slp_unc.tif'.format(wg['name']),
             'prox_err': '{}_prox.err'.format(wg['name']),
-            'slp_err': '{}_slp.err'.format(wg['name']),
             'prox_bf': '{}_prox_bf.png'.format(wg['name']),
             'prox_scatter': '{}_prox_scatter.png'.format(wg['name']),
-            'slp_bf': '{}_slp_bf.png'.format(wg['name']),
-            'slp_scatter': '{}_slp_scatter.png'.format(wg['name']),
             'prox_coeff': ec_d,
-            'slp_coeff': ec_s,
         }
 
         # for key in unc_out.keys():
@@ -1625,15 +1632,21 @@ def waffles_run(wg = _waffles_grid_info):
         except Exception as e:
             utils.echo_error_msg('failed to calculate uncertainty, {}'.format(e))
 
+    # if wg['mod'] == 'uncertainty':
+    #     os.rename(waffles_out['prox_unc'], '{}_prox_unc.tif'.format(wg['name']))
+    #     os.rename(waffles_out['slp_unc'], '{}_slp_unc.tif'.format(wg['name']))
+    #     os.rename(waffles_out['prox_err'], '{}_prox.err'.format(wg['name']))
+    #     os.rename(waffles_out['slp_err'], '{}_slp.err'.format(wg['name']))
+    #     os.rename(waffles_out['prox_bf'], '{}_prox_bf.png'.format(wg['name']))
+    #     os.rename(waffles_out['slp_bf'], '{}_slp_bf.png'.format(wg['name']))
+    #     os.rename(waffles_out['prox_scatter'], '{}_prox_scatter.png'.format(wg['name']))
+    #     os.rename(waffles_out['slp_scatter'], '{}_slp_scatter.png'.format(wg['name']))
+
     if wg['mod'] == 'uncertainty':
         os.rename(waffles_out['prox_unc'], '{}_prox_unc.tif'.format(wg['name']))
-        os.rename(waffles_out['slp_unc'], '{}_slp_unc.tif'.format(wg['name']))
         os.rename(waffles_out['prox_err'], '{}_prox.err'.format(wg['name']))
-        os.rename(waffles_out['slp_err'], '{}_slp.err'.format(wg['name']))
         os.rename(waffles_out['prox_bf'], '{}_prox_bf.png'.format(wg['name']))
-        os.rename(waffles_out['slp_bf'], '{}_slp_bf.png'.format(wg['name']))
         os.rename(waffles_out['prox_scatter'], '{}_prox_scatter.png'.format(wg['name']))
-        os.rename(waffles_out['slp_scatter'], '{}_slp_scatter.png'.format(wg['name']))
 
     ## ==============================================
     ## if dem has data, return

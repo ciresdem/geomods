@@ -260,9 +260,10 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
     ydata = np.insert(std, 0, 0)
     bins_orig=(_[1:] + _[:-1]) / 2
     xdata = np.insert(bins_orig, 0, 0)
-    fitfunc = lambda p, x: p[0] + p[1] * (abs(x) ** abs(p[2]))
+    fitfunc = lambda p, x: p[0] + p[1] * (x ** p[2])
     errfunc = lambda p, x, y: y - fitfunc(p, x)
     out, cov, infodict, mesg, ier = optimize.leastsq(errfunc, coeff_guess, args = (xdata, ydata), full_output = True)
+    if out[2]<0.001: out[2]=0.001
     try:
         err_fit_plot(xdata, ydata, out, fitfunc, dst_name, xa)
         err_scatter_plot(error, distance, dst_name, xa)
