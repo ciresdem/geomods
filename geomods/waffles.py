@@ -890,7 +890,7 @@ waffles_unc_config_copy = lambda uc: copy.deepcopy(uc)
 
 def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', mod_args = (), \
                                       dem = None, msk = None, prox = None, slp = None, \
-                                      percentile = 95, zones = ['bathy', 'bathy-topo', 'topo'], \
+                                      percentile = 95, zones = ['low-dens', 'mid-dens', 'high-dens'], \
                                       sims = 10, chnk_lvl = 6):
     '''calculate the interpolation uncertainty
     - as related to distance to nearest measurement.
