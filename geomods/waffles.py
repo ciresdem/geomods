@@ -1158,14 +1158,16 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
                 ec_d = last_ec_d
                 ec_s = last_ec_s
                 break
+            last_ec_d = ec_d
+            last_ec_s = ec_s
 
     ## ==============================================
     ## Save/Output results
     ## apply error coefficient to full proximity grid
     ## ==============================================
             
-    np.savetxt('{}_prox.err'.format(wg['name']), prox_err, '%f', ' ')
-    np.savetxt('{}_slp.err'.format(wg['name']), slp_err, '%f', ' ')
+    #np.savetxt('{}_prox.err'.format(wg['name']), prox_err, '%f', ' ')
+    #np.savetxt('{}_slp.err'.format(wg['name']), slp_err, '%f', ' ')
 
     utils.echo_msg('applying coefficient to proximity grid')
     ## USE numpy/gdal instead
@@ -1188,12 +1190,10 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     unc_out = {
         'unc': '{}_unc.tif'.format(wg['name']),
         'prox_unc': '{}_prox_unc.tif'.format(wg['name']),
-        'prox_err': '{}_prox.err'.format(wg['name']),
         'prox_bf': '{}_prox_bf.png'.format(wg['name']),
         'prox_scatter': '{}_prox_scatter.png'.format(wg['name']),
         'prox': '{}_prox.tif'.format(wg['name']),
         'slp_unc': '{}_slp_unc.tif'.format(wg['name']),
-        'slp_err': '{}_slp.err'.format(wg['name']),
         'slp_bf': '{}_slp_bf.png'.format(wg['name']),
         'slp_scatter': '{}_slp_scatter.png'.format(wg['name']),
         'slp': '{}_slp.tif'.format(wg['name']),
@@ -1643,13 +1643,11 @@ def waffles_run(wg = _waffles_grid_info):
     if wg['mod'] == 'uncertainty':
         os.rename(waffles_out['unc'], '{}_unc.tif'.format(wg['name']))
         os.rename(waffles_out['prox_unc'], '{}_prox_unc.tif'.format(wg['name']))
-        os.rename(waffles_out['prox_err'], '{}_prox.err'.format(wg['name']))
         os.rename(waffles_out['prox_bf'], '{}_prox_bf.png'.format(wg['name']))
         os.rename(waffles_out['prox_scatter'], '{}_prox_scatter.png'.format(wg['name']))
         os.rename(waffles_out['prox'], '{}_prox.tif'.format(wg['name']))
         os.rename(waffles_out['slp_unc'], '{}_slp_unc.tif'.format(wg['name']))
         os.rename(waffles_out['slp'], '{}_slp.tif'.format(wg['name']))
-        os.rename(waffles_out['slp_err'], '{}_slp.err'.format(wg['name']))
         os.rename(waffles_out['slp_bf'], '{}_slp_bf.png'.format(wg['name']))
         os.rename(waffles_out['slp_scatter'], '{}_slp_scatter.png'.format(wg['name']))
 
