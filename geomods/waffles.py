@@ -973,10 +973,12 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     ## ==============================================
     ## chunk region into sub regions
     ## ==============================================
-    utils.echo_msg('chunking region into sub-regions using chunk level {}...'.format(chnk_lvl))
+    chnk_lvl = 2
     chnk_inc = int(region_info[wg['name']][4] * int(chnk_lvl))
+    utils.echo_msg('chunking region into sub-regions using chunk level {}...'.format(chnk_lvl))
+    #print(chnk_inc)
     sub_regions = regions.region_chunk(wg['region'], wg['inc'], chnk_inc)
-    utils.echo_msg('chunked region into {} sub-regions.'.format(len(sub_regions)))
+    utils.echo_msg('chunked region into {} sub-regions @ {}x{}.'.format(len(sub_regions), chnk_inc, chnk_inc))
 
     ## ==============================================
     ## sub-region analysis
