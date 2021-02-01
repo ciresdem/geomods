@@ -1193,9 +1193,9 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         'prox_scatter': '{}_prox_scatter.png'.format(wg['name']),
         'prox': '{}_prox.tif'.format(wg['name']),
         'slp_unc': '{}_slp_unc.tif'.format(wg['name']),
-        'slp_err': '{}_prox.err'.format(wg['name']),
-        'slp_bf': '{}_prox_bf.png'.format(wg['name']),
-        'slp_scatter': '{}_prox_scatter.png'.format(wg['name']),
+        'slp_err': '{}_slp.err'.format(wg['name']),
+        'slp_bf': '{}_slp_bf.png'.format(wg['name']),
+        'slp_scatter': '{}_slp_scatter.png'.format(wg['name']),
         'slp': '{}_slp.tif'.format(wg['name']),
         'prox_coeff': ec_d,
         'slp_coeff': ec_s,
@@ -1456,14 +1456,14 @@ def waffles_run(wg = _waffles_grid_info):
             ## ==============================================
             ## gererate the DEM (run the module)
             ## ==============================================
-            #try:
-            waffles_out, status = _waffles_modules[this_wg['mod']][0](args_d)
-            #except KeyboardInterrupt as e:
-            #utils.echo_error_msg('killed by user, {}'.format(e))
-            #sys.exit(-1)
-            #except Exception as e:
-            #utils.echo_error_msg('{}'.format(e))
-            #    status = -1
+            try:
+                waffles_out, status = _waffles_modules[this_wg['mod']][0](args_d)
+            except KeyboardInterrupt as e:
+                utils.echo_error_msg('killed by user, {}'.format(e))
+                sys.exit(-1)
+            except Exception as e:
+                utils.echo_error_msg('{}'.format(e))
+                status = -1
 
             if status != 0: utils.remove_glob(this_dem)
             if not os.path.exists(this_dem): continue
