@@ -103,7 +103,7 @@ def gdal_set_nodata(src_fn, nodata = -9999):
     ds = None
     return(0)
 
-def gdal_infos(src_fn, scan = False):
+def gdal_infos(src_fn, region = None, scan = False):
     '''scan gdal file src_fn and gather region info.
 
     returns region dict.'''
@@ -111,23 +111,35 @@ def gdal_infos(src_fn, scan = False):
     if os.path.exists(src_fn):
         ds = gdal.Open(src_fn)
         if ds is not None:
-            dsc = gdal_gather_infos(ds, scan = scan)
+            dsc = gdal_gather_infos(ds, region = region, scan = scan)
             ds = None
             return(dsc)
         else: return(None)
     else: return(None)
 
-def gdal_gather_infos(src_ds, scan = False):
+def gdal_gather_infos(src_ds, region = None, scan = False):
     '''gather information from `src_ds` GDAL dataset
 
     returns gdal_config dict.'''
 
+    gt = src_ds.GetGeoTransform()
+    if region is not None:
+        srcwin = gdal_srcwin(src_ds, region)
+    else: srcwin = (0, 0, src_ds.RasterXSize, src_ds.RasterYSize)
     src_band = src_ds.GetRasterBand(1)
+    #src_arr = src_band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
+    dst_gt = (gt[0] + (srcwin[0] * gt[1]), gt[1], 0., gt[3] + (srcwin[1] * gt[5]), 0., gt[5])
+    #src_band = src_ds.GetRasterBand(1)
+    #'nx': src_ds.RasterXSize,
+    #'ny': src_ds.RasterYSize,
+    #'nb':src_ds.RasterCount,
+    #'geoT': src_ds.GetGeoTransform(),
+
     ds_config = {
-        'nx': src_ds.RasterXSize,
-        'ny': src_ds.RasterYSize,
-        'nb':src_ds.RasterCount,
-        'geoT': src_ds.GetGeoTransform(),
+        'nx': srcwin[2],
+        'ny': srcwin[3],
+        'nb': srcwin[2] * srcwin[3],
+        'geoT': dst_gt,
         'proj': src_ds.GetProjectionRef(),
         'dt': src_band.DataType,
         'dtn': gdal.GetDataTypeName(src_band.DataType),
@@ -137,9 +149,10 @@ def gdal_gather_infos(src_ds, scan = False):
     }
     if ds_config['ndv'] is None: ds_config['ndv'] = -9999
     if scan:
-        try:
-            ds_config['zr'] = src_band.ComputeRasterMinMax()
-        except: ds_config = None    
+        src_arr = src_band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
+        ds_config['zr'] = (np.amin(src_arr), np.amax(src_arr))
+        #ds_config['zr'] = src_band.ComputeRasterMinMax()
+        src_arr = None
     return(ds_config)
 
 def gdal_set_infos(nx, ny, nb, geoT, proj, dt, ndv, fmt):
@@ -456,8 +469,10 @@ def gdal_sum(src_gdal):
     '''sum the z vale of src_gdal
 
     return the sum'''
-    
-    ds = gdal.Open(src_gdal)
+
+    try:
+        ds = gdal.Open(src_gdal)
+    except: ds = None
     if ds is not None:
         ds_array = ds.GetRasterBand(1).ReadAsArray() 
         sums = np.sum(ds_array)
@@ -475,10 +490,13 @@ def gdal_percentile(src_gdal, perc = 95):
         ds_array = np.array(ds.GetRasterBand(1).ReadAsArray())
         x_dim = ds_array.shape[0]
         ds_array_flat = ds_array.flatten()
-        p = np.percentile(ds_array_flat, perc)
-        percentile = 2 if p < 2 else p
-        ds = ds_array = None
-        return(percentile)
+        ds_array = ds_array_flat[ds_array_flat != 0]
+        if len(ds_array) > 0:
+            p = np.percentile(ds_array, perc)
+            #percentile = 2 if p < 2 else p
+        else: p = 2
+        ds = ds_array = ds_array_flat = None
+        return(p)
     else: return(None)
 
 def gdal_mask(src_gdal, dst_gdal, invert = False):
@@ -512,7 +530,35 @@ def gdal_mask_analysis(mask = None):
     msk_max = float(msk_gc['nx'] * msk_gc['ny'])
     msk_perc = float((msk_sum / msk_max) * 100.)
     return(msk_sum, msk_max, msk_perc)
+
+def gdal_mask_analysis2(src_gdal, region = None):
+
+    ds_config = gdal_gather_infos(src_gdal)
+    if region is not None:
+        srcwin = gdal_srcwin(src_gdal, region)
+    else: srcwin = (0, 0, ds_config['nx'], ds_config['ny'])
+    ds_arr = src_gdal.GetRasterBand(1).ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
+        
+    msk_sum = np.sum(ds_arr)
+    msk_max = float(srcwin[2] * srcwin[3])
+    msk_perc = float((msk_sum / msk_max) * 100.)
+    dst_arr = None
     
+    return(msk_sum, msk_max, msk_perc)
+
+def gdal_prox_analysis2(src_gdal, region = None):
+
+    ds_config = gdal_gather_infos(src_gdal)
+    if region is not None:
+        srcwin = gdal_srcwin(src_gdal, region)
+    else: srcwin = (0, 0, ds_config['nx'], ds_config['ny'])
+    ds_arr = src_gdal.GetRasterBand(1).ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
+
+    prox_perc = np.percentile(ds_arr, 95)
+    dst_arr = None
+    
+    return(prox_perc)
+        
 def gdal_proximity(src_fn, dst_fn):
     '''compute a proximity grid via GDAL
 

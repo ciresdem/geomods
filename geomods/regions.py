@@ -198,18 +198,23 @@ def regions_sort(trainers, verbose = False):
     for z, train in enumerate(trainers):
         train_d = []
         np.random.shuffle(train)
+        train_total = len(train)
         while True:
+            if verbose: utils.echo_msg_inline('sorting training tiles [{}]'.format(len(train)))
             if len(train) == 0: break
+            #if len(train) == train_total - 30: break
             this_center = region_center(train[0][0])
             train_d.append(train[0])
             train = train[1:]
-            if len(train) == 0: break
-            dsts = [utils.hav_dst(this_center, region_center(x[0])) for x in train]
+            if len(train_d) > 25 or len(train) == 0: break
+            #dsts = [utils.hav_dst(this_center, region_center(x[0])) for x in train]
+            dsts = [utils.euc_dst(this_center, region_center(x[0])) for x in train]
             min_dst = np.percentile(dsts, 50)
-            d_t = lambda t: utils.hav_dst(this_center, region_center(t[0])) > min_dst
+            #d_t = lambda t: utils.hav_dst(this_center, region_center(t[0])) > min_dst
+            d_t = lambda t: utils.euc_dst(this_center, region_center(t[0])) > min_dst
             np.random.shuffle(train)
             train.sort(reverse=True, key=d_t)
-        utils.echo_msg(' '.join([region_format(x[0], 'gmt') for x in train_d[:25]]))
+        if verbose: utils.echo_msg(' '.join([region_format(x[0], 'gmt') for x in train_d[:25]]))
         train_sorted.append(train_d)
     if verbose: utils.echo_msg_inline('sorting training tiles [OK]\n')
     return(train_sorted)
