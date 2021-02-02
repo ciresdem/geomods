@@ -1120,8 +1120,8 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
             ## perform split-sample analysis on each training region.
             ## ==============================================
             for n, sub_region in enumerate(train_h):
-                #ss_samp = s_5perc
-                ss_samp = samp_percs[sub_region[8]]
+                ss_samp = s_5perc
+                #ss_samp = samp_percs[sub_region[8]]
                 perc = int(float(n+(len(train_h) * z))/(len(train_h)*len(trains)) * 100)
                 utils.echo_msg_inline('performing SPLIT-SAMPLE simulation {} out of {} [{:3}%]'.format(sim, sims, perc))
                 #utils.echo_msg_inline('performing SPLIT-SAMPLE ({} - {}) simulation {} out of {} [{:3}%]'.format(ss_samp, sub_region[8], sim, sims, perc))
@@ -1209,7 +1209,7 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
                 utils.remove_glob('sub_{}*'.format(n))
 
         if len(s_dp) > 0:
-            d_max = (region_info[wg['name']][4] * 2)
+            d_max = region_info[wg['name']][4]
             #s_max = region_info[wg['name']][5]
             s_dp = s_dp[s_dp[:,3] < d_max,:]
             # s_dp = s_dp[s_dp[:,4] < s_max,:]
