@@ -277,6 +277,7 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
     #f = lambda x, a, b, c: a/1+b*x**c
     #g = lambda x, a, b, c: b/a*x**c+1/a
     out, cov, infodict, mesg, ier = optimize.leastsq(errfunc, coeff_guess, args = (xdata, ydata), full_output = True)
+    #print(out, cov, infodict, mesg, ier)
     #if out[2]<0.001: out[2]=0.001
     #try:
     #popt, pcov = optimize.curve_fit(f, xdata, ydata, p0=optimize.curve_fit(g, xdata, 1/ydata)[0])
@@ -409,6 +410,7 @@ def echo_msg2(msg, prefix = 'waffles', nl = True):
     sys.stderr.flush()
     sys.stderr.write('\x1b[2K\r')
     sys.stderr.write('{}: {}{}'.format(prefix, msg, '\n' if nl else ''))
+    sys.stderr.flush()
 
 ## ==============================================
 ## echo message `m` to sys.stderr using

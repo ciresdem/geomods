@@ -1809,9 +1809,12 @@ class srtm_plus:
 class tnm:
     '''Fetch elevation data from The National Map'''
     def __init__(self, extent = None, filters = [], callback = None):
-        self._tnm_api_url = "http://viewer.nationalmap.gov/tnmaccess/"
-        self._tnm_dataset_url = "http://viewer.nationalmap.gov/tnmaccess/api/datasets?"
-        self._tnm_product_url = "http://viewer.nationalmap.gov/tnmaccess/api/products?"
+        #self._tnm_api_url = "http://apps.nationalmap.gov/tnmaccess/"
+        #self._tnm_dataset_url = "https://apps.nationalmap.gov/tnmaccess/api/datasets?"
+        #self._tnm_product_url = "https://apps.nationalmap.gov/tnmaccess/api/products?"
+        self._tnm_api_url = 'http://tnmaccess.nationalmap.gov/api/v1'
+        self._tnm_dataset_url = 'https://tnmaccess.nationalmap.gov/api/v1/datasets?'
+        self._tnm_product_url = 'https://tnmaccess.nationalmap.gov/api/v1/products?'
         self._outdir = os.path.join(os.getcwd(), 'tnm')        
         self._status = 0
         self._req = None
@@ -1829,6 +1832,8 @@ class tnm:
         utils.echo_msg('loading The National Map fetch module...')
         if self.region is None: return([])
         self._req = fetch_req(self._tnm_dataset_url)
+        print(self._req.url)
+        #print(self._req.text)
         if self._req is not None:
             try:
                 self._datasets = self._req.json()
@@ -1855,8 +1860,12 @@ class tnm:
         utils.echo_msg('filtering TNM dataset results...')
         sbDTags = []        
         for ds in self._tnm_ds:
+            print(ds)
             dtags = self._datasets[ds[0]]['tags']
             if len(ds) > 1:
+                # print(dtags)
+                # print(ds[1])
+                # print(dtags.keys())
                 if len(dtags) == 0:
                     sbDTags.append( self._datasets[ds[0]]['sbDatasetTag'])
                 else:
@@ -1925,7 +1934,8 @@ class tnm:
         utils.echo_msg('filtered \033[1m{}\033[m data files from TNM dataset results.'.format(len(self._results)))
 
     def print_dataset_index(self):
-        for i,j in enumerate(self._datasets):
+        #self._datasets
+        for i,j in enumerate(self._datasets['items']):
             print('%s: %s [ %s ]' %(i, j['title'], ", ".join(j['formats'])))
             for m,n in enumerate(j['tags']):
                 print('\t%s: %s [ %s ]' %(m, n, ", ".join(j['tags'][n]['formats'])))
@@ -2857,14 +2867,14 @@ def fetches_cli(argv = sys.argv):
             fl = fetch_infos[fetch_mod][0](regions.region_buffer(this_region, 5, pct = True), f, lambda: stop_threads)
             #fl._verbose = True
             args_d = utils.args2dict(args)
-            try:
-                r = fl.run(**args_d)
-            except ValueError as e:
-                utils.echo_error_msg('something went wrong, {}'.format(e))
-                sys.exit(-1)
-            except Exception as e:
-                utils.echo_error_msg('{}'.format(e))
-                sys.exit(-1)
+            #try:
+            r = fl.run(**args_d)
+            #except ValueError as e:
+            #    utils.echo_error_msg('something went wrong, {}'.format(e))
+            #    sys.exit(-1)
+            #except Exception as e:
+            #    utils.echo_error_msg('{}'.format(e))
+            #    sys.exit(-1)
             utils.echo_msg('found {} data files.'.format(len(r)))
             
             if want_list:

@@ -484,8 +484,9 @@ def gdal_percentile(src_gdal, perc = 95):
     '''calculate the `perc` percentile of src_fn gdal file.
 
     return the calculated percentile'''
-    
-    ds = gdal.Open(src_gdal)
+    try:
+        ds = gdal.Open(src_gdal)
+    except: ds = None
     if ds is not None:
         ds_array = np.array(ds.GetRasterBand(1).ReadAsArray())
         x_dim = ds_array.shape[0]
@@ -502,7 +503,9 @@ def gdal_percentile(src_gdal, perc = 95):
 def gdal_mask(src_gdal, dst_gdal, invert = False):
     '''transform src_gdal to a raster mask (1 = data; 0 = nodata)
     if invert is True, 1 = nodata, 0 = data.'''
-    ds = gdal.Open(src_gdal)
+    try:
+        ds = gdal.Open(src_gdal)
+    except: ds = None
     if ds is not None:
         ds_band = ds.GetRasterBand(1)
         ds_array = ds_band.ReadAsArray()
