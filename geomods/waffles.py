@@ -1087,8 +1087,8 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         else: continue
         utils.echo_msg('Maximum proximity, sampling for {} tiles: {}, {}'.format(zones[z].upper(), t_50perc, d_50perc))
         samp_percs[this_zone] = d_5perc
-        #t_trainers = [x for x in tile_set if x[4] > t_50perc or abs(x[4] - t_50perc) < 0.01]
-        t_trainers = [x for x in tile_set if x[3] < d_5perc or abs(x[3] - d_5perc) < 0.01]
+        t_trainers = [x for x in tile_set if x[4] > t_50perc or abs(x[4] - t_50perc) < 0.01]
+        #t_trainers = [x for x in tile_set if x[3] < d_5perc or abs(x[3] - d_5perc) < 0.01]
         utils.echo_msg('possible {} training zones: {}'.format(zones[z].upper(), len(t_trainers)))
         trainers.append(t_trainers)
         
