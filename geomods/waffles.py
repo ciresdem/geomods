@@ -966,8 +966,8 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     ## proximity analysis
     ## ==============================================
     prox_percentile = gdalfun.gdal_percentile(prox, percentile)
-    prox_perc_33 = gdalfun.gdal_percentile(prox, 25)
-    prox_perc_66 = gdalfun.gdal_percentile(prox, 75)
+    prox_perc_33 = gdalfun.gdal_percentile(prox, 33)
+    prox_perc_66 = gdalfun.gdal_percentile(prox, 66)
     prox_perc_100 = gdalfun.gdal_percentile(prox, 100)
 
     # ## ==============================================
@@ -990,12 +990,13 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     if int(region_info[wg['name']][3] > region_info[wg['name']][4]):
         chnk_lvl = int(region_info[wg['name']][3] / region_info[wg['name']][4])
     else: chnk_lvl = int(region_info[wg['name']][4] / region_info[wg['name']][3])
+    chnk_lvl = 4
     #chnk_inc = int(region_info[wg['name']][4] * int(chnk_lvl))
     utils.echo_msg('chunking region into sub-regions using chunk level {}...'.format(chnk_lvl))
     #print(chnk_inc)
     #if chnk_inc
-    #chnk_inc = int(region_info[wg['name']][4] * int(chnk_lvl))
-    chnk_inc = int((int(region_info[wg['name']][1]) / math.sqrt(g_max)) / int(region_info[wg['name']][4] * int(chnk_lvl)))
+    chnk_inc = int(region_info[wg['name']][4] * int(chnk_lvl))
+    #chnk_inc = int((int(region_info[wg['name']][1]) / math.sqrt(g_max)) / int(region_info[wg['name']][4] * int(chnk_lvl)))
     sub_regions = regions.region_chunk(wg['region'], wg['inc'], chnk_inc)
     utils.echo_msg('chunked region into {} sub-regions @ {}x{} cells.'.format(len(sub_regions), chnk_inc, chnk_inc))
 
@@ -1049,7 +1050,7 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     # flat_tiles = [sub_zones[x] for x in sub_zones.keys() if sub_zones[x][9] == zones[3]]
     # mid_slp_tiles = [sub_zones[x] for x in sub_zones.keys() if sub_zones[x][9] == zones[4]]
     # steep_tiles = [sub_zones[x] for x in sub_zones.keys() if sub_zones[x][9] == zones[5]]
-    t_perc = 95
+    t_perc = 50
     s_perc = 50
 
     # #for z, tile_set in enumerate([bathy_tiles, bathy_topo_tiles, topo_tiles]):
@@ -1088,7 +1089,7 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         utils.echo_msg('Maximum proximity, sampling for {} tiles: {}, {}'.format(zones[z].upper(), t_50perc, d_50perc))
         samp_percs[this_zone] = d_5perc
         t_trainers = [x for x in tile_set if x[4] > t_50perc or abs(x[4] - t_50perc) < 0.01]
-        #t_trainers = [x for x in tile_set if x[3] < d_5perc or abs(x[3] - d_5perc) < 0.01]
+        #t_trainers = [x for x in tile_set if x[3] < d_50perc or abs(x[3] - d_50perc) < 0.01]
         utils.echo_msg('possible {} training zones: {}'.format(zones[z].upper(), len(t_trainers)))
         trainers.append(t_trainers)
         
@@ -1243,10 +1244,10 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
 
     utils.echo_msg('applying coefficient to proximity grid')
     ## USE numpy/gdal instead
-    utils.run_cmd('gdal_calc.py -A {} --outfile {}_prox_unc.tif --calc "{}+({}*(A**{}))"'.format(prox, wg['name'], 0, ec_d[1], ec_d[2]), verbose = True)
-    #math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_prox_unc.tif=gd+n-9999:GTiff\
-    #'.format(prox, ec_d[2], ec_d[1], 0, wg['name'])
-    #utils.run_cmd(math_cmd, verbose = wg['verbose'])
+    #utils.run_cmd('gdal_calc.py -A {} --outfile {}_prox_unc.tif --calc "{}+({}*(A**{}))"'.format(prox, wg['name'], 0, ec_d[1], ec_d[2]), verbose = True)
+    math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_prox_unc.tif=gd+n-9999:GTiff\
+    '.format(prox, ec_d[2], ec_d[1], 0, wg['name'])
+    utils.run_cmd(math_cmd, verbose = wg['verbose'])
     if wg['epsg'] is not None: status = gdalfun.gdal_set_epsg('{}_prox_unc.tif'.format(wg['name']), epsg = wg['epsg'])
     utils.echo_msg('applied coefficient {} to proximity grid'.format(ec_d))
 
