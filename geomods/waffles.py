@@ -1088,8 +1088,8 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
         else: continue
         utils.echo_msg('Maximum proximity, sampling for {} tiles: {}, {}'.format(zones[z].upper(), t_50perc, d_50perc))
         samp_percs[this_zone] = d_5perc
-        t_trainers = [x for x in tile_set if x[4] > t_50perc or abs(x[4] - t_50perc) < 0.01]
-        #t_trainers = [x for x in tile_set if x[3] < d_50perc or abs(x[3] - d_50perc) < 0.01]
+        #t_trainers = [x for x in tile_set if x[4] > t_50perc or abs(x[4] - t_50perc) < 0.01]
+        t_trainers = [x for x in tile_set if x[3] < d_50perc or abs(x[3] - d_50perc) < 0.01]
         utils.echo_msg('possible {} training zones: {}'.format(zones[z].upper(), len(t_trainers)))
         trainers.append(t_trainers)
         
@@ -1244,10 +1244,10 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
 
     utils.echo_msg('applying coefficient to proximity grid')
     ## USE numpy/gdal instead
-    #utils.run_cmd('gdal_calc.py -A {} --outfile {}_prox_unc.tif --calc "{}+({}*(A**{}))"'.format(prox, wg['name'], 0, ec_d[1], ec_d[2]), verbose = True)
-    math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_prox_unc.tif=gd+n-9999:GTiff\
-    '.format(prox, ec_d[2], ec_d[1], 0, wg['name'])
-    utils.run_cmd(math_cmd, verbose = wg['verbose'])
+    utils.run_cmd('gdal_calc.py -A {} --outfile {}_prox_unc.tif --calc "{}+({}*(A**{}))"'.format(prox, wg['name'], 0, ec_d[1], ec_d[2]), verbose = True)
+    #math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_prox_unc.tif=gd+n-9999:GTiff\
+    #'.format(prox, ec_d[2], ec_d[1], 0, wg['name'])
+    #utils.run_cmd(math_cmd, verbose = wg['verbose'])
     if wg['epsg'] is not None: status = gdalfun.gdal_set_epsg('{}_prox_unc.tif'.format(wg['name']), epsg = wg['epsg'])
     utils.echo_msg('applied coefficient {} to proximity grid'.format(ec_d))
 

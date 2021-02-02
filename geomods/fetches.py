@@ -1861,13 +1861,17 @@ class tnm:
         utils.echo_msg('filtering TNM dataset results...')
         sbDTags = []        
         for ds in self._tnm_ds:
+            print(ds)
             dtags = self._datasets[ds[0]]['tags']
             if len(ds) > 1:
                 if len(dtags) == 0:
                     sbDTags.append( self._datasets[ds[0]]['sbDatasetTag'])
                 else:
-                    print(dtags.keys())
-                    dtag = dtags.keys()[ds[1]]
+                    #print(ds[1])
+                    #print(json.dumps(dtags, indent=4))
+                    #print(dtags.keys())
+                    #dtag = dtags.keys()[ds[1]]
+                    dtag = list(dtags.keys())[0]
                     sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
                     if len(self._tnm_df) == 0:
                         formats = self._datasets[ds[0]]['tags'][dtag]['formats']
@@ -1878,15 +1882,15 @@ class tnm:
                 if len(dtags) == 0:
                     sbDTags.append( self._datasets[ds[0]]['sbDatasetTag'])
                 else:
-                    for dtag in dtags.keys():
+                    for dtag in list(dtags.keys()):
                         #print(dtag)
                         sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
-                        #if len(self._tnm_df) == 0:
-                        #if all_formats:
-                        #    formats = self._datasets[ds[0]]['tags'][dtag]['formats']
-                        #    #print(formats)
-                        #    for ff in formats:
-                        #        self._tnm_df.append(ff)                                
+                        if len(self._tnm_df) == 0:
+                            #if all_formats:
+                            formats = self._datasets[ds[0]]['tags'][dtag]['formats']
+                            #print(formats)
+                            for ff in formats:
+                                self._tnm_df.append(ff)                                
                         sbDTags.append(sbDTag)
 
         self.data = {
@@ -1946,7 +1950,7 @@ class tnm:
         for i,j in enumerate(self._datasets):
             try: fmts = ', '.join(j['formats'])
             except: fmts = ''
-            print('%s: %s [ %s ] - %s' %(i, j['title'], fmts, j['tags']))
+            print('%s: %s [ %s ]' %(i, j['title'], fmts))
             for m,n in enumerate(j['tags']):
                 print('\t%s: %s [ %s ]' %(m, n, ", ".join(j['tags'][n]['formats'])))
 
