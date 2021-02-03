@@ -970,8 +970,8 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     num_sum, g_max, num_perc = gdalfun.gdal_mask_analysis(mask = msk)
 
     prox_percentile = gdalfun.gdal_percentile(prox, percentile)
-    prox_perc_33 = gdalfun.gdal_percentile(prox, 33)
-    prox_perc_66 = gdalfun.gdal_percentile(prox, 66)
+    prox_perc_33 = gdalfun.gdal_percentile(prox, 25)
+    prox_perc_66 = gdalfun.gdal_percentile(prox, 75)
     prox_perc_100 = gdalfun.gdal_percentile(prox, 100)
 
     # slp_percentile = gdalfun.gdal_percentile(slp, percentile)
