@@ -1043,9 +1043,9 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     for z, this_zone in enumerate(zones):
         tile_set = [sub_zones[x] for x in sub_zones.keys() if sub_zones[x][8] == zones[z]]
         if len(tile_set) > 0:
-            #dens = np.array([x[3] for x in tile_set])
-            #d_50perc = np.percentile(dens, 50)
-            #d_5perc = np.percentile(dens, 5)
+            dens = np.array([x[3] for x in tile_set])
+            d_50perc = np.percentile(dens, 50)
+            d_5perc = np.percentile(dens, 5)
             t_dens = np.array([x[4] for x in tile_set])
             t_dens = t_dens[t_dens != 0]
             if len(t_dens) == 0: continue
