@@ -1809,13 +1809,9 @@ class srtm_plus:
 class tnm:
     '''Fetch elevation data from The National Map'''
     def __init__(self, extent = None, filters = [], callback = None):
-        #self._tnm_api_url = "http://apps.nationalmap.gov/tnmaccess/"
-        #self._tnm_dataset_url = "https://apps.nationalmap.gov/tnmaccess/api/datasets?"
-        #self._tnm_product_url = "https://apps.nationalmap.gov/tnmaccess/api/products?"
         self._tnm_api_url = 'http://tnmaccess.nationalmap.gov/api/v1'
         self._tnm_dataset_url = 'https://tnmaccess.nationalmap.gov/api/v1/datasets?'
         self._tnm_product_url = 'https://tnmaccess.nationalmap.gov/api/v1/products?'
-        #self._tnm_product_url = 'https://tnmaccess.nationalmap.gov/api/v1/datasets?'
         self._outdir = os.path.join(os.getcwd(), 'tnm')        
         self._status = 0
         self._req = None
@@ -1833,8 +1829,6 @@ class tnm:
         utils.echo_msg('loading The National Map fetch module...')
         if self.region is None: return([])
         self._req = fetch_req(self._tnm_dataset_url)
-        #print(self._req.url)
-        #print(self._req.text)
         if self._req is not None:
             try:
                 self._datasets = self._req.json()
@@ -1867,10 +1861,6 @@ class tnm:
                 if len(dtags) == 0:
                     sbDTags.append( self._datasets[ds[0]]['sbDatasetTag'])
                 else:
-                    #print(ds[1])
-                    #print(json.dumps(dtags, indent=4))
-                    #print(dtags.keys())
-                    #dtag = dtags.keys()[ds[1]]
                     dtag = list(dtags.keys())[0]
                     sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
                     if len(self._tnm_df) == 0:
@@ -1883,12 +1873,9 @@ class tnm:
                     sbDTags.append( self._datasets[ds[0]]['sbDatasetTag'])
                 else:
                     for dtag in list(dtags.keys()):
-                        #print(dtag)
                         sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
                         if len(self._tnm_df) == 0:
-                            #if all_formats:
                             formats = self._datasets[ds[0]]['tags'][dtag]['formats']
-                            #print(formats)
                             for ff in formats:
                                 self._tnm_df.append(ff)                                
                         sbDTags.append(sbDTag)
@@ -1897,11 +1884,8 @@ class tnm:
             'datasets': sbDTags,
             'bbox': regions.region_format(self.region, 'bbox'),
         }
-        #print(self._tnm_df)
         if len(self._tnm_df) > 0: self.data['prodFormats'] = ','.join(self._tnm_df)
         req = fetch_req(self._tnm_product_url, params = self.data)
-        #print(req.text)
-        #print(req.url)
         if req is not None:
             try:
                 self._dataset_results = req.json()
@@ -1914,7 +1898,6 @@ class tnm:
 
         if len(self._dataset_results) > 0:
             for item in self._dataset_results['items']:
-                #for item in self._dataset_results:
                 if len(self._extents) > 0:
                     for extent in self._extents:
                         if item['extent'] == extent:
@@ -1926,27 +1909,23 @@ class tnm:
                                 elif item['format'] == 'LAZ' or item['format'] == 'LAS':
                                     tnm_ds = 'lidar'
                                 else: tnm_ds = 'tnm'
-                                self._results.append([f_url, os.path.join(item['datasets'][0].replace('/', '').replace(' ', '_'), f_url.split('/')[-1]), tnm_ds])
+                                #self._results.append([f_url, os.path.join(item['datasets'][0].replace('/', '').replace(' ', '_'), f_url.split('/')[-1]), tnm_ds])
+                                self._results.append([f_url, f_url.split('/')[-1], tnm_ds])
                             except: pass
                 else:
-                    #try:
-                    f_url = item['downloadURL']
-                    if item['format'] == 'IMG' or item['format'] == 'GeoTIFF':
-                        tnm_ds = 'ned'
-                    elif item['format'] == 'LAZ' or item['format'] == 'LAS':
-                        tnm_ds = 'lidar'
-                    else: tnm_ds = 'tnm'
-                    #print(f_url)
-                    #print(item)
-                    #print(item['datasets'])
-                    #self._results.append([f_url, os.path.join(item['datasets'][0].replace('/', '').replace(' ', '_'), f_url.split('/')[-1]), tnm_ds])
-                    self._results.append([f_url, f_url.split('/')[-1], tnm_ds])
-                    #except: pass
+                    try:
+                        f_url = item['downloadURL']
+                        if item['format'] == 'IMG' or item['format'] == 'GeoTIFF':
+                            tnm_ds = 'ned'
+                        elif item['format'] == 'LAZ' or item['format'] == 'LAS':
+                            tnm_ds = 'lidar'
+                        else: tnm_ds = 'tnm'
+                        #self._results.append([f_url, os.path.join(item['datasets'][0].replace('/', '').replace(' ', '_'), f_url.split('/')[-1]), tnm_ds])
+                        self._results.append([f_url, f_url.split('/')[-1], tnm_ds])
+                    except: pass
         utils.echo_msg('filtered \033[1m{}\033[m data files from TNM dataset results.'.format(len(self._results)))
 
     def print_dataset_index(self):
-        #print(self._datasets)
-        #for i,j in enumerate(self._datasets['items']):
         for i,j in enumerate(self._datasets):
             try: fmts = ', '.join(j['formats'])
             except: fmts = ''
