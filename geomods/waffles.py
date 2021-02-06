@@ -1303,7 +1303,7 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
         utils.remove_glob('region_buff.*')
 
         fl = fetches.fetch_infos['tnm'][0](waffles_proc_region(wg), [], None)
-        r = fl.run(ds = 6, formats = 'FileGDB', extent = 'HU-4 Subregion')
+        r = fl.run(ds = 4, formats = 'FileGDB', extent = 'HU-4 Subregion')
 
         if len(r) > 0:
             r_shp = []
