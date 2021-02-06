@@ -178,8 +178,8 @@ def waffles_config(datalist = None, data = [], region = None, inc = None, name =
     if wg['datalist'] is None and len(wg['data']) > 0:
         wg['datalist'] = datalists.datalist_major(wg['data'], region = wg['region'], major = '{}_major.datalist'.format(wg['name']))
         
-    if not os.path.exists(wg['datalist']):
-        wg['datalist'] = datalists.datalist_major(wg['data'], region = wg['region'], major = '{}_major.datalist'.format(wg['name']))
+    #if not os.path.exists(wg['datalist']):
+    #    wg['datalist'] = datalists.datalist_major(wg['data'], region = wg['region'], major = '{}_major.datalist'.format(wg['name']))
         
     #if wg['mod'].lower() != 'vdatum' and wg['mod'].lower() != 'coastline':
     if _waffles_modules[wg['mod']][3]:
