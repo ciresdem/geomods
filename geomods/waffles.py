@@ -1190,7 +1190,7 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
 
             if last_ec_d is None:
                 last_ec_d = [0, 0.1, 0.2]
-                last_ec_diff = 1
+                last_ec_diff = 10
             else: last_ec_diff = abs(last_ec_d[2] - last_ec_d[1])
 
             ec_d = utils.err2coeff(prox_err[:50000000], coeff_guess = last_ec_d, dst_name = wg['name'] + '_prox', xa = 'distance')
