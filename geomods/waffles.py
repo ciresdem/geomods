@@ -1389,18 +1389,18 @@ def waffle(wg = _waffles_grid_info):
         ## ==============================================
         ## gererate the DEM (run the module)
         ## ==============================================
-        #try:
-        waffles_out, status = _waffles_modules[this_wg['mod']][0](args_d)
-        if wg['mask']: waffles_out['msk'] = ['{}_msk.tif'.format(this_wg['name']), 'raster']
-        chunks.append(waffles_out)
-        #except KeyboardInterrupt as e:
-        #    utils.echo_error_msg('killed by user, {}'.format(e))
-        #    sys.exit(-1)
-        #except Exception as e:
-        #    utils.echo_error_msg('{}'.format(e))
-        #    [utils.remove_glob('{}.*'.format(waffles_out[x][0].split('.')[0])) for x in waffles_out.keys()]
-        #    status = -1
-        #    continue
+        try:
+            waffles_out, status = _waffles_modules[this_wg['mod']][0](args_d)
+            if wg['mask']: waffles_out['msk'] = ['{}_msk.tif'.format(this_wg['name']), 'raster']
+            chunks.append(waffles_out)
+        except KeyboardInterrupt as e:
+            utils.echo_error_msg('killed by user, {}'.format(e))
+            sys.exit(-1)
+        except Exception as e:
+            utils.echo_error_msg('{}'.format(e))
+            [utils.remove_glob('{}.*'.format(waffles_out[x][0].split('.')[0])) for x in waffles_out.keys()]
+            status = -1
+            continue
 
         for out_key in waffles_out.keys():
             if waffles_out[out_key][1] == 'raster':
@@ -1500,51 +1500,52 @@ def waffle(wg = _waffles_grid_info):
     ## ==============================================
     ## merge the chunks and remove any remnants
     ## ==============================================
-    for out_key in chunks[0].keys():
-        if out_key == 'dem': out_dem = '{}.{}'.format(wg['name'], chunks[0][out_key][0].split('.')[-1])
-        else: out_dem = '{}_{}.{}'.format(wg['name'], out_key, chunks[0][out_key][0].split('.')[-1])
+    if len(chunks) > 0 and len(chunks[0].keys()) > 0:
+        for out_key in chunks[0].keys():
+            if out_key == 'dem': out_dem = '{}.{}'.format(wg['name'], chunks[0][out_key][0].split('.')[-1])
+            else: out_dem = '{}_{}.{}'.format(wg['name'], out_key, chunks[0][out_key][0].split('.')[-1])
 
-        if len(chunks) > 1:
-            if chunks[0][out_key][1] == 'raster':
-                out, status = utils.run_cmd('gdal_merge.py -n -9999 -a_nodata -9999 -ps {} -{} -ul_lr {} -o {} {} -co TILED=YES -co COMPRESS=DEFLATE -co PREDICTOR=3\
-                '.format(wg['inc'], wg['inc'], waffles_dist_ul_lr(wg), out_dem, ' '.join([x[out_key] for x in chunks])), verbose = True)
-            elif chunks[0][out_key][1] == 'vector':
-                out, status = utils.run_cmd('ogrmerge.py {} {}'.format(dem_vect, ' '.join(chunks_vect)))
-            [utils.remove_glob('{}.*'.format(x[out_key][0].split('.')[0])) for x in chunks]            
-        else:
-            if os.path.exists(chunks[0][out_key][0]):
+            if len(chunks) > 1:
                 if chunks[0][out_key][1] == 'raster':
-                    gdalfun.gdal_gdal2gdal(chunks[0][out_key][0], dst_fmt = wg['fmt'], dst_gdal = out_dem)
-                    utils.remove_glob(chunks[0][out_key][0])
+                    out, status = utils.run_cmd('gdal_merge.py -n -9999 -a_nodata -9999 -ps {} -{} -ul_lr {} -o {} {} -co TILED=YES -co COMPRESS=DEFLATE -co PREDICTOR=3\
+                    '.format(wg['inc'], wg['inc'], waffles_dist_ul_lr(wg), out_dem, ' '.join([x[out_key] for x in chunks])), verbose = True)
                 elif chunks[0][out_key][1] == 'vector':
-                    out, status = utils.run_cmd('ogr2ogr {} {} -overwrite'.format(out_dem, chunks[0][out_key][0]), verbose = True)
-                    gdalfun.ogr_remove_ds(chunks[0][out_key][0])
-                    #utils.remove_glob('{}.*'.format(chunks[0][out_key][0].split('.')[0]))
-                else: os.rename(chunks[0][out_key][0], '{}_{}.{}'.format(wg['name'], out_key, chunks[0][out_key][0].split('.')[-1]))
-            else: utils.echo_error_msg('{} not found.'.format(chunks[0][out_key][0]))
+                    out, status = utils.run_cmd('ogrmerge.py {} {}'.format(dem_vect, ' '.join(chunks_vect)))
+                [utils.remove_glob('{}.*'.format(x[out_key][0].split('.')[0])) for x in chunks]            
+            else:
+                if os.path.exists(chunks[0][out_key][0]):
+                    if chunks[0][out_key][1] == 'raster':
+                        gdalfun.gdal_gdal2gdal(chunks[0][out_key][0], dst_fmt = wg['fmt'], dst_gdal = out_dem)
+                        utils.remove_glob(chunks[0][out_key][0])
+                    elif chunks[0][out_key][1] == 'vector':
+                        out, status = utils.run_cmd('ogr2ogr {} {} -overwrite'.format(out_dem, chunks[0][out_key][0]), verbose = True)
+                        gdalfun.ogr_remove_ds(chunks[0][out_key][0])
+                        #utils.remove_glob('{}.*'.format(chunks[0][out_key][0].split('.')[0]))
+                    else: os.rename(chunks[0][out_key][0], '{}_{}.{}'.format(wg['name'], out_key, chunks[0][out_key][0].split('.')[-1]))
+                else: utils.echo_error_msg('{} not found.'.format(chunks[0][out_key][0]))
 
-        ## ==============================================
-        ## convert to final format if not geotiff and
-        ## set the projection and other metadata
-        ## ==============================================
-        if os.path.exists(out_dem):
-            if chunks[0][out_key][1] == 'raster':
-                if wg['fmt'] != 'GTiff':
-                    orig_dem = out_dem
-                    if wg['gc']['GMT'] is not None:
-                        out_dem = gmtfun.gmt_grd2gdal(orig_dem, wg['fmt'])
-                        utils.remove_glob(orig_dem)
-                    else: out_dem = gdalfun.gdal_gdal2gdal(orig_dem, wg['fmt'])
-                try:
-                    gdalfun.gdal_set_epsg(out_dem, wg['epsg'])
-                    waffles_gdal_md(out_dem, wg, True if wg['mod'] == 'cudem' else False)
-                except: pass
-                dems[out_key] = [out_dem, 'raster']
-            elif chunks[0][out_key][1] == 'vector':
-                if gdalfun.ogr_empty_p(out_dem):
-                    utils.remove_glob('{}.*'.format(out_dem.split('.')[0]))
-                else: dems[out_key] = [out_dem, 'vector']
-            else: dems[out_key] = [out_dem, chunks[0][out_key][1]]
+            ## ==============================================
+            ## convert to final format if not geotiff and
+            ## set the projection and other metadata
+            ## ==============================================
+            if os.path.exists(out_dem):
+                if chunks[0][out_key][1] == 'raster':
+                    if wg['fmt'] != 'GTiff':
+                        orig_dem = out_dem
+                        if wg['gc']['GMT'] is not None:
+                            out_dem = gmtfun.gmt_grd2gdal(orig_dem, wg['fmt'])
+                            utils.remove_glob(orig_dem)
+                        else: out_dem = gdalfun.gdal_gdal2gdal(orig_dem, wg['fmt'])
+                    try:
+                        gdalfun.gdal_set_epsg(out_dem, wg['epsg'])
+                        waffles_gdal_md(out_dem, wg, True if wg['mod'] == 'cudem' else False)
+                    except: pass
+                    dems[out_key] = [out_dem, 'raster']
+                elif chunks[0][out_key][1] == 'vector':
+                    if gdalfun.ogr_empty_p(out_dem):
+                        utils.remove_glob('{}.*'.format(out_dem.split('.')[0]))
+                    else: dems[out_key] = [out_dem, 'vector']
+                else: dems[out_key] = [out_dem, chunks[0][out_key][1]]
 
     ## ==============================================
     ## optionally generate associated uncertainty grid
