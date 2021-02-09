@@ -75,7 +75,7 @@ def writeArray(outArray, outfile, outdriver, ycount, xcount, gt, ndata, overwrit
         else:
             driver.Delete(outfile)
             if verbose:
-                print "Warning - Overwriting file %s " %(outfile)
+                print("Warning - Overwriting file %s " %(outfile))
 
     dst_ds = driver.Create(outfile, xcount, ycount, 1, gdal.GDT_Float64)
 

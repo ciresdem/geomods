@@ -222,7 +222,7 @@ if __name__ == '__main__':
             overwrite = True
 
         elif arg[0] == '-':
-            print usage
+            print(usage)
             sys.exit(0)
 
         elif outfile is None:
@@ -232,7 +232,7 @@ if __name__ == '__main__':
             infile = arg
 
         else:
-            print usage
+            print(usage)
             sys.exit(0)
 
         i = i + 1
@@ -241,7 +241,7 @@ if __name__ == '__main__':
         infile = sys.stdin
 
     if outfile is None:
-        print usage
+        print(usage)
         sys.exit(0)
 
     xloc = int(xyzf.split(",")[0].strip())

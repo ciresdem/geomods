@@ -90,7 +90,7 @@ def xyzClip(inxyz, ingrd, outfile, outfile2, delim, msk_nval, msk_kval, inverse,
                     writer.writerow(row)
                 else:
                     #print x,y,z
-                    print delim.join(map(str, [x,y,z]))
+                    print(delim.join(map(str, [x,y,z])))
             else:
                 # Write discared results to file
                 if outfile2 is not None:
@@ -106,7 +106,7 @@ def xyzClip(inxyz, ingrd, outfile, outfile2, delim, msk_nval, msk_kval, inverse,
                 row = [x,y,z]
                 writer.writerow(row)
             else:
-                print delim.join(map(str, [x,y,z]))
+                print(delim.join(map(str, [x,y,z])))
                 
 
 #--
@@ -186,7 +186,7 @@ def xyz_clip(inxyz, ingrd, outfile, outfile2, delim, msk_nval, msk_kval, inverse
                     writer.writerow(row)
                 else:
                     #print x,y,z
-                    print delim.join(map(str, [x,y,z]))
+                    print(delim.join(map(str, [x,y,z])))
             else:
                 # Write discared results to file
                 if outfile2 is not None:
@@ -202,7 +202,7 @@ def xyz_clip(inxyz, ingrd, outfile, outfile2, delim, msk_nval, msk_kval, inverse
                 row = [x,y,z]
                 writer.writerow(row)
             else:
-                print delim.join(map(str, [x,y,z]))
+                print(delim.join(map(str, [x,y,z])))
 
 #--
 def Usage():
