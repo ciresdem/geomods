@@ -168,7 +168,7 @@ def datalist_inf(dl, inf_file = True, overwrite = False):
             out_region = regions.regions_merge(out_region, x)
         dl_i['minmax'] = out_region
 
-    dl_i['wkt'] = gdalfun.gdal_region2wkt(minmax)
+    dl_i['wkt'] = gdalfun.gdal_region2wkt(dl_i['minmax'])
     
     if dl_i['minmax'] is not None and inf_file:
         with open('{}.inf'.format(dl), 'w') as inf:
