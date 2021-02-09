@@ -1389,18 +1389,18 @@ def waffle(wg = _waffles_grid_info):
         ## ==============================================
         ## gererate the DEM (run the module)
         ## ==============================================
-        #try:
-        waffles_out, status = _waffles_modules[this_wg['mod']][0](args_d)
-        if wg['mask']: waffles_out['msk'] = ['{}_msk.tif'.format(this_wg['name']), 'raster']
-        chunks.append(waffles_out)
-        #except KeyboardInterrupt as e:
-        #utils.echo_error_msg('killed by user, {}'.format(e))
-        #    sys.exit(-1)
-        #except Exception as e:
-        #    utils.echo_error_msg('{}'.format(e))
-        #    [utils.remove_glob('{}.*'.format(waffles_out[x][0].split('.')[0])) for x in waffles_out.keys()]
-        #    status = -1
-        #    continue
+        try:
+            waffles_out, status = _waffles_modules[this_wg['mod']][0](args_d)
+            if wg['mask']: waffles_out['msk'] = ['{}_msk.tif'.format(this_wg['name']), 'raster']
+            chunks.append(waffles_out)
+        except KeyboardInterrupt as e:
+            utils.echo_error_msg('killed by user, {}'.format(e))
+            sys.exit(-1)
+        except Exception as e:
+            utils.echo_error_msg('{}'.format(e))
+            [utils.remove_glob('{}.*'.format(waffles_out[x][0].split('.')[0])) for x in waffles_out.keys()]
+            status = -1
+            continue
 
         for out_key in waffles_out.keys():
             if waffles_out[out_key][1] == 'raster':
