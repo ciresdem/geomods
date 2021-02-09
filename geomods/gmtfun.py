@@ -56,9 +56,9 @@ def gmt_inc2inc(inc_str):
     
     if inc_str is None or inc_str.lower() == 'none': return(None)
     units = inc_str[-1]
-    if units == 'c': inc = float(inc_str[:-1]) / 3600
-    elif units == 's': inc = float(inc_str[:-1]) / 3600
-    elif units == 'm': inc = float(inc_str[:-1]) / 360
+    if units == 'c': inc = float(inc_str[:-1]) / 3600.
+    elif units == 's': inc = float(inc_str[:-1]) / 3600.
+    elif units == 'm': inc = float(inc_str[:-1]) / 360.
     else:
         try:
             inc = float(inc_str)

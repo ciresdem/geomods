@@ -18,13 +18,12 @@
 ## ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ##
 ### Commentary:
-## ==============================================
 ## datalists and entries - datalists.py
 ##
 ## datalist processing (datalists fmt:-1)
 ## entry processing fmt:*
 ## TODO -> pass_h to list for all entry passing
-## ==============================================
+##
 ### Code:
 
 import os
@@ -33,6 +32,7 @@ import glob
 
 import gdal
 import osr
+import json
 import numpy as np
 
 from geomods import utils
@@ -43,6 +43,9 @@ from geomods import xyzfun
 from geomods import lasfun
 from geomods import fetches
 
+## ==============================================
+## Datalist formats and lambdas
+## ==============================================
 _known_dl_delims = [' ']
 _known_datalist_fmts = {
     -1: ['datalist', 'mb-1'],
@@ -84,29 +87,34 @@ def inf_parse(src_inf):
     '''parse an inf file (mbsystem or gmt)
     
     returns region: [xmin, xmax, ymin, ymax, zmin, zmax]'''
-    
-    minmax = [0, 0, 0, 0, 0, 0]
+
+    xyzi = {}
+    xyzi['minmax'] = [0, 0, 0, 0, 0, 0]
     with open(src_inf) as iob:
-        for il in iob:
-            til = il.split()
-            if len(til) > 1:
-                try: 
-                    minmax = [float(x) for x in til]
-                except:
-                    if til[0] == 'Minimum':
-                        if til[1] == 'Longitude:':
-                            minmax[0] = til[2]
-                            minmax[1] = til[5]
-                        elif til[1] == 'Latitude:':
-                            minmax[2] = til[2]
-                            minmax[3] = til[5]
-                        # elif til[1] == 'Altitude:':
-                        #     minmax[4] = til[2]
-                        #     minmax[5] = til[5]
-                        elif til[1] == 'Depth:':
-                            minmax[4] = float(til[5])*-1
-                            minmax[5] = float(til[2])*-1
-    return([float(x) for x in minmax])
+        try:
+            xyzi = json.load(iob)
+        except:
+            xyzi['name'] = src_inf
+            xyzi['numpts'] = 0
+
+            for il in iob:
+                til = il.split()
+                if len(til) > 1:
+                    try: 
+                        xyzi['minmax'] = [float(x) for x in til]
+                    except:
+                        if til[0] == 'Minimum':
+                            if til[1] == 'Longitude:':
+                                xyzi['minmax'][0] = til[2]
+                                xyzi['minmax'][1] = til[5]
+                            elif til[1] == 'Latitude:':
+                                xyzi['minmax'][2] = til[2]
+                                xyzi['minmax'][3] = til[5]
+                            elif til[1] == 'Depth:':
+                                xyzi['minmax'][4] = float(til[5])*-1
+                                xyzi['minmax'][5] = float(til[2])*-1
+            xyzi['wkt'] = gdalfun.gdal_region2wkt(xyzi['minmax'])
+    return(xyzi)
 
 def inf_entry(src_entry, overwrite = False, epsg = None):
     '''Read .inf file and extract minmax info.
@@ -116,15 +124,15 @@ def inf_entry(src_entry, overwrite = False, epsg = None):
 
     returns the region of the inf file.'''
     
-    minmax = None
-    if os.path.exists(src_entry[0]):
+    ei = {}
+    if os.path.exists(src_entry[0]) or src_entry[1] == 400:
         path_i = src_entry[0] + '.inf'
         if not os.path.exists(path_i) or overwrite:
-            minmax = _dl_inf_h[src_entry[1]](src_entry, epsg)
-        else: minmax = inf_parse(path_i)
-    if not regions.region_valid_p(minmax): minmax = None
-    return(minmax)
-
+            ei = _dl_inf_h[src_entry[1]](src_entry, epsg)
+        else: ei = inf_parse(path_i)
+        if not regions.region_valid_p(ei['minmax']): return(None)
+    return(ei)
+    
 ## ==============================================
 ## datalists
 ## ==============================================
@@ -133,39 +141,46 @@ def datalist_inf(dl, inf_file = True, overwrite = False):
     an associated `.inf` file if `inf_file` is True.'''
     
     out_regions = []
-    minmax = None
     dp_h = _dl_pass_h
-
+    dl_i = {}
+    dl_i['name'] = dl
+    dl_i['minmax'] = None
+    dl_i['numpts'] = 0
+    
     utils.echo_msg('generating inf for datalist {}'.format(dl))
     
     for entry in datalist(dl, pass_h = dp_h):
         if entry[1] == 200:
-            entry_inf = inf_entry(entry, True)
-        else: entry_inf = inf_entry(entry)
+            entry_inf = inf_entry(entry, warp = None, overwrite = overwrite)
+        else: entry_inf = inf_entry(entry, overwrite = overwrite)
         if entry_inf is not None:
-            out_regions.append(inf_entry(entry)[:6])
+            out_regions.append(entry_inf['minmax'][:6])
+            dl_i['numpts'] += entry_inf['numpts']
     
     out_regions = [x for x in out_regions if x is not None]
     if len(out_regions) == 0:
-        minmax = None
+        dl_i['minmax'] = None
     elif len(out_regions) == 1:
-        minmax = out_regions[0]
+        dl_i['minmax'] = out_regions[0]
     else:
         out_region = out_regions[0]
         for x in out_regions[1:]:
             out_region = regions.regions_merge(out_region, x)
-        minmax = out_region
-    if minmax is not None and inf_file:
-        with open('{}.inf'.format(dl), 'w') as inf:
-            inf.write('{}\n'.format(regions.region_format(minmax, 'inf')))
-    return(minmax)
+        dl_i['minmax'] = out_region
 
-def datalist_inf_entry(e):
+    dl_i['wkt'] = gdalfun.gdal_region2wkt(minmax)
+    
+    if dl_i['minmax'] is not None and inf_file:
+        with open('{}.inf'.format(dl), 'w') as inf:
+            inf.write(json.dumps(dl_i))
+    return(dl_i)
+
+def datalist_inf_entry(e, inf_file = True, overwrite = False):
     '''write an inf file for datalist entry e
     
     return the region [xmin, xmax, ymin, ymax]'''
     
-    return(datalist_inf(e[0]))
+    return(datalist_inf(e[0], overwrite = overwrite))
 
 def datalist_append_entry(entry, datalist):
     '''append entry to datalist file `datalist`'''
@@ -267,21 +282,6 @@ def datalist2py(dl, region = None):
                     if this_line[0] != '#' and this_line[0] != '\n' and this_line[0].rstrip() != '':
                         these_entries.append([os.path.join(this_dir, x) if n == 0 else x for n,x in enumerate(entry2py(this_line.rstrip()))])
         else: utils.echo_error_msg('could not open datalist/entry {}'.format(this_entry[0]))
-    # elif this_entry[1] == 400:
-    #     fetch_mod = this_entry[0].split(':')[0]
-    #     fetch_args = this_entry[0].split(':')[1:]
-    #     if fetch_mod in fetches.fetch_infos.keys():
-    #         fl = fetches.fetch_infos[fetch_mod][0](regions.region_buffer(region, 5, pct = True), [], lambda: False)
-    #         args_d = utils.args2dict(fetch_args, {})
-    #         fl._verbose = True
-
-    #         results = fl.run(**args_d)
-    #         if len(results) > 0:
-    #             with open('{}.datalist'.format(fetch_mod), 'w') as fdl:
-    #                 for r in results:
-    #                     e = [r[0], fl._datalists_code, 1]
-    #                     fdl.write('{} {} {}\n'.format(e[0], e[1], e[2]))
-    #             these_entries.append(['{}.datalist'.format(fetch_mod), -1, 1])
                 
     else: these_entries.append(this_entry)
     return(these_entries)
@@ -311,6 +311,7 @@ def datalist_yield_entry(this_entry, region = None, verbose = False, z_region = 
     '''yield the xyz data from the datalist entry [entry/path, entry-format, entry-weight]
 
     yields xyz line data [x, y, z, ...]'''
+    
     if this_entry[1] == 168:
         for xyz in xyzfun.xyz_yield_entry(this_entry, region = region, verbose = verbose, z_region = z_region):
             #for xyz in gmt_yield_entry(this_entry, region = region, verbose = verbose, z_region = z_region):
@@ -369,6 +370,7 @@ def datalist_yield_xyz(dl, wt = None, pass_h = _dl_pass_h,
     for xyz in datalist_yield_xyz(dl): xyz_line(xyz)
 
     yields xyz line data [x, y, z, ...]'''
+    
     for this_entry in datalist(dl, wt = wt, pass_h = pass_h, verbose = verbose):
         dly = datalist_yield_entry(this_entry, region, verbose = verbose, z_region = z_region, epsg = epsg)
         if archive: dly = datalist_archive_yield_entry(this_entry, dirname = 'archive', region = region, weight = wt, verbose = verbose, z_region = z_region, epsg = None)
@@ -579,14 +581,15 @@ def datalists_cli(argv = sys.argv):
         utils.echo_msg('processed datalist')
         dlp_hooks = datalist_default_hooks()
         if regions.region_valid_p(this_region):
-            dlp_hooks.append(lambda e: regions.regions_intersect_ogr_p(this_region, inf_entry(e, epsg = epsg)))
+            r_geom = gdalfun.gdal_region2geom(this_region)
+            dlp_hooks.append(lambda e: regions.geoms_intersect_p(r_geom, ogr.CreateGeometryFromWkt(inf_entry(e, epsg = epsg)['wkt'])))
         if z_region is not None:
-            dlp_hooks.append(lambda e: regions.z_region_pass(inf_entry(e), upper_limit = z_region[1], lower_limit = z_region[0]))
+            dlp_hooks.append(lambda e: regions.z_region_pass(inf_entry(e)['minmax'], upper_limit = z_region[1], lower_limit = z_region[0]))
         if w_region is not None:
             dlp_hooks.append(lambda e: regions.z_pass(e[2], upper_limit = w_region[1], lower_limit = w_region[0]))
         
         if want_inf:
-            datalist_inf_entry([dl_m, -1, 1])
+            datalist_inf_entry([dl_m, -1, 1], overwrite=True)
         elif want_region:
             print(datalist_inf(dl_m, False, False))
         elif want_list:

@@ -1846,7 +1846,7 @@ class tnm:
             if sub_ds is not None: this_ds.append(int(sub_ds))
             self._tnm_ds = [this_ds]
             self._tnm_df = [] if formats is None else formats.split(',')
-            self._extents = [] if extent is None else [str(extent)]            
+            self._extents = [] if extent is None else extent.split(',')
             self.filter_datasets()
         return(self._results)
 
@@ -1855,13 +1855,14 @@ class tnm:
         utils.echo_msg('filtering TNM dataset results...')
         sbDTags = []        
         for ds in self._tnm_ds:
-            print(ds)
             dtags = self._datasets[ds[0]]['tags']
+            #print(dtags)
+            #print(len(dtags))
             if len(ds) > 1:
                 if len(dtags) == 0:
                     sbDTags.append( self._datasets[ds[0]]['sbDatasetTag'])
                 else:
-                    dtag = list(dtags.keys())[0]
+                    dtag = list(dtags.keys())[ds[1]]
                     sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
                     if len(self._tnm_df) == 0:
                         formats = self._datasets[ds[0]]['tags'][dtag]['formats']
@@ -1869,23 +1870,32 @@ class tnm:
                     sbDTags.append(sbDTag)
             else:
                 all_formats = False if len(self._tnm_df) == 0 else True
+                #print(dtags)
                 if len(dtags) == 0:
                     sbDTags.append( self._datasets[ds[0]]['sbDatasetTag'])
                 else:
                     for dtag in list(dtags.keys()):
+                        #print(dtag)
                         sbDTag = self._datasets[ds[0]]['tags'][dtag]['sbDatasetTag']
+                        #print(sbDTag)
                         if len(self._tnm_df) == 0:
                             formats = self._datasets[ds[0]]['tags'][dtag]['formats']
+                            #print(formats)
                             for ff in formats:
+                                if ff == 'FileGDB':
+                                    self._tnm_df.append('FileGDB 10.1')
+                                    #ff = 'FileGDB 10.1'
                                 self._tnm_df.append(ff)                                
                         sbDTags.append(sbDTag)
 
+
         self.data = {
-            'datasets': sbDTags,
             'bbox': regions.region_format(self.region, 'bbox'),
         }
+        self.data['datasets'] = ','.join(sbDTags)
         if len(self._tnm_df) > 0: self.data['prodFormats'] = ','.join(self._tnm_df)
         req = fetch_req(self._tnm_product_url, params = self.data)
+        print(req.url)
         if req is not None:
             try:
                 self._dataset_results = req.json()
@@ -1896,6 +1906,8 @@ class tnm:
                 
         else: self._status = -1
 
+        #print(self._dataset_results)
+        
         if len(self._dataset_results) > 0:
             for item in self._dataset_results['items']:
                 if len(self._extents) > 0:
@@ -2580,7 +2592,7 @@ class osm:
 ## fetches processing (datalists fmt:400 - 499)
 ## ==============================================
 def fetch_inf_entry(entry = []):
-    return([-180,180,-90,90])
+    return({'minmax': [-180,180,-90,90], 'name': entry[0], 'pts': None, 'wkt': gdalfun.gdal_region2wkt([-180,180,-90,90])})
 
 def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, verbose = False):
     '''yield the xyz data from the fetch module datalist entry

@@ -25,7 +25,7 @@ with open('README', 'r') as fh:
 
 setuptools.setup(
     name = 'geomods',
-    version = '0.4.5',
+    version = '0.5.0',
     description = 'Modules and scripts for utilizing geographic data Digital Elevation Models',
     long_description = long_description,
     long_description_content_type = 'text/markdown',
@@ -46,6 +46,7 @@ setuptools.setup(
         'requests',
         'lxml',
         'matplotlib',
+        'affine',
     ], 
     entry_points = {
         'console_scripts': [

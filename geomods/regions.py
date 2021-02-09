@@ -1,6 +1,6 @@
 ### regions.py
 ##
-## Copyright (c) 2019 - 2020 CIRES Coastal DEM Team
+## Copyright (c) 2019 - 2021 CIRES Coastal DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -106,6 +106,17 @@ def regions_intersect_p(region_a, region_b):
     if region_a is not None and region_b is not None:
         return(region_valid_p(regions_reduce(region_a, region_b)))
     else: return(False)
+
+def geoms_intersect_p(geom_a, geom_b):
+    '''check if OGR geometries `geom_a` and `geom_b` intersect
+
+    returns True for intersection'''
+    
+    if geom_a is not None and geom_b is not None:
+        if geom_a.Intersects(geom_b):
+            return(True)
+        else: return(False)
+    else: return(True)
     
 def regions_intersect_ogr_p(region_a, region_b):
     '''check if two regions intersect.
@@ -189,7 +200,7 @@ def region_chunk(region, inc, n_chunk = 10):
         else: break
     return(o_chunks)
 
-def regions_sort(trainers, verbose = False):
+def regions_sort(trainers, t_num = 25, verbose = False):
     '''sort regions by distance; regions is a list of regions [xmin, xmax, ymin, ymax].
 
     returns the sorted region-list'''
@@ -202,19 +213,16 @@ def regions_sort(trainers, verbose = False):
         while True:
             if verbose: utils.echo_msg_inline('sorting training tiles [{}]'.format(len(train)))
             if len(train) == 0: break
-            #if len(train) == train_total - 30: break
             this_center = region_center(train[0][0])
             train_d.append(train[0])
             train = train[1:]
-            if len(train_d) > 25 or len(train) == 0: break
-            #dsts = [utils.hav_dst(this_center, region_center(x[0])) for x in train]
+            if len(train_d) > t_num or len(train) == 0: break
             dsts = [utils.euc_dst(this_center, region_center(x[0])) for x in train]
             min_dst = np.percentile(dsts, 50)
-            #d_t = lambda t: utils.hav_dst(this_center, region_center(t[0])) > min_dst
             d_t = lambda t: utils.euc_dst(this_center, region_center(t[0])) > min_dst
             np.random.shuffle(train)
             train.sort(reverse=True, key=d_t)
-        if verbose: utils.echo_msg(' '.join([region_format(x[0], 'gmt') for x in train_d[:25]]))
+        if verbose: utils.echo_msg(' '.join([region_format(x[0], 'gmt') for x in train_d[:t_num]]))
         train_sorted.append(train_d)
     if verbose: utils.echo_msg_inline('sorting training tiles [OK]\n')
     return(train_sorted)

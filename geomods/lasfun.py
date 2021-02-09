@@ -21,15 +21,55 @@
 ### Code:
 
 import sys
+import json
+from scipy import spatial
 
 from geomods import utils
 from geomods import regions
 from geomods import xyzfun
+from geomods import gdalfun
 
 ## ==============================================
 ## las-file processing (datalists fmt:300)
 ## ==============================================
 def las_inf(src_las):
+
+    pts = []
+    lasi = {}
+    lasi['name'] = src_las
+    lasi['numpts'] = 0
+    lasi['minmax'] = [0, 0, 0, 0, 0, 0]
+    utils.echo_msg('generating inf file for {}'.format(src_las))
+    
+    for i, l in enumerate(las_yield_entry([src_las])):
+        if i == 0:
+            lasi['minmax'] = [l[0], l[0], l[1], l[1], l[2], l[2]]
+        else:
+            try:
+                if l[0] < lasi['minmax'][0]: lasi['minmax'][0] = l[0]
+                elif l[0] > lasi['minmax'][1]: lasi['minmax'][1] = l[0]
+                if l[1] < lasi['minmax'][2]: lasi['minmax'][2] = l[1]
+                elif l[1] > lasi['minmax'][3]: lasi['minmax'][3] = l[1]
+                if l[2] < lasi['minmax'][4]: lasi['minmax'][4] = l[2]
+                elif l[2] > lasi['minmax'][5]: lasi['minmax'][5] = l[2]
+            except: pass
+        pts.append(l)
+        lasi['numpts'] = i
+
+    if lasi['numpts'] > 4:
+        out_hull = [pts[i] for i in spatial.ConvexHull(pts, qhull_options='Qt').vertices]
+        out_hull.append(out_hull[0])
+        lasi['wkt'] = gdalfun.gdal_create_polygon(out_hull, xpos = 0, ypos = 1)
+    elif lasi['numpts'] > 0: lasi['wkt'] = gdalfun.gdal_region2wkt(lasi['minmax'])
+    else: lasi['wkt'] = gdalfun.gdal_region2wkt(lasi['minmax'])
+
+    if lasi['numpts'] > 0:
+        with open('{}.inf'.format(src_las), 'w') as inf:
+            inf.write(json.dumps(lasi))
+        
+    return(lasi)
+
+def las_inf2(src_las):
     '''scan an xyz file and find it's min/max values and
     write an associated inf file for the src_xyz file.
 

@@ -1,6 +1,6 @@
 ### xyzfun.py
 ##
-## Copyright (c) 2010 - 2020 CIRES Coastal DEM Team
+## Copyright (c) 2010 - 2021 CIRES Coastal DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -22,7 +22,9 @@
 
 import sys
 import copy
+import json
 import numpy as np
+from scipy import spatial
 import gdal
 
 from geomods import utils
@@ -67,11 +69,9 @@ def xyz_parse_line(xyz, xyz_c = _xyz_config):
     try:
         o_xyz = [float(this_xyz[xyz_c['xpos']]) + float(xyz_c['x-off']), float(this_xyz[xyz_c['ypos']]), float(this_xyz[xyz_c['zpos']]) * float(xyz_c['z-scale'])]
     except IndexError as e:
-        #print(this_xyz)
         if xyz_c['verbose']: utils.echo_error_msg(e)
         return(None)
     except Exception as e:
-        #print(this_xyz)
         if xyz_c['verbose']: utils.echo_error_msg(e)
         return(None)
     return(o_xyz)
@@ -117,8 +117,6 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False, verbo
     yields the xyz value for each block with data'''
     
     xcount, ycount, dst_gt = gdalfun.gdal_region2gt(region, inc)
-    #xcount += 1
-    #ycount += 1
     sumArray = np.zeros((ycount, xcount))
     gdt = gdal.GDT_Float32
     ptArray = np.zeros((ycount, xcount))
@@ -174,33 +172,44 @@ def xyz_in_region_p(src_xy, src_region):
     elif src_xy[1] < src_region[2]: return(False)
     elif src_xy[1] > src_region[3]: return(False)
     else: return(True)
-    
-def xyz_inf(src_xyz):
-    '''scan an xyz file and find it's min/max values and
-    write an associated inf file for the src_xyz file.
 
-    returns region [xmin, xmax, ymin, ymax] of the src_xyz file.'''
+def xyz_inf(src_xyz):
+
+    pts = []
+    xyzi = {}
+    xyzi['name'] = src_xyz.name
+    xyzi['numpts'] = 0
+    xyzi['minmax'] = [0, 0, 0, 0, 0, 0]
     
-    minmax = []
-    for i,l in enumerate(xyz_parse(src_xyz)):
+    #utils.echo_msg('generating inf file for {}'.format(src_xyz.name))
+    
+    for i, l in enumerate(xyz_parse(src_xyz)):
         if i == 0:
-            minmax = [l[0], l[0], l[1], l[1], l[2], l[2]]
+            xyzi['minmax'] = [l[0], l[0], l[1], l[1], l[2], l[2]]
         else:
             try:
-                if l[0] < minmax[0]: minmax[0] = l[0]
-                elif l[0] > minmax[1]: minmax[1] = l[0]
-                if l[1] < minmax[2]: minmax[2] = l[1]
-                elif l[1] > minmax[3]: minmax[3] = l[1]
-                if l[2] < minmax[4]: minmax[4] = l[2]
-                elif l[2] > minmax[5]: minmax[5] = l[2]
+                if l[0] < xyzi['minmax'][0]: xyzi['minmax'][0] = l[0]
+                elif l[0] > xyzi['minmax'][1]: xyzi['minmax'][1] = l[0]
+                if l[1] < xyzi['minmax'][2]: xyzi['minmax'][2] = l[1]
+                elif l[1] > xyzi['minmax'][3]: xyzi['minmax'][3] = l[1]
+                if l[2] < xyzi['minmax'][4]: xyzi['minmax'][4] = l[2]
+                elif l[2] > xyzi['minmax'][5]: xyzi['minmax'][5] = l[2]
             except: pass
-    if len(minmax) == 6:
-        with open('{}.inf'.format(src_xyz.name), 'w') as inf:
-            #utils.echo_msg('generating inf file for {}'.format(src_xyz.name))
-            inf.write('{}\n'.format(' '.join([str(x) for x in minmax])))
-        return(minmax)
-    else: return(0,0,0,0,0,0)
+        pts.append(l)
+        xyzi['numpts'] = i
 
+    if xyzi['numpts'] > 4:
+        out_hull = [pts[i] for i in spatial.ConvexHull(pts, qhull_options='Qt').vertices]
+        out_hull.append(out_hull[0])
+        xyzi['wkt'] = gdalfun.gdal_create_polygon(out_hull, xpos = 0, ypos = 1)
+    elif xyzi['numpts'] > 0: xyzi['wkt'] = gdalfun.gdal_region2wkt(xyzi['minmax'])
+    else: xyzi['wkt'] = gdalfun.gdal_region2wkt(xyzi['minmax'])
+
+    if xyzi['numpts'] > 0:
+        with open('{}.inf'.format(src_xyz.name), 'w') as inf:
+            inf.write(json.dumps(xyzi))
+    return(xyzi)
+            
 def xyz_inf_entry(entry):
     '''find the region of the xyz datalist entry
     
@@ -232,5 +241,11 @@ def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False,
     
     for xyz in xyz_yield_entry(entry, region, verbose, z_region):
         xyz_line(xyz, dst_port, True, None)
+
+def gdal_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, epsg = None, z_region = None):
+    '''dump the xyz data from the gdal entry to dst_port'''
+    
+    for xyz in gdalfun.gdal_yield_entry(entry, region, verbose, epsg, z_region):
+        xyz_line(xyz, dst_port, True)
         
 ### End
