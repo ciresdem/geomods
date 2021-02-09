@@ -124,13 +124,13 @@ def inf_entry(src_entry, overwrite = False, epsg = None):
 
     returns the region of the inf file.'''
     
-    ei = {}
+    ei = {'name': src_entry, 'numpts': 0, 'minmax': [0,0,0,0,0,0], 'wkt': gdalfun.gdal_region2wkt([0,0,0,0,0,0])}
     if os.path.exists(src_entry[0]) or src_entry[1] == 400:
         path_i = src_entry[0] + '.inf'
         if not os.path.exists(path_i) or overwrite:
             ei = _dl_inf_h[src_entry[1]](src_entry, epsg)
         else: ei = inf_parse(path_i)
-        if not regions.region_valid_p(ei['minmax']): return(None)
+        if not regions.region_valid_p(ei['minmax']): return({})
     return(ei)
     
 ## ==============================================
