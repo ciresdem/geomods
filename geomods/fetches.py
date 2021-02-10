@@ -2008,7 +2008,7 @@ class mb:
     def run(self):
         '''Run the MB (multibeam) fetching module.'''
         if self.region is None: return([])        
-        self._req = fetch_req(self._mb_search_url, params = {'geometry': regions.region_format(self.region, 'bbox')})
+        self._req = fetch_req(self._mb_search_url, params = {'geometry': regions.region_format(self.region, 'bbox')}, timeout = 20)
         if self._req is not None:
             survey_list = self._req.text.split('\n')[:-1]
             for r in survey_list:
