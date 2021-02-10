@@ -871,7 +871,6 @@ def np_gaussian_blur(in_array, size):
     
     from scipy.signal import fftconvolve
     from scipy.signal import convolve
-    import scipy.fftpack._fftpack as sff
     padded_array = np.pad(in_array, size, 'symmetric')
     x, y = np.mgrid[-size:size + 1, -size:size + 1]
     g = np.exp(-(x**2 / float(size) + y**2 / float(size)))
