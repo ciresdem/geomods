@@ -322,6 +322,14 @@ def waffles_wg_valid_p(wg = _waffles_grid_info):
         else: return(True)
     except: return(False)
 
+def intersect_hook_c(r, e):
+    r_geom = gdalfun.gdal_region2geom(r)
+    dl_i = datalists.inf_entry(e)
+    if 'wkt' in dl_i.keys():
+        e_geom = ogr.CreateGeometryFromWkt(dl_i['wkt'])
+    else: e_geom = r_geom
+    return(regions.geoms_intersect_p(r_geom, e_geom))
+    
 def waffles_dlp_hooks(wg = _waffles_grid_info):
     '''the deafult datalist pass hooks.
     checks for region intersection and possibly z and/or weight range.
@@ -332,12 +340,9 @@ def waffles_dlp_hooks(wg = _waffles_grid_info):
     dlp_hooks = datalists.datalist_default_hooks()
     
     if region is not None:
-        r_geom = gdalfun.gdal_region2geom(region)
-        dlp_hooks.append(lambda e: regions.geoms_intersect_p(r_geom, ogr.CreateGeometryFromWkt(datalists.inf_entry(e)['wkt'])))
-        #dlp_hooks.append(lambda e: regions.regions_intersect_ogr_p(region, datalists.inf_entry(e)['minmax']))
+        dlp_hooks.append(lambda e: intersect_hook_c(region, e))
     if wg['z_region'] is not None:
         dlp_hooks.append(lambda e: regions.z_region_pass(datalists.inf_entry(e)['minmax'], upper_limit = wg['z_region'][1], lower_limit = wg['z_region'][0]))
-
     if wg['w_region'] is not None:
         dlp_hooks.append(lambda e: regions.z_pass(e[2], upper_limit = wg['w_region'][1], lower_limit = wg['w_region'][0]))
 
@@ -735,7 +740,7 @@ def waffles_gdal_grid(wg = _waffles_grid_info, alg_str = 'linear:radius=1'):
     region = waffles_proc_region(wg)
     dly = xyzfun.xyz_block(waffles_yield_datalist(wg), region, wg['inc'], weights = False if wg['weights'] is None else True)
     ds = gdalfun.xyz2gdal_ds(dly, '{}'.format(wg['name']))
-    if ds.GetLayer().GetFeatureCount() == 0: return(-1,-1)
+    if ds.GetLayer().GetFeatureCount() == 0: return({},-1)
     xcount, ycount, dst_gt = gdalfun.gdal_region2gt(region, wg['inc'])
     gd_opts = gdal.GridOptions(outputType = gdal.GDT_Float32, noData = -9999, format = 'GTiff', \
                                width = xcount, height = ycount, algorithm = alg_str, callback = gdalfun._gdal_progress if wg['verbose'] else None, \
@@ -1389,19 +1394,19 @@ def waffle(wg = _waffles_grid_info):
         ## ==============================================
         ## gererate the DEM (run the module)
         ## ==============================================
-        try:
-            waffles_out, status = _waffles_modules[this_wg['mod']][0](args_d)
-            if wg['mask']: waffles_out['msk'] = ['{}_msk.tif'.format(this_wg['name']), 'raster']
-            chunks.append(waffles_out)
-        except KeyboardInterrupt as e:
-            utils.echo_error_msg('killed by user, {}'.format(e))
-            sys.exit(-1)
-        except Exception as e:
-            utils.echo_error_msg('{}'.format(e))
-            [utils.remove_glob('{}.*'.format(waffles_out[x][0].split('.')[0])) for x in waffles_out.keys()]
-            status = -1
-            continue
-
+        #try:
+        waffles_out, status = _waffles_modules[this_wg['mod']][0](args_d)
+        if wg['mask']: waffles_out['msk'] = ['{}_msk.tif'.format(this_wg['name']), 'raster']
+        chunks.append(waffles_out)
+        #except KeyboardInterrupt as e:
+        #    utils.echo_error_msg('killed by user, {}'.format(e))
+        #    sys.exit(-1)
+        #except Exception as e:
+        #    utils.echo_error_msg('{}'.format(e))
+        #    [utils.remove_glob('{}.*'.format(waffles_out[x][0].split('.')[0])) for x in waffles_out.keys()]
+        #    status = -1
+        #    continue
+        print(waffles_out)
         for out_key in waffles_out.keys():
             if waffles_out[out_key][1] == 'raster':
 
@@ -1738,7 +1743,7 @@ def waffles_cli(argv = sys.argv):
         elif arg == '-u' or arg == '--uncert':
             wg['mask'] = True
             wg['unc'] = True
-        elif arg == '-c' or arg == '--continue': wg['overwrite'] = False
+        elif arg == '-c' or arg == '--continue': wg['clobber'] = False
         #elif arg == '-s' or arg == 'spat-meta': wg['spat'] = True
         elif arg == '-r' or arg == '--grid-node': wg['node'] = 'grid'
         elif arg == '--verbose' or arg == '-V': wg['verbose'] = True

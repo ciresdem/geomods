@@ -56,12 +56,11 @@ def las_inf(src_las):
         pts.append(l)
         lasi['numpts'] = i
 
-    if lasi['numpts'] > 4:
+    try:
         out_hull = [pts[i] for i in spatial.ConvexHull(pts, qhull_options='Qt').vertices]
         out_hull.append(out_hull[0])
         lasi['wkt'] = gdalfun.gdal_create_polygon(out_hull, xpos = 0, ypos = 1)
-    elif lasi['numpts'] > 0: lasi['wkt'] = gdalfun.gdal_region2wkt(lasi['minmax'])
-    else: lasi['wkt'] = gdalfun.gdal_region2wkt(lasi['minmax'])
+    except: lasi['wkt'] = gdalfun.gdal_region2wkt(lasi['minmax'])
 
     if lasi['numpts'] > 0:
         with open('{}.inf'.format(src_las), 'w') as inf:

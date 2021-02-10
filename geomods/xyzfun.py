@@ -198,16 +198,15 @@ def xyz_inf(src_xyz):
         pts.append(l)
         xyzi['numpts'] = i
 
-    if xyzi['numpts'] > 4:
-        out_hull = [pts[i] for i in spatial.ConvexHull(pts, qhull_options='Qt').vertices]
-        out_hull.append(out_hull[0])
-        xyzi['wkt'] = gdalfun.gdal_create_polygon(out_hull, xpos = 0, ypos = 1)
-    elif xyzi['numpts'] > 0: xyzi['wkt'] = gdalfun.gdal_region2wkt(xyzi['minmax'])
-    else: xyzi['wkt'] = gdalfun.gdal_region2wkt(xyzi['minmax'])
-
     if xyzi['numpts'] > 0:
-        with open('{}.inf'.format(src_xyz.name), 'w') as inf:
-            inf.write(json.dumps(xyzi))
+        try:
+            out_hull = [pts[i] for i in spatial.ConvexHull(pts, qhull_options='Qt').vertices]
+            out_hull.append(out_hull[0])
+            xyzi['wkt'] = gdalfun.gdal_create_polygon(out_hull, xpos = 0, ypos = 1)
+
+            with open('{}.inf'.format(src_xyz.name), 'w') as inf:
+                inf.write(json.dumps(xyzi))
+        except: xyzi['wkt'] = gdalfun.gdal_region2wkt(xyzi['minmax'])
     return(xyzi)
             
 def xyz_inf_entry(entry):
