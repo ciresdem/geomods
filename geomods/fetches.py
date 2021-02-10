@@ -2002,17 +2002,15 @@ class mb:
         self._req = None
         self._results = []
         self.region = extent
-        self._datalists_code = 406
         self._verbose = False
         self._stop = callback
 
     def run(self):
         '''Run the MB (multibeam) fetching module.'''
         if self.region is None: return([])        
-        self.data = { 'geometry': regions.region_format(self.region, 'bbox') }
-        self._req = fetch_req(self._mb_search_url, params = self.data)
+        self._req = fetch_req(self._mb_search_url, params = {'geometry': regions.region_format(self.region, 'bbox')})
         if self._req is not None:
-            survey_list = self._req.content.split('\n')[:-1]
+            survey_list = self._req.text.split('\n')[:-1]
             for r in survey_list:
                 dst_pfn = r.split(' ')[0]
                 dst_fn = dst_pfn.split('/')[-1:][0]
@@ -2063,7 +2061,7 @@ class mb:
         if vdc['jar'] is None: vdc['jar'] = vdatumfun.vdatum_locate_jar()[0]
         
         for entry in self._results:
-            for xyz in self._yield_xyz(vdc, xyzc):
+            for xyz in self._yield_xyz(entry, vdc, xyzc):
                 yield(xyz)
 
     def _dump_results_to_xyz(self, dst_port = sys.stdout):
@@ -2602,7 +2600,7 @@ def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, verbose = Fal
     fetch_mod = entry[0].split(':')[0]
     fetch_args = entry[0].split(':')[1:]
     
-    fl = fetch_infos[fetch_mod][0](regions.region_buffer(region, 5, pct = True), [], lambda: False)
+    fl = _fetch_modules[fetch_mod]['run'](regions.region_buffer(region, 5, pct = True), [], lambda: False)
     args_d = utils.args2dict(fetch_args, {})
     fl._verbose = verbose
 
@@ -2620,7 +2618,7 @@ def fetch_module_yield_entry(entry, region = None, verbose = False, module = 'dc
 
     yields [x, y, z, <w, ...>]'''
 
-    fl = fetch_infos[module][0](regions.region_buffer(region, 5, pct = True), [], lambda: False)
+    fl = _fetch_modules[module]['run'](regions.region_buffer(region, 5, pct = True), [], lambda: False)
     fl._verbose = verbose
     fetch_entry = [entry[0], entry[0].split('/')[-1], module]
     
@@ -2638,114 +2636,158 @@ def fetch_dc_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = F
 ## Run fetches from command-line
 ##
 ## =============================================================================
-fetch_infos = { 
-    'dc':[lambda x, f, c: dc(x, f, c), '''NOAA Digital Coast
-    Lidar and Raster data from NOAA's Digital Coast
+# old fetch_infos
+_fetch_modules = { 
+    'dc': {
+        'run': lambda x, f, c: dc(x, f, c),
+        'description': '''NOAA Digital Coast
+        Lidar and Raster data from NOAA's Digital Coast
 
-    < dc:datatype=None:index=False:update=False >
-     :datatype=[lidar/raster] - Only fetch lidar or raster data.
-     :index=[True/False] - True to display indexed results.
-     :update=[True/False] - True to update stored reference vector.'''],
-     'nos':[lambda x, f, c: nos(x, f, c), '''NOAA NOS Bathymetric Data
-    Bathymetry surveys and data (xyz & BAG)
+        < dc:datatype=None:index=False:update=False >
+         :datatype=[lidar/raster] - Only fetch lidar or raster data.
+         :index=[True/False] - True to display indexed results.
+         :update=[True/False] - True to update stored reference vector.''',
+    },
+    'nos': {
+        'run': lambda x, f, c: nos(x, f, c),
+        'description': '''NOAA NOS Bathymetric Data
+        Bathymetry surveys and data (xyz & BAG)
 
-    < nos:datatype=None:update=False >
-     :datatype=[bag/xyz] - Only fetch BAG or Hydro-XYZ data.
-     :update=[True/False] - True to update stored reference vector.'''],
-     'charts':[lambda x, f, c: charts(x, f, c), '''NOAA Nautical CHARTS (RNC & ENC)
-    Raster and Vector U.S. Nautical Charts
+        < nos:datatype=None:update=False >
+         :datatype=[bag/xyz] - Only fetch BAG or Hydro-XYZ data.
+         :update=[True/False] - True to update stored reference vector.''',
+    },
+    'charts': {
+        'run': lambda x, f, c: charts(x, f, c),
+        'description': '''NOAA Nautical CHARTS (RNC & ENC)
+        Raster and Vector U.S. Nautical Charts
 
-    < charts:datatype=None:update=False >
-     :dataype=[ENC/RNC] - Only fetch either ENC or RNC data.
-     :update=[True/False] - True to update stored reference vector.'''],
-    'srtm_cgiar':[lambda x, f, c: srtm_cgiar(x, f, c), '''SRTM elevation data (CGIAR)
-    Global Topography at 90m DEMs
+        < charts:datatype=None:update=False >
+         :dataype=[ENC/RNC] - Only fetch either ENC or RNC data.
+         :update=[True/False] - True to update stored reference vector.''',
 
-    < srtm_cgiar >'''],
-    'srtm_plus':[lambda x, f, c: srtm_plus(x, f, c), '''SRTM15+ elevation data (Scripps)
-    Global Bathymetry and Topography at 15 Arc Sec:SRTM15+
+    },
+    'srtm_cgiar': {
+        'run': lambda x, f, c: srtm_cgiar(x, f, c),
+        'description': '''SRTM elevation data (CGIAR)
+        Global Topography at 90m DEMs
+
+        < srtm_cgiar >''',
+    },
+    'srtm_plus': {
+        'run': lambda x, f, c: srtm_plus(x, f, c),
+        'description': '''SRTM15+ elevation data (Scripps)
+        Global Bathymetry and Topography at 15 Arc Sec:SRTM15+
     
-    < srtm_plus >'''],
-    'tnm':[lambda x, f, c: tnm(x, f, c), '''The National Map (TNM) from USGS
-    Various datasets from USGS's National Map.
-    The National Map is a collaborative effort among the USGS and other Federal, State, and local partners to improve and deliver topographic information for the Nation.
+        < srtm_plus >''',
+    },
+    'tnm': {
+        'run': lambda x, f, c: tnm(x, f, c),
+        'description': '''The National Map (TNM) from USGS
+        Various datasets from USGS's National Map.
+        The National Map is a collaborative effort among the USGS and other Federal, State, and local partners to improve and deliver topographic information for the Nation.
 
-    https://www.usgs.gov/core-science-systems/national-geospatial-program/national-map
-    https://viewer.nationalmap.gov/advanced-viewer/
+        https://www.usgs.gov/core-science-systems/national-geospatial-program/national-map
+        https://viewer.nationalmap.gov/advanced-viewer/
 
-    < tnm:ds=1:sub_ds=None:formats=None:index=False >
-     :index=[True/False] - True to display an index of available datasets.
-     :ds=[dataset index value (0-15)] - see :index=True for dataset index values.
-     :sub_ds=[sub-dataset index value (0-x)] - see :index=True for sub-dataset index values.
-     :formats=[data-set format] - see :index=True for dataset format options.'''],
-    'mb':[lambda x, f, c: mb(x, f, c), '''NOAA MULTIBEAM survey data
-    Multibeam Bathymetric Data from NOAA.
-    In addition to deepwater data, the Multibeam Bathymetry Database (MBBDB) includes hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).
+        < tnm:ds=1:sub_ds=None:formats=None:index=False >
+         :index=[True/False] - True to display an index of available datasets.
+         :ds=[dataset index value (0-15)] - see :index=True for dataset index values.
+         :sub_ds=[sub-dataset index value (0-x)] - see :index=True for sub-dataset index values.
+         :formats=[data-set format] - see :index=True for dataset format options.''',
+    },
+    'mb': {
+        'run': lambda x, f, c: mb(x, f, c),
+        'description': '''NOAA MULTIBEAM survey data
+        Multibeam Bathymetric Data from NOAA.
+        In addition to deepwater data, the Multibeam Bathymetry Database (MBBDB) includes hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).
 
-    https://www.ngdc.noaa.gov/mgg/bathymetry/multibeam.html
+        https://www.ngdc.noaa.gov/mgg/bathymetry/multibeam.html
 
-    < mb >'''],
-    'gmrt':[lambda x, f, c: gmrt(x, f, c), '''The Global Multi-Reosolution Topography Data Synthesis (GMRT) 
-    Global Elevation raster dataset via GMRT.
+        < mb >''',
+    },
+    'gmrt': {
+        'run': lambda x, f, c: gmrt(x, f, c),
+        'description': '''The Global Multi-Reosolution Topography Data Synthesis (GMRT) 
+        Global Elevation raster dataset via GMRT.
 
-    < gmrt:res=max:fmt=geotiff >
-     :res=[an Integer power of 2 zoom level (<=1024)]
-     :fmt=[netcdf/geotiff/esriascii/coards]'''],
-    'cudem':[lambda x, f, c: cudem(x, f, c), '''ncei cudem thredds catalog
-    NOAA NCEI THREDDS DEM Catalog Access
+        < gmrt:res=max:fmt=geotiff >
+         :res=[an Integer power of 2 zoom level (<=1024)]
+         :fmt=[netcdf/geotiff/esriascii/coards]''',
+    },
+    'cudem': {
+        'run': lambda x, f, c: cudem(x, f, c),
+        'description': '''ncei cudem thredds catalog
+        NOAA NCEI THREDDS DEM Catalog Access
 
-    < cudem >'''],
-    'usace':[lambda x, f, c: usace(x, f, c), '''USACE bathymetry surveys via eHydro
-    Bathymetric Channel surveys from USACE - U.S. only.
-    The hydrographic surveys provided by this application are to be used for informational purposes only and should not be used as a navigational aid. 
-    Channel conditions can change rapidly and the surveys may or may not be accurate.
+        < cudem >''',
+    },
+    'usace': {
+        'run': lambda x, f, c: usace(x, f, c),
+        'description': '''USACE bathymetry surveys via eHydro
+        Bathymetric Channel surveys from USACE - U.S. only.
+        The hydrographic surveys provided by this application are to be used for informational purposes only and should not be used as a navigational aid. 
+        Channel conditions can change rapidly and the surveys may or may not be accurate.
 
-    https://navigation.usace.army.mil/Survey/Hydro
+        https://navigation.usace.army.mil/Survey/Hydro
 
-    < usace >'''],
-    'ngs':[lambda x, f, c: ngs(x, f, c), '''NOAA NGS Monument Data
-    Monument data from NOAA's Nagional Geodetic Survey (NGS) monument dataset.
+        < usace >''',
+    },
+    'ngs': {
+        'run': lambda x, f, c: ngs(x, f, c),
+        'description': '''NOAA NGS Monument Data
+        Monument data from NOAA's Nagional Geodetic Survey (NGS) monument dataset.
 
-    < ngs >'''],
-    'mar_grav':[lambda x, f, c: mar_grav(x, f, c), '''Marine Gravity from Sattelite Altimetry topographic data.
-    Elevation data from Scripps Marine Gravity dataset.
+        < ngs >''',
+    },
+    'mar_grav': {
+        'run': lambda x, f, c: mar_grav(x, f, c),
+        'description': '''Marine Gravity from Sattelite Altimetry topographic data.
+        Elevation data from Scripps Marine Gravity dataset.
 
-    < mar_grav >'''],
-    'emodnet':[lambda x, f, c: emodnet(x, f, c), '''EMODNET Elevation Data
-    European Bathymetry/Topographic data from EMODNET
+        < mar_grav >''',
+    },
+    'emodnet': {
+        'run': lambda x, f, c: emodnet(x, f, c),
+        'description': '''EMODNET Elevation Data
+        European Bathymetry/Topographic data from EMODNET
 
-    https://portal.emodnet-bathymetry.eu/help/help.html
+        https://portal.emodnet-bathymetry.eu/help/help.html
 
-    < emodnet >'''],
-    'chs':[lambda x, f, c: chs(x, f, c), '''CHS Bathymetry
-    CHS NONNA 100m Bathymetric Survey Grids
-    Non-Navigational gridded bathymetric data based on charts and soundings.
+        < emodnet >''',
+    },
+    'chs': {
+        'run': lambda x, f, c: chs(x, f, c),
+        'description': '''CHS Bathymetry
+        CHS NONNA 100m Bathymetric Survey Grids
+        Non-Navigational gridded bathymetric data based on charts and soundings.
 
-    https://open.canada.ca/data/en/dataset/d3881c4c-650d-4070-bf9b-1e00aabf0a1d
+        https://open.canada.ca/data/en/dataset/d3881c4c-650d-4070-bf9b-1e00aabf0a1d
 
-    < chs >'''],
-    'hrdem':[lambda x, f, c: hrdem(x, f, c), '''Canada HRDEM Elevation Data
-    Canada High-Resolution Digital Elevation Model (HRDEM).
-    Collection of lidar-derived DTMs across Canada.
+        < chs >''',
+    },
+    'hrdem': {
+        'run': lambda x, f, c: hrdem(x, f, c),
+        'description': '''Canada HRDEM Elevation Data
+        Canada High-Resolution Digital Elevation Model (HRDEM).
+        Collection of lidar-derived DTMs across Canada.
 
-    https://open.canada.ca/data/en/dataset/957782bf-847c-4644-a757-e383c0057995
+        https://open.canada.ca/data/en/dataset/957782bf-847c-4644-a757-e383c0057995
 
-    < hredem >'''],
-    'osm':[lambda x, f, c: osm(x, f, c), '''Open Street Map (OSM) data <beta>
-    various datasets via OSM OverPass
-    currently, either 'highway, waterway, building'
+        < hredem >''',
+    },
+    'osm': {
+        'run': lambda x, f, c: osm(x, f, c),
+        'description': '''Open Street Map (OSM) data <beta>
+        various datasets via OSM OverPass
+        currently, either 'highway, waterway, building'
 
-    < osm:osm_type='all' >
-     :osm_type=[data-type] - use 'all' to fetch all available datasets.'''],
+        < osm:osm_type='all' >
+         :osm_type=[data-type] - use 'all' to fetch all available datasets.''',
+    },
 }
 
-def fetch_desc(x):
-    fd = []
-    for key in x: 
-        fd.append('{:18}{}'.format(key, x[key][-1]))
-    return fd
-
-_fetch_long_desc = lambda x: 'fetches modules:\n% fetches ... <mod>:key=val:key=val...\n\n  ' + '\n  '.join(['{:14}{}\n'.format(key, x[key][-1]) for key in x]) + '\n'
+_fetch_long_desc = lambda x: 'fetches modules:\n% fetches ... <mod>:key=val:key=val...\n\n  ' + '\n  '.join(['{:14}{}\n'.format(key, x[key]['description']) for key in x]) + '\n'
 _fetch_short_desc = lambda x: ', '.join(['{}'.format(key) for key in x])
 
 _usage = '''{} [OPTIONS] <module[:parameter=value]* ...>
@@ -2776,14 +2818,13 @@ Examples:
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
 '''.format(os.path.basename(sys.argv[0]),
-           _fetch_short_desc(fetch_infos),
+           _fetch_short_desc(_fetch_modules),
            os.path.basename(sys.argv[0]),
            os.path.basename(sys.argv[0]), 
            os.path.basename(sys.argv[0]), 
            os.path.basename(sys.argv[0]),
            os.path.basename(sys.argv[0]))
            
-#'\n  '.join(fetch_desc(fetch_infos)),
 def fetches_cli(argv = sys.argv):
     status = 0
     extent = None
@@ -2822,14 +2863,14 @@ def fetches_cli(argv = sys.argv):
             sys.exit(0)
         elif arg == '--modules' or arg == '-m':
             try:
-                if argv[i + 1] in fetch_infos.keys():
-                    sys.stderr.write(_fetch_long_desc({k: fetch_infos[k] for k in (argv[i + 1],)}))
-                else: sys.stderr.write(_fetch_long_desc(fetch_infos))
-            except: sys.stderr.write(_fetch_long_desc(fetch_infos))
+                if argv[i + 1] in _fetch_modules.keys():
+                    sys.stderr.write(_fetch_long_desc({k: _fetch_modules[k] for k in (argv[i + 1],)}))
+                else: sys.stderr.write(_fetch_long_desc(_fetch_modules))
+            except: sys.stderr.write(_fetch_long_desc(_fetch_modules))
             sys.exit(0)
         else: 
             opts = arg.split(':')
-            if opts[0] in fetch_infos.keys():
+            if opts[0] in _fetch_modules.keys():
                 mod_opts[opts[0]] = list(opts[1:])
             else: utils.echo_error_msg('invalid module name `{}`'.format(opts[0]))
         i = i + 1
@@ -2869,7 +2910,7 @@ def fetches_cli(argv = sys.argv):
             args = tuple(mod_opts[fetch_mod])
             utils.echo_msg('running fetch module {} on region {} ({}/{})...\
             '.format(fetch_mod, regions.region_format(this_region, 'str'), rn+1, len(these_regions)))
-            fl = fetch_infos[fetch_mod][0](regions.region_buffer(this_region, 5, pct = True), f, lambda: stop_threads)
+            fl = _fetch_modules[fetch_mod]['run'](regions.region_buffer(this_region, 5, pct = True), f, lambda: stop_threads)
             #fl._verbose = True
             args_d = utils.args2dict(args)
             #try:

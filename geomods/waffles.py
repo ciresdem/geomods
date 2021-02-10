@@ -193,9 +193,9 @@ def waffles_config(datalist = None, data = [], region = None, inc = None, name =
 
 ## ==============================================
 ## The waffles modules
-## { 'module-name': [module-lambda, module description, dem-p, requires-datalist], ... }
 ## the module lambda should point to a function that takes at least
 ## the waffles config as its first option (e.g. def mod(wg))
+## and return a dict with 'dem' = output raster
 ## ==============================================
 _waffles_modules = {
     'surface': {
@@ -477,7 +477,7 @@ def waffles_filter(src_gdal, dst_gdal, fltr = 1, fltr_val = None, split_value = 
         ## filter the possibly split DEM
         ## ==============================================
         if int(fltr) == 1: out, status = gdalfun.gdal_blur(dem_l, 'tmp_fltr.tif', fltr_val if fltr_val is not None else 10)
-        elif int(fltr) == 2: out, status = gmtfun.gmt_grdfilter(dem_l, 'tmp_fltr.tif=gd+n-9999:GTiff', dist = fltr_val if fltr_val is not None else '1s', verbose = True)
+        elif int(fltr) == 2: out, status = gmtfun.gmt_grdfilter(dem_l, 'tmp_fltr.tif=gd+n-9999:GTiff', dist = fltr_val if fltr_val is not None else '1s', verbose = False)
         else: out, status = gdalfun.gdal_blur(dem_l, 'tmp_fltr.tif', fltr_val if fltr_val is not None else 10)
 
         ## ==============================================
@@ -1275,7 +1275,7 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
                 .format(wg['inc'], wg['inc'], regions.region_format(waffles_dist_region(wg), 'te'), u_mask), verbose = False)
         utils.remove_glob('region_buff.*')
 
-        fl = fetches.fetch_infos['tnm'][0](waffles_proc_region(wg), [], None)
+        fl = fetches._fetch_modules['tnm']['run'](waffles_proc_region(wg), [], None)
         r = fl.run(ds = 4, formats = 'FileGDB 10.1', extent = 'HU-4 Subregion, Hu-2 Region')
 
         if len(r) > 0:
@@ -1323,7 +1323,7 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
     if wg['gc']['GMT'] is not None and not want_gmrt:
         utils.run_cmd('gmt grdlandmask {} -I{} -r -Df -G{}=gd:GTiff -V -N1/0/1/0/1'.format(regions.region_format(waffles_dist_region(wg), 'gmt'), wg['inc'], g_mask), verbose = wg['verbose'])
     else:
-        r = fetches.fetch_infos['gmrt'][0](regions.region_buffer(waffles_dist_region(wg), 5, pct = True), [], None).run()
+        r = fetches._fetch_modules['gmrt']['run'](regions.region_buffer(waffles_dist_region(wg), 5, pct = True), [], None).run()
         gmrt_tif = r[0][1]
         if fetches.fetch_file(r[0][0], gmrt_tif, verbose = True) == 0:
             utils.run_cmd('gdalwarp {} {} -tr {} {} -overwrite'.format(gmrt_tif, g_mask, wg['inc'], wg['inc']), verbose = True)

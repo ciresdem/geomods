@@ -43,21 +43,33 @@ from geomods import fetches
 ## Datalist formats and lambdas
 ## ==============================================
 _known_dl_delims = [' ']
-_dl_dl_h = {-1: {'fmts': ['datalist', 'mb-1'],
-                 'inf': lambda e, p: datalist_inf_entry(e),
-                 'yield': lambda e, r, v, z, w, p: datalist_yield_entry(e, r, v, z, w, p)},
-            168: {'fmts': ['xyz', 'csv', 'dat', 'ascii'],
-                  'inf': lambda e, p: xyzfun.xyz_inf_entry(e),
-                  'yield': lambda e, r, v, z, w, p: xyzfun.xyz_yield_entry(e, r, v, z)},
-            200: {'fmts': ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'],
-                  'inf': lambda e, p: gdalfun.gdal_inf_entry(e, p),
-                  'yield': lambda e, r, v, z, w, p: gdalfun.gdal_yield_entry(e, r, v, z, p)},
-            300: {'fmts': ['las', 'laz'],
-                  'inf': lambda e, p: lasfun.las_inf_entry(e),
-                  'yield': lambda e, r, v, z, w, p: lasfun.las_yield_entry(e, r, v, z)},
-            400: {'fmts': ['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs', 'hrdem', 'cudem'],
-                  'inf': lambda e, p: fetches.fetch_inf_entry(e),
-                  'yield': lambda e, r, v, z, w, p: fetches.fetch_yield_entry(e, r, v)}}
+_dl_dl_h = {
+    -1: {
+        'fmts': ['datalist', 'mb-1'],
+        'inf': lambda e, p: datalist_inf_entry(e),
+        'yield': lambda e, r, v, z, w, p: datalist_yield_entry(e, r, v, z, w, p),
+    },
+    168: {
+        'fmts': ['xyz', 'csv', 'dat', 'ascii'],
+        'inf': lambda e, p: xyzfun.xyz_inf_entry(e),
+        'yield': lambda e, r, v, z, w, p: xyzfun.xyz_yield_entry(e, r, v, z),
+    },
+    200: {
+        'fmts': ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'],
+        'inf': lambda e, p: gdalfun.gdal_inf_entry(e, p),
+        'yield': lambda e, r, v, z, w, p: gdalfun.gdal_yield_entry(e, r, v, z, p),
+    },
+    300: {
+        'fmts': ['las', 'laz'],
+        'inf': lambda e, p: lasfun.las_inf_entry(e),
+        'yield': lambda e, r, v, z, w, p: lasfun.las_yield_entry(e, r, v, z),
+    },
+    400: {
+        'fmts': ['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs', 'hrdem', 'cudem'],
+        'inf': lambda e, p: fetches.fetch_inf_entry(e),
+        'yield': lambda e, r, v, z, w, p: fetches.fetch_yield_entry(e, r, v),
+    },
+}
 
 _datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, _dl_dl_h[key]['fmts']) for key in _dl_dl_h])
 
