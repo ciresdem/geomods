@@ -244,6 +244,9 @@ def gdal_create_polygon(coords, xpos = 1, ypos = 0):
     poly = None
     return(poly_wkt)
 
+def gdal_wkt2geom(wkt):
+    return(ogr.CreateGeometryFromWkt(wkt))
+
 def gdal_region2wkt(region):
 
     eg = [[region[2], region[0]], [region[2], region[1]],

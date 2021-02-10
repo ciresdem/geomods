@@ -29,12 +29,7 @@
 import os
 import sys
 import glob
-
-import gdal
-import osr
-import ogr
 import json
-import numpy as np
 
 from geomods import utils
 from geomods import regions
@@ -48,66 +43,46 @@ from geomods import fetches
 ## Datalist formats and lambdas
 ## ==============================================
 _known_dl_delims = [' ']
-_dl_dl_h = {
-    -1: {
-        'fmts': ['datalist', 'mb-1'],
-        'inf': lambda e, p: datalist_inf_entry(e),
-    },
-    168: {
-        'fmts': ['xyz', 'csv', 'dat', 'ascii'],
-        'inf': lambda e, p: xyzfun.xyz_inf_entry(e),
-        'yield': lambda e, r, v, z, w, p: xyzfun.xyz_yield_entry(e, r, v, z),
-    },
-    200: {
-        'fmts': ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'],
-        'inf': lambda e, p: gdalfun.gdal_inf_entry(e, p),
-        'yield': lambda e, r, v, z, w, p: gdalfun.gdal_yield_entry(e, r, v, z, p),
-    },
-    300: {
-        'fmts': ['las', 'laz'],
-        'inf': lambda e, p: lasfun.las_inf_entry(e),
-        'yield': lambda e, r, v, z, w, p: lasfun.las_yield_entry(e, r, v, z),
-    },
-    400: {
-        'fmts': ['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs', 'hrdem', 'cudem'],
-        'inf': lambda e, p: fetches.fetch_inf_entry(e),
-        'yield': lambda e, r, v, z, w, p: fetches.fetch_yield_entry(e, r, v),
-    },
-}
+_dl_dl_h = {-1: {'fmts': ['datalist', 'mb-1'],
+                 'inf': lambda e, p: datalist_inf_entry(e),
+                 'yield': lambda e, r, v, z, w, p: datalist_yield_entry(e, r, v, z, w, p)},
+            168: {'fmts': ['xyz', 'csv', 'dat', 'ascii'],
+                  'inf': lambda e, p: xyzfun.xyz_inf_entry(e),
+                  'yield': lambda e, r, v, z, w, p: xyzfun.xyz_yield_entry(e, r, v, z)},
+            200: {'fmts': ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'],
+                  'inf': lambda e, p: gdalfun.gdal_inf_entry(e, p),
+                  'yield': lambda e, r, v, z, w, p: gdalfun.gdal_yield_entry(e, r, v, z, p)},
+            300: {'fmts': ['las', 'laz'],
+                  'inf': lambda e, p: lasfun.las_inf_entry(e),
+                  'yield': lambda e, r, v, z, w, p: lasfun.las_yield_entry(e, r, v, z)},
+            400: {'fmts': ['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs', 'hrdem', 'cudem'],
+                  'inf': lambda e, p: fetches.fetch_inf_entry(e),
+                  'yield': lambda e, r, v, z, w, p: fetches.fetch_yield_entry(e, r, v)}}
 
-_known_datalist_fmts = {
-    -1: ['datalist', 'mb-1'],
-    168: ['xyz', 'csv', 'dat', 'ascii'],
-    200: ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'],
-    300: ['las', 'laz'],
-    400: ['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs', 'hrdem', 'cudem'],
-}
-_known_datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, _known_datalist_fmts[key]) for key in _known_datalist_fmts])
-_dl_inf_h = {
-    -1: lambda e, p: datalist_inf_entry(e),
-    168: lambda e, p: xyzfun.xyz_inf_entry(e),
-    200: lambda e, p: gdalfun.gdal_inf_entry(e, p),
-    300: lambda e, p: lasfun.las_inf_entry(e),
-    400: lambda e, p: fetches.fetch_inf_entry(e)
-}
-_dl_pass_h = [lambda e: path_exists_or_url(e[0])]
-
-_dl_yield_h = {
-    168: lambda e, r, v, z, w, p: xyzfun.xyz_yield_entry(e, r, v, z),
-    200: lambda e, r, v, z, w, p: gdalfun.gdal_yield_entry(e, r, v, z, p),
-    300: lambda e, r, v, z, w, p: lasfun.las_yield_entry(e, r, v, z),
-    400: lambda e, r, v, z, w, p: fetches.fetch_yield_entry(e, r, v)
-}
+_datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, _dl_dl_h[key]['fmts']) for key in _dl_dl_h])
 
 def path_exists_or_url(src_str):
+    '''return True if src_str is a valid path, url or fetches module'''
+    
     if os.path.exists(src_str): return(True)
     if src_str[:4] == 'http': return(True)
-    if src_str.split(':')[0] in _known_datalist_fmts[400]: return(True)
+    if src_str.split(':')[0] in _dl_dl_h[400]['fmts']: return(True)
     utils.echo_error_msg('invalid datafile/datalist: {}'.format(src_str))
     return(False)
 
+def intersect_p(r, e):
+    '''return True if region r intersects with the wkt found in the 
+    inf file for datalist entry e'''
+    
+    dl_i = inf_entry(e)
+    r_geom = gdalfun.gdal_region2geom(r)
+    e_geom = gdalfun.gdal_wkt2geom(dl_i['wkt']) if 'wkt' in dl_i.keys() else r_geom
+    return(regions.geoms_intersect_p(r_geom, e_geom))
+
 def datalist_default_hooks():
     return([lambda e: path_exists_or_url(e[0])])
+
+_dl_pass_h = [lambda e: path_exists_or_url(e[0])]
 
 ## ==============================================
 ## inf files (data info) inf.py
@@ -163,7 +138,7 @@ def inf_entry(src_entry, overwrite = False, epsg = None):
     if os.path.exists(src_entry[0]) or src_entry[1] == 400:
         path_i = src_entry[0] + '.inf'
         if not os.path.exists(path_i) or overwrite:
-            ei = _dl_inf_h[src_entry[1]](src_entry, epsg)
+            ei = _dl_dl_h[src_entry[1]]['inf'](src_entry, epsg)
         else: ei = inf_parse(path_i)
         if not regions.region_valid_p(ei['minmax']): return({})
     return(ei)
@@ -258,12 +233,12 @@ def entry2py(dl_e):
         utils.echo_error_msg('could not parse entry {}'.format(dl_e))
         return(None)
     if len(entry) < 2:
-        for key in _known_datalist_fmts.keys():
+        for key in _dl_dl_h.keys():
             se = entry[0].split('.')
             if len(se) == 1:
                 see = entry[0].split(':')[0]
             else: see = se[-1]
-            if see in _known_datalist_fmts[key]:
+            if see in _dl_dl_h[key]['fmts']:
                 entry.append(int(key))
     if len(entry) < 3: entry.append(1)
     return(entry)
@@ -343,7 +318,7 @@ def datalist_yield_entry(this_entry, region = None, verbose = False, z_region = 
     yields xyz line data [x, y, z, ...]'''
 
     if this_entry[1] != -1:
-        for xyz in _dl_yield_h[this_entry[1]](this_entry, region, verbose, z_region, w_region, epsg):
+        for xyz in _dl_dl_h[this_entry[1]]['yield'](this_entry, region, verbose, z_region, w_region, epsg):
             yield(xyz)
         
 def datalist_yield_xyz(dl, wt = None, pass_h = _dl_pass_h,
@@ -406,16 +381,8 @@ CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
 '''.format( os.path.basename(sys.argv[0]), 
             datalists_version, 
             os.path.basename(sys.argv[0]),
-            _known_datalist_fmts_short_desc(),
+            _datalist_fmts_short_desc(),
             os.path.basename(sys.argv[0]))
-
-def intersect_hook_c(r, e):
-    r_geom = gdalfun.gdal_region2geom(r)
-    dl_i = inf_entry(e)
-    if 'wkt' in dl_i.keys():
-        e_geom = ogr.CreateGeometryFromWkt(dl_i['wkt'])
-    else: e_geom = r_geom
-    return(regions.geoms_intersect_p(r_geom, e_geom))
 
 def datalists_cli(argv = sys.argv):
 
@@ -532,7 +499,7 @@ def datalists_cli(argv = sys.argv):
 
     if want_glob:
         if dl_fmt is None:
-            dl_fmts = list(_known_datalist_fmts.keys())
+            dl_fmts = list(_dl_dl_h.keys())
             dl_fmts.remove(-1)
         else:
             dl_fmts = [dl_fmt]
@@ -540,7 +507,7 @@ def datalists_cli(argv = sys.argv):
         #     globs = glob.glob('*.{}'.format(f))
         #     [sys.stdout.write('{}\n'.format(' '.join([x, str(-1), '1']))) for x in globs]
         for key in dl_fmts:
-            for f in _known_datalist_fmts[key]:
+            for f in _dl_dl_h[key]['fmts']:
                 globs = glob.glob('*.{}'.format(f))
                 [sys.stdout.write('{}\n'.format(' '.join([x, str(key), '1']))) for x in globs]
         sys.exit(0)
@@ -572,9 +539,7 @@ def datalists_cli(argv = sys.argv):
         utils.echo_msg('processed datalist')
         dlp_hooks = datalist_default_hooks()
         if regions.region_valid_p(this_region):
-            dlp_hooks.append(lambda e: intersect_hook_c(this_region, e))
-            #r_geom = gdalfun.gdal_region2geom(this_region)
-            #dlp_hooks.append(lambda e: regions.geoms_intersect_p(r_geom, ogr.CreateGeometryFromWkt(inf_entry(e, epsg = epsg)['wkt'])))
+            dlp_hooks.append(lambda e: intersect_p(this_region, e))
         if z_region is not None:
             dlp_hooks.append(lambda e: regions.z_region_pass(inf_entry(e)['minmax'], upper_limit = z_region[1], lower_limit = z_region[0]))
         if w_region is not None:

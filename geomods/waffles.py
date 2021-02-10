@@ -321,14 +321,6 @@ def waffles_wg_valid_p(wg = _waffles_grid_info):
         if wg['mod'] is None: return(False)
         else: return(True)
     except: return(False)
-
-def intersect_hook_c(r, e):
-    r_geom = gdalfun.gdal_region2geom(r)
-    dl_i = datalists.inf_entry(e)
-    if 'wkt' in dl_i.keys():
-        e_geom = ogr.CreateGeometryFromWkt(dl_i['wkt'])
-    else: e_geom = r_geom
-    return(regions.geoms_intersect_p(r_geom, e_geom))
     
 def waffles_dlp_hooks(wg = _waffles_grid_info):
     '''the deafult datalist pass hooks.
@@ -340,7 +332,7 @@ def waffles_dlp_hooks(wg = _waffles_grid_info):
     dlp_hooks = datalists.datalist_default_hooks()
     
     if region is not None:
-        dlp_hooks.append(lambda e: intersect_hook_c(region, e))
+        dlp_hooks.append(lambda e: datalists.intersect_p(region, e))
     if wg['z_region'] is not None:
         dlp_hooks.append(lambda e: regions.z_region_pass(datalists.inf_entry(e)['minmax'], upper_limit = wg['z_region'][1], lower_limit = wg['z_region'][0]))
     if wg['w_region'] is not None:
@@ -1394,19 +1386,18 @@ def waffle(wg = _waffles_grid_info):
         ## ==============================================
         ## gererate the DEM (run the module)
         ## ==============================================
-        #try:
-        waffles_out, status = _waffles_modules[this_wg['mod']][0](args_d)
-        if wg['mask']: waffles_out['msk'] = ['{}_msk.tif'.format(this_wg['name']), 'raster']
-        chunks.append(waffles_out)
-        #except KeyboardInterrupt as e:
-        #    utils.echo_error_msg('killed by user, {}'.format(e))
-        #    sys.exit(-1)
-        #except Exception as e:
-        #    utils.echo_error_msg('{}'.format(e))
-        #    [utils.remove_glob('{}.*'.format(waffles_out[x][0].split('.')[0])) for x in waffles_out.keys()]
-        #    status = -1
-        #    continue
-        print(waffles_out)
+        try:
+            waffles_out, status = _waffles_modules[this_wg['mod']][0](args_d)
+            if wg['mask']: waffles_out['msk'] = ['{}_msk.tif'.format(this_wg['name']), 'raster']
+            chunks.append(waffles_out)
+        except KeyboardInterrupt as e:
+            utils.echo_error_msg('killed by user, {}'.format(e))
+            sys.exit(-1)
+        except Exception as e:
+            utils.echo_error_msg('{}'.format(e))
+            [utils.remove_glob('{}.*'.format(waffles_out[x][0].split('.')[0])) for x in waffles_out.keys()]
+            status = -1
+            continue
         for out_key in waffles_out.keys():
             if waffles_out[out_key][1] == 'raster':
 
@@ -1639,7 +1630,7 @@ Modules (see waffles --modules <module-name> for more info):
   {}
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
-'''.format(datalists._known_datalist_fmts_short_desc(), _waffles_module_short_desc(_waffles_modules))
+'''.format(datalists._datalist_fmts_short_desc(), _waffles_module_short_desc(_waffles_modules))
 
 def waffles_cli(argv = sys.argv):
     '''run waffles from command-line
