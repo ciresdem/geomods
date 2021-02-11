@@ -30,6 +30,7 @@ import gdal
 from geomods import utils
 from geomods import regions
 from geomods import gdalfun
+from geomods import mbsfun
 
 ## ==============================================
 ## xyz processing (datalists fmt:168)
@@ -215,9 +216,9 @@ def xyz_inf_entry(entry):
     returns the region [xmin, xmax, ymin, ymax, zmin, zmax] of the xyz entry'''
     
     with open(entry[0]) as infile:
-        try:
-            minmax = mbsfun.mb_inf(infile)
-        except: minmax = xyz_inf(infile)
+        #try:
+        minmax = mbsfun.mb_inf(infile)
+        #except: minmax = xyz_inf(infile)
     return(minmax)        
 
 def xyz_yield_entry(entry, region = None, verbose = False, z_region = None):

@@ -40,6 +40,16 @@ def gmt_inf(src_xyz):
     
     return(utils.run_cmd('gmt gmtinfo {} -C > {}.inf'.format(src_xyz, src_xyz), verbose = False))
 
+def gmt_inf_parse(src_inf):
+    xyzi = {'name': src_inf, 'numpts': 0, 'minmax': [0,0,0,0,0,0], 'wkt': gdalfun.gdal_region2wkt([0,0,0,0,0,0])}
+    with open(src_inf) as iob:
+        for il in iob:
+            til = il.split()
+            if len(til) > 1:
+                xyzi['minmax'] = [float(x) for x in til]
+    xyzi['wkt'] = gdalfun.gdal_region2wkt(xyzi['minmax'])
+    return(xyzi)
+
 def gmt_grd_inf(src_grd):
     '''generate an info (.inf) file from a src_gdal file using GMT.
 

@@ -180,12 +180,13 @@ def gdal_gt2region(ds_config):
     geoT = ds_config['geoT']
     return([geoT[0], geoT[0] + geoT[1] * ds_config['nx'], geoT[3] + geoT[5] * ds_config['ny'], geoT[3]])
 
-def gdal_region2gt(region, inc):
+def gdal_region2gt(region, inc, y_inc = None):
     '''return a count info and a gdal geotransform based on extent and cellsize
 
     returns a list [xcount, ycount, geot]'''
 
-    dst_gt = (region[0], inc, 0, region[3], 0, (inc * -1.))
+    if y_inc is None: y_inc = inc * -1.
+    dst_gt = (region[0], inc, 0, region[3], 0, y_inc)
     
     this_origin = _geo2pixel(region[0], region[3], dst_gt)
     this_end = _geo2pixel(region[1], region[2], dst_gt)
@@ -1359,9 +1360,9 @@ def gdal_inf(src_ds, warp = None, overwrite = False):
     tmp_layer = tmp_ds.CreateLayer('tmp_poly', None, ogr.wkbMultiPolygon)
     tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
     
-    gdal.Polygonize(ds_band, None, tmp_layer, 0, callback = _gdal_progress)
+    gdal.Polygonize(ds_band, ds_band, tmp_layer, 0, callback = _gdal_progress)
 
-    #print(len(tmp_layer))
+    ## TODO scan all features
     feat = tmp_layer.GetFeature(0)
     geom = feat.GetGeometryRef()
     wkt = geom.ExportToWkt()

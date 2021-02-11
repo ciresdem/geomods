@@ -35,6 +35,7 @@ from geomods import utils
 from geomods import regions
 from geomods import gdalfun
 from geomods import mbsfun
+from geomods import gmtfun
 from geomods import xyzfun
 from geomods import lasfun
 from geomods import fetches
@@ -111,31 +112,17 @@ def inf_parse(src_inf):
     returns region: [xmin, xmax, ymin, ymax, zmin, zmax]'''
 
     xyzi = {'name': src_inf, 'numpts': 0, 'minmax': [0,0,0,0,0,0], 'wkt': gdalfun.gdal_region2wkt([0,0,0,0,0,0])}
-    with open(src_inf) as iob:
-        try:
-            ## waffles infos blob
+    try:
+        with open(src_inf) as iob:
             xyzi = json.load(iob)
+    except:
+        try:
+            xyzi = gmtfun.gmt_inf_parse(src_inf)
         except:
-            iob.seek(0, 0)
-            for il in iob:
-                til = il.split()
-                if len(til) > 1:
-                    try:
-                        ## GMT -C infos blob
-                        xyzi['minmax'] = [float(x) for x in til]
-                    except:
-                        ## MB-System inf
-                        if til[0] == 'Minimum':
-                            if til[1] == 'Longitude:':
-                                xyzi['minmax'][0] = til[2]
-                                xyzi['minmax'][1] = til[5]
-                            elif til[1] == 'Latitude:':
-                                xyzi['minmax'][2] = til[2]
-                                xyzi['minmax'][3] = til[5]
-                            elif til[1] == 'Depth:':
-                                xyzi['minmax'][4] = float(til[5]) * -1
-                                xyzi['minmax'][5] = float(til[2]) * -1
-            xyzi['wkt'] = gdalfun.gdal_region2wkt(xyzi['minmax'])
+            try:
+                xyzi = mbsfun.mb_inf_parse(src_inf)
+            except: pass
+
     return(xyzi)
 
 def inf_entry(src_entry, overwrite = False, epsg = None):
@@ -321,7 +308,7 @@ def datalist_archive_yield_entry(entry, dirname = 'archive', region = None, inc 
             xyzfun.xyz_line(xyz, fob)
             yield(xyz)
             
-    mbsfun.mb_inf(a_xyz)
+    inf = mbsfun.mb_inf(a_xyz)
     datalist_append_entry([i_xyz + '.xyz', 168, entry[2] if entry[2] is not None else 1], a_dl)
     
 def datalist_yield_entry(this_entry, region = None, verbose = False, z_region = None, w_region = None, epsg = None):
