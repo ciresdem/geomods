@@ -459,7 +459,7 @@ def waffles_datalists(wg = _waffles_grid_info, dump = False, echo = False, infos
 ## 2 = gmt grdfilter (default filter_val = 1s)
 ## 3 = ?
 ## ==============================================
-def waffles_filter(src_gdal, dst_gdal, fltr = 1, fltr_val = None, split_value = None):
+def waffles_filter(src_gdal, dst_gdal, fltr = 1, fltr_val = None, split_value = None, node = 'pixel'):
     '''filter `src_gdal` using smoothing factor `fltr`; optionally
     only smooth bathymetry (sub-zero) using a split_value of 0.
 
@@ -477,9 +477,11 @@ def waffles_filter(src_gdal, dst_gdal, fltr = 1, fltr_val = None, split_value = 
         ## filter the possibly split DEM
         ## ==============================================
         if int(fltr) == 1: out, status = gdalfun.gdal_blur(dem_l, 'tmp_fltr.tif', fltr_val if fltr_val is not None else 10)
-        elif int(fltr) == 2: out, status = gmtfun.gmt_grdfilter(dem_l, 'tmp_fltr.tif=gd+n-9999:GTiff', dist = fltr_val if fltr_val is not None else '1s', verbose = False)
+        elif int(fltr) == 2: out, status = gmtfun.gmt_grdfilter(dem_l, 'tmp_fltr.tif=gd+n-9999:GTiff', dist = fltr_val if fltr_val is not None else '1s', node = node, verbose = False)
         else: out, status = gdalfun.gdal_blur(dem_l, 'tmp_fltr.tif', fltr_val if fltr_val is not None else 10)
 
+        if status != 0: return(status)
+        
         ## ==============================================
         ## merge the split filtered and non filtered DEMs
         ## ==============================================
@@ -1492,6 +1494,7 @@ def waffle(wg = _waffles_grid_info):
                         fltrs = fltr.split(':')
                         fltr_args['fltr'] = fltrs[0]
                         fltr_args['fltr_val'] = gmtfun.gmt_inc2inc(fltrs[1])
+                        fltr_args['node'] = this_wg['node']
                         fltr_args = utils.args2dict(fltrs[2:], fltr_args)        
 
                         if this_wg['verbose']: utils.echo_msg('filtering {} using filter {}@{}...'.format(this_dem, fltr_args['fltr'], fltr_args['fltr_val']))
@@ -1499,9 +1502,10 @@ def waffle(wg = _waffles_grid_info):
                             if this_wg['gc']['GMT'] is None:
                                 continue
                         try:
-                            waffles_filter(this_dem, 'tmp_s.tif', **fltr_args)
-                            os.rename('tmp_s.tif', this_dem)
+                            status = waffles_filter(this_dem, 'tmp_s.tif', **fltr_args)
+                            if status == 0: os.rename('tmp_s.tif', this_dem)
                         except TypeError as e: utils.echo_error_msg('{}'.format(e))
+                        except Exception as e: utils.echo_error_msg(e)
 
                 ## ==============================================
                 ## optionally resample the DEM 

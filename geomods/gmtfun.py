@@ -129,12 +129,13 @@ def gmt_grdcut(src_grd, src_region, dst_grd, verbose = False):
     cut_cmd1 = ('gmt grdcut -V {} -G{} {}'.format(src_grd, dst_grd, src_region.gmt))
     return(utils.run_cmd(cut_cmd1, verbose = True))
 
-def gmt_grdfilter(src_grd, dst_grd, dist = '3s', verbose = False):
+def gmt_grdfilter(src_grd, dst_grd, dist = '3s', node = 'pixel', verbose = False):
     '''filter `src_grd` using GMT grdfilter
 
     returns [cmd-output, cmd-return-code]'''
     
-    ft_cmd1 = ('gmt grdfilter -V {} -G{} -R{} -Fc{} -D1'.format(src_grd, dst_grd, src_grd, dist))
+    #ft_cmd1 = ('gmt grdfilter -V {} -G{} -R{} -Fc{} -D1{}'.format(src_grd, dst_grd, src_grd, dist, ' -r' if node == 'pixel' else ''))
+    ft_cmd1 = ('gmt grdfilter -V {} -G{} -Fc{} -D1{}'.format(src_grd, dst_grd, dist, ' -r' if node == 'pixel' else ''))
     return(utils.run_cmd(ft_cmd1, verbose = verbose))
 
 def gmt_nan2zero(src_grd, node = 'pixel', verbose = False):
