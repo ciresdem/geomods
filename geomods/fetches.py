@@ -241,6 +241,7 @@ def _ogr_create_polygon(coords):
     '''convert coords to Wkt
 
     returns WKT polygon'''
+    
     ring = ogr.Geometry(ogr.wkbLinearRing)
     for coord in coords: ring.AddPoint(coord[1], coord[0])
     poly = ogr.Geometry(ogr.wkbPolygon)
@@ -254,6 +255,7 @@ def bounds2geom(bounds):
     OGR geometry
     
     returns OGR geometry'''
+    
     b1 = [[bounds[2], bounds[0]],
           [bounds[2], bounds[1]],
           [bounds[3], bounds[1]],
@@ -263,6 +265,7 @@ def bounds2geom(bounds):
 
 def addf_ref_vector(ogr_layer, survey):
     '''add a survey to the reference vector layer'''
+    
     layer_defn = ogr_layer.GetLayerDefn()
     feat = ogr.Feature(layer_defn)
     feat.SetGeometry(survey[0])
@@ -277,6 +280,7 @@ def addf_ref_vector(ogr_layer, survey):
 
 def update_ref_vector(src_vec, surveys, update=True):
     '''update or create a reference vector'''
+    
     layer = None
     if update:
         ds = ogr.GetDriverByName('GMT').Open(src_vec, 1)
