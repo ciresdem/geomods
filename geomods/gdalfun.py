@@ -306,7 +306,9 @@ def gdal_region(src_ds, warp = None):
     if warp is not None:
         dst_srs = osr.SpatialReference()
         dst_srs.ImportFromEPSG(int(warp))
-        #dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+        try:
+            dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+        except: pass
         dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
 
         pointA = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(ds_region[0], ds_region[2]))
@@ -1041,7 +1043,7 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format = 'GTiff', mode = '
                         ptArray[ypos, xpos] += 1
                     else: ptArray[ypos, xpos] = 1
                 except Exception as e:
-                    if verbose: utils.echo_error_msg(e)
+                    #if verbose: utils.echo_error_msg(e)
                     pass
     if mode == 'm' or mode == 'w':
         ptArray[ptArray == 0] = np.nan
@@ -1160,16 +1162,26 @@ def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = N
     src_srs.ImportFromWkt(ds_config['proj'])
     src_srs.AutoIdentifyEPSG()
     srs_auth = src_srs.GetAuthorityCode(None)
-    
-    if srs_auth is None or srs_auth == warp: warp = None
+
+    if srs_auth is None:
+        src_srs.ImportFromEPSG(4326)
+        src_srs.AutoIdentifyEPSG()
+        srs_auth = src_srs.GetAuthorityCode(None)
+    try:
+        src_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    except: pass
+        
+    if srs_auth == warp: warp = None
 
     if warp is not None:
         dst_srs = osr.SpatialReference()
         dst_srs.ImportFromEPSG(int(warp))
         ## GDAL 3+
-        #dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+        try:
+            dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+        except: pass
         dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
-        
+
     gt = ds_config['geoT']
     msk_band = None
     if mask is not None:

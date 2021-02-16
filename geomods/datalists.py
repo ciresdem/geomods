@@ -20,6 +20,9 @@
 ### Commentary:
 ## datalists and entries - datalists.py
 ##
+## a datalists is a space-delineated file containing:
+## /path/to/data data-fmt data-weight data,meta,data
+##
 ## datalist processing (datalists fmt:-1)
 ## entry processing fmt:*
 ## TODO -> pass_h to list for all entry passing
@@ -67,8 +70,8 @@ _dl_dl_h = {
     },
     400: {
         'fmts': ['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs', 'hrdem', 'cudem'],
-        'inf': lambda e, p: fetches.fetch_inf_entry(e),
-        'yield': lambda e, r, v, z, w, p: fetches.fetch_yield_entry(e, r, v),
+        'inf': lambda e, p: fetches.fetch_inf_entry(e, p),
+        'yield': lambda e, r, v, z, w, p: fetches.fetch_yield_entry(e, r, p, v),
     },
 }
 
@@ -83,11 +86,11 @@ def path_exists_or_url(src_str):
     utils.echo_error_msg('invalid datafile/datalist: {}'.format(src_str))
     return(False)
 
-def intersect_p(r, e):
+def intersect_p(r, e, p = None):
     '''return True if region r intersects with the wkt found in the 
     inf file for datalist entry e'''
     
-    dl_i = inf_entry(e)
+    dl_i = inf_entry(e, epsg = p)
     r_geom = gdalfun.gdal_region2geom(r)
     e_geom = gdalfun.gdal_wkt2geom(dl_i['wkt']) if 'wkt' in dl_i.keys() else r_geom
     return(regions.geoms_intersect_p(r_geom, e_geom))
@@ -145,7 +148,7 @@ def inf_entry(src_entry, overwrite = False, epsg = None):
 ## ==============================================
 ## datalists
 ## ==============================================
-def datalist_inf(dl, inf_file = True, overwrite = False):
+def datalist_inf(dl, inf_file = True, epsg = None, overwrite = False):
     '''return the region of the datalist and generate
     an associated `.inf` file if `inf_file` is True.'''
     
@@ -154,9 +157,9 @@ def datalist_inf(dl, inf_file = True, overwrite = False):
     utils.echo_msg('generating inf for datalist {}'.format(dl))
     
     for entry in datalist(dl, pass_h = _dl_pass_h):
-        if entry[1] == 200:
-            entry_inf = inf_entry(entry, warp = None, overwrite = overwrite)
-        else: entry_inf = inf_entry(entry, overwrite = overwrite)
+        #if entry[1] == 200:
+        entry_inf = inf_entry(entry, epsg = epsg, overwrite = overwrite)
+        #else: entry_inf = inf_entry(entry, overwrite = overwrite)
         if entry_inf is not None:
             out_regions.append(entry_inf['minmax'][:6])
             dl_i['numpts'] += entry_inf['numpts']
@@ -179,12 +182,12 @@ def datalist_inf(dl, inf_file = True, overwrite = False):
             inf.write(json.dumps(dl_i))
     return(dl_i)
 
-def datalist_inf_entry(e, inf_file = True, overwrite = False):
+def datalist_inf_entry(e, inf_file = True, epsg = None, overwrite = False):
     '''write an inf file for datalist entry e
     
     return the region [xmin, xmax, ymin, ymax]'''
     if e[0] is not None:
-        return(datalist_inf(e[0], overwrite = overwrite))
+        return(datalist_inf(e[0], epsg = epsg, overwrite = overwrite))
 
 def datalist_append_entry(entry, datalist):
     '''append entry to datalist file `datalist`'''
@@ -522,7 +525,7 @@ def datalists_cli(argv = sys.argv):
     if i_region is not None:
         try:
             these_regions = [[float(x) for x in i_region.split('/')]]
-        except ValueError: these_regions = gdal_ogr_regions(i_region)
+        except ValueError: these_regions = gdalfun.gdal_ogr_regions(i_region)
         except Exception as e:
             utils.echo_error_msg('failed to parse region(s), {}'.format(e))
         #else: these_regions = [[-180,180,-90,90]]
@@ -538,16 +541,16 @@ def datalists_cli(argv = sys.argv):
         utils.echo_msg('processed datalist')
         dlp_hooks = datalist_default_hooks()
         if regions.region_valid_p(this_region):
-            dlp_hooks.append(lambda e: intersect_p(this_region, e))
+            dlp_hooks.append(lambda e: intersect_p(this_region, e, epsg))
         if z_region is not None:
             dlp_hooks.append(lambda e: regions.z_region_pass(inf_entry(e)['minmax'], upper_limit = z_region[1], lower_limit = z_region[0]))
         if w_region is not None:
             dlp_hooks.append(lambda e: regions.z_pass(e[2], upper_limit = w_region[1], lower_limit = w_region[0]))
         
         if want_inf:
-            datalist_inf_entry([dl_m, -1, 1], overwrite=True)
+            datalist_inf_entry([dl_m, -1, 1], epsg = epsg, overwrite = True)
         elif want_region:
-            print(datalist_inf(dl_m, False, False))
+            print(datalist_inf(dl_m, inf_file = False, epsg = epsg, overwrite = False))
         elif want_list:
             for this_entry in datalist(dl_m, wt = 1, pass_h = dlp_hooks):
                 print(' '.join([','.join(x) if i == 3 else os.path.abspath(str(x)) if i == 0 else str(x) for i,x in enumerate(this_entry[:-1])]))

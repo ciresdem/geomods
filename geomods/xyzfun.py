@@ -26,6 +26,8 @@ import json
 import numpy as np
 from scipy import spatial
 import gdal
+import ogr
+import osr
 
 from geomods import utils
 from geomods import regions
@@ -43,10 +45,13 @@ _xyz_config = {
     'skip': 0,
     'z-scale': 1,
     'x-off': 0,
+    'y-off': 0,
     'name': '<xyz-data-stream>',
     'upper_limit': None,
     'lower_limit': None,
     'verbose': False,
+    'epsg': 4326,
+    'warp': None,
 }
 
 #_known_delims = [',', ' ', '\t', '/', ':']
@@ -57,6 +62,14 @@ def xyz_line_delim(xyz):
         this_xyz = xyz.split(delim)
         if len(this_xyz) > 1: return(delim)
     return(None)
+
+def xyz_warp(xyz, dst_trans):
+    '''transform the x/y using the dst_trans'''
+    
+    if dst_trans is None: return(xyz)
+    point = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(xyz[0], xyz[1]))
+    point.Transform(dst_trans)
+    return([point.GetX(), point.GetY(), xyz[2]])
 
 def xyz_parse_line(xyz, xyz_c = _xyz_config):
     '''parse an xyz line-string, using _xyz_config
@@ -89,11 +102,28 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
     ypos = xyz_c['ypos']
     zpos = xyz_c['zpos']
     pass_d = True
+
+    if xyz_c['epsg'] == xyz_c['warp'] or xyz_c['epsg'] is None: xyz_c['warp'] = None
+    if xyz_c['warp'] is not None:
+        src_srs = osr.SpatialReference()
+        src_srs.ImportFromEPSG(int(xyz_c['epsg']))
+        dst_srs = osr.SpatialReference()
+        dst_srs.ImportFromEPSG(int(xyz_c['warp']))
+    
+        try:
+            src_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+            dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+        except: pass
+        dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
+    else: src_srs = dst_srs = dst_trans = None
+    
     #if verbose: utils.echo_msg('parsing xyz data from {}...'.format(xyz_c['name']))
     for xyz in src_xyz:
         pass_d = True
         if ln >= skip:
             this_xyz = xyz_parse_line(xyz, xyz_c)
+            if xyz_c['warp'] is not None:
+                this_xyz = xyz_warp(this_xyz, dst_trans)
             if this_xyz is not None:
                 if region is not None:
                     if not xyz_in_region_p(this_xyz, region): pass_d = False

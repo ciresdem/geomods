@@ -27,6 +27,7 @@ import os
 
 ## import gdal/numpy
 import ogr
+import osr
 import numpy as np
 
 ## import geomods
@@ -159,6 +160,28 @@ def region_format(region, t = 'gmt'):
                                                         ew, abs(int(region[0])), abs(int(region[0] * 100)) % 100))
     elif t == 'inf': return(' '.join([str(x) for x in region]))
 
+def region_warp(region, src_epsg = 4326, dst_epsg = 4326):
+
+    if dst_epsg is None or src_epsg is None: return(region)
+        
+    src_srs = osr.SpatialReference()
+    src_srs.ImportFromEPSG(int(src_epsg))
+
+    dst_srs = osr.SpatialReference()
+    dst_srs.ImportFromEPSG(int(dst_epsg))
+    try:
+        src_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+        dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    except: pass
+    dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
+
+    pointA = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(region[0], region[2]))
+    pointB = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(region[1], region[3]))
+    pointA.Transform(dst_trans)
+    pointB.Transform(dst_trans)
+    ds_region = [pointA.GetX(), pointB.GetX(), pointA.GetY(), pointB.GetY()]
+    return(ds_region)
+    
 def region_chunk(region, inc, n_chunk = 10):
     '''chunk the region [xmin, xmax, ymin, ymax] into 
     n_chunk by n_chunk cell regions, given inc.

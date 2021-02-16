@@ -607,7 +607,7 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
         c_wg['mod_args'] = ()
         c_wg['name'] = 'tmp_coast'
         
-        coast_out = waffles(c_wg)
+        coast_out = waffle(c_wg)
         coast_ply = coast_out['cst_ply'][0]
         coast_msk = coast_out['cst'][0]
 
