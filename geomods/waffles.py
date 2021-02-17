@@ -611,6 +611,7 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None, spat = False):
                 verbose = True,
                 extend = wg['extend'],
                 mask = True,
+                epsg = wg['epsg'],
                 datalist = None,
                 data = wg['data'])
         )
@@ -656,6 +657,7 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None, spat = False):
             mod_args = ('upper_limit={}'.format(ul),),
             sample = wg['inc'],
             inc = wg['inc'] * 3,
+            epsg = wg['epsg'],
             clip = '{}:invert=True'.format(coastline),
             extend = wg['extend'],
             extend_proc = 40,
