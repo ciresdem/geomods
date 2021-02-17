@@ -37,7 +37,7 @@
 ##
 ## find data to grid with GEOMODS' fetch.py or use fetch modules as datalist entries in waffles.
 ##
-## a datalist '*.datalist' file should be formatted as in MBSystem:
+## a datalist '*.datalist' file should be formatted as in MBSystem, with additional metadata comma separated list:
 ## ~path ~format ~weight ~metadata,list ~etc
 ##
 ## a format of -1 represents a datalist
@@ -46,8 +46,7 @@
 ## a format of 300 represents LAS/LAZ data <not implemented>
 ## a format of 400 represents a FETCHES module - e.g. `nos:datatype=bag`
 ##
-## each xyz file in a datalist should have an associated '*.inf' file 
-## for faster processing
+## each xyz file in a datalist should have an associated '*.inf' file for faster processing
 ##
 ## 'inf' files can be generated using 'mbdatalist -O -V -I~datalist.datalist'
 ## or via `datalists -i ~datalist.datalist`
@@ -582,26 +581,44 @@ def waffles_spatial_metadata(wg, geojson = False):
     return(sm_out, 0)
     
 ## ==============================================
+##
 ## Waffles CUDEM generation module
+##
+## generate CUDEM DEM products, including the integrated
+## bathy/topo DEM, Data Mask, Spatial Metadata and Uncertainty Grid.
+##
+## TODO: Report and Metadta
+##
 ## ==============================================
-def waffles_cudem(wg = _waffles_grid_info, coastline = None):
+def waffles_cudem(wg = _waffles_grid_info, coastline = None, spat = False):
     '''generate bathy/topo DEM suitable for CUDEM project'''
     
     if wg['gc']['GMT'] is None:
         utils.echo_error_msg('GMT must be installed to use the CUDEM module')
         return(None, -1)
-
-    b_wg = waffles_config_copy(wg)
     ul = -0.1
 
     ## ==============================================
-    ## generate coastline
+    ## Generate the spatial-metadata
+    ## ==============================================
+    if spat:
+        spat_out = waffle(
+            waffles_config(
+                region = wg['region'],
+                inc = wg['inc'],
+                name = wg['name'],
+                mod = 'spat-meta',
+                verbose = True,
+                extend = wg['extend'],
+                mask = True,
+                datalist = None,
+                data = wg['data'])
+        )
+    
+    ## ==============================================
+    ## generate/process coastline
     ## ==============================================
     if coastline is None:
-        utils.echo_msg('----------------------------')
-        utils.echo_msg('generating coastline')
-        utils.echo_msg('----------------------------')
-        
         c_wg = waffles_config_copy(wg)
         c_wg['mod'] = 'coastline'
         c_wg['mod_args'] = ()
@@ -612,52 +629,48 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
         coast_msk = coast_out['cst'][0]
     else: coast_ply = coastline
 
-    coast_xyz = '{}_coast.xyz'.format(b_wg['name'])
-    out, status = utils.run_cmd('coastline2xyz.sh -I {} -O {} -Z 0 -W {} -E {} -S {} -N {}'\
-                                .format(coast_ply, coast_xyz, waffles_coast_region(b_wg)[0], waffles_coast_region(b_wg)[1], waffles_coast_region(b_wg)[2], waffles_coast_region(b_wg)[3]), verbose = True)
-
+    coast_xyz = '{}_coast.xyz'.format(wg['name'])
+    c_cmd = 'coastline2xyz.sh -I {} -O {} -Z 0 -W {} -E {} -S {} -N {}'.format(coast_ply, coast_xyz,
+                                                                               waffles_coast_region(wg)[0], waffles_coast_region(wg)[1],
+                                                                               waffles_coast_region(wg)[2], waffles_coast_region(wg)[3])
+    out, status = utils.run_cmd(c_cmd, verbose = True)
+    
     coast_region = datalists.inf_entry([coast_xyz, 168, 1])['minmax']
-
+    wg['data'].append('{} 168 .1'.format(coast_xyz)),
+    
     ## ==============================================
     ## generate the bathy-surface
     ## using 'surface' with upper_limit of -0.1
-    ## at 1 arc-second spacing
+    ## at inc*3 spacing
     ## ==============================================
-    utils.echo_msg('----------------------------')
-    utils.echo_msg('generating bathy surface')
-    utils.echo_msg('----------------------------')
-    
-    b_wg['z_region'] = [None, ul + .5]
-    b_wg['name'] = 'bathy_{}'.format(wg['name'])
-    b_wg['spat'] = False
-    b_wg['fltr'] = None
-    b_wg['datalist'] = None
-    b_wg['data'].append('{} 168 .1'.format(coast_xyz))
-    b_wg['mod'] = 'surface'
-    b_wg['mod_args'] = ('upper_limit={}'.format(ul),)
-    #b_wg['mod'] = 'triangulate'
-    b_wg['sample'] = wg['inc']
-    b_wg['inc'] = wg['inc'] * 3
-    b_wg['name'] = 'bathy_{}'.format(wg['name'])
-    b_wg['clip'] = '{}:invert=True'.format(coastline)
-    b_wg['extend_proc'] = 40
-    b_wg['mask'] = False
-    b_wg = waffles_config(**b_wg)
-    
-    bathy_out = waffle(b_wg)
-    print(bathy_out)
-    utils.remove_glob(coast_xyz)
+    bathy_out = waffle(
+        waffles_config(
+            region = wg['region'],
+            z_region = [None, ul + .5],
+            name = 'bathy_{}'.format(wg['name']),
+            spat = False,
+            fltr = ['1:10'],
+            datalist = None,
+            data = wg['data'],
+            mod = 'surface',
+            mod_args = ('upper_limit={}'.format(ul),),
+            sample = wg['inc'],
+            inc = wg['inc'] * 3,
+            clip = '{}:invert=True'.format(coastline),
+            extend = wg['extend'],
+            extend_proc = 40,
+            mask = False,
+            verbose = True)
+    )
+
+    wg['data'].append('{} 200 .5'.format(bathy_out['dem'][0]))
     
     ## ==============================================
     ## append the bathy-surface to the datalist and
     ## generate final DEM using 'surface'
+    ## utils.remove_glob(coast_xyz)
     ## ==============================================
-    utils.echo_msg('----------------------------')
-    utils.echo_msg('generating integrated bathy-topo surface')
-    utils.echo_msg('----------------------------')
-
     wg['datalist'] = None
-    wg['data'].append('{} 200 .5'.format(bathy_out['dem'][0]))
     wg['w_region'] = [.4, None]
     wg = waffles_config(**wg)
 
