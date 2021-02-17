@@ -56,22 +56,22 @@ _dl_dl_h = {
     168: {
         'fmts': ['xyz', 'csv', 'dat', 'ascii'],
         'inf': lambda e, p: xyzfun.xyz_inf_entry(e),
-        'yield': lambda e, r, v, z, w, p: xyzfun.xyz_yield_entry(e, r, v, z),
+        'yield': lambda e, r, v, z, w, p: xyzfun.xyz_yield_entry(e, region = r, verbose = v, z_region = z),
     },
     200: {
         'fmts': ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'],
         'inf': lambda e, p: gdalfun.gdal_inf_entry(e, p),
-        'yield': lambda e, r, v, z, w, p: gdalfun.gdal_yield_entry(e, r, v, z, p),
+        'yield': lambda e, r, v, z, w, p: gdalfun.gdal_yield_entry(e, region = r, verbose = v, z_region = z, epsg = p),
     },
     300: {
         'fmts': ['las', 'laz'],
         'inf': lambda e, p: lasfun.las_inf_entry(e),
-        'yield': lambda e, r, v, z, w, p: lasfun.las_yield_entry(e, r, v, z),
+        'yield': lambda e, r, v, z, w, p: lasfun.las_yield_entry(e, region = r, verbose = v, z_region = z),
     },
     400: {
         'fmts': ['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs', 'hrdem', 'cudem'],
         'inf': lambda e, p: fetches.fetch_inf_entry(e, p),
-        'yield': lambda e, r, v, z, w, p: fetches.fetch_yield_entry(e, r, p, v),
+        'yield': lambda e, r, v, z, w, p: fetches.fetch_yield_entry(e, region = r, warp = p, verbose = v),
     },
 }
 

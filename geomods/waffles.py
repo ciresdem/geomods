@@ -610,6 +610,7 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
         coast_out = waffle(c_wg)
         coast_ply = coast_out['cst_ply'][0]
         coast_msk = coast_out['cst'][0]
+    else: coast_ply = coastline
 
     coast_xyz = '{}_coast.xyz'.format(b_wg['name'])
     out, status = utils.run_cmd('coastline2xyz.sh -I {} -O {} -Z 0 -W {} -E {} -S {} -N {}'\
@@ -643,7 +644,8 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None):
     b_wg['mask'] = False
     b_wg = waffles_config(**b_wg)
     
-    bathy_out = waffles(b_wg)
+    bathy_out = waffle(b_wg)
+    print(bathy_out)
     utils.remove_glob(coast_xyz)
     
     ## ==============================================
@@ -1333,17 +1335,31 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
 
     ## ==============================================
     ## update wet/dry mask with gsshg/gmrt data
+    ## speed up!
     ## ==============================================
+    utils.echo_msg('updating the coast mask with gsshg/gmrt data...')
     c_ds = gdal.Open(g_mask)
-    for this_xyz in gdalfun.gdal_parse(c_ds):
-        xpos, ypos = gdalfun._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
-        try:
-            if coast_array[ypos, xpos] == ds_config['ndv']:
-                if this_xyz[2] == 1: coast_array[ypos, xpos] = 0
-                elif this_xyz[2] == 0: coast_array[ypos, xpos] = 1
-        except: pass
+    c_ds_arr = c_ds.GetRasterBand(1).ReadAsArray()
+    
+    for x in range(0, ds_config['nx']):
+        for y in range(0, ds_config['ny']):
+            if coast_array[y, x] == ds_config['ndv']:
+                c_ds_v = c_ds_arr[y, x]
+                if c_ds_v == 1: coast_array[y, x] = 0
+                elif c_ds_v == 0: coast_array[y, x] = 1
     c_ds = None
     utils.remove_glob('{}*'.format(g_mask))
+                
+    # c_ds = gdal.Open(g_mask)
+    # for this_xyz in gdalfun.gdal_parse(c_ds):
+    #     xpos, ypos = gdalfun._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
+    #     try:
+    #         if coast_array[ypos, xpos] == ds_config['ndv']:
+    #             if this_xyz[2] == 1: coast_array[ypos, xpos] = 0
+    #             elif this_xyz[2] == 0: coast_array[ypos, xpos] = 1
+    #     except: pass
+    # c_ds = None
+    # utils.remove_glob('{}*'.format(g_mask))
 
     ## ==============================================
     ## write coast_array to file
@@ -1452,18 +1468,18 @@ def waffle(wg = _waffles_grid_info):
         ## ==============================================
         ## gererate the DEM (run the module)
         ## ==============================================
-        try:
-            waffles_out, status = _waffles_modules[this_wg['mod']]['run'](args_d)
-            if wg['mask']: waffles_out['msk'] = ['{}_msk.tif'.format(this_wg['name']), 'raster']
-            chunks.append(waffles_out)
-        except KeyboardInterrupt as e:
-            utils.echo_error_msg('killed by user, {}'.format(e))
-            sys.exit(-1)
-        except Exception as e:
-            utils.echo_error_msg('{}'.format(e))
-            [utils.remove_glob('{}.*'.format(waffles_out[x][0].split('.')[0])) for x in waffles_out.keys()]
-            status = -1
-            continue
+        #try:
+        waffles_out, status = _waffles_modules[this_wg['mod']]['run'](args_d)
+        if wg['mask']: waffles_out['msk'] = ['{}_msk.tif'.format(this_wg['name']), 'raster']
+        chunks.append(waffles_out)
+        #except KeyboardInterrupt as e:
+        #    utils.echo_error_msg('killed by user, {}'.format(e))
+        #    sys.exit(-1)
+        #except Exception as e:
+        #    utils.echo_error_msg('{}'.format(e))
+        #    [utils.remove_glob('{}.*'.format(waffles_out[x][0].split('.')[0])) for x in waffles_out.keys()]
+        #    status = -1
+        #    continue
         for out_key in waffles_out.keys():
             if waffles_out[out_key][1] == 'raster':
 

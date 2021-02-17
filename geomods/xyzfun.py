@@ -251,7 +251,7 @@ def xyz_inf_entry(entry):
         #except: minmax = xyz_inf(infile)
     return(minmax)        
 
-def xyz_yield_entry(entry, region = None, verbose = False, z_region = None):
+def xyz_yield_entry(entry, region = None, verbose = False, z_region = None, epsg = None):
     '''yield the xyz data from the xyz datalist entry
 
     yields [x, y, z, <w, ...>]'''

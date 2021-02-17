@@ -478,6 +478,28 @@ def gdal_clip(src_gdal, src_ply = None, invert = False):
     gi = gdal_infos(src_gdal)
     g_region = gdal_gt2region(gi)
     tmp_ply = 'tmp_clp_ply.shp'
+    tmp_gdal = 'tmp_clp_gd.tif'
+    utils.run_cmd('ogr2ogr {} {} -clipsrc {} {} {} {}'.format(tmp_ply, src_ply, g_region[0], g_region[3], g_region[1], g_region[2]), verbose = True)
+    if gi is not None and src_ply is not None:
+        gr_inv = '-i' if invert else ''
+        gr_cmd = 'gdalwarp -cutline {} -cl tmp_clp_ply {} {}'.format(tmp_ply, src_gdal, tmp_gdal)
+        #gr_cmd = 'gdal_rasterize -burn {} {} -l {} {} {}'\
+        #         .format(gi['ndv'], gr_inv, os.path.basename(tmp_ply).split('.')[0], tmp_ply, src_gdal)
+        out, status = utils.run_cmd(gr_cmd, verbose = True)
+    else: return(None)
+    utils.remove_glob('tmp_clp_ply.*')
+    os.rename(tmp_gdal, src_gdal)
+    return(out, status)
+
+def gdal_clip2(src_gdal, src_ply = None, invert = False):
+    '''clip dem to polygon `src_ply`, optionally invert the clip.
+
+    returns [gdal_raserize-output, gdal_rasterize-return-code]'''
+
+    # clip src_ply to src_gdal extent
+    gi = gdal_infos(src_gdal)
+    g_region = gdal_gt2region(gi)
+    tmp_ply = 'tmp_clp_ply.shp'
     utils.run_cmd('ogr2ogr {} {} -clipsrc {} {} {} {}'.format(tmp_ply, src_ply, g_region[0], g_region[3], g_region[1], g_region[2]), verbose = True)
     if gi is not None and src_ply is not None:
         gr_inv = '-i' if invert else ''
@@ -1374,11 +1396,12 @@ def gdal_inf(src_ds, warp = None, overwrite = False):
     
     gdal.Polygonize(ds_band, ds_band, tmp_layer, 0, callback = _gdal_progress)
 
-    ## TODO scan all features
-    feat = tmp_layer.GetFeature(0)
-    geom = feat.GetGeometryRef()
-    wkt = geom.ExportToWkt()
-    gdali['wkt'] = wkt
+    try:
+        feat = tmp_layer.GetFeature(0)
+        geom = feat.GetGeometryRef()
+        wkt = geom.ExportToWkt()
+        gdali['wkt'] = wkt
+    except: gdali['wkt'] = gdal_region2wkt(gdali['minmax'])
     tmp_ds = ds = None
     
     with open('{}.inf'.format(src_ds.GetDescription()), 'w') as inf:
@@ -1400,7 +1423,7 @@ def gdal_inf_entry(entry, warp = None):
     else: minmax = None
     return(minmax)
 
-def gdal_yield_entry(entry, region = None, verbose = False, epsg = None, z_region = None):
+def gdal_yield_entry(entry, region = None, verbose = False, z_region = None, epsg = None):
     '''yield the xyz data from the datalist entry.
 
     yields [x, y, z, <w, ...>]'''
