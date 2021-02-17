@@ -643,6 +643,7 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None, spat = False):
     ## generate the bathy-surface
     ## using 'surface' with upper_limit of -0.1
     ## at inc*3 spacing
+    #            fltr = ['1:10'],
     ## ==============================================
     bathy_out = waffle(
         waffles_config(
@@ -650,12 +651,12 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None, spat = False):
             z_region = [None, ul + .5],
             name = 'bathy_{}'.format(wg['name']),
             spat = False,
-            fltr = ['1:10'],
             datalist = None,
             data = wg['data'],
             mod = 'surface',
             mod_args = ('upper_limit={}'.format(ul),),
             sample = wg['inc'],
+            weights = wg['weights'],
             inc = wg['inc'] * 3,
             epsg = wg['epsg'],
             clip = '{}:invert=True'.format(coastline),
