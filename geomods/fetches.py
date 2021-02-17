@@ -762,10 +762,10 @@ class nos:
         ## ==============================================
         if self._has_vector:
             try:
-                gmt1 = ogr.GetDriverByName('GeoJSON').Open(self._ref_vector, 1)
+                gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 1)
             except: gmt1 = None
             if gmt1 is not None:
-                layer = gmt1.GetLayer('nos')
+                layer = gmt1.GetLayer()
                 if layer is None: layer = []
             else: layer = []
         else: layer = []
@@ -815,7 +815,7 @@ class nos:
         
         if self._verbose: utils.echo_msg('filtering NOS reference vector...')
         gmt1 = ogr.Open(self._ref_vector)
-        layer = gmt1.GetLayer('nos')
+        layer = gmt1.GetLayer('')
         [layer.SetAttributeFilter('{}'.format(filt)) for filt in self._filters]
 
         for feature in layer:
