@@ -153,9 +153,9 @@ def gmt_nan2zero(src_grd, node = 'pixel', verbose = False):
 
     returns status code (0 == success) '''
     
-    num_msk_cmd = ('gmt grdmath -V {} 0 MUL 1 ADD 0 AND = tmp.tif=gd+n-9999:GTiff'.format(src_grd))
+    num_msk_cmd = ('gmt grdmath -V {} 0 MUL 1 ADD 0 AND = _tmp.tif=gd+n-9999:GTiff'.format(src_grd))
     out, status = utils.run_cmd(num_msk_cmd, verbose = True)
-    if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
+    if status == 0: os.rename('_tmp.tif', '{}'.format(src_grd))
     return(status)
 
 def gmt_grdcut(src_grd, region, verbose = False):
@@ -163,12 +163,12 @@ def gmt_grdcut(src_grd, region, verbose = False):
 
     return status code (0 == success)'''
     
-    cut_cmd = ('gmt grdcut -V {} -Gtmp.grd {}\
+    cut_cmd = ('gmt grdcut -V {} -G_tmp.grd {}\
     '.format(src_grd, region_format(region, 'gmt')))
     out, status = utils.run_cmd(cut_cmd, verbose = True)
     if status == 0:
         remove_glob(src_grd)
-        os.rename('tmp.grd', '{}'.format(src_grd))
+        os.rename('_tmp.grd', '{}'.format(src_grd))
     return(status)
 
 def gmt_slope(src_dem, dst_slp, verbose = False):
@@ -202,8 +202,8 @@ def gmt_sample_gnr(src_grd, verbose = False):
 
     returns status code (0 == success)'''
     
-    out, status = utils.run_cmd('gmt grdsample -T {} -Gtmp.tif=gd+n-9999:GTiff'.format(src_grd), verbose = verbose)
-    if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
+    out, status = utils.run_cmd('gmt grdsample -T {} -G_tmp.tif=gd+n-9999:GTiff'.format(src_grd), verbose = verbose)
+    if status == 0: os.rename('_tmp.tif', '{}'.format(src_grd))
     return(status)
 
 def gmt_sample_inc(src_grd, inc = 1, verbose = False):
@@ -211,8 +211,8 @@ def gmt_sample_inc(src_grd, inc = 1, verbose = False):
 
     returns status code (0 == success)'''
     
-    out, status = utils.run_cmd('gmt grdsample -I{:.10f} {} -R{} -Gtmp.tif=gd+n-9999:GTiff'.format(inc, src_grd, src_grd), verbose = verbose)
-    if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
+    out, status = utils.run_cmd('gmt grdsample -I{:.10f} {} -R{} -G_tmp.tif=gd+n-9999:GTiff'.format(inc, src_grd, src_grd), verbose = verbose)
+    if status == 0: os.rename('_tmp.tif', '{}'.format(src_grd))
     return(status)
 
 def gmt_yield_entry(entry, region = None, verbose = False, z_region = None):

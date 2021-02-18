@@ -458,7 +458,7 @@ def waffles_datalists(wg = _waffles_grid_info, dump = False, echo = False, infos
 ## 2 = gmt grdfilter (default filter_val = 1s)
 ## 3 = ?
 ## ==============================================
-def waffles_filter(src_gdal, dst_gdal, fltr = 1, fltr_val = None, split_value = None, node = 'pixel'):
+def waffles_filter(src_gdal, dst_gdal, fltr = 1, fltr_val = None, split_value = None, mask = None, node = 'pixel'):
     '''filter `src_gdal` using smoothing factor `fltr`; optionally
     only smooth bathymetry (sub-zero) using a split_value of 0.
 
@@ -469,9 +469,9 @@ def waffles_filter(src_gdal, dst_gdal, fltr = 1, fltr_val = None, split_value = 
         ## split the dem by `split_value`
         ## ==============================================
         if split_value is not None:
-            dem_u, dem_l = gdal_split(src_gdal, split_value)
+            dem_u, dem_l = gdalfun.gdal_split(src_gdal, split_value)
         else: dem_l = src_gdal
-        
+
         ## ==============================================
         ## filter the possibly split DEM
         ## ==============================================
@@ -590,13 +590,13 @@ def waffles_spatial_metadata(wg, geojson = False):
 ## TODO: Report and Metadta
 ##
 ## ==============================================
-def waffles_cudem(wg = _waffles_grid_info, coastline = None, spat = False):
+def waffles_cudem(wg = _waffles_grid_info, coastline = None, spat = False, upper_limit = -0.1, fltr = ['1:10'], inc = None):
     '''generate bathy/topo DEM suitable for CUDEM project'''
     
     if wg['gc']['GMT'] is None:
         utils.echo_error_msg('GMT must be installed to use the CUDEM module')
         return(None, -1)
-    ul = -0.1
+    upper_limit = -0.1
 
     ## ==============================================
     ## Generate the spatial-metadata
@@ -643,21 +643,21 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None, spat = False):
     ## generate the bathy-surface
     ## using 'surface' with upper_limit of -0.1
     ## at inc*3 spacing
-    #            fltr = ['1:10'],
     ## ==============================================
     bathy_out = waffle(
         waffles_config(
             region = wg['region'],
-            z_region = [None, ul + .5],
+            z_region = [None, upper_limit + .5],
             name = 'bathy_{}'.format(wg['name']),
             spat = False,
             datalist = None,
             data = wg['data'],
             mod = 'surface',
-            mod_args = ('upper_limit={}'.format(ul),),
+            mod_args = ('upper_limit={}'.format(upper_limit),),
             sample = wg['inc'],
+            fltr = fltr,
             weights = wg['weights'],
-            inc = wg['inc'] * 3,
+            inc = wg['inc'] * 3 if inc is None else inc,
             epsg = wg['epsg'],
             clip = '{}:invert=True'.format(coastline),
             extend = wg['extend'],
@@ -933,6 +933,7 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     ## generate any necessary grids that don't exists/
     ## aren't specified...
     ## ==============================================
+    unc_out = {}
     if mod not in _waffles_modules.keys():
         utils.echo_error_msg('invalid module name `{}`; reverting to `surface`'.format(mod))
         mod = 'surface'
@@ -945,19 +946,21 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
     out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
 
     if dem is None:
-        dem = 'dem_{}.tif'.format(wg['mod'])
+        dem = '{}.tif'.format(wg['name'])
+        unc_out['dem'] = [dem, 'raster']
         tmp_wg = waffles_config_copy(wg)
         tmp_wg['datalist'] = None
-        tmp_wg['name'] = 'dem_{}'.format(wg['mod'])
         
         if msk is None:
-            msk = 'dem_{}_msk.tif'.format(tmp_wg['mod'])
+            msk = '{}_msk.tif'.format(tmp_wg['mod'])
+            unc_out['msk'] = [msk, 'raster']
             tmp_wg['mask'] = True
         else: tmp_wg['mask'] = False
         tmp_wg = waffles_config(**tmp_wg)
         waffle(tmp_wg)
 
     if msk is None:
+        
         if msk is None: msk = '{}_msk.tif'.format(wg['name'])
         tmp_wg = waffles_config_copy(wg)
         tmp_wg['name'] = '{}_msk'.format(wg['name'])
@@ -1238,12 +1241,10 @@ def waffles_interpolation_uncertainty(wg = _waffles_grid_info, mod = 'surface', 
 
     utils.remove_glob(prox)
     #utils.remove_glob(slp)
-    
-    unc_out = {
-        'prox_unc': ['{}_prox_unc.tif'.format(wg['name']), 'raster'],
-        'prox_bf': ['{}_prox_bf.png'.format(wg['name']), 'image'],
-        'prox_scatter': ['{}_prox_scatter.png'.format(wg['name']), 'image'],
-    }
+
+    unc_out['prox_unc'] = ['{}_prox_unc.tif'.format(wg['name']), 'raster']
+    unc_out['prox_bf'] = ['{}_prox_bf.png'.format(wg['name']), 'image'],
+    unc_out['prox_scatter'] = ['{}_prox_scatter.png'.format(wg['name']), 'image'],
 
     return(unc_out, 0)
 
@@ -1296,7 +1297,8 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
         utils.remove_glob('region_buff.*')
 
         fl = fetches._fetch_modules['tnm']['run'](waffles_proc_region(wg), [], None)
-        r = fl.run(ds = 4, formats = 'FileGDB 10.1', extent = 'HU-4 Subregion, Hu-2 Region')
+        #r = fl.run(ds = 4, formats = 'FileGDB 10.1', extent = 'HU-4 Subregion, Hu-2 Region')
+        r = fl.run(ds = 4, formats = 'FileGDB 10.1')
 
         if len(r) > 0:
             r_shp = []
@@ -1312,16 +1314,15 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
                     r_shp.append('{}_NHDArea.shp'.format(gdb_bn))
                     utils.run_cmd('ogr2ogr {}_NHDPlusBurnWaterBody.shp {} NHDPlusBurnWaterBody -overwrite'.format(gdb_bn, gdb), verbose = False)
                     r_shp.append('{}_NHDPlusBurnWaterBody.shp'.format(gdb_bn))
+                    shutil.rmtree(gdb)
                 else: utils.echo_error_msg('unable to fetch {}'.format(result))
 
             [utils.run_cmd('ogr2ogr -skipfailures -update -append nhdArea_merge.shp {}'.format(shp), verbose = False) for shp in r_shp]
             utils.run_cmd('gdal_rasterize -burn 1 nhdArea_merge.shp {}'.format(u_mask), verbose = True)
+            utils.remove_glob('nhdArea_merge.*')
             utils.remove_glob(gdb_zip)
             utils.remove_glob('{}*'.format(gdb_bn))
-            utils._clean_zips(gdb_files)
             [utils.remove_glob('{}*'.format(shp[:-3])) for shp in r_shp]
-            utils.remove_glob('nhdArea_merge.*')
-            utils.remove_glob('NHDPLUS*')
 
         ## ==============================================
         ## update wet/dry mask with nhd data

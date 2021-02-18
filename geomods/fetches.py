@@ -346,7 +346,6 @@ class dc:
         else: self._ref_vector = self._local_ref_vector
 
         self._has_vector = True if os.path.exists(self._ref_vector) else False
-        print(self._has_vector)
         if not self._has_vector: self._ref_vector = 'dc.gmt'
         
         self._outdir = os.path.join(os.getcwd(), 'dc')
@@ -380,7 +379,9 @@ class dc:
         if self._want_update:
             #self.dcftp = dc_ftp()
             self._ref_vector = self._local_ref_vector
+            self._has_vector = True if os.path.exists(self._ref_vector) else False
             #self._update_from_ftp()
+            print(self._has_vector)
             self._update()
             
         if self._verbose: utils.echo_msg('using reference vector: {}'.format(self._ref_vector))
@@ -402,10 +403,10 @@ class dc:
             
             if self._has_vector:
                 try:
-                    gmt1 = ogr.GetDriverByName('GeoJSON').Open(self._ref_vector, 1)
+                    gmt1 = ogr.GetDriverByName('GMT').Open(self._ref_vector, 1)
                 except: gmt1 = None
                 if gmt1 is not None:
-                    layer = gmt1.GetLayer('dc')
+                    layer = gmt1.GetLayer()
                     if layer is None: layer = []
                 else: layer = []
             else: layer = []
@@ -436,7 +437,9 @@ class dc:
                         else: dc[cols[j]] = cell.text_content()
                     perc = int((float(i)/len(tr)) * 100)
                     if self._verbose: utils.echo_msg_inline('scanning {} surveys in {} [{:3}%] - {}.'.format(len(tr), ld, perc, dc['ID #']))
-                    if self._has_vector: layer.SetAttributeFilter("ID = '{}'".format(dc['ID #']))
+                    try:
+                        layer.SetAttributeFilter("ID = '{}'".format(dc['ID #']))
+                    except: pass
 
                     if len(layer) == 0:
                         if 'Metadata' in dc.keys():
@@ -457,7 +460,7 @@ class dc:
                                 ## ==============================================
                                 ## Append survey to surveys list
                                 ## ==============================================
-                                out_s = [obbox, otitle, did, odate, xml_url, ds_url, s_dtype]
+                                out_s = [obbox, dc['Dataset Name'], dc['ID #'], odate, dc['Metadata'], dc['https'], ld]
                                 self._surveys.append(out_s)
                                 
             ## ==============================================
@@ -478,7 +481,7 @@ class dc:
         
         utils.echo_msg('filtering Digital Coast reference vector...')
         gmt1 = ogr.Open(self._ref_vector)
-        layer = gmt1.GetLayer('dc')
+        layer = gmt1.GetLayer()
         [layer.SetAttributeFilter('{}'.format(filt)) for filt in self._filters]
 
         ## ==============================================
@@ -507,6 +510,7 @@ class dc:
                     if suh is None: 
                         self._status = -1
                         break
+                    print(surv_dt)
                     if 'lidar' in surv_dt:
                         ## ==============================================
                         ## Lidar data has a minmax.csv file to get extent
@@ -535,29 +539,31 @@ class dc:
                         ## to get extent
                         ## ==============================================
                         sshpz = suh.xpath('//a[contains(@href, ".zip")]/@href')[0]
-                        fetch_file(surv_url + sshpz, os.path.join('.', sshpz), callback = self.stop)
-                        zip_ref = zipfile.ZipFile(sshpz)
-                        zip_ref.extractall('dc_tile_index')
-                        zip_ref.close()
-                        if os.path.exists('dc_tile_index'): ti = os.listdir('dc_tile_index')
+                        status = fetch_file(surv_url + sshpz, os.path.join('.', sshpz), callback = self.stop)
+                        if status == 0:
+                            zip_ref = zipfile.ZipFile(sshpz)
+                            zip_ref.extractall('dc_tile_index')
+                            zip_ref.close()
+                            if os.path.exists('dc_tile_index'): ti = os.listdir('dc_tile_index')
 
-                        ts = None
-                        for i in ti:
-                            if ".shp" in i:
-                                ts = os.path.join('dc_tile_index/', i)
+                            ts = None
+                            for i in ti:
+                                if ".shp" in i:
+                                    ts = os.path.join('dc_tile_index/', i)
 
-                        if ts is not None:
-                            shp1 = ogr.Open(ts)
-                            slay1 = shp1.GetLayer(0)
-                            for sf1 in slay1:
-                                geom = sf1.GetGeometryRef()
-                                if geom.Intersects(self._boundsGeom):
-                                    tile_url = sf1.GetField('URL').strip()
-                                    self._results.append([tile_url, '{}/{}'.format(surv_id, tile_url.split('/')[-1]), 'raster'])
-                            shp1 = slay1 = None
-                        for i in ti: ts = os.remove(os.path.join('dc_tile_index/', i))
-                        os.removedirs(os.path.join('.', 'dc_tile_index'))
-                        os.remove(os.path.join('.', sshpz))
+                            if ts is not None:
+                                shp1 = ogr.Open(ts)
+                                slay1 = shp1.GetLayer(0)
+                                for sf1 in slay1:
+                                    geom = sf1.GetGeometryRef()
+                                    if geom.Intersects(self._boundsGeom):
+                                        tile_url = sf1.GetField('URL').strip()
+                                        self._results.append([tile_url, '{}/{}'.format(surv_id, tile_url.split('/')[-1]), 'raster'])
+                                shp1 = slay1 = None
+                            for i in ti: ts = os.remove(os.path.join('dc_tile_index/', i))
+                            os.removedirs(os.path.join('.', 'dc_tile_index'))
+                            os.remove(os.path.join('.', sshpz))
+                        else: echo_error_msg('could not access {}'.format(sshpz))
                         
         if len(self._results) == 0: self._status = -1
         gmt1 = layer = None
@@ -815,7 +821,7 @@ class nos:
         
         if self._verbose: utils.echo_msg('filtering NOS reference vector...')
         gmt1 = ogr.Open(self._ref_vector)
-        layer = gmt1.GetLayer('')
+        layer = gmt1.GetLayer()
         [layer.SetAttributeFilter('{}'.format(filt)) for filt in self._filters]
 
         for feature in layer:
@@ -1826,7 +1832,7 @@ class tnm:
         self.data['datasets'] = ','.join(sbDTags)
         if len(self._tnm_df) > 0: self.data['prodFormats'] = ','.join(self._tnm_df)
         req = fetch_req(self._tnm_product_url, params = self.data)
-        print(req.url)
+
         if req is not None:
             try:
                 self._dataset_results = req.json()
@@ -1841,25 +1847,25 @@ class tnm:
                 if len(self._extents) > 0:
                     for extent in self._extents:
                         if item['extent'] == extent:
-                            try:
-                                f_url = item['downloadURL']
-                                if item['format'] == 'IMG' or item['format'] == 'GeoTIFF':
-                                    tnm_ds = 'ned'
-                                elif item['format'] == 'LAZ' or item['format'] == 'LAS':
-                                    tnm_ds = 'lidar'
-                                else: tnm_ds = 'tnm'
-                                self._results.append([f_url, f_url.split('/')[-1], tnm_ds])
-                            except: pass
+                            #try:
+                            f_url = item['downloadURL']
+                            if item['format'] == 'IMG' or item['format'] == 'GeoTIFF':
+                                tnm_ds = 'ned'
+                            elif item['format'] == 'LAZ' or item['format'] == 'LAS':
+                                tnm_ds = 'lidar'
+                            else: tnm_ds = 'tnm'
+                            self._results.append([f_url, f_url.split('/')[-1], tnm_ds])
+                            #except: pass
                 else:
-                    try:
-                        f_url = item['downloadURL']
-                        if item['format'] == 'IMG' or item['format'] == 'GeoTIFF':
-                            tnm_ds = 'ned'
-                        elif item['format'] == 'LAZ' or item['format'] == 'LAS':
-                            tnm_ds = 'lidar'
-                        else: tnm_ds = 'tnm'
-                        self._results.append([f_url, f_url.split('/')[-1], tnm_ds])
-                    except: pass
+                    #try:
+                    f_url = item['downloadURL']
+                    if item['format'] == 'IMG' or item['format'] == 'GeoTIFF':
+                        tnm_ds = 'ned'
+                    elif item['format'] == 'LAZ' or item['format'] == 'LAS':
+                        tnm_ds = 'lidar'
+                    else: tnm_ds = 'tnm'
+                    self._results.append([f_url, f_url.split('/')[-1], tnm_ds])
+                    #except: pass
         if self._verbose: utils.echo_msg('filtered \033[1m{}\033[m data files from TNM dataset results.'.format(len(self._results)))
 
     def print_dataset_index(self):

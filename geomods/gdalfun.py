@@ -62,15 +62,15 @@ def gdal_fext(src_drv_name):
         else: fext = 'gdal'
         return(fext)
 
-def _geo2pixel_old(geo_x, geo_y, geoTransform):
+def _geo2pixel(geo_x, geo_y, geoTransform):
    '''convert a geographic x,y value to a pixel location of geoTransform'''
    if geoTransform[2] + geoTransform[4] == 0:
-       pixel_x = ((geo_x - geoTransform[0]) / geoTransform[1])# + .5
-       pixel_y = ((geo_y - geoTransform[3]) / geoTransform[5])# + .5
+       pixel_x = ((geo_x - geoTransform[0]) / geoTransform[1]) + .5
+       pixel_y = ((geo_y - geoTransform[3]) / geoTransform[5]) + .5
    else: pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt(geoTransform))
-   return(round(pixel_x), round(pixel_y))
+   return(int(pixel_x), int(pixel_y))
 
-def _geo2pixel(geo_x, geo_y, geoTransform):
+def _geo2pixel2(geo_x, geo_y, geoTransform):
     '''convert a geographic x,y value to a pixel location of geoTransform'''
     forward_transform = affine.Affine.from_gdal(*geoTransform)
     reverse_transform = ~forward_transform
@@ -482,13 +482,13 @@ def gdal_clip(src_gdal, src_ply = None, invert = False):
     utils.run_cmd('ogr2ogr {} {} -clipsrc {} {} {} {}'.format(tmp_ply, src_ply, g_region[0], g_region[3], g_region[1], g_region[2]), verbose = True)
     if gi is not None and src_ply is not None:
         gr_inv = '-i' if invert else ''
-        gr_cmd = 'gdalwarp -cutline {} -cl tmp_clp_ply {} {}'.format(tmp_ply, src_gdal, tmp_gdal)
-        #gr_cmd = 'gdal_rasterize -burn {} {} -l {} {} {}'\
-        #         .format(gi['ndv'], gr_inv, os.path.basename(tmp_ply).split('.')[0], tmp_ply, src_gdal)
+        #gr_cmd = 'gdalwarp -cutline {} -cl tmp_clp_ply {} {}'.format(tmp_ply, src_gdal, tmp_gdal)
+        gr_cmd = 'gdal_rasterize -burn {} {} -l {} {} {}'\
+                 .format(gi['ndv'], gr_inv, os.path.basename(tmp_ply).split('.')[0], tmp_ply, src_gdal)
         out, status = utils.run_cmd(gr_cmd, verbose = True)
     else: return(None)
     utils.remove_glob('tmp_clp_ply.*')
-    os.rename(tmp_gdal, src_gdal)
+    #os.rename(tmp_gdal, src_gdal)
     return(out, status)
 
 def gdal_clip2(src_gdal, src_ply = None, invert = False):
@@ -525,7 +525,8 @@ def np_split(src_arr, sv = 0, nd = -9999):
     return(u_arr, l_arr)
 
 def gdal_split(src_gdal, split_value = 0):
-    '''split raster file `src_gdal`into two files based on z value
+    '''split raster file `src_gdal`into two files based on z value, 
+    or if split_value is a filename, split raster by overlay, where upper is outside and lower is inside.
 
     returns [upper_grid-fn, lower_grid-fn]'''
     
@@ -576,6 +577,7 @@ def gdal_crop(src_ds):
 def gdal_mask(src_gdal, dst_gdal, invert = False):
     '''transform src_gdal to a raster mask (1 = data; 0 = nodata)
     if invert is True, 1 = nodata, 0 = data.'''
+    
     try:
         ds = gdal.Open(src_gdal)
     except: ds = None
