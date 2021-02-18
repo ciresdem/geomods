@@ -469,7 +469,7 @@ def gdal_cut(src_gdal, region, dst_fn):
         return(gdal_write(ds_arr, dst_fn, out_ds_config))
     else: return(None, -1)
 
-def gdal_clip(src_gdal, src_ply = None, invert = False):
+def gdal_clip(src_gdal, src_ply = None, invert = False, return_clip = False):
     '''clip dem to polygon `src_ply`, optionally invert the clip.
 
     returns [gdal_raserize-output, gdal_rasterize-return-code]'''
