@@ -1787,8 +1787,8 @@ class tnm:
             this_ds = [int(ds)]
             if sub_ds is not None: this_ds.append(int(sub_ds))
             self._tnm_ds = [this_ds]
-            self._tnm_df = [] if formats is None else formats.split(',')
-            self._extents = [] if extent is None else extent.split(',')
+            self._tnm_df = [] if formats is None else [x.strip() for x in formats.split(',')]
+            self._extents = [] if extent is None else [x.strip() for x in extent.split(',')]
             self.filter_datasets(q)
         return(self._results)
 
@@ -1872,9 +1872,11 @@ class tnm:
         for i,j in enumerate(self._datasets):
             try: fmts = ', '.join(j['formats'])
             except: fmts = ''
+            try: exts = ', '.join(j['extents'])
+            except: exts = ''
             print('%s: %s [ %s ]' %(i, j['title'], fmts))
             for m,n in enumerate(j['tags']):
-                print('\t%s: %s [ %s ]' %(m, n, ", ".join(j['tags'][n]['formats'])))
+                print('\t%s: %s [ %s ] [ %s ]' %(m, n, ", ".join(j['tags'][n]['formats']), ", ".join(j['tags'][n]['extents'])))
 
     ## ==============================================
     ## Process results to xyz
@@ -1973,7 +1975,7 @@ class mb:
         if xyzc is None: xyzc = copy.deepcopy(xyzfun._xyz_config)
         src_mb = os.path.basename(entry[1])
 
-        if fetch_file(entry[0], src_mb, callback = self._stop, verbose = self._verbose) == 0:
+        if fetch_file(entry[0], src_mb, callback = self._stop, verbose = False) == 0:
             src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
             out, status = utils.run_cmd('mblist -MX20 -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
             vdc['ivert'] = 'lmsl:m:height'
@@ -1981,6 +1983,7 @@ class mb:
             vdc['delim'] = 'tab'
             vdc['xyzl'] = '0,1,2'
             vdc['skip'] = '0'
+            xyzc['name'] = src_mb
             xyzc['delim'] = '\t'
             xyzc['z-scale'] = 1
             xyzc['epsg'] = 4326
@@ -2781,6 +2784,7 @@ def fetches_cli(argv = sys.argv):
     fetch_class = []
     these_regions = []
     mod_opts = {}
+    verbose = True
 
     ## ==============================================
     ## process Command-Line
@@ -2801,6 +2805,8 @@ def fetches_cli(argv = sys.argv):
             i = i + 1
         elif arg == '--process' or arg == '-p':
             want_proc = True
+        elif arg == '--quiet' or arg == '-q':
+            verbose = False
         elif arg == '--help' or arg == '-h':
             sys.stderr.write(_usage)
             sys.exit(1)
@@ -2880,7 +2886,7 @@ def fetches_cli(argv = sys.argv):
                         time.sleep(2)
                         sys.stderr.write('\x1b[2K\r')
                         perc = float((len(r) - fr.fetch_q.qsize())) / len(r) * 100 if len(r) > 0 else 1
-                        sys.stderr.write('fetches: fetching remote data files [{}%]'.format(perc))
+                        if verbose: sys.stderr.write('fetches: fetching remote data files [{}%]'.format(perc))
                         sys.stderr.flush()
                         if not fr.is_alive():
                             break
@@ -2894,7 +2900,7 @@ def fetches_cli(argv = sys.argv):
                         except Empty: continue
                         fr.fetch_q.task_done()
                 fr.join()
-            utils.echo_msg('ran fetch module {} on region {} ({}/{})...\
+            if verbose: utils.echo_msg('ran fetch module {} on region {} ({}/{})...\
             '.format(fetch_mod, regions.region_format(this_region, 'str'), rn+1, len(these_regions)))
             if want_proc: vdatumfun.vdatum_clean_result()
 
