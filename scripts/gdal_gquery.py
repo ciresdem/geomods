@@ -94,7 +94,7 @@ if __name__ == '__main__':
     ds_inc = ds_config['geoT'][1]
 
     gp = gdalfun.gdal_parse(ds)
-    gq = gdalfun.gdal_query2(gp, t_ds, d_form)
+    gq = gdalfun.gdal_yield_query(gp, t_ds, d_form)
     out, status = gdalfun.gdal_xyz2gdal(gq, d_ds, ds_region, ds_inc, mode='m')
     
     ds = None

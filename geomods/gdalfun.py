@@ -29,7 +29,6 @@ import ogr
 import osr
 import sys
 import numpy as np
-import affine
 import json
 
 from geomods import utils
@@ -64,14 +63,17 @@ def gdal_fext(src_drv_name):
 
 def _geo2pixel(geo_x, geo_y, geoTransform):
    '''convert a geographic x,y value to a pixel location of geoTransform'''
+   
    if geoTransform[2] + geoTransform[4] == 0:
        pixel_x = ((geo_x - geoTransform[0]) / geoTransform[1]) + .5
        pixel_y = ((geo_y - geoTransform[3]) / geoTransform[5]) + .5
    else: pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt(geoTransform))
    return(int(pixel_x), int(pixel_y))
 
-def _geo2pixel2(geo_x, geo_y, geoTransform):
+def _geo2pixel_affine(geo_x, geo_y, geoTransform):
     '''convert a geographic x,y value to a pixel location of geoTransform'''
+    
+    import affine
     forward_transform = affine.Affine.from_gdal(*geoTransform)
     reverse_transform = ~forward_transform
     pixel_x, pixel_y = reverse_transform * (geo_x, geo_y)
@@ -87,8 +89,8 @@ def _pixel2geo(pixel_x, pixel_y, geoTransform):
 def _apply_gt(in_x, in_y, geoTransform):
     '''apply geotransform to in_x,in_y'''
     
-    out_x = geoTransform[0] + (in_x + 0.5) * geoTransform[1] + (in_y + 0.5) * geoTransform[2]
-    out_y = geoTransform[3] + (in_x + 0.5) * geoTransform[4] + (in_y + 0.5) * geoTransform[5]
+    out_x = geoTransform[0] + int(in_x + 0.5) * geoTransform[1] + int(in_y + 0.5) * geoTransform[2]
+    out_y = geoTransform[3] + int(in_x + 0.5) * geoTransform[4] + int(in_y + 0.5) * geoTransform[5]
 
     return(out_x, out_y)
 
@@ -145,7 +147,7 @@ def gdal_set_epsg(src_fn, epsg = 4326):
         return(0)
     else: return(None)
 
-def gdal_getEPSG(src_ds):
+def gdal_get_epsg(src_ds):
     '''returns the EPSG of the given gdal data-source'''
     
     ds_config = gdal_gather_infos(src_ds)
@@ -190,7 +192,6 @@ def gdal_region2gt(region, inc, y_inc = None):
     
     this_origin = _geo2pixel(region[0], region[3], dst_gt)
     this_end = _geo2pixel(region[1], region[2], dst_gt)
-    #this_size = ((this_end[0] - this_origin[0]) + 1, (this_end[1] - this_origin[1]) + 1)
     this_size = (this_end[0] - this_origin[0], this_end[1] - this_origin[1])
     
     return(this_size[0], this_size[1], dst_gt)
@@ -330,10 +331,8 @@ def gdal_srcwin(src_ds, region):
     this_origin = [0 if x < 0 else x for x in _geo2pixel(region[0], region[3], geoT)]
     this_end = [0 if x < 0 else x for x in _geo2pixel(region[1], region[2], geoT)]
     this_size = [0 if x < 0 else x for x in ((this_end[0] - this_origin[0]), (this_end[1] - this_origin[1]))]
-    #this_size = [0 if x < 0 else x for x in ((this_end[0] - this_origin[0]), (this_end[1] - this_origin[1]))]
     if this_size[0] > ds_config['nx'] - this_origin[0]: this_size[0] = ds_config['nx'] - this_origin[0]
     if this_size[1] > ds_config['ny'] - this_origin[1]: this_size[1] = ds_config['ny'] - this_origin[1]
-    #this_size = [0 if x < 0 else x for x in this_size]
     return(this_origin[0], this_origin[1], this_size[0], this_size[1])
 
 def gdal_sample_inc(src_grd, inc = 1, verbose = False):
@@ -469,7 +468,7 @@ def gdal_cut(src_gdal, region, dst_fn):
         return(gdal_write(ds_arr, dst_fn, out_ds_config))
     else: return(None, -1)
 
-def gdal_clip(src_gdal, src_ply = None, invert = False, return_clip = False):
+def gdal_clip(src_gdal, src_ply = None, invert = False):
     '''clip dem to polygon `src_ply`, optionally invert the clip.
 
     returns [gdal_raserize-output, gdal_rasterize-return-code]'''
@@ -489,25 +488,6 @@ def gdal_clip(src_gdal, src_ply = None, invert = False, return_clip = False):
     else: return(None)
     utils.remove_glob('tmp_clp_ply.*')
     #os.rename(tmp_gdal, src_gdal)
-    return(out, status)
-
-def gdal_clip2(src_gdal, src_ply = None, invert = False):
-    '''clip dem to polygon `src_ply`, optionally invert the clip.
-
-    returns [gdal_raserize-output, gdal_rasterize-return-code]'''
-
-    # clip src_ply to src_gdal extent
-    gi = gdal_infos(src_gdal)
-    g_region = gdal_gt2region(gi)
-    tmp_ply = 'tmp_clp_ply.shp'
-    utils.run_cmd('ogr2ogr {} {} -clipsrc {} {} {} {}'.format(tmp_ply, src_ply, g_region[0], g_region[3], g_region[1], g_region[2]), verbose = True)
-    if gi is not None and src_ply is not None:
-        gr_inv = '-i' if invert else ''
-        gr_cmd = 'gdal_rasterize -burn {} {} -l {} {} {}'\
-                 .format(gi['ndv'], gr_inv, os.path.basename(tmp_ply).split('.')[0], tmp_ply, src_gdal)
-        out, status = utils.run_cmd(gr_cmd, verbose = True)
-    else: return(None)
-    utils.remove_glob('tmp_clp_ply.*')
     return(out, status)
 
 def np_split(src_arr, sv = 0, nd = -9999):
@@ -597,19 +577,8 @@ def gdal_mask(src_gdal, dst_gdal, invert = False):
             
         return(gdal_write(ds_array, dst_gdal, ds_config))
     else: return(-1, -1)
-    
-def gdal_mask_analysis(mask = None):
-    '''mask is a GDAL mask grid of 0/1
 
-    returns [sum, max, percentile]'''
-    
-    msk_sum = gdal_sum(mask)
-    msk_gc = gdal_infos(mask)
-    msk_max = float(msk_gc['nx'] * msk_gc['ny'])
-    msk_perc = float((msk_sum / msk_max) * 100.)
-    return(msk_sum, msk_max, msk_perc)
-
-def gdal_mask_analysis2(src_gdal, region = None):
+def gdal_mask_analysis(src_gdal, region = None):
 
     ds_config = gdal_gather_infos(src_gdal)
     if region is not None:
@@ -624,7 +593,7 @@ def gdal_mask_analysis2(src_gdal, region = None):
     
     return(msk_sum, msk_max, msk_perc)
 
-def gdal_prox_analysis2(src_gdal, region = None):
+def gdal_prox_analysis(src_gdal, region = None):
 
     ds_config = gdal_gather_infos(src_gdal)
     if region is not None:
@@ -643,8 +612,10 @@ def gdal_proximity(src_fn, dst_fn):
     return 0 if success else None'''
     
     prog_func = None
-    src_ds = gdal.Open(src_fn)
     dst_ds = None
+    try:
+        src_ds = gdal.Open(src_fn)
+    except: src_ds = None
     if src_ds is not None:
         src_band = src_ds.GetRasterBand(1)
         ds_config = gdal_gather_infos(src_ds)
@@ -660,22 +631,13 @@ def gdal_proximity(src_fn, dst_fn):
         dst_band = src_band = dst_ds = src_ds = None
         return(0)
     else: return(None)
-
-## ==============================================
-## query a GDAL file
-## ==============================================
-def gdal_query(src_xyz, src_grd, out_form):
+    
+def gdal_yield_query(src_xyz, src_grd, out_form):
     '''query a gdal-compatible grid file with xyz data.
     out_form dictates return values
 
-    returns array of values'''
+    yields out_form results'''
     
-    xyzl = []
-    out_array = []
-
-    ## ==============================================
-    ## Process the src grid file
-    ## ==============================================
     try:
         ds = gdal.Open(src_grd)
     except: ds = None
@@ -685,59 +647,8 @@ def gdal_query(src_xyz, src_grd, out_form):
         ds_gt = ds_config['geoT']
         ds_nd = ds_config['ndv']
         tgrid = ds_band.ReadAsArray()
-
-        ## ==============================================   
-        ## Process the src xyz data
-        ## ==============================================
-        for xyz in src_xyz:
-            x = xyz[0]
-            y = xyz[1]
-            try: 
-                z = xyz[2]
-            except: z = ds_nd
-
-            if x > ds_gt[0] and y < float(ds_gt[3]):
-                xpos, ypos = _geo2pixel(x, y, ds_gt)
-                try: 
-                    g = tgrid[ypos, xpos]
-                except: g = ds_nd
-                #print(g)
-                d = c = m = s = ds_nd
-                if g != ds_nd:
-                    d = z - g
-                    m = z + g
-                    outs = []
-                    for i in out_form:
-                        outs.append(vars()[i])
-                    xyzl.append(np.array(outs))
-        dsband = ds = None
-        out_array = np.array(xyzl)
-    return(out_array)
-
-def gdal_yield_query(src_xyz, src_grd, out_form):
-    '''query a gdal-compatible grid file with xyz data.
-    out_form dictates return values
-
-    yields out_form results'''
-    
-    xyzl = []
-    out_array = []
-
-    ## ==============================================
-    ## Process the src grid file
-    ## ==============================================
-    ds = gdal.Open(src_grd)
-    if ds is not None:
-        ds_config = gdal_gather_infos(ds)
-        ds_band = ds.GetRasterBand(1)
-        ds_gt = ds_config['geoT']
-        ds_nd = ds_config['ndv']
-        tgrid = ds_band.ReadAsArray()
         dsband = ds = None
         
-        ## ==============================================   
-        ## Process the src xyz data
-        ## ==============================================
         for xyz in src_xyz:
             x = xyz[0]
             y = xyz[1]
@@ -759,55 +670,83 @@ def gdal_yield_query(src_xyz, src_grd, out_form):
                         outs.append(vars()[i])
                     yield(outs)
 
-def gdal_query2(src_xyz, src_grd, out_form):
+def gdal_query(src_xyz, src_grd, out_form):
     '''query a gdal-compatible grid file with xyz data.
     out_form dictates return values
 
-    yields out_form results'''
-    
+    returns array of values'''
     xyzl = []
-    out_array = []
+    for out_q in gdal_yield_query(src_xyz, src_grd, out_form):
+        xyzl.append(np.array(out_q))
+    return(np.array(xyzl))
+                    
+def gdal_yield_mw_srcwin(src_gdal, n_chunk = 10, step = 5):
 
-    ## ==============================================
-    ## Process the src grid file
-    ## ==============================================
-    ds = gdal.Open(src_grd)
-    if ds is not None:
-        ds_config = gdal_gather_infos(ds)
-        ds_band = ds.GetRasterBand(1)
-        ds_gt = ds_config['geoT']
-        ds_nd = ds_config['ndv']
-        tgrid = ds_band.ReadAsArray()
+    ds_config = gdal_infos(src_gdal)
+    gt = ds_config['geoT']
+    x_chunk = n_chunk
+    i_chunk = 0
+    x_i_chunk = 0
+    #_gdal_progress_nocb(0.0)
+    while True:
+        y_chunk = n_chunk
+        #_gdal_progress_nocb((i_chunk*step)/(ds_config['nb']/step))
+        utils.echo_msg_inline('[{:.2f}%]'.format(((i_chunk*step)/(ds_config['nb']/step) * 100)))
+        while True:
+            this_x_chunk = ds_config['nx'] if x_chunk > ds_config['nx'] else x_chunk
+            this_y_chunk = ds_config['ny'] if y_chunk > ds_config['ny'] else y_chunk
+            this_x_origin = x_chunk - n_chunk
+            this_y_origin = y_chunk - n_chunk
+            this_x_size = int(this_x_chunk - this_x_origin)
+            this_y_size = int(this_y_chunk - this_y_origin)
+            if this_x_size == 0 or this_y_size == 0: break
+            srcwin = (this_x_origin, this_y_origin, this_x_size, this_y_size)
+            yield(srcwin)
 
-        ## ==============================================   
-        ## Process the src xyz data
-        ## ==============================================
-        for xyz in src_xyz:
-            x = xyz[0]
-            y = xyz[1]
-            try: 
-                z = xyz[2]
-            except: z = ds_nd
+            if y_chunk > ds_config['ny']:
+                break
+            else:
+                y_chunk += step
+                i_chunk += 1
+        if x_chunk > ds_config['nx']:
+            break
+        else:
+            x_chunk += step
+            x_i_chunk += 1
+    #_gdal_progress_nocb(100.0)
+    utils.echo_msg('[OK]'.format(((i_chunk*step)/(ds_config['nb']/step) * 100)))
+    
+def gdal_chunks(src_fn, n_chunk):
+    '''split `src_fn` GDAL file into chunks with `n_chunk` cells squared.
 
-            if x > ds_gt[0] and y < float(ds_gt[3]):
-                xpos, ypos = _geo2pixel(x, y, ds_gt)
-                try: 
-                    g = tgrid[ypos, xpos]
-                except: g = ds_nd
-                #print(g)
-                d = c = m = s = ds_nd
-                if g != ds_nd:
-                    d = z - g
-                    m = z + g
-                    #c = con_dec(math.fabs(d / (g + 0.00000001) * 100), 2)
-                    #s = con_dec(math.fabs(d / (z + (g + 0.00000001))), 4)
-                    #d = con_dec(d, 4)
-                    outs = []
-                    for i in out_form:
-                        outs.append(vars()[i])
-                    yield(outs)
-        dsband = ds = None
-        
+    returns a list of chunked filenames.'''
+    
+    o_chunks = []
+    try:
+        src_ds = gdal.Open(src_fn)
+    except: src_ds = None
+    if src_ds is not None:
+        ds_config = gdal_gather_infos(src_ds)
+        band = src_ds.GetRasterBand(1)
+        gt = ds_config['geoT']
+        c_n = 0
+        for srcwin in gdal_yield_mw_srcwin(src_fn, n_chunk = n_chunk, step = n_chunk):
+            this_geo_x_origin, this_geo_y_origin = _pixel2geo(srcwin[0], srcwin[1], gt)
+            dst_gt = [this_geo_x_origin, float(gt[1]), 0.0, this_geo_y_origin, 0.0, float(gt[5])]
+            band_data = band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
+            if not np.all(band_data == band_data[0,:]):
+                dst_config = gdal_cpy_infos(ds_config)
+                dst_config['nx'] = srcwin[2]
+                dst_config['ny'] = srcwin[3]
+                dst_config['geoT'] = dst_gt
+                this_region = gdal_gt2region(dst_config)
+                o_chunk = '{}_chnk{}.tif'.format(os.path.basename(src_fn).split('.')[0], c_n)
+                dst_fn = os.path.join(os.path.dirname(src_fn), o_chunk)
+                o_chunks.append(dst_fn)
+                gdal_write(band_data, dst_fn, dst_config)
+                c_n += 1                
+    return(o_chunks)
+            
 ## ==============================================
 ## GDAL command-line wrappers
 ## ==============================================
@@ -853,7 +792,7 @@ def gdal_polygonize(src_gdal, dst_layer, verbose = False):
     else: return(-1, -1)
 
 ## ==============================================
-## numpy and arrays
+## numpy, arrays and grid processing
 ## ==============================================
 def gdal_sum(src_gdal):
     '''sum the z vale of src_gdal
@@ -903,11 +842,7 @@ def np_gaussian_blur(in_array, size):
     g = np.exp(-(x**2 / float(size) + y**2 / float(size)))
     g = (g / g.sum()).astype(in_array.dtype)
     in_array = None
-    #try:
     out_array = fftconvolve(padded_array, g, mode = 'valid')
-    #except:
-    #print('switching to convolve')
-    #out_array = convolve(padded_array, g, mode = 'valid')
     return(out_array)
 
 def gdal_blur(src_gdal, dst_gdal, sf = 1):
@@ -933,6 +868,107 @@ def gdal_blur(src_gdal, dst_gdal, sf = 1):
         return(gdal_write(smooth_array, dst_gdal, ds_config))
     else: return([], -1)
 
+def gdal_filter_outliers(src_gdal, dst_gdal, threshhold = None, chunk_size = None, chunk_step = None, slp = False):
+    '''scan a src_gdal file for outliers and remove them'''
+    
+    try:
+        ds = gdal.Open(src_gdal)
+    except: ds = None
+
+    if ds is not None:
+        tnd = 0
+        
+        ds_config = gdal_gather_infos(ds)
+        ds_band = ds.GetRasterBand(1)
+        ds_array = ds_band.ReadAsArray(0, 0, ds_config['nx'], ds_config['ny'])
+        gt = ds_config['geoT']
+        if threshhold is None:
+            ds_std = np.std(ds_array)
+        else: ds_std = threshhold
+        
+        driver = gdal.GetDriverByName('MEM')
+        mem_ds = driver.Create('tmp', ds_config['nx'], ds_config['ny'], 1, ds_config['dt'])
+        mem_ds.SetGeoTransform(gt)
+        mem_ds.SetProjection(ds_config['proj'])
+        band = mem_ds.GetRasterBand(1)
+        band.SetNoDataValue(ds_config['ndv'])
+        band.WriteArray(ds_array)
+
+        ds = None
+        if chunk_size is None:
+            n_chunk = int(ds_config['nx'] * .005)
+            n_chunk = 10 if n_chunk < 10 else n_chunk
+        else: n_chunk = chunk_size
+        if chunk_step is None:
+            n_step = int(n_chunk/4)
+        else: n_step = chunk_step
+
+        utils.echo_msg('scanning {} for spikes with {}@{} MAX {}...'.format(src_gdal, n_chunk, n_step, ds_std))
+        for srcwin in gdal_yield_mw_srcwin(src_gdal, n_chunk = n_chunk, step = n_step):
+            band_data = band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
+            band_data[band_data == ds_config['ndv']] = np.nan
+            this_geo_x_origin, this_geo_y_origin = _pixel2geo(srcwin[0], srcwin[1], gt)
+            dst_gt = [this_geo_x_origin, float(gt[1]), 0.0, this_geo_y_origin, 0.0, float(gt[5])]
+
+            dst_config = gdal_cpy_infos(ds_config)
+            dst_config['nx'] = srcwin[2]
+            dst_config['ny'] = srcwin[3]
+            dst_config['geoT'] = dst_gt
+            
+            if not np.all(band_data == band_data[0,:]):
+                while True:
+                    nd = 0                    
+                    srcwin_std = np.nanstd(band_data)
+                    slp_data = np.gradient(band_data, axis=0)
+                    slp_srcwin_std = np.nanstd(slp_data)
+                    if srcwin_std < ds_std and slp_srcwin_std < slp_std: break
+                    
+                    srcwin_perc75 = np.nanpercentile(band_data, 75)
+                    srcwin_perc25 = np.nanpercentile(band_data, 25)
+                    iqr_p = (srcwin_perc75 - srcwin_perc25) * 1.5
+                    upper_limit = srcwin_perc75 + iqr_p
+                    lower_limit = srcwin_perc25 - iqr_p
+                    
+                    slp_srcwin_perc75 = np.nanpercentile(slp_data, 75)
+                    slp_srcwin_perc25 = np.nanpercentile(slp_data, 25)
+                    slp_iqr_p = (slp_srcwin_perc75 - slp_srcwin_perc25) * 1.5
+                    slp_upper_limit = slp_srcwin_perc75 + slp_iqr_p
+                    slp_lower_limit = slp_srcwin_perc25 - slp_iqr_p
+
+
+                    for i in range(0, srcwin[2]):
+                        for j in range(0, srcwin[3]):
+                            bandz = band_data[j][i]
+                            slpz = slp_data[j][i]
+                            if bandz > upper_limit or bandz < lower_limit:
+                                if slpz > slp_upper_limit or slpz < slp_lower_limit:
+                                    ds_array[j+srcwin[1]][i+srcwin[0]] = ds_config['ndv']
+                                    band.WriteArray(ds_array)
+                                    band_data[j][i] = np.nan
+                                    nd += 1
+                    tnd += nd
+                    if nd == 0: break
+                band_data = slp_data = None
+                
+        utils.echo_msg('filtering {} spikes...'.format(tnd))
+        if tnd > 0:
+            driver = gdal.GetDriverByName('MEM')
+            tmp_ds = driver.Create('tmp', ds_config['nx'], ds_config['ny'], 1, ds_config['dt'])
+            tmp_ds.SetGeoTransform(ds_config['geoT'])
+            tmp_ds.SetProjection(ds_config['proj'])
+            ds_band = tmp_ds.GetRasterBand(1)
+            ds_band.SetNoDataValue(ds_config['ndv'])
+            ds_band.WriteArray(ds_array)
+            result = gdal.FillNodata(targetBand = ds_band, maskBand = None, maxSearchDist = 100, smoothingIterations = 4, callback = _gdal_progress)
+        
+            ds_array = ds_band.ReadAsArray()
+            tmp_ds = None
+
+        out, status = gdal_write(ds_array, dst_gdal, ds_config)
+        mem_ds = None
+        return(out, status)
+    else: return(None)
+    
 ## ==============================================
 ## OGR functions
 ## ==============================================
@@ -976,7 +1012,6 @@ def ogr_clip(src_ogr, dst_ogr, clip_region = None, dn = "ESRI Shapefile"):
     dst_layer = dst_ds.CreateLayer(dst_ogr.split('.')[0], geom_type=ogr.wkbMultiPolygon)
 
     layer.Clip(c_layer, dst_layer)
-    #ogr.Layer.Clip(layer, c_layer, dst_layer)
 
     ds = c_ds = dst_ds = None
 
@@ -1099,78 +1134,7 @@ def gdal_xyz_mask(src_xyz, dst_gdal, region, inc, dst_format='GTiff', epsg = 432
                 try:
                     ptArray[ypos, xpos] = 1
                 except: pass
-    out, status = gdal_write(ptArray, dst_gdal, ds_config)
-    
-def gdal_chunks(src_fn, n_chunk = 10):
-    '''split `src_fn` GDAL file into chunks with `n_chunk` cells squared.
-
-    returns a list of chunked filenames or None'''
-    
-    band_nums = []
-    o_chunks = []
-    if band_nums == []: band_nums = [1]
-    i_chunk = 0
-    x_i_chunk = 0
-    x_chunk = n_chunk
-
-    try:
-        src_ds = gdal.Open(src_fn)
-    except: src_ds = None
-    if src_ds is not None:
-        ds_config = gdal_gather_infos(src_ds)
-        band = src_ds.GetRasterBand(1)
-        gt = ds_config['geoT']
-
-        while True:
-            y_chunk = n_chunk
-            while True:
-                if x_chunk > ds_config['nx']:
-                    this_x_chunk = ds_config['nx']
-                else: this_x_chunk = x_chunk
-
-                if y_chunk > ds_config['ny']:
-                    this_y_chunk = ds_config['ny']
-                else: this_y_chunk = y_chunk
-
-                this_x_origin = x_chunk - n_chunk
-                this_y_origin = y_chunk - n_chunk
-                this_x_size = this_x_chunk - this_x_origin
-                this_y_size = this_y_chunk - this_y_origin
-
-                ## chunk size aligns with grid cellsize
-                if this_x_size == 0 or this_y_size == 0: break
-                
-                srcwin = (this_x_origin, this_y_origin, this_x_size, this_y_size)
-                this_geo_x_origin, this_geo_y_origin = _pixel2geo(this_x_origin, this_y_origin, gt)
-                dst_gt = [this_geo_x_origin, float(gt[1]), 0.0, this_geo_y_origin, 0.0, float(gt[5])]
-                
-                band_data = band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
-                if not np.all(band_data == band_data[0,:]):
-                    o_chunk = '{}_chnk{}x{}.tif'.format(os.path.basename(src_fn).split('.')[0], x_i_chunk, i_chunk)
-                    dst_fn = os.path.join(os.path.dirname(src_fn), o_chunk)
-                    o_chunks.append(dst_fn)
-
-                    dst_config = gdal_cpy_infos(ds_config)
-                    dst_config['nx'] = this_x_size
-                    dst_config['ny'] = this_y_size
-                    dst_config['geoT'] = dst_gt                    
-                    gdal_write(band_data, dst_fn, dst_config)
-
-                band_data = None
-
-                if y_chunk > ds_config['ny']:
-                    break
-                else: 
-                    y_chunk += n_chunk
-                    i_chunk += 1
-            if x_chunk > ds_config['nx']:
-                break
-            else:
-                x_chunk += n_chunk
-                x_i_chunk += 1
-        src_ds = None
-        return(o_chunks)
-    else: return(None)
+    out, status = gdal_write(ptArray, dst_gdal, ds_config)    
 
 def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = None, verbose = False, z_region = None, step = 1):
     '''parse the data from gdal dataset src_ds (first band only)
@@ -1435,7 +1399,7 @@ def gdal_yield_entry(entry, region = None, verbose = False, z_region = None, eps
     except: ds = None
     if ds is not None:
         if region is not None:
-            srcwin = gdal_srcwin(ds, gdal_region_warp(region, s_warp = epsg, t_warp = gdal_getEPSG(ds)))
+            srcwin = gdal_srcwin(ds, gdal_region_warp(region, s_warp = epsg, t_warp = gdal_get_epsg(ds)))
         else: srcwin = None
         for xyz in gdal_parse(ds, dump_nodata = False, srcwin = srcwin, warp = epsg, verbose = verbose, z_region = z_region):
             yield(xyz + [entry[2]] if entry[2] is not None else xyz)

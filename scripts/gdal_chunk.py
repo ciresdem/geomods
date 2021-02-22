@@ -80,5 +80,5 @@ if __name__ == '__main__':
 
     if not os.path.exists(src_fn):
         utils.echo_error_msg('{} is not valid'.format(src_fn))
-    else: gdalfun.gdal_chunks(src_fn, chunk_value)
+    else: gdalfun.gdal_chunks(src_fn, n_chunk = chunk_value)
 ### End

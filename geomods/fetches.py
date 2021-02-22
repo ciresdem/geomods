@@ -605,7 +605,7 @@ class dc:
                 src_ds = None
             
             if src_ds is not None:
-                srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_getEPSG(src_ds)))
+                srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
                 for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose):
                     yield(xyz)
             src_ds = None
@@ -904,7 +904,7 @@ class nos:
                 #, gdalfun.gdal_region(src_ds, warp = 4326):
                 src_ds = gdal.Open(src_bag)
                 if src_ds is not None:
-                    srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_getEPSG(src_ds)))
+                    srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_getEPSG(src_ds)))
                     with open(nos_f, 'w') as cx:
                         for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg):
                             #xyzfun.xyz_line(xyz, cx)
@@ -1439,7 +1439,7 @@ class charts():
                         for f in layer_s:
                             g = json.loads(f.GetGeometryRef().ExportToJson())
                             for xyz in g['coordinates']:
-                                xyzfun.xyz_line([float(x) for x in xyz], o_xyz, self._verbose)
+                                xyzfun.xyz_line([float(x) for x in xyz], o_xyz, False)
 
                 ds_ogr = layer_s = None
 
