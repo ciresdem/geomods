@@ -33,7 +33,7 @@ setuptools.setup(
     author = 'CIRES Coastal DEM Team',
     url = 'http://ciresgroups.colorado.edu/coastalDEM',
     packages = setuptools.find_packages(),#['geomods'],  #same as name
-    package_data = {'geomods': ['data/*.gmt']},
+    package_data = {'geomods': ['data/*.geojson']},
     classifiers = [
         'Programming Language :: Python :: 3',
         'License :: OSI APPROVED :: MIT License',

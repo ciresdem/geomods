@@ -167,6 +167,19 @@ def gunzip(gz_file):
         guz_file = None
     return(guz_file)
 
+def p_unzip(src_file, exts):
+    src_procs = []
+    if src_file.split('.')[-1].lower() == 'zip':
+        with zipfile.ZipFile(src_file) as z:
+            zfs = z.namelist()
+            for ext in exts:
+                for zf in zfs:
+                    if ext in zf:
+                        src_procs.append(os.path.basename(zf))
+                        with open(os.path.basename(zf), 'wb') as f:
+                            f.write(z.read(zf))
+    return(src_procs)
+    
 def procs_unzip(src_file, exts):
     '''unzip/gunzip src_file based on `exts`
     
@@ -174,7 +187,7 @@ def procs_unzip(src_file, exts):
 
     zips = []
     src_proc = None
-    if src_file.split('.')[-1] == 'zip':
+    if src_file.split('.')[-1].lower() == 'zip':
         with zipfile.ZipFile(src_file) as z:
             zfs = z.namelist()
             for ext in exts:

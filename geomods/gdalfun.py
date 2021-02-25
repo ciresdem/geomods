@@ -868,7 +868,7 @@ def gdal_blur(src_gdal, dst_gdal, sf = 1):
         return(gdal_write(smooth_array, dst_gdal, ds_config))
     else: return([], -1)
 
-def gdal_filter_outliers(src_gdal, dst_gdal, threshhold = None, chunk_size = None, chunk_step = None, slp = False):
+def gdal_filter_outliers(src_gdal, dst_gdal, threshhold = None, slp_threshhold = None, chunk_size = None, chunk_step = None, slp = False):
     '''scan a src_gdal file for outliers and remove them'''
     
     try:
@@ -885,7 +885,10 @@ def gdal_filter_outliers(src_gdal, dst_gdal, threshhold = None, chunk_size = Non
         if threshhold is None:
             ds_std = np.std(ds_array)
         else: ds_std = threshhold
-        
+        if slp_threshhold is None:
+            slp_std = ds_std
+        else: slp_std = slp_threshhold
+
         driver = gdal.GetDriverByName('MEM')
         mem_ds = driver.Create('tmp', ds_config['nx'], ds_config['ny'], 1, ds_config['dt'])
         mem_ds.SetGeoTransform(gt)
@@ -1028,10 +1031,24 @@ def ogr_empty_p(src_ogr):
         else: return(False)
     else: return(True)
 
-
 def ogr_remove_ds(src_ds, src_fmt = 'ESRI Shapefile'):
     drv = ogr.GetDriverByName(src_fmt)
     drv.DeleteDataSource(src_ds)
+
+def ogr_get_fields(src_ds):
+    '''return the field names in src_ds ogr vector'''
+    
+    schema = []
+    try:
+        ds = ogr.Open(src_ds)
+    except: ds = None
+    if ds is not None:
+        layer = ds.GetLayer()
+        ldefn = layer.GetLayerDefn()
+        for n in range(ldefn.GetFieldCount()):
+            fdefn = ldefn.GetFieldDefn(n)
+            schema.append(fdefn.name)
+    return(schema)
     
 ## ==============================================
 ## GDAL XYZ functions

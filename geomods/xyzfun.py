@@ -67,6 +67,7 @@ def xyz_warp(xyz, dst_trans):
     '''transform the x/y using the dst_trans'''
     
     if dst_trans is None: return(xyz)
+    #if xyz is None: return(xyz)
     point = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(xyz[0], xyz[1]))
     point.Transform(dst_trans)
     return([point.GetX(), point.GetY(), xyz[2]])
@@ -122,9 +123,9 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
         pass_d = True
         if ln >= skip:
             this_xyz = xyz_parse_line(xyz, xyz_c)
-            if xyz_c['warp'] is not None:
-                this_xyz = xyz_warp(this_xyz, dst_trans)
             if this_xyz is not None:
+                if xyz_c['warp'] is not None:
+                    this_xyz = xyz_warp(this_xyz, dst_trans)
                 if region is not None:
                     if not xyz_in_region_p(this_xyz, region): pass_d = False
                 if xyz_c['upper_limit'] is not None or xyz_c['lower_limit'] is not None:
