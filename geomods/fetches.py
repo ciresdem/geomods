@@ -407,7 +407,7 @@ class FRED:
                         
             this_layer = None
         self._close_ds()
-        utils.echo_msg('filtered \033[1m{}\033[m data files from reference vector'.format(len(_results)))
+        utils.echo_msg('filtered \033[1m{}\033[m data files from the FRED'.format(len(_results)))
         return(_results)
 
 ## heaps of thanks to https://github.com/fitnr/stateplane
