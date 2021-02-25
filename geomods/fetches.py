@@ -309,7 +309,8 @@ this_dir, this_filename = os.path.split(__file__)
 fetchdata = os.path.join(this_dir, 'data')
 
 class FRED:
-    def __init__(self):
+    def __init__(self, verbose = False):
+        self._verbose = verbose
         self.fetchdata = os.path.join(this_dir, 'data')
         self.driver = ogr.GetDriverByName('GeoJSON')
         self.fetch_v = 'FRED.geojson'
@@ -318,7 +319,7 @@ class FRED:
         elif os.path.exists(os.path.join(self.fetchdata, self.fetch_v)):
             self.FREDloc = os.path.join(self.fetchdata, self.fetch_v)
         else: self.FREDloc = self.fetch_v
-        utils.echo_msg('using {}'.format(self.FREDloc))
+        if self._verbose: utils.echo_msg('using {}'.format(self.FREDloc))
         self.ds = None
         self.layer = None
         
@@ -387,7 +388,7 @@ class FRED:
         _boundsGeom = gdalfun.gdal_region2geom(region)
         _results = []
 
-        utils.echo_msg('filtering {} reference vector...'.format(self.FREDloc))
+        if self._verbose: utils.echo_msg('filtering {}...'.format(self.FREDloc))
         self._open_ds()
 
         f = 0
@@ -407,7 +408,7 @@ class FRED:
                         
             this_layer = None
         self._close_ds()
-        utils.echo_msg('filtered \033[1m{}\033[m data files from the FRED'.format(len(_results)))
+        if self._verbose: utils.echo_msg('filtered \033[1m{}\033[m data files from the FRED'.format(len(_results)))
         return(_results)
 
 ## heaps of thanks to https://github.com/fitnr/stateplane
@@ -500,7 +501,7 @@ class dc:
         self.region = extent
         if self.region is not None:
             self._boundsGeom = gdalfun.gdal_region2geom(self.region)
-        self.FRED = FRED()
+        self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
         self._surveys = []
         self._stop = callback
@@ -672,7 +673,7 @@ class nos:
         self.region = extent
         if self.region is not None:
             self._boundsGeom = gdalfun.gdal_region2geom(self.region)
-        self.FRED = FRED()
+        self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
         self._surveys = []
         self._stop = callback
@@ -845,7 +846,7 @@ class charts():
         self.region = extent
         if self.region is not None:
             self._boundsGeom = gdalfun.gdal_region2geom(self.region)
-        self.FRED = FRED()
+        self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
         self._surveys = []
         self._stop = callback
@@ -971,7 +972,7 @@ class ncei_thredds:
         self.region = extent
         if self.region is not None:
             self._boundsGeom = gdalfun.gdal_region2geom(self.region)
-        self.FRED = FRED()
+        self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
         self._surveys = []
         self._stop = callback
@@ -1132,7 +1133,7 @@ class mb:
         self.region = extent
         if self.region is not None:
             self._boundsGeom = gdalfun.gdal_region2geom(self.region)
-        self.FRED = FRED()
+        self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
         self._stop = callback
 
@@ -1267,7 +1268,7 @@ class usace:
         self.region = extent
         if self.region is not None:
             self._boundsGeom = gdalfun.gdal_region2geom(self.region)
-        self.FRED = FRED()
+        self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
         self._stop = callback
         
@@ -1430,7 +1431,7 @@ class tnm:
         self.region = extent
         if self.region is not None:
             self._boundsGeom = gdalfun.gdal_region2geom(self.region)
-        self.FRED = FRED()
+        self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
         self._stop = callback
         
@@ -1513,7 +1514,7 @@ class tnm:
         return(self.FRED._filter(self.region, self.where, ['tnm']))
 
     def _parse_results(self, r, f = None, e = None, q = None):
-        utils.echo_msg('filtering TNM dataset results...')
+        if self._verbose: utils.echo_msg('filtering TNM dataset results...')
         for surv in r:
     
             _data = {
@@ -1616,7 +1617,7 @@ class gmrt:
         self.region = extent
         if self.region is not None:
             self._boundsGeom = gdalfun.gdal_region2geom(self.region)
-        self.FRED = FRED()
+        self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
         self._surveys = []
         self._stop = callback
@@ -1744,7 +1745,7 @@ class mar_grav:
         self.region = extent
         if self.region is not None:
             self._boundsGeom = gdalfun.gdal_region2geom(self.region)
-        self.FRED = FRED()
+        self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
         self._surveys = []
         self._stop = callback
@@ -1856,7 +1857,7 @@ class srtm_plus:
         self.region = extent
         if self.region is not None:
             self._boundsGeom = gdalfun.gdal_region2geom(self.region)
-        self.FRED = FRED()
+        self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
         self._surveys = []
         self._stop = callback
@@ -1965,7 +1966,7 @@ class emodnet:
         self.region = extent
         if self.region is not None:
             self._boundsGeom = gdalfun.gdal_region2geom(self.region)
-        self.FRED = FRED()
+        self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
         self._surveys = []
         self._stop = callback
@@ -2130,7 +2131,7 @@ class hrdem():
         self.region = extent
         if self.region is not None:
             self._boundsGeom = gdalfun.gdal_region2geom(self.region)
-        self.FRED = FRED()
+        self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
         self._surveys = []
         self._stop = callback
@@ -2255,7 +2256,7 @@ class chs:
         self.region = extent
         if self.region is not None:
             self._boundsGeom = gdalfun.gdal_region2geom(self.region)
-        self.FRED = FRED()
+        self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
         self._surveys = []
         self._stop = callback
@@ -2404,7 +2405,7 @@ class ngs:
         self.region = extent
         if self.region is not None:
             self._boundsGeom = gdalfun.gdal_region2geom(self.region)
-        self.FRED = FRED()
+        self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
         self._surveys = []
         self._stop = callback
@@ -2506,7 +2507,7 @@ class osm:
         self.region = extent
         if self.region is not None:
             self._boundsGeom = gdalfun.gdal_region2geom(self.region)
-        self.FRED = FRED()
+        self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
         self._surveys = []
         self._stop = callback
@@ -2621,7 +2622,7 @@ def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, warp = None, 
     fetch_mod = entry[0].split(':')[0]
     fetch_args = entry[0].split(':')[1:]
 
-    fl = _fetch_modules[fetch_mod](regions.region_buffer(region, 5, pct = True), [], lambda: False, verbose)
+    fl = _fetch_modules[fetch_mod](regions.region_buffer(region, 5, pct = True), [], lambda: False, False)
     args_d = utils.args2dict(fetch_args, {})
 
     r = fl._parse_results(fl._filter_results(), **args_d)
