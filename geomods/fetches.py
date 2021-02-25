@@ -1814,7 +1814,7 @@ class mar_grav:
     ## ==============================================
     def _yield_xyz(self, entry, epsg = None):
         if fetch_file(entry[0], os.path.basename(entry[1]), callback = lambda: False, verbose = self._verbose) == 0:
-            if xyzc is None: xyzc = copy.deepcopy(xyzfun._xyz_config)
+            xyzc = copy.deepcopy(xyzfun._xyz_config)
             xyzc['skip'] = 1
             xyzc['x-off'] = -360
             xyzc['verbose'] = True
@@ -1924,7 +1924,7 @@ class srtm_plus:
     ## ==============================================
     def _yield_xyz(self, entry, epsg = None):
         if fetch_file(entry[0], os.path.basename(entry[1]), callback = lambda: False, verbose = self._verbose) == 0:
-            if xyzc is None: xyzc = copy.deepcopy(xyzfun._xyz_config)
+            xyzc = copy.deepcopy(xyzfun._xyz_config)
             xyzc['skip'] = 1
             xyzc['x-off'] = -360
             xyzc['verbose'] = True
