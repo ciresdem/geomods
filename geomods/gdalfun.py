@@ -906,7 +906,7 @@ def gdal_filter_outliers(src_gdal, dst_gdal, threshhold = None, slp_threshhold =
             n_step = int(n_chunk/4)
         else: n_step = chunk_step
 
-        utils.echo_msg('scanning {} for spikes with {}@{} MAX {}...'.format(src_gdal, n_chunk, n_step, ds_std))
+        utils.echo_msg('scanning {} for spikes with {}@{} MAX {}/{}...'.format(src_gdal, n_chunk, n_step, ds_std, slp_dst))
         for srcwin in gdal_yield_mw_srcwin(src_gdal, n_chunk = n_chunk, step = n_step):
             band_data = band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
             band_data[band_data == ds_config['ndv']] = np.nan

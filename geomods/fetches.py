@@ -1149,7 +1149,7 @@ class mb:
     def _update(self):
 
         self.FRED._open_ds()
-        self.FREDlayer.SetAttributeFilter("ID = '{}'".format('MB-1'))
+        self.FRED.layer.SetAttributeFilter("ID = '{}'".format('MB-1'))
         if len(self.FRED.layer) == 0:
             _surveys = [[
                 {
