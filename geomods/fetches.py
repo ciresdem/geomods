@@ -1176,12 +1176,14 @@ class mb:
     def _filter_results(self):
         return(self.FRED._filter(self.region, self.where, ['mb']))
         
-    def _parse_results(self, r):
+    def _parse_results(self, r, processed = False):
         '''Run the MB (multibeam) fetching module.'''
-
+        these_surveys = {}
+        these_versions = {}
         for surv in r:
             if self.region is None: return([])        
             _req = fetch_req(surv['DataLink'], params = {'geometry': regions.region_format(self.region, 'bbox')}, timeout = 20)
+            print(_req.url)
             if _req is not None:
                 survey_list = _req.text.split('\n')[:-1]
                 for r in survey_list:
@@ -1189,8 +1191,25 @@ class mb:
                     dst_fn = dst_pfn.split('/')[-1:][0]
                     survey = dst_pfn.split('/')[6]
                     dn = r.split(' ')[0].split('/')[:-1]
+                    version = dst_pfn.split('/')[9][-1]
                     data_url = self._mb_data_url + '/'.join(r.split('/')[3:])
-                    self._data_urls.append([data_url.split(' ')[0], '/'.join([survey, dst_fn]), 'mb'])
+                    if survey in these_surveys.keys():
+                        if version in these_surveys[survey].keys():
+                            these_surveys[survey][version].append([data_url.split(' ')[0], '/'.join([survey, dst_fn]), 'mb'])
+                        else: these_surveys[survey][version] = [[data_url.split(' ')[0], '/'.join([survey, dst_fn]), 'mb']]
+                    else: these_surveys[survey] = {version: [[data_url.split(' ')[0], '/'.join([survey, dst_fn]), 'mb']]}
+                    
+        for key in these_surveys.keys():
+            if '2' in these_surveys[key].keys():
+                for v2 in these_surveys[key]['2']:
+                    self._data_urls.append(v2)
+                #print(these_surveys[key]['2'])
+            else:
+                for v1 in these_surveys[key]['1']:
+                    self._data_urls.append(v1)
+                    #self._data_urls.append(these_surveys[key]['1'])
+            #self._data_urls.append([data_url.split(' ')[0], '/'.join([survey, dst_fn]), 'mb'])
+
         return(self._data_urls)
 
     ## ==============================================
@@ -1638,7 +1657,7 @@ class gmrt:
     def _filter_results(self):
         return(self.FRED._filter(self.region, self.where, ['gmrt']))
     
-    def _parse_results(self, r, fmt = 'geotiff', res = 'max'):
+    def _parse_results(self, r, fmt = 'geotiff', res = 'max', layer = 'topo'):
         '''Run the GMRT fetching module'''
 
         for surv in r:
@@ -1651,17 +1670,25 @@ class gmrt:
                 'resolution':res,
                 'format':fmt,
             }
+            #                'layer': layer,
             _req = fetch_req(surv['DataLink'], params = _data, tries = 10, timeout = 2)
             if _req is not None:
                 gmrt_urls = _req.json()
                 for url in gmrt_urls:
                     opts = {}
+                    url_base = url.split('?')[0]
                     for url_opt in url.split('?')[1].split('&'):
                         opt_kp = url_opt.split('=')
                         opts[opt_kp[0]] = opt_kp[1]
+                    opts['layer'] = layer
+                    try:
+                        url_enc = urllib.urlencode(opts)
+                    except: url_enc = urllib.parse.urlencode(opts)
+
+                    this_url = '{}?{}'.format(url_base, url_enc)
                     url_region = [float(opts['west']), float(opts['east']), float(opts['south']), float(opts['north'])]
                     outf = 'gmrt_{}_{}.{}'.format(opts['layer'], regions.region_format(url_region, 'fn'), gdalfun.gdal_fext(opts['format']))
-                    self._data_urls.append([url, outf, 'gmrt'])
+                    self._data_urls.append([this_url, outf, 'gmrt'])
         return(self._data_urls)
 
     ## ==============================================
@@ -2756,24 +2783,24 @@ def fetches_cli(argv = sys.argv):
             if want_update:
                 fl._update()
                 continue
-            try:
-                ir = fl._filter_results()
-                if want_index:
-                    for result in ir:
-                        print(json.dumps(result, indent=4))
-                    continue
-                r = fl._parse_results(ir, **args_d)
-                utils.echo_msg('found {} data files.'.format(len(r)))
-                if want_list:
-                    for result in r:
-                        print(result[0])
-                    continue
-            except ValueError as e:
-                utils.echo_error_msg('something went wrong, {}'.format(e))
-                sys.exit(-1)
-            except Exception as e:
-                utils.echo_error_msg('{}'.format(e))
-                sys.exit(-1)
+            #try:
+            ir = fl._filter_results()
+            if want_index:
+                for result in ir:
+                    print(json.dumps(result, indent=4))
+                continue
+            r = fl._parse_results(ir, **args_d)
+            utils.echo_msg('found {} data files.'.format(len(r)))
+            if want_list:
+                for result in r:
+                    print(result[0])
+                continue
+            #except ValueError as e:
+            #    utils.echo_error_msg('something went wrong, {}'.format(e))
+            #    sys.exit(-1)
+            #except Exception as e:
+            #    utils.echo_error_msg('{}'.format(e))
+            #    sys.exit(-1)
             
             fr = fetch_results(r, this_region, fl._outdir, fl if want_proc else None, fl if want_dump else None, lambda: stop_threads)
             fr.daemon = True
