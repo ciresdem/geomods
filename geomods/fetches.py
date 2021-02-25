@@ -2620,9 +2620,10 @@ def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, warp = None, 
     region = regions.region_warp(region, src_epsg = warp, dst_epsg = 4326)
     fetch_mod = entry[0].split(':')[0]
     fetch_args = entry[0].split(':')[1:]
-    
+
     fl = _fetch_modules[fetch_mod](regions.region_buffer(region, 5, pct = True), [], lambda: False, verbose)
-    args_d = utils.args2dict(fetch_args)
+    args_d = utils.args2dict(fetch_args, {})
+
     r = fl._parse_results(fl._filter_results(), **args_d)
     
     for e in r:
