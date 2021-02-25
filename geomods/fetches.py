@@ -1659,7 +1659,7 @@ class gmrt:
     
     def _parse_results(self, r, fmt = 'geotiff', res = 'max', layer = 'topo'):
         '''Run the GMRT fetching module'''
-
+        if layer != 'topo' and layer != 'topo-mask': layer = 'topo'
         for surv in r:
             _data = {
                 'north':self.region[3],
@@ -1680,6 +1680,7 @@ class gmrt:
                     for url_opt in url.split('?')[1].split('&'):
                         opt_kp = url_opt.split('=')
                         opts[opt_kp[0]] = opt_kp[1]
+
                     opts['layer'] = layer
                     try:
                         url_enc = urllib.urlencode(opts)
