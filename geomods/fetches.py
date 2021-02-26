@@ -1331,7 +1331,7 @@ class usace:
                         if feature['attributes']['SURVEYTYPE'].lower() == stype.lower():
                             self._data_urls.append([fetch_fn, fetch_fn.split('/')[-1], 'usace'])
                     else: self._data_urls.append([fetch_fn, fetch_fn.split('/')[-1], 'usace'])
-            return(self._data_urls)
+        return(self._data_urls)
 
     ## ==============================================
     ## Process results to xyz
@@ -1423,6 +1423,7 @@ class tnm:
         self._tnm_api_url = 'http://tnmaccess.nationalmap.gov/api/v1'
         self._tnm_dataset_url = 'https://tnmaccess.nationalmap.gov/api/v1/datasets?'
         self._tnm_product_url = 'https://tnmaccess.nationalmap.gov/api/v1/products?'
+        self._tnm_meta_base = 'https://www.sciencebase.gov/catalog/item/'
         self._outdir = os.path.join(os.getcwd(), 'tnm')
         self._tnm_ds = []
         self._tnm_df = []
@@ -1433,6 +1434,7 @@ class tnm:
             self._boundsGeom = gdalfun.gdal_region2geom(self.region)
         self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
+        self._surveys = []
         self._stop = callback
         
         self._desc = ''
@@ -1452,10 +1454,8 @@ class tnm:
 
     def _parse_dsTag(self, dsTag):
         sbDTag = dsTag['sbDatasetTag']
-        meta = dsTag['metaUrl']
-        info = dsTag['infoUrl']
-        if meta == '': meta = info
-        meta = '{}?format=iso'.format(dsTag['infoUrl'])
+        meta = '{}{}?format=iso'.format(self._tnm_meta_base, dsTag['id'])
+
         this_xml = iso_xml(meta)
         h_epsg, v_epsg = this_xml.reference_system()
         if h_epsg is None: h_epsg = 'varies'
@@ -1468,45 +1468,61 @@ class tnm:
             url_enc = urllib.urlencode(_data)
         except: url_enc = urllib.parse.urlencode(_data)
         data_link = '{}{}'.format(self._tnm_product_url, url_enc)
-        
         this_geom = this_xml.bounds(geom=True)
+        this_date = this_xml.date()
+        
         if this_geom is not None:
             return([{'Name': dsTag['title'],
                      'ID': sbDTag, 
-                     'Date': dsTag['LastCreatedDate'][-4:],
+                     'Date': this_date,
                      'MetadataLink': meta,
                      'MetadataDate': this_xml.xml_date(), 
                      'DataLink': data_link,
                      'IndexLink': '',
-                     'DataType': ','.join(dsTag['formats']),
                      'DataSource': 'tnm',
                      'HorizontalDatum': h_epsg,
                      'VerticalDatum': v_epsg,
                      'LastUpdate': utils.this_date(),
                      'Info': this_xml.abstract()}, this_geom.ExportToJson()])
         else: return(None)
-                    
-    def _update(self):
 
+    def _parse_ds(self, ds):
         _surveys = []
+        try:
+            dsTags = ds['tags']
+        except: dsTags = []
+        if len(dsTags) > 0:
+            for tag in dsTags:
+                _surveys.append(self._parse_ds(tag))
+        else: _surveys.append(self._parse_dsTag(ds))
+        return(_surveys)
+        
+    def _update(self):
+        _surveys = []
+        _s = {}
         self.FRED._open_ds()
         tnm_ds = self._datasets()
         for i, ds in enumerate(tnm_ds):
-            dsTags = ds['tags']
-            if len(dsTags) == 0:
-                self.FRED.layer.SetAttributeFilter("ID = '{}'".format(ds['sbDatasetTag']))
-                if len(self.FRED.layer) == 0:
-                    _s = self._parse_dsTag(ds)
-                    if _s is not None: _surveys.append(_s)
-            else:
-                for j, tag in enumerate(dsTags):
-                    dsTag = ds['tags'][tag]
-                    self.FRED.layer.SetAttributeFilter("ID = '{}'".format(dsTag['sbDatasetTag']))
-                    if len(self.FRED.layer) == 0:
-                        _s = self._parse_dsTag(dsTag)
-                        if _s is not None: _surveys.append(_s)
+            formats = ''
+            for f in ds['formats']:
+                if 'isDefault' in f.keys():
+                    formats = f['value']
+                    break
+            mapServerUrl = ds['mapServerUrl']
+            _s = self._parse_ds(ds)
+            for _survey in _s:
+                if _survey is not None:
+                    #print(_survey)
+                    if _survey[0] is not None:
+                        if len(_survey) == 1:
+                            _survey = _survey[0]
+                        _survey[0]['DataType'] = formats
+                        _survey[0]['IndexLink'] = mapServerUrl
+                        self.FRED.layer.SetAttributeFilter("ID = '{}'".format(ds['sbDatasetTag']))
+                        if len(self.FRED.layer) == 0:
+                            self._surveys.append(_survey)
                 
-        self.FRED._add_surveys(_surveys)
+        self.FRED._add_surveys(self._surveys)
         self.FRED._close_ds()
         return(_surveys)
         
