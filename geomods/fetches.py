@@ -408,7 +408,7 @@ class FRED:
                         
             this_layer = None
         self._close_ds()
-        if self._verbose: utils.echo_msg('filtered \033[1m{}\033[m data files from the FRED'.format(len(_results)))
+        if self._verbose: utils.echo_msg('filtered \033[1m{}\033[m data files from FRED'.format(len(_results)))
         return(_results)
 
 ## heaps of thanks to https://github.com/fitnr/stateplane
@@ -512,7 +512,7 @@ class dc:
         < dc >'''
 
     def _update(self):
-        '''Update the FREDI reference vector after scanning
+        '''Update the FRED reference vector after scanning
         the relevant metadata from Digital Coast.'''
         
         if self._verbose: utils.echo_msg('updating Digital Coast fetch module')
@@ -570,24 +570,23 @@ class dc:
     def _parse_results(self, r):
         for surv in r:
             surv_shp_zip = os.path.basename(surv['IndexLink'])
-            fetch_file(surv['IndexLink'], surv_shp_zip)
-            v_shps = utils.p_unzip(surv_shp_zip, ['.shp', '.shx', '.dbf', '.prj'])
-            v_shp = None
-            for v in v_shps:
-                if '.shp' in v: v_shp = v
-            try:
-                v_ds = ogr.Open(v_shp)
-            except: v_ds = None
-            if v_ds is not None:
-                shp1 = ogr.Open(v_ds)
-                slay1 = shp1.GetLayer(0)
-                for sf1 in slay1:
-                    tile_url = sf1.GetField('URL').strip()
-                    geom = sf1.GetGeometryRef()
-                    if geom.Intersects(self._boundsGeom):
-                        self._data_urls.append([tile_url, '{}/{}'.format(surv['ID'], tile_url.split('/')[-1]), surv['DataType']])
-                shp1 = slay1 = None
-            [utils.remove_glob(v) for v in v_shps]
+            if fetch_file(surv['IndexLink'], surv_shp_zip, verbose = self._verbose) == 0:
+                v_shps = utils.p_unzip(surv_shp_zip, ['.shp', '.shx', '.dbf', '.prj'])
+                v_shp = None
+                for v in v_shps:
+                    if '.shp' in v: v_shp = v
+                try:
+                    v_ds = ogr.Open(v_shp)
+                except: v_ds = None
+                if v_ds is not None:
+                    slay1 = v_ds.GetLayer(0)
+                    for sf1 in slay1:
+                        geom = sf1.GetGeometryRef()
+                        if geom.Intersects(self._boundsGeom):
+                            tile_url = sf1.GetField('URL').strip()
+                            self._data_urls.append([tile_url, '{}/{}'.format(surv['ID'], tile_url.split('/')[-1]), surv['DataType']])
+                    v_ds = slay1 = None
+                [utils.remove_glob(v) for v in v_shps]
             utils.remove_glob(surv_shp_zip)
         return(self._data_urls)
 
@@ -627,7 +626,7 @@ class dc:
                 src_ds = None
             
             if src_ds is not None:
-                srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
+                srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
                 for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose):
                     yield(xyz)
             src_ds = None
@@ -806,7 +805,7 @@ class nos:
                 xyzc['epsg'] = None
                 src_ds = gdal.Open(src_bag)
                 if src_ds is not None:
-                    srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
+                    srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
                     with open(nos_f, 'w') as cx:
                         for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg):
                             yield(xyz)

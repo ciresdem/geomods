@@ -293,7 +293,7 @@ def datalist_archive_yield_entry(entry, dirname = 'archive', region = None, inc 
     
     if region is None:
         a_name = entry[-1]
-    else: a_name = '{}_{}_{}'.format(entry[-1], regions.region_format(region, 'fn'), this_year())
+    else: a_name = '{}_{}_{}'.format(entry[-1], regions.region_format(region, 'fn'), utils.this_year())
     
     i_dir = os.path.dirname(entry[0])
     i_xyz = os.path.basename(entry[0]).split('.')[0]
