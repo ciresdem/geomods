@@ -604,7 +604,7 @@ class dc:
         elif src_ext == 'tif' or src_ext == 'img': dt = 'raster'
         else: dt = None
         if dt == 'lidar':
-            if fetch_file(entry[0], src_dc, callback = lambda: False, verbose = True) == 0:
+            if fetch_file(entry[0], src_dc, callback = lambda: False, verbose = False) == 0:
                 xyz_dat = utils.yield_cmd('las2txt -stdout -parse xyz -keep_xy {} -keep_class {} -i {}\
                 '.format(regions.region_format(self.region, 'te'), '2 29', src_dc), verbose = False)
                 xyzc = copy.deepcopy(xyzfun._xyz_config)
