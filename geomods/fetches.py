@@ -629,7 +629,8 @@ class dc:
             
             if src_ds is not None:
                 srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
-                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose): yield(xyz)
+                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = True):
+                    yield(xyz)
             src_ds = None
         utils.remove_glob(src_dc)
 

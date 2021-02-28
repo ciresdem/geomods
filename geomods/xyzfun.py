@@ -119,7 +119,7 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
         dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
     else: src_srs = dst_srs = dst_trans = None
     
-    #if verbose: utils.echo_msg('parsing xyz data from {}...'.format(xyz_c['name']))
+    if verbose: utils.echo_msg('parsing xyz data from {}...'.format(xyz_c['name']))
     for xyz in src_xyz:
         pass_d = True
         if ln >= skip:
