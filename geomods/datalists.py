@@ -334,8 +334,7 @@ def datalist_yield_xyz(dl, wt = None, pass_h = _dl_pass_h,
     for this_entry in datalist(dl, wt = wt, pass_h = pass_h, verbose = verbose):
         dly = datalist_yield_entry(this_entry, region, verbose = verbose, z_region = z_region, epsg = epsg)
         if archive: dly = datalist_archive_yield_entry(this_entry, dirname = 'archive', region = region, weight = wt, verbose = verbose, z_region = z_region, epsg = None)
-        for xyz in dly:
-            yield(xyz)
+        for xyz in dly: yield(xyz)
 
 def datalist_dump_xyz(dl, wt = None,  pass_h = _dl_pass_h,
                       region = None, archive = False, mask = False,

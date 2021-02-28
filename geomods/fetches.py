@@ -584,11 +584,13 @@ class dc:
                         geom = sf1.GetGeometryRef()
                         if geom.Intersects(self._boundsGeom):
                             tile_url = sf1.GetField('URL').strip()
-                            self._data_urls.append([tile_url, '{}/{}'.format(surv['ID'], tile_url.split('/')[-1]), surv['DataType']])
+                            #self._data_urls.append([tile_url, '{}/{}'.format(surv['ID'], tile_url.split('/')[-1]), surv['DataType']])
+                            yield([tile_url, '{}/{}'.format(surv['ID'], tile_url.split('/')[-1]), surv['DataType']])
                     v_ds = slay1 = None
                 [utils.remove_glob(v) for v in v_shps]
-            utils.remove_glob(surv_shp_zip)
-        return(self._data_urls)
+
+                utils.remove_glob(surv_shp_zip)
+        #return(self._data_urls)
 
     ## ==============================================
     ## Process results to xyz
@@ -603,13 +605,13 @@ class dc:
         else: dt = None
         if dt == 'lidar':
             if fetch_file(entry[0], src_dc, callback = lambda: False, verbose = False) == 0:
-                xyz_dat = utils.yield_cmd('las2txt -verbose -stdout -parse xyz -keep_xy {} -keep_class {} -i {}\
+                xyz_dat = utils.yield_cmd('las2txt -stdout -parse xyz -keep_xy {} -keep_class {} -i {}\
                 '.format(regions.region_format(self.region, 'te'), '2 29', src_dc), verbose = False)
                 xyzc = copy.deepcopy(xyzfun._xyz_config)
                 xyzc['name'] = src_dc
                 xyzc['epsg'] = 4326
                 xyzc['warp'] = epsg
-                for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, verbose = self._verbose):
+                for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, verbose = True):
                     yield(xyz)
         elif dt == 'raster':
             try:
@@ -627,8 +629,7 @@ class dc:
             
             if src_ds is not None:
                 srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
-                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose):
-                    yield(xyz)
+                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose): yield(xyz)
             src_ds = None
         utils.remove_glob(src_dc)
 
@@ -759,7 +760,7 @@ class nos:
     ## as well as for processing incoming fetched data.
     ## ==============================================    
     def _yield_xyz(self, entry, datatype = None, epsg = 4326):
-        if xyzc is None: xyzc = copy.deepcopy(xyzfun._xyz_config)
+        xyzc = copy.deepcopy(xyzfun._xyz_config)
         src_nos = os.path.basename(entry[1])
         dt = None
         if fetch_file(entry[0], src_nos, callback = lambda: False, verbose = False) == 0:
@@ -805,6 +806,10 @@ class nos:
                 xyzc['epsg'] = None
                 src_ds = gdal.Open(src_bag)
                 if src_ds is not None:
+                    print(self.region)
+                    print(gdalfun.gdal_get_epsg(src_ds))
+                    print(epsg)
+                    print(gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
                     srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
                     with open(nos_f, 'w') as cx:
                         for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg):
@@ -913,7 +918,7 @@ class charts():
     ## as well as for processing incoming fetched data.
     ## ==============================================
     def _yield_xyz(self, entry, epsg = None):
-        if xyzc is None: xyzc = xyzfun._xyz_config
+        xyzc = xyzfun._xyz_config
         xyzc['z-scale'] = -1
         xyzc['warp'] = epsg
         src_zip = os.path.basename(entry[1])
@@ -2808,7 +2813,7 @@ def fetches_cli(argv = sys.argv):
                     print(json.dumps(result, indent=4))
                 continue
             r = fl._parse_results(ir, **args_d)
-            utils.echo_msg('found {} data files.'.format(len(r)))
+            #utils.echo_msg('found {} data files.'.format(len(r)))
             if want_list:
                 for result in r:
                     print(result[0])
@@ -2825,11 +2830,11 @@ def fetches_cli(argv = sys.argv):
             try:
                 fr.start()
                 while True:
-                    time.sleep(2)
-                    sys.stderr.write('\x1b[2K\r')
-                    perc = float((len(r) - fr.fetch_q.qsize())) / len(r) * 100 if len(r) > 0 else 1
-                    sys.stderr.write('fetches: fetching remote data files [{}%]'.format(perc))
-                    sys.stderr.flush()
+                    #time.sleep(2)
+                    #sys.stderr.write('\x1b[2K\r')
+                    #perc = float((len(r) - fr.fetch_q.qsize())) / len(r) * 100 if len(r) > 0 else 1
+                    #sys.stderr.write('fetches: fetching remote data files [{}%]'.format(perc))
+                    #sys.stderr.flush()
                     if not fr.is_alive():
                         break
             except (KeyboardInterrupt, SystemExit):

@@ -102,6 +102,7 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
     xpos = xyz_c['xpos']
     ypos = xyz_c['ypos']
     zpos = xyz_c['zpos']
+    verbose = xyz_c['verbose']
     pass_d = True
 
     if xyz_c['epsg'] == xyz_c['warp'] or xyz_c['epsg'] is None: xyz_c['warp'] = None

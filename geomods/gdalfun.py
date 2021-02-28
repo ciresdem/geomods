@@ -153,6 +153,9 @@ def gdal_get_epsg(src_ds):
     ds_config = gdal_gather_infos(src_ds)
     ds_region = gdal_gt2region(ds_config)
     src_srs = osr.SpatialReference()
+    try:
+        src_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    except: pass
     src_srs.ImportFromWkt(ds_config['proj'])
     src_srs.AutoIdentifyEPSG()
     srs_auth = src_srs.GetAuthorityCode(None)
@@ -206,6 +209,10 @@ def gdal_region_warp(region, s_warp = 4326, t_warp = 4326):
     src_srs = osr.SpatialReference()
     src_srs.ImportFromEPSG(int(s_warp))
 
+    try:
+        src_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    except: pass
+    
     if t_warp is not None:
         dst_srs = osr.SpatialReference()
         dst_srs.ImportFromEPSG(int(t_warp))
@@ -298,6 +305,9 @@ def gdal_region(src_ds, warp = None):
     ds_config = gdal_gather_infos(src_ds)
     ds_region = gdal_gt2region(ds_config)
     src_srs = osr.SpatialReference()
+    try:
+        src_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    except: pass
     src_srs.ImportFromWkt(ds_config['proj'])
     src_srs.AutoIdentifyEPSG()
     srs_auth = src_srs.GetAuthorityCode(None)
@@ -1164,6 +1174,9 @@ def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = N
     band = src_ds.GetRasterBand(1)
     ds_config = gdal_gather_infos(src_ds)
     src_srs = osr.SpatialReference()
+    try:
+        src_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    except: pass
     src_srs.ImportFromWkt(ds_config['proj'])
     src_srs.AutoIdentifyEPSG()
     srs_auth = src_srs.GetAuthorityCode(None)
@@ -1172,9 +1185,7 @@ def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = N
         src_srs.ImportFromEPSG(4326)
         src_srs.AutoIdentifyEPSG()
         srs_auth = src_srs.GetAuthorityCode(None)
-    try:
-        src_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
-    except: pass
+
         
     if srs_auth == warp: warp = None
 
