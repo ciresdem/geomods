@@ -1106,8 +1106,9 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format = 'GTiff', mode = '
     
     xcount, ycount, dst_gt = gdal_region2gt(region, inc)
     if verbose:
-        utils.echo_msg('gridding data with mode: {} to {}'.format(mode, dst_gdal))
-        utils.echo_msg('grid size: {}/{}'.format(ycount, xcount))
+        #utils.echo_msg('gridding data with mode: {} to {}'.format(mode, dst_gdal))
+        #utils.echo_msg('grid size: {}/{}'.format(ycount, xcount))
+        progress = utils._progress('generating uninterpolated num grid {} @ {}/{}'.format(mode, ycount, xcount))
     if mode == 'm' or mode == 'w':
         sumArray = np.zeros((ycount, xcount))
     gdt = gdal.GDT_Float32
@@ -1140,6 +1141,7 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format = 'GTiff', mode = '
     elif mode == 'n': outarray = ptArray
     else: outarray = ptArray
     outarray[np.isnan(outarray)] = -9999
+    if verbose: progress.end(0, 'generated uninterpolated num grid {} @ {}/{}'.format(mode, ycount, xcount))
     return(gdal_write(outarray, dst_gdal, ds_config))
 
 def gdal_xyz_mask(src_xyz, dst_gdal, region, inc, dst_format='GTiff', epsg = 4326):

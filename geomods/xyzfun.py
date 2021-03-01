@@ -104,7 +104,8 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
     zpos = xyz_c['zpos']
     #verbose = xyz_c['verbose']
     pass_d = True
-
+    #if verbose: progress = utils._progress('parsing xyz data from {}'.format(xyz_c['name']))
+    
     if xyz_c['epsg'] == xyz_c['warp'] or xyz_c['epsg'] is None: xyz_c['warp'] = None
     if xyz_c['warp'] is not None:
         src_srs = osr.SpatialReference()
@@ -119,7 +120,7 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
         dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
     else: src_srs = dst_srs = dst_trans = None
     
-    if verbose: utils.echo_msg('parsing xyz data from {}...'.format(xyz_c['name']))
+    #if verbose: utils.echo_msg('parsing xyz data from {}...'.format(xyz_c['name']))
     for xyz in src_xyz:
         pass_d = True
         if ln >= skip:
@@ -134,9 +135,12 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
             else: pass_d = False
             if pass_d:
                 ln += 1
+                #if verbose: progress.update()
                 yield(this_xyz)
         else: skip -= 1
-    if verbose: utils.echo_msg('parsed {} data records from {}'.format(ln, xyz_c['name']))
+    if verbose:
+        utils.echo_msg('parsed {} data records from {}'.format(ln, xyz_c['name']))
+        #progress.end(0, 'parsed {} data records from {}'.format(ln, xyz_c['name']))
 
 def xyz2py(src_xyz):
     '''return src_xyz as a python list'''

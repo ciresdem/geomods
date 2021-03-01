@@ -77,23 +77,37 @@ _dl_dl_h = {
 
 _datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, _dl_dl_h[key]['fmts']) for key in _dl_dl_h])
 
+def entry_exists_p(src_str):
+    '''return True if src_str is a valid path and is of size greater than 0'''
+    
+    if os.path.exists(src_str):
+        if os.stat(src_str).st_size > 0:
+            return(True)
+    return(False)
+
 def path_exists_or_url(src_str):
     '''return True if src_str is a valid path, url or fetches module'''
     
-    if os.path.exists(src_str): return(True)
+    if os.path.exists(src_str):
+        if os.stat(src_str).st_size > 0:
+            #print(src_str, os.stat(src_str).st_size)
+            return(True)
     if src_str[:4] == 'http': return(True)
     if src_str.split(':')[0] in _dl_dl_h[400]['fmts']: return(True)
-    utils.echo_error_msg('invalid datafile/datalist: {}'.format(src_str))
+    #utils.echo_error_msg('invalid datafile/datalist: {}'.format(src_str))
+    utils.echo_warning_msg('invalid datafile/datalist: {}'.format(src_str))
     return(False)
 
 def intersect_p(r, e, p = None):
     '''return True if region r intersects with the wkt found in the 
     inf file for datalist entry e'''
-    
-    dl_i = inf_entry(e, epsg = p)
-    r_geom = gdalfun.gdal_region2geom(r)
-    e_geom = gdalfun.gdal_wkt2geom(dl_i['wkt']) if 'wkt' in dl_i.keys() else r_geom
-    return(regions.geoms_intersect_p(r_geom, e_geom))
+
+    if entry_exists_p(e[0]) or e[1] == 400:
+        dl_i = inf_entry(e, epsg = p)
+        r_geom = gdalfun.gdal_region2geom(r)
+        e_geom = gdalfun.gdal_wkt2geom(dl_i['wkt']) if 'wkt' in dl_i.keys() else r_geom
+        return(regions.geoms_intersect_p(r_geom, e_geom))
+    else: return(False)
 
 def datalist_default_hooks():
     return([lambda e: path_exists_or_url(e[0])])
@@ -137,7 +151,7 @@ def inf_entry(src_entry, overwrite = False, epsg = None):
     returns the region of the inf file.'''
     
     ei = {'name': src_entry, 'numpts': 0, 'minmax': [0,0,0,0,0,0], 'wkt': gdalfun.gdal_region2wkt([0,0,0,0,0,0])}
-    if os.path.exists(src_entry[0]) or src_entry[1] == 400:
+    if entry_exists_p(src_entry[0]) or src_entry[1] == 400:
         path_i = src_entry[0] + '.inf'
         if not os.path.exists(path_i) or overwrite:
             ei = _dl_dl_h[src_entry[1]]['inf'](src_entry, epsg)
@@ -270,20 +284,25 @@ def datalist(dl, wt = None, pass_h = _dl_pass_h,
     for entry in datalist(dl): do_something_with entry
 
     yields entry [path, fmt, wt, ...]'''
-
+    status = 0
+    progress = utils._progress('processing datalist {} @ W{}...'.format(dl, wt))
     these_entries = datalist2py(dl)
     if len(these_entries) == 0: these_entries = [entry2py(dl)]
-    for this_entry in these_entries:
+    for i, this_entry in enumerate(these_entries):
+        status = 0
+        progress.update_perc((i, len(these_entries)))
         if this_entry is not None:
             this_entry[2] = wt if wt is None else wt * this_entry[2] 
             this_entry = this_entry[:3] + [' '.join(this_entry[3:]).split(',')] + [os.path.basename(dl).split('.')[0]]
             if not False in [x(this_entry) for x in pass_h]:
-                if verbose and this_entry[1] == -1: utils.echo_msg('parsing datalist ({}) {}'.format(this_entry[2], this_entry[0]))
+                #if verbose and this_entry[1] == -1: utils.echo_msg('parsing datalist ({}) {}'.format(this_entry[2], this_entry[0]))
                 if this_entry[1] == -1:
                     if yield_dl_entry: yield(this_entry)
                     for entry in datalist(this_entry[0], wt = this_entry[2], pass_h = pass_h, yield_dl_entry = yield_dl_entry, verbose = verbose):
                         yield(entry)
                 else: yield(this_entry)
+        else: status = -1
+    progress.end(status, 'processed datalist {} @ W{}'.format(dl, wt))
 
 def datalist_archive_yield_entry(entry, dirname = 'archive', region = None, inc = 1, weight = None, verbose = None, z_region = None, epsg = None):
     '''archive a datalist entry.

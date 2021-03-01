@@ -22,6 +22,7 @@
 
 import os
 import sys
+import time
 import subprocess
 import glob
 import math
@@ -75,6 +76,11 @@ def remove_glob(glob_str):
             os.remove(g)
         except: pass
     return(0)
+
+def base_name(instr, extension):
+    '''Return the basename of a file-string'''
+
+    return(instr[:-len(extension)])
 
 def args2dict(args, dict_args = {}):
     '''convert list of arg strings to dict.
@@ -319,12 +325,15 @@ def run_cmd(cmd, data_fun = None, verbose = False):
     >> data_fun = lambda p: datalist_dump(wg, dst_port = p, ...)
 
     returns [command-output, command-return-code]'''
-    
-    if verbose: echo_msg('running cmd: {}...'.format(cmd.rstrip()))    
+
+    if verbose:
+        #echo_msg('running cmd: {}...'.format(cmd.rstrip()))
+        _prog = _progress('running cmd: {}...'.format(cmd.rstrip()[:20]))
     if data_fun is not None:
         pipe_stdin = subprocess.PIPE
     else: pipe_stdin = None
-    p = subprocess.Popen(cmd, shell = True, stdin = pipe_stdin, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)    
+    #p = subprocess.Popen(cmd, shell = True, stdin = pipe_stdin, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)
+    p = subprocess.Popen(cmd, shell = True, stdin = pipe_stdin, stdout = subprocess.PIPE, close_fds = True)    
 
     if data_fun is not None:
         if verbose: echo_msg('piping data to cmd subprocess...')
@@ -332,16 +341,22 @@ def run_cmd(cmd, data_fun = None, verbose = False):
         p.stdin.close()
     
     while p.poll() is None:
-        rl = p.stderr.readline()
+        #rl = p.stderr.readline()
         if verbose:
-            sys.stderr.write('\x1b[2K\r')
-            sys.stderr.write(rl.decode('utf-8'))
-    if verbose: sys.stderr.write(p.stderr.read().decode('utf-8'))
+            time.sleep(2)
+            #echo_msg(rl.decode('utf-8').strip('\n'))
+            #sys.stderr.write('\x1b[2K\r')
+            #sys.stderr.write(rl.decode('utf-8'))
+            _prog.update()
+    #if verbose:
+    #    sys.stderr.write(p.stderr.read().decode('utf-8'))
 
     out = p.stdout.read()
-    p.stderr.close()
+    #p.stderr.close()
     p.stdout.close()
-    if verbose: echo_msg('ran cmd: {} and returned {}.'.format(cmd.rstrip(), p.returncode))
+    if verbose:
+        #echo_msg('ran cmd: {} and returned {}.'.format(cmd.rstrip(), p.returncode))
+        _prog.end(p.returncode, 'ran cmd: {}... and returned {}.'.format(cmd.rstrip()[:20], p.returncode))
     return(out, p.returncode)
 
 def yield_cmd(cmd, data_fun = None, verbose = False):
@@ -397,7 +412,7 @@ def config_check(chk_vdatum = False, verbose = False):
     #if chk_vdatum: _waff_co['VDATUM'] = vdatum(verbose=verbose).vdatum_path
     _waff_co['GDAL'] = cmd_check('gdal_grid{}'.format(ae), 'gdal_grid --version')
     _waff_co['GMT'] = cmd_check('gmt{}'.format(ae), 'gmt --version')
-    _waff_co['MBGRID'] = cmd_check('mbgrid{}'.format(ae), 'mbgrid -version | grep Version')
+    _waff_co['MBGRID'] = cmd_check('mbgrid{}'.format(ae), 'mbgrid -version 2>&1 | grep Version')
     _waff_co['LASTOOLS'] = cmd_check('las2txt{}'.format(ae), 'las2txt -version 2>&1 | awk \'{print $5}\'')
     _waff_co['GEOMODS'] = str(_version)
     return(_waff_co)
@@ -405,6 +420,15 @@ def config_check(chk_vdatum = False, verbose = False):
 ## ==============================================
 ## stderr messaging
 ## ==============================================
+def echo_warning_msg2(msg, prefix = 'waffles'):
+    '''echo warning msg to stderr using `prefix`
+    >> echo_warning_msg2('message', 'test')
+    test: warning, message'''
+    
+    sys.stderr.flush()
+    sys.stderr.write('\x1b[2K\r')
+    sys.stderr.write('{}: \033[31m\033[1mwarining\033[m, {}\n'.format(prefix, msg))
+
 def echo_error_msg2(msg, prefix = 'waffles'):
     '''echo error msg to stderr using `prefix`
     >> echo_error_msg2('message', 'test')
@@ -412,7 +436,7 @@ def echo_error_msg2(msg, prefix = 'waffles'):
     
     sys.stderr.flush()
     sys.stderr.write('\x1b[2K\r')
-    sys.stderr.write('{}: error, {}\n'.format(prefix, msg))
+    sys.stderr.write('{}: \033[31m\033[1merror\033[m, {}\n'.format(prefix, msg))
 
 def echo_msg2(msg, prefix = 'waffles', nl = True):
     '''echo `msg` to stderr using `prefix`
@@ -437,6 +461,7 @@ echo_msg_inline = lambda m: echo_msg2(m, prefix = os.path.basename(sys.argv[0]),
 ## auto-generated prefix
 ## ==============================================
 echo_error_msg = lambda m: echo_error_msg2(m, prefix = os.path.basename(sys.argv[0]))
+echo_warning_msg = lambda m: echo_warning_msg2(m, prefix = os.path.basename(sys.argv[0]))
 
 class _progress:
     '''geomods minimal progress indicator'''
@@ -451,6 +476,8 @@ class _progress:
         self.spin_way = self.add_one
         self.spinner = ['*     ', '**    ', '***   ', ' ***  ', '  *** ', '   ***', '    **', '     *']
         
+        self.perc = lambda p: ((p[0]/p[1]) * 100.)
+        
         if self.opm is not None:
             self._clear_stderr()
             sys.stderr.write('\r {}  {:40}\n'.format(" " * (self.tw - 1), self.opm))
@@ -462,11 +489,20 @@ class _progress:
         sys.stderr.write('\x1b[2K\r')
         sys.stderr.flush()
 
+    def update_perc(self, p, msg = None):
+        if len(p) == 2:
+            self._clear_stderr()
+            sys.stderr.write('\r[\033[36m{:^5.2f}%\033[m] {:40}\r'.format(self.perc(p), msg if msg is not None else self.opm))
+        else: self.update()
+        
     def update(self):
+
         self.pc = (self.count % self.tw)
-        self.sc = (self.count % (self.tw+1))
+        self.sc = (self.count % (self.tw + 1))
+            
         self._clear_stderr()
         sys.stderr.write('\r[\033[36m{:6}\033[m] {:40}\r'.format(self.spinner[self.sc], self.opm))
+        
         if self.count == self.tw: self.spin_way = self.sub_one
         if self.count == 0: self.spin_way = self.add_one
         self.count = self.spin_way(self.count)

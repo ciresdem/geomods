@@ -1489,7 +1489,10 @@ def waffle(wg = _waffles_grid_info):
     args_d = {}
     args_d = utils.args2dict(wg['mod_args'], args_d)
     
-    if wg['verbose']: utils.echo_msg('{}\nrunning module {} with {} [{}]...'.format(wg, wg['mod'], wg['mod_args'], args_d))        
+    if wg['verbose']:
+        #utils.echo_msg('{}\nrunning module {} with {} [{}]...'.format(wg, wg['mod'], wg['mod_args'], args_d))
+        #utils.echo_msg(wg)
+        _prog = utils._progress('running WAFFLES module {} with {} [{}]...'.format(wg['mod'], wg['mod_args'], args_d))
     wg['region'] = waffles_grid_node_region(wg) if wg['node'] == 'grid' else wg['region']
 
     ## ==============================================
@@ -1687,6 +1690,7 @@ def waffle(wg = _waffles_grid_info):
     utils.remove_glob('waffles_dem_mjr.datalist')
     utils.remove_glob(wg['datalist'])
     #utils.echo_msg(dems)
+    _prog.end(status, 'ran WAFFLES module {} with {} [{}].'.format(wg['mod'], wg['mod_args'], args_d))
     return(dems)
 
 ## ==============================================
@@ -1741,6 +1745,7 @@ General Options:
   -m, --mask\t\tGenerate a data mask raster.
   -u, --uncert\t\tGenerate an associated uncertainty grid.
   -c, --continue\tDon't clobber existing files.
+  -q, --quiet\t\tLower verbosity to a quiet. (overrides --verbose)
 
   --help\t\tPrint the usage text
   --config\t\tSave the waffles config JSON and major datalist
@@ -1769,7 +1774,7 @@ def waffles_cli(argv = sys.argv):
     on each region supplied (multiple regions can be supplied
     by using a vector file as the -R option.)
     See `waffles_cli_usage` for full cli options.'''
-    
+
     wg = waffles_config_copy(_waffles_grid_info)
     wg_user = None
     dls = []
@@ -1781,6 +1786,7 @@ def waffles_cli(argv = sys.argv):
     want_threads = False
     status = 0
     i = 1
+
     while i < len(argv):
         arg = argv[i]
         if arg == '--region' or arg == '-R':
@@ -1867,6 +1873,7 @@ def waffles_cli(argv = sys.argv):
         #elif arg == '-s' or arg == 'spat-meta': wg['spat'] = True
         elif arg == '-r' or arg == '--grid-node': wg['node'] = 'grid'
         elif arg == '--verbose' or arg == '-V': wg['verbose'] = True
+        elif arg == '--quiet' or arg == '-q': wg['verbose'] = False
         elif arg == '--config': want_config = True
         elif arg == '--modules' or arg == '-m':
             try:
@@ -1912,7 +1919,7 @@ def waffles_cli(argv = sys.argv):
         if opts[0] in _waffles_modules.keys():
             mod_opts[opts[0]] = list(opts[1:])
         else: utils.echo_error_msg('invalid module name `{}`'.format(opts[0]))
-        
+
         for key in mod_opts.keys():
             mod_opts[key] = [None if x == '' else x for x in mod_opts[key]]
         mod = opts[0]
@@ -1946,7 +1953,7 @@ def waffles_cli(argv = sys.argv):
             utils.echo_error_msg('failed to parse region(s), {}'.format(e))
     else: these_regions = [None]
     if len(these_regions) == 0: utils.echo_error_msg('failed to parse region(s), {}'.format(region))
-    
+
     ## ==============================================
     ## run waffles for each input region.
     ## ==============================================
@@ -1958,6 +1965,7 @@ def waffles_cli(argv = sys.argv):
             twg['name'] = waffles_append_fn(wg['name'], twg['region'], twg['sample'] if twg['sample'] is not None else twg['inc'])
             
         twg = waffles_config(**twg)
+
         if want_config:
             this_wg = waffles_config_copy(twg)
             if this_wg is not None:

@@ -90,7 +90,7 @@ def fetch_queue(q, p, s):
                     
         q.task_done()
 
-def fetch_ftp_file(src_url, dst_fn, params = None, callback = None, datatype = None, verbose = False):
+def fetch_ftp_file(src_url, dst_fn, params = None, callback = None, datatype = None, overwrite = False, verbose = False):
     '''fetch an ftp file via urllib'''
     
     status = 0
@@ -119,7 +119,9 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
     req = None
     halt = callback
 
-    if verbose: utils.echo_msg('fetching remote file: {}...'.format(os.path.basename(src_url)))
+    if verbose:
+        #utils.echo_msg('fetching remote file: {}...'.format(os.path.basename(src_url)))
+        progress = utils._progress('fetching remote file: {}...'.format(os.path.basename(src_url)))
 
     if not os.path.exists(os.path.dirname(dst_fn)):
         try:
@@ -134,6 +136,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
                     curr_chunk = 0
                     with open(dst_fn, 'wb') as local_file:
                         for chunk in req.iter_content(chunk_size = 8196):
+                            if verbose: progress.update()
                             if chunk:
                                 if halt(): 
                                     status = -1
@@ -144,11 +147,13 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
         except Exception as e:
             utils.echo_error_msg(e)
             status = -1
-    else:
-        if os.path.exists(dst_fn): return(status)
-        status = -1
+    #else:
+    #    #if os.path.exists(dst_fn): return(status)
+    #    status = -1
     if not os.path.exists(dst_fn) or os.stat(dst_fn).st_size ==  0: status = -1
-    if verbose: utils.echo_msg('fetched remote file: {}.'.format(os.path.basename(dst_fn)))
+    if verbose:
+        #utils.echo_msg('fetched remote file: {}.'.format(os.path.basename(dst_fn)))
+        progress.end(status, 'fetched remote file: {}.'.format(os.path.basename(dst_fn)))
     return(status)
 
 def fetch_req(src_url, params = None, tries = 5, timeout = 2, read_timeout = 10):
@@ -201,7 +206,7 @@ class fetch_results(threading.Thread):
             t.start()
 
         fq = [[row[0], os.path.join(self._outdir, row[1]), self.region, self.stop_threads, row[2]] for row in self.results]
-        [self.fetch_q.put([row[0], os.path.join(self._outdir, row[1]), self.region, self.stop_threads, row[2]]) for row in self.results]
+        [self.fetch_q.put([row[0], os.path.join(self._outdir, row[1]), self.region, self.stop_threads, row[2], False, True]) for row in self.results]
         self.fetch_q.join()
         
 ## =============================================================================
@@ -387,13 +392,15 @@ class FRED:
 
         _boundsGeom = gdalfun.gdal_region2geom(region)
         _results = []
-
-        if self._verbose: utils.echo_msg('filtering {}...'.format(self.FREDloc))
+        if self._verbose: _progress = utils._progress('filtering {}...'.format(self.FREDloc))
+        
+        #if self._verbose: utils.echo_msg('filtering {}...'.format(self.FREDloc))
         self._open_ds()
 
         f = 0
         
-        for layer in layers:
+        for i, layer in enumerate(layers):
+            if self._verbose: _progress.update_perc((i, len(layers)))
             this_layer = self.layer
             this_layer.SetAttributeFilter("DataSource = '{}'".format(layer))
             [this_layer.SetAttributeFilter('{}'.format(filt)) for filt in where]
@@ -408,7 +415,9 @@ class FRED:
                         
             this_layer = None
         self._close_ds()
-        if self._verbose: utils.echo_msg('filtered \033[1m{}\033[m data files from FRED'.format(len(_results)))
+        if self._verbose:
+            #utils.echo_msg('filtered \033[1m{}\033[m data files from FRED'.format(len(_results)))
+            _progress.end(0, 'filtered \033[1m{}\033[m data files from FRED'.format(len(_results)))
         return(_results)
 
 ## heaps of thanks to https://github.com/fitnr/stateplane
@@ -570,7 +579,7 @@ class dc:
     def _parse_results(self, r):
         for surv in r:
             surv_shp_zip = os.path.basename(surv['IndexLink'])
-            if fetch_file(surv['IndexLink'], surv_shp_zip, verbose = self._verbose) == 0:
+            if fetch_file(surv['IndexLink'], surv_shp_zip, verbose = False) == 0:
                 v_shps = utils.p_unzip(surv_shp_zip, ['.shp', '.shx', '.dbf', '.prj'])
                 v_shp = None
                 for v in v_shps:
@@ -604,14 +613,14 @@ class dc:
         elif src_ext == 'tif' or src_ext == 'img': dt = 'raster'
         else: dt = None
         if dt == 'lidar':
-            if fetch_file(entry[0], src_dc, callback = lambda: False, verbose = False) == 0:
+            if fetch_file(entry[0], src_dc, callback = lambda: False, verbose = self._verbose) == 0:
                 xyz_dat = utils.yield_cmd('las2txt -stdout -parse xyz -keep_xy {} -keep_class {} -i {}\
                 '.format(regions.region_format(self.region, 'te'), '2 29', src_dc), verbose = False)
                 xyzc = copy.deepcopy(xyzfun._xyz_config)
                 xyzc['name'] = src_dc
                 xyzc['epsg'] = 4326
                 xyzc['warp'] = epsg
-                for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, verbose = True):
+                for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, verbose = self._verbose):
                     yield(xyz)
         elif dt == 'raster':
             try:
@@ -764,7 +773,7 @@ class nos:
         xyzc = copy.deepcopy(xyzfun._xyz_config)
         src_nos = os.path.basename(entry[1])
         dt = None
-        if fetch_file(entry[0], src_nos, callback = lambda: False, verbose = False) == 0:
+        if fetch_file(entry[0], src_nos, callback = lambda: False, verbose = self._verbose) == 0:
             src_ext = src_nos.split('.')
             if len(src_ext) > 2:
                 if src_ext[-2] == 'bag': dt = 'grid_bag'
@@ -868,15 +877,16 @@ class charts():
         
         self.FRED._open_ds()
         for dt in self._dt_xml.keys():
-            utils.echo_msg('updating {}'.format(dt))
-
+            #utils.echo_msg('updating {}'.format(dt))
             this_xml = iso_xml(self._dt_xml[dt], timeout = 1000, read_timeout = 2000)
             charts = this_xml.xml_doc.findall('.//{*}has', namespaces = this_xml.namespaces)
+            _prog = utils._progress('scanning {} surveys in {}.'.format(len(charts), dt))
             for i, chart in enumerate(charts):
                 this_xml.xml_doc = chart
                 title = this_xml.title()
-                perc = int((float(i)/len(charts)) * 100)
-                if self._verbose: utils.echo_msg_inline('scanning {} surveys in {} [{:3}%] - {}.'.format(len(charts), dt, perc, title))
+                #perc = int((float(i)/len(charts)) * 100)
+                #if self._verbose: utils.echo_msg_inline('scanning {} surveys in {} [{:3}%] - {}.'.format(len(charts), dt, perc, title))
+                if self._verbose: _prog.update_perc((i, len(charts)), msg = '{} - {}'.format(_prog.opm, title))
                 self.FRED.layer.SetAttributeFilter("ID = 'CHARTS-{}'".format(title))
                 if len(self.FRED.layer) == 0:
                     h_epsg, v_epsg = this_xml.reference_system()
@@ -897,7 +907,9 @@ class charts():
                                                'LastUpdate': utils.this_date(),
                                                'Info': this_xml.abstract()}, geom.ExportToJson()])
                     
-            if self._verbose: utils.echo_msg('scanning {} surveys in {} [ OK ].\n'.format(len(charts), dt))                                    
+            if self._verbose:
+                #utils.echo_msg('scanning {} surveys in {} [ OK ].\n'.format(len(charts), dt))
+                _prog.end(0, 'scanned {} surveys in {}'.format(len(charts), dt))
         self.FRED._add_surveys(self._surveys)
         self.FRED._close_ds()
         return(self._surveys)
@@ -924,7 +936,7 @@ class charts():
         xyzc['warp'] = epsg
         src_zip = os.path.basename(entry[1])
         
-        if fetch_file(entry[0], src_zip, callback = lambda: False) == 0:
+        if fetch_file(entry[0], src_zip, callback = lambda: False, verbose = self._verbose) == 0:
             if entry[-1].lower() == 'enc':
                 src_ch, src_zips = utils.procs_unzip(src_zip, ['.000'])
                 dst_xyz = src_ch.split('.')[0] + '.xyz'
@@ -1089,7 +1101,7 @@ class ncei_thredds:
         try:
             src_ds = gdal.Open(entry[0])
         except Exception as e:
-            fetch_file(entry[0], src_dc, callback = lambda: False, verbose = False)
+            fetch_file(entry[0], src_dc, callback = lambda: False, verbose = self._verbose)
             try:
                 src_ds = gdal.Open(src_dc)
             except Exception as e:
@@ -1101,7 +1113,7 @@ class ncei_thredds:
 
         if src_ds is not None:
             srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_getEPSG(src_ds)))
-            for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = True):
+            for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose):
                 yield(xyz)
         src_ds = None
         utils.remove_glob(src_dc)
@@ -1227,7 +1239,7 @@ class mb:
         xyzc = copy.deepcopy(xyzfun._xyz_config)
         src_mb = os.path.basename(entry[1])
 
-        if fetch_file(entry[0], src_mb, callback = self._stop, verbose = False) == 0:
+        if fetch_file(entry[0], src_mb, callback = self._stop, verbose = self._verbose) == 0:
             src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
             out, status = utils.run_cmd('mblist -MX20 -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
             xyzc['name'] = src_mb
@@ -1348,7 +1360,7 @@ class usace:
         src_zip = os.path.basename(entry[1])
         xyzc['warp'] = epsg
         
-        if fetch_file(entry[0], src_zip, callback = self._stop, verbose = False) == 0:
+        if fetch_file(entry[0], src_zip, callback = self._stop, verbose = self._verbose) == 0:
 
             ## attempt to discover the state plane zone from xml
             src_xmls = utils.p_unzip(src_zip, ['.xml', '.XML'])
@@ -1722,7 +1734,7 @@ class gmrt:
     ## ==============================================    
     def _yield_xyz(self, entry, epsg = 4326):
         src_gmrt = 'gmrt_tmp.tif'
-        if fetch_file(entry[0], src_gmrt, callback = lambda: False, verbose = False) == 0:
+        if fetch_file(entry[0], src_gmrt, callback = lambda: False, verbose = self._verbose) == 0:
             try:
                 src_ds = gdal.Open(src_gmrt)
             except: src_ds = None
@@ -2229,7 +2241,7 @@ class hrdem():
         try:
             src_ds = gdal.Open(entry[0])
         except Exception as e:
-            fetch_file(entry[0], src_dc, callback = lambda: False, verbose = True)
+            fetch_file(entry[0], src_dc, callback = lambda: False, verbose = self._verbose)
             try:
                 src_ds = gdal.Open(src_dc)
             except Exception as e:
@@ -2241,7 +2253,7 @@ class hrdem():
 
         if src_ds is not None:
             srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_getEPSG(src_ds)))
-            for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = True):
+            for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose):
                 yield(xyz)
         src_ds = None
         utils.remove_glob(src_dc)
@@ -2643,7 +2655,7 @@ def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, warp = None, 
     fetch_mod = entry[0].split(':')[0]
     fetch_args = entry[0].split(':')[1:]
 
-    fl = _fetch_modules[fetch_mod](regions.region_buffer(region, 5, pct = True), [], lambda: False, False)
+    fl = _fetch_modules[fetch_mod](regions.region_buffer(region, 5, pct = True), [], lambda: False, verbose)
     args_d = utils.args2dict(fetch_args, {})
 
     r = fl._parse_results(fl._filter_results(), **args_d)
@@ -2799,7 +2811,8 @@ def fetches_cli(argv = sys.argv):
         for fetch_mod in mod_opts.keys():
             status = 0
             args = tuple(mod_opts[fetch_mod])
-            utils.echo_msg('running fetch module {} on region {} ({}/{})...\
+            #utils.echo_msg('running fetch module {} on region {} ({}/{})...\
+            _prog = utils._progress('running fetch module {} on region {} ({}/{})...\
             '.format(fetch_mod, regions.region_format(this_region, 'str'), rn+1, len(these_regions)))
             fl = _fetch_modules[fetch_mod](regions.region_buffer(this_region, 5, pct = True), w, lambda: stop_threads, verbose)
             args_d = utils.args2dict(args)
@@ -2831,7 +2844,8 @@ def fetches_cli(argv = sys.argv):
             try:
                 fr.start()
                 while True:
-                    #time.sleep(2)
+                    time.sleep(2)
+                    _prog.update()
                     #sys.stderr.write('\x1b[2K\r')
                     #perc = float((len(r) - fr.fetch_q.qsize())) / len(r) * 100 if len(r) > 0 else 1
                     #sys.stderr.write('fetches: fetching remote data files [{}%]'.format(perc))
@@ -2841,12 +2855,14 @@ def fetches_cli(argv = sys.argv):
             except (KeyboardInterrupt, SystemExit):
                 utils.echo_error_msg('user breakage...please wait for while fetches exits.')
                 stop_threads = True
+                status = -1
                 while not fr.fetch_q.empty():
                     try:
                         fr.fetch_q.get(False)
                     except Empty: continue
                     fr.fetch_q.task_done()
             fr.join()
-            utils.echo_msg('ran fetch module {} on region {} ({}/{})...\
+            #utils.echo_msg('ran fetch module {} on region {} ({}/{})...\
+            _prog.end(status, 'ran fetch module {} on region {} ({}/{})...\
             '.format(fetch_mod, regions.region_format(this_region, 'str'), rn+1, len(these_regions)))            
 ### End

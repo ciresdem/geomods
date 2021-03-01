@@ -36,8 +36,8 @@ def mb_inf(src_xyz, src_fmt = 168):
     '''generate an info (.inf) file from a src_xyz file using MBSystem.
 
     return mb_inf_parse(inf_file)'''
-    
-    utils.run_cmd('mbdatalist -O -F{} -I{}'.format(src_fmt, src_xyz.name), verbose = True)
+
+    utils.run_cmd('mbdatalist -O -F{} -I{}'.format(src_fmt, src_xyz.name), verbose = False)
     return(mb_inf_parse('{}.inf'.format(src_xyz.name)))
 
 def mb_inf_parse(src_inf):
