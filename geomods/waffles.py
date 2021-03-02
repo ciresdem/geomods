@@ -199,137 +199,143 @@ def waffles_config(datalist = None, data = [], region = None, inc = None, name =
 _waffles_modules = {
     'surface': {
         'run': lambda args: waffles_gmt_surface(**args),
-        'description': '''SPLINE DEM via GMT surface
-        Generate a DEM using GMT's surface command
+        'description': '''SPLINE DEM via GMT surface\n
+Generate a DEM using GMT's surface command
         
-        < surface:tension=.35:relaxation=1.2:lower_limit=d:upper_limit=d >
-         :tension=[0-1] - Spline tension.''',
+< surface:tension=.35:relaxation=1.2:lower_limit=d:upper_limit=d >
+ :tension=[0-1] - Spline tension.''',
         'dem-p': True,
         'datalist-p': True,
     },
     'triangulate': {
         'run': lambda args: waffles_gmt_triangulate(**args),
-        'description': '''TRIANGULATION DEM via GMT triangulate
-        Generate a DEM using GMT's triangulate command
+        'description': '''TRIANGULATION DEM via GMT triangulate\n
+Generate a DEM using GMT's triangulate command.
         
-        < triangulate >''',
+< triangulate >''',
         'dem-p': True,
         'datalist-p': True,
     },
     'cudem': {
         'run': lambda args: waffles_cudem(**args),
-        'description': '''Generate a CUDEM Bathy/Topo DEM <beta>''',
+        'description': '''Generate a CUDEM Bathy/Topo DEM <beta>\n
+Generate a DEM using CUDEM methods.
+Generates a pre-surface bathymetric grid at a lower resolution, clipped to a coastline, for use in final DEM generation.
+
+< cudem:coastline=None:spat=False:upper_limit=-0.1 >''',
         'dem-p': True,
         'datalist-p': True,
     },
     'nearest': {
         'run': lambda args: waffles_nearneighbor(**args),
-        'description': '''NEAREST NEIGHBOR DEM via GMT or gdal_grid
-        Generate a DEM using GDAL's gdal_grid command or GMT's nearest command
+        'description': '''NEAREST NEIGHBOR DEM via GMT or gdal_grid\n
+Generate a DEM using GDAL's gdal_grid command or GMT's nearest command
         
-        < nearest:radius=6s:use_gdal=False >
-         :radius=[value] - Nearest Neighbor search radius
-         :use_gdal=[True/False] - use gdal grid nearest algorithm''',
+< nearest:radius=6s:use_gdal=False >
+ :radius=[value] - Nearest Neighbor search radius
+ :use_gdal=[True/False] - use gdal grid nearest algorithm''',
         'dem-p': True,
         'datalist-p': True,
     },
     'num': {
         'run': lambda args: waffles_num(**args),
-        'description': '''Uninterpolated DEM populated by <mode>.
-        Generate an uninterpolated DEM using <mode> option.
-        Using mode of 'A<mode>' uses GMT's xyz2grd command, see gmt xyz2grd --help for more info.
+        'description': '''Uninterpolated DEM populated by <mode>.\n
+Generate an uninterpolated DEM using <mode> option.
+Using mode of 'A<mode>' uses GMT's xyz2grd command, see gmt xyz2grd --help for more info.
 
-        < num:mode=n >
-         :mode=[key] - specify mode of grid population: k (mask), m (mean) or n (num)''',
+< num:mode=n >
+ :mode=[key] - specify mode of grid population: k (mask), m (mean), n (num), w (wet)''',
         'dem-p': False,
         'datalist-p': True,
     },
     'vdatum': {
         'run': lambda args: waffles_vdatum(**args),
-        'description': '''VDATUM transformation grid
-        Generate a VDatum based vertical datum transformation grid.
+        'description': '''VDATUM transformation grid\n
+Generate a VDatum based vertical datum transformation grid.
+VDatum coverage areas only!
         
-        < vdatum:ivert=navd88:overt=mhw:region=3:jar=None >
-         :ivert=[vdatum] - Input VDatum vertical datum.
-         :overt=[vdatum] - Output VDatum vertical datum.
-         :region=[0-10] - VDatum region (3 is CONUS).
-         :jar=[/path/to/vdatum.jar] - VDatum jar path - (auto-locates by default)''',
+< vdatum:ivert=navd88:overt=mhw:region=3:jar=None >
+ :ivert=[vdatum] - Input VDatum vertical datum.
+ :overt=[vdatum] - Output VDatum vertical datum.
+ :region=[0-10] - VDatum region (3 is CONUS).
+ :jar=[/path/to/vdatum.jar] - VDatum jar path - (auto-locates by default)''',
         'dem-p':False,
         'datalist-p': False,
     },
     'mbgrid': {
         'run': lambda args: waffles_mbgrid(**args),
-        'description': '''Weighted SPLINE DEM via mbgrid
-        Generate a DEM using MBSystem's mbgrid command.
+        'description': '''Weighted SPLINE DEM via mbgrid\n
+Generate a DEM using MBSystem's mbgrid command.
         
-        < mbgrid:tension=35:dist=10/3:use_datalists=False >
-         :tension=[0-100] - Spline tension.
-         :dist=[value] - MBgrid -C switch (distance to fill nodata with spline)
-         :use_datalists=[True/False] - use waffles built-in datalists''',
+< mbgrid:tension=35:dist=10/3:use_datalists=False >
+ :tension=[0-100] - Spline tension.
+ :dist=[value] - MBgrid -C switch (distance to fill nodata with spline)
+ :use_datalists=[True/False] - use waffles built-in datalists''',
         'dem-p': True,
         'datalist-p': True,
     },
     'invdst': {
         'run': lambda args: waffles_invdst(**args),
-        'description': '''INVERSE DISTANCE DEM via gdal_grid
-        Generate a DEM using GDAL's gdal_grid command.
+        'description': '''INVERSE DISTANCE DEM via gdal_grid\n
+Generate a DEM using GDAL's gdal_grid command.
 
-        < invdst:power=2.0:smoothing=0.0:radus1=0.1:radius2:0.1 >''',
+< invdst:power=2.0:smoothing=0.0:radus1=0.1:radius2:0.1 >''',
         'dem-p': True,
         'datalist-p': True,
     },
     'average': {
         'run': lambda args: waffles_moving_average(**args),
-        'description': '''Moving AVERAGE DEM via gdal_grid
-        Generate a DEM using GDAL's gdal_grid command.
+        'description': '''Moving AVERAGE DEM via gdal_grid\n
+Generate a DEM using GDAL's gdal_grid command.
         
-        < average:radius1=0.01:radius2=0.01 >''',
+< average:radius1=0.01:radius2=0.01 >''',
         'dem-p': True,
         'datalist-p': True,
     },
     'linear': {
         'run': lambda args: waffles_linear(**args),
-        'description': '''LINEAR DEM via gdal_grid
-        Generate a DEM using GDAL's gdal_grid command.
+        'description': '''LINEAR DEM via gdal_grid\n
+Generate a DEM using GDAL's gdal_grid command.
 
-        < linear:radius=0.01 >''',
+< linear:radius=0.01 >''',
         'dem-p': True,
         'datalist-p': True,
     },
     'spat-meta': {
         'run': lambda args: waffles_spatial_metadata(**args),
-        'description': '''generate SPATIAL-METADATA
-        Generate spatial metadata based on the data in the datalist.
-        Append metadata to the end of each datalist entry to apply in the output vector
-        e.g. /path/to/data/datalist.datalist -1 10 'Name','Agency','Date','Type','Resolution','HDatum','VDatum','URL'
+        'description': '''generate SPATIAL-METADATA\n
+Generate spatial metadata based on the data in the datalist.
+Append metadata to the end of each datalist entry to apply in the output vector
+e.g. /path/to/data/datalist.datalist -1 10 'Name','Agency','Date','Type','Resolution','HDatum','VDatum','URL'
         
-        < spat-meta >''',
+< spat-meta >''',
         'dem-p': False,
         'datalist-p': True,
     },
     'coastline': {
         'run': lambda args: waffles_coastline(**args),
-        'description': '''generate a coastline (landmask)
-        Generate a land/sea mask (coastline) based on various datasets.
+        'description': '''generate a coastline (landmask)\n
+Generate a land/sea mask (coastline) based on various datasets.
+Include a datalist to use in forming initial coastline.
 
-        < coastline:want_nhd=True:want_gmrt=False >
-         :want_nhd=[True/False] - Use the USGS NHD database (US Only)
-         :want_gmrt=[True/False] - USE the GMRT to fill unknown coastal areas.''',
+< coastline:want_nhd=True:want_gmrt=False >
+ :want_nhd=[True/False] - Use the USGS NHD database (US Only)
+ :want_gmrt=[True/False] - USE the GMRT to fill unknown coastal areas.''',
         'dem-p': False,
         'datalist-p': False,
     },
     'uncertainty': {
         'run': lambda args: waffles_interpolation_uncertainty(**args),
-        'description': '''generate DEM UNCERTAINTY
-        Calculate the interpolation uncertainty in relation to distance to nearest measurement
-        A DEM, Mask and Proximity gird will be generated if not supplied.
+        'description': '''generate DEM UNCERTAINTY\n
+Calculate the interpolation uncertainty in relation to distance to nearest measurement
+A DEM, Mask and Proximity gird will be generated if not supplied.
 
-        < uncertainty:mod=surface:dem=None:msk=None:prox=None:slp=None:sims=10 >
-         :mod=[value] - The waffles module to use for interpolation.
-         :dem=[path] - Interpolated DEM
-         :msk=[path] - Data mask in same size as DEM (Mask is 1 for data, 0 for nodata)
-         :prox=[path] - The proximity grid of the data mask
-         :sims=[value] - The maximum number of split-sample simulations to perform.''',
+< uncertainty:mod=surface:dem=None:msk=None:prox=None:slp=None:sims=10 >
+ :mod=[value] - The waffles module to use for interpolation.
+ :dem=[path] - Interpolated DEM
+ :msk=[path] - Data mask in same size as DEM (Mask is 1 for data, 0 for nodata)
+ :prox=[path] - The proximity grid of the data mask
+ :sims=[value] - The maximum number of split-sample simulations to perform.''',
         'dem-p': False,
         'datalist-p': False,
     },
@@ -338,7 +344,7 @@ _waffles_modules = {
 ## ==============================================
 ## module descriptors (used in cli help)
 ## ==============================================
-_waffles_module_long_desc = lambda x: 'waffles modules:\n% waffles ... -M <mod>:key=val:key=val...\n\n  ' + '\n  '.join(['{:14}{}\n'.format(key, x[key]['description']) for key in x]) + '\n'
+_waffles_module_long_desc = lambda x: 'waffles modules:\n% waffles ... -M <mod>:key=val:key=val...\n\n  ' + '\n  '.join(['\033[1m{:14}\033[0m{}\n'.format(key, x[key]['description']) for key in x]) + '\n'
 _waffles_module_short_desc = lambda x: ', '.join(['{}'.format(key) for key in x])
 
 ## ==============================================
@@ -620,6 +626,8 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None, spat = False, upper
     ## ==============================================
     ## generate/process coastline
     ## ==============================================
+    _prog = utils._progress('generating coastline XYZ..')
+    
     if coastline is None:
         c_wg = waffles_config_copy(wg)
         c_wg['datalist'] = None
@@ -641,6 +649,8 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None, spat = False, upper
     
     coast_region = datalists.inf_entry([coast_xyz, 168, 1])['minmax']
     wg['data'].append('{} 168 .1'.format(coast_xyz)),
+
+    _prog.end(0, 'generated coastline XYZ.')
     
     ## ==============================================
     ## generate the bathy-surface
@@ -679,8 +689,10 @@ def waffles_cudem(wg = _waffles_grid_info, coastline = None, spat = False, upper
     wg['datalist'] = None
     wg['w_region'] = [.4, None]
     wg = waffles_config(**wg)
-
-    return(waffles_gmt_surface(wg))
+    _prog = utils._progress('generating final DEM...')
+    surf_dem = waffles_gmt_surface(wg)
+    _prog.end(surf_dem[1], 'generated final DEM')
+    return(surf_dem)
     
 ## ==============================================
 ## Waffles MBGrid module

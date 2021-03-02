@@ -490,7 +490,7 @@ _fetch_modules = {'dc': lambda r, f, c, v: dc(r, f, c, v),
                   'chs': lambda r, f, c, v: chs(r, f, c, v),
                   'hrdem': lambda r, f, c, v: hrdem(r, f, c, v),
                   }
-_fetch_long_desc = lambda x: 'fetches modules:\n% fetches ... <mod>:key=val:key=val...\n\n  ' + '\n  '.join(['{:14}{}\n'.format(key, x[key](None, [], None, False)._desc) for key in x]) + '\n'
+_fetch_long_desc = lambda x: 'fetches modules:\n% fetches ... <mod>:key=val:key=val...\n\n  ' + '\n  '.join(['\033[1m{:14}\033[0m{}\n'.format(key, x[key](None, [], None, False)._desc) for key in x]) + '\n'
 _fetch_short_desc = lambda x: ', '.join(['{}'.format(key) for key in x])
 
 ## =============================================================================
@@ -1094,9 +1094,9 @@ class ncei_thredds:
 
         for surv in r:
             fldata = surv['DataLink'].split(',')
-            wcs_url = "{}?request=GetCoverage&version=1.0.0&service=WCS&coverage={}&bbox={}&format=NetCDF3"\
-                .format(surv['IndexLink'], surv['DataType'], regions.region_format(self.region, 'bbox'))
-            #[self._data_urls.append([i, i.split('/')[-1], surv['DataType']]) if i != '' else None for i in fldata]
+            #wcs_url = "{}?request=GetCoverage&version=1.0.0&service=WCS&coverage={}&bbox={}&format=NetCDF3"\
+            #    .format(surv['IndexLink'], surv['DataType'], regions.region_format(self.region, 'bbox'))
+            [self._data_urls.append([i, i.split('/')[-1], surv['DataType']]) if i != '' else None for i in fldata]
             self._data_urls.append([surv['IndexLink'], surv['DataLink'].split('/')[-1], surv['DataType']])
         return(self._data_urls)
 
