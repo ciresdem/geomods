@@ -1263,17 +1263,17 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
     ## ==============================================
     ## wet/dry datalist mask or burn region
     ## ==============================================
-    if wg['datalist'] is not None:    
-        dly = waffles_yield_datalist(wg)
-        if wg['weights']: dly = xyzfun.xyz_block(dly, waffles_dist_region(wg), wg['inc'], weights = True)
-        gdalfun.gdal_xyz2gdal(dly, w_mask, waffles_dist_region(wg), wg['inc'], dst_format = wg['fmt'], mode = 'w', verbose = wg['verbose'])
+    if wg['datalist'] is not None:
+        cwg = waffles_config_copy(wg)
+        cwg['z-region'] = [-1, 1]
+        dly = waffles_yield_datalist(cwg)
+        if wg['weights']: dly = xyzfun.xyz_block(dly, waffles_dist_region(cwg), cwg['inc'], weights = True)
+        gdalfun.gdal_xyz2gdal(dly, w_mask, waffles_dist_region(cwg), cwg['inc'], dst_format = cwg['fmt'], mode = 'w', verbose = cwg['verbose'])
     else:
         gdalfun.gdal_region2ogr(waffles_dist_region(wg), 'region_buff.shp')
-        # utils.run_cmd('gdal_rasterize -tr {} {} -te {} -burn -9999 -a_nodata -9999 -ot Int32 -co COMPRESS=DEFLATE region_buff.shp {}'\
-        #         .format(wg['inc'], wg['inc'], regions.region_format(waffles_dist_region(wg), 'te'), w_mask), verbose = False)
         xsize, ysize, gt = gdalfun.gdal_region2gt(waffles_dist_region(wg), wg['inc'])
-        utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn -9999 -a_nodata -9999 -ot Int32 -co COMPRESS=DEFLATE region_buff.shp {}'\
-                      .format(xsize, ysize, regions.region_format(waffles_dist_region(wg), 'te'), w_mask), verbose = False)
+        utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn -9999 -a_nodata -9999 -ot Int32 -co COMPRESS=DEFLATE -a_srs EPSG:{} region_buff.shp {}'\
+                      .format(xsize, ysize, regions.region_format(waffles_dist_region(wg), 'te'), wg['epsg'], w_mask), verbose = False)
 
     ## ==============================================
     ## load the wet/dry mask array
@@ -1299,68 +1299,56 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
         u_mask = '{}_u.tif'.format(wg['name'])
         gdalfun.gdal_region2ogr(waffles_dist_region(wg), 'region_buff.shp')
         xsize, ysize, gt = gdalfun.gdal_region2gt(waffles_proc_region(wg), wg['inc'])
-        utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn -9999 -a_nodata -9999 -ot Int32 -co COMPRESS=DEFLATE region_buff.shp {}'\
-                      .format(xsize, ysize, regions.region_format(waffles_dist_region(wg), 'te'), u_mask), verbose = False)
-        # utils.run_cmd('gdal_rasterize -tr {} {} -te {} -burn -9999 -a_nodata -9999 -ot Int32 -co COMPRESS=DEFLATE region_buff.shp {}'\
-        #         .format(wg['inc'], wg['inc'], regions.region_format(waffles_dist_region(wg), 'te'), u_mask), verbose = False)
+        utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn -9999 -a_nodata -9999 -ot Int32 -co COMPRESS=DEFLATE -a_srs EPSG:{} region_buff.shp {}'\
+                      .format(xsize, ysize, regions.region_format(waffles_dist_region(wg), 'te'), wg['epsg'], u_mask), verbose = False)
         utils.remove_glob('region_buff.*')
 
-        fl = fetches._fetch_modules['tnm']['run'](waffles_proc_region(wg), [], None)
-        #r = fl.run(ds = 4, formats = 'FileGDB 10.1', extent = 'HU-4 Subregion, Hu-2 Region')
-        #r = fl.run(ds = 4, formats = 'FileGDB 10.1,FileGDB', extent = 'HU-2 Region,HU-4 Subregion,HU-8 Subbasin')
-        r = fl.run(ds = 4, formats = 'FileGDB 10.1', extent = 'HU-8 Subbasin,HU-4 Subregion')
-
+        fl = fetches._fetch_modules['tnm'](waffles_proc_region(wg), ["ID = 'National Hydrography Dataset Plus High Resolution (NHDPlus HR)' OR ID = 'National Hydrography Dataset (NHD) Best Resolution'"], None, True)
+        r = fl._parse_results(fl._filter_results(), e = 'HU-2 Region,HU-4 Subregion,HU-8 Subbasin')
         if len(r) > 0:
             r_shp = []
             for result in r:
                 if fetches.fetch_file(result[0], os.path.join(result[2], result[1]), verbose = True) == 0:
                     gdb_zip = os.path.join(result[2], result[1])
                     gdb_files = utils.unzip(gdb_zip)
-                    gdb, gdb_files = utils.procs_unzip(gdb_zip, ['gdb'])
                     gdb_bn = os.path.basename('.'.join(gdb_zip.split('.')[:-1]))
                     gdb = gdb_bn + '.gdb'
 
-                    utils.run_cmd('ogr2ogr {}_NHDArea.shp {} NHDArea -clipdst {} -overwrite'.format(gdb_bn, gdb, regions.region_format(wg['region'], 'ul_lr')), verbose = False)
-                    r_shp.append('{}_NHDArea.shp'.format(gdb_bn))
-                    utils.run_cmd('ogr2ogr {}_NHDPlusBurnWaterBody.shp {} NHDPlusBurnWaterBody -clipdst {} -overwrite'.format(gdb_bn, gdb, regions.region_format(wg['region'], 'ul_lr')), verbose = False)
-                    r_shp.append('{}_NHDPlusBurnWaterBody.shp'.format(gdb_bn))
-                    utils.run_cmd('ogr2ogr {}_NHDWaterBody.shp {} NHDWaterBody -where "FType = 390" -clipdst {} -overwrite'.format(gdb_bn, gdb, regions.region_format(wg['region'], 'ul_lr')), verbose = False)
-                    r_shp.append('{}_NHDWaterBody.shp'.format(gdb_bn))
-                    #shutil.rmtree(gdb)
+                    utils.run_cmd('ogr2ogr {}_NHDArea.shp {} NHDArea -clipdst {} -overwrite 2>&1'.format(gdb_bn, gdb, regions.region_format(wg['region'], 'ul_lr')), verbose = False)
+                    if os.path.exists('{}_NHDArea.shp'.format(gdb_bn)):
+                        r_shp.append('{}_NHDArea.shp'.format(gdb_bn))
+                    utils.run_cmd('ogr2ogr {}_NHDPlusBurnWaterBody.shp {} NHDPlusBurnWaterBody -clipdst {} -overwrite 2>&1'.format(gdb_bn, gdb, regions.region_format(wg['region'], 'ul_lr')), verbose = False)
+                    if os.path.exists('{}_NHDPlusBurnWaterBody.shp'.format(gdb_bn)):
+                        r_shp.append('{}_NHDPlusBurnWaterBody.shp'.format(gdb_bn))
+                    utils.run_cmd('ogr2ogr {}_NHDWaterBody.shp {} NHDWaterBody -where "FType = 390" -clipdst {} -overwrite 2>&1'.format(gdb_bn, gdb, regions.region_format(wg['region'], 'ul_lr')), verbose = False)
+                    if os.path.exists('{}_NHDWaterBody.shp'.format(gdb_bn)):
+                        r_shp.append('{}_NHDWaterBody.shp'.format(gdb_bn))
+                    shutil.rmtree(gdb)
+                    #utils.remove_glob('{}*'.format(gdb))
                 else: utils.echo_error_msg('unable to fetch {}'.format(result))
 
-            [utils.run_cmd('ogr2ogr -skipfailures -update -append nhdArea_merge.shp {}'.format(shp), verbose = False) for shp in r_shp]
+            [utils.run_cmd('ogr2ogr -skipfailures -update -append nhdArea_merge.shp {} 2>&1'.format(shp), verbose = False) for shp in r_shp]
             utils.run_cmd('gdal_rasterize -burn 1 nhdArea_merge.shp {}'.format(u_mask), verbose = True)
-            #utils.remove_glob('nhdArea_merge.*')
+            utils.remove_glob('nhdArea_merge.*')
             #utils.remove_glob(gdb_zip)
             #utils.remove_glob('{}*'.format(gdb_bn))
-            #[utils.remove_glob('{}*'.format(shp[:-3])) for shp in r_shp]
-            #utils.remove_glob('NHD_*')
+            [utils.remove_glob('{}*'.format(shp[:-3])) for shp in r_shp]
+            utils.remove_glob('NHD_*')
         ## ==============================================
         ## update wet/dry mask with nhd data
         ## ==============================================
         utils.echo_msg('filling the coast mask with NHD data...')
         c_ds = gdal.Open(u_mask)
         c_ds_arr = c_ds.GetRasterBand(1).ReadAsArray()
-        
-        for x in range(0, ds_config['nx']):
-            for y in range(0, ds_config['ny']):
-                if coast_array[y, x] == ds_config['ndv']:
-                    #try:
-                    if c_ds_arr[y, x] == 1: coast_array[y, x] = 0
-                    #except: pass
-        c_ds = None
-        #utils.remove_glob('{}*'.format(u_mask))
-
-        # c_ds = gdal.Open(u_mask)
-        # for this_xyz in gdalfun.gdal_parse(c_ds):
-        #     xpos, ypos = gdalfun._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
-        #     try:
-        #         if coast_array[ypos, xpos] == ds_config['ndv']:
-        #             if this_xyz[2] == 1: coast_array[ypos, xpos] = 0
-        #     except: pass
-        # c_ds = None            
-        # utils.remove_glob('{}*'.format(u_mask))
+        c_ds = gdal.Open(u_mask)
+        for this_xyz in gdalfun.gdal_parse(c_ds):
+            xpos, ypos = gdalfun._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
+            try:
+                if coast_array[ypos, xpos] == ds_config['ndv']:
+                    if this_xyz[2] == 1: coast_array[ypos, xpos] = 0
+            except: pass
+        c_ds = None            
+        utils.remove_glob('{}*'.format(u_mask))
 
     ## ==============================================
     ## GSHHG/GMRT - Global low-res
@@ -1369,7 +1357,8 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
     if wg['gc']['GMT'] is not None and not want_gmrt:
         utils.run_cmd('gmt grdlandmask {} -I{} -r -Df -G{}=gd:GTiff -V -N1/0/1/0/1'.format(regions.region_format(waffles_dist_region(wg), 'gmt'), wg['inc'], g_mask), verbose = wg['verbose'])
     else:
-        r = fetches._fetch_modules['gmrt']['run'](regions.region_buffer(waffles_dist_region(wg), 5, pct = True), [], None).run()
+        fl = fetches._fetch_modules['gmrt'](regions.region_buffer(waffles_dist_region(wg), 5, pct = True), [], None, True)
+        r = fl._parse_results(fl._filter_results(), layer = 'topo-mask')
         gmrt_tif = r[0][1]
         if fetches.fetch_file(r[0][0], gmrt_tif, verbose = True) == 0:
             utils.run_cmd('gdalwarp {} {} -tr {} {} -overwrite'.format(gmrt_tif, g_mask, wg['inc'], wg['inc']), verbose = True)
@@ -1382,28 +1371,16 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
     utils.echo_msg('filling the coast mask with gsshg/gmrt data...')
     c_ds = gdal.Open(g_mask)
     c_ds_arr = c_ds.GetRasterBand(1).ReadAsArray()
-    
-    for x in range(0, ds_config['nx']):
-        for y in range(0, ds_config['ny']):
-            if coast_array[y, x] == ds_config['ndv']:
-                #try:
-                c_ds_v = c_ds_arr[y, x]
-                if c_ds_v == 1: coast_array[y, x] = 0
-                elif c_ds_v == 0: coast_array[y, x] = 1
-                #except: pass
+    c_ds = gdal.Open(g_mask)
+    for this_xyz in gdalfun.gdal_parse(c_ds):
+        xpos, ypos = gdalfun._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
+        try:
+            if coast_array[ypos, xpos] == ds_config['ndv']:
+                if this_xyz[2] == 1: coast_array[ypos, xpos] = 0
+                elif this_xyz[2] == 0: coast_array[ypos, xpos] = 1
+        except: pass
     c_ds = None
     utils.remove_glob('{}*'.format(g_mask))
-                
-    # c_ds = gdal.Open(g_mask)
-    # for this_xyz in gdalfun.gdal_parse(c_ds):
-    #     xpos, ypos = gdalfun._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
-    #     try:
-    #         if coast_array[ypos, xpos] == ds_config['ndv']:
-    #             if this_xyz[2] == 1: coast_array[ypos, xpos] = 0
-    #             elif this_xyz[2] == 0: coast_array[ypos, xpos] = 1
-    #     except: pass
-    # c_ds = None
-    # utils.remove_glob('{}*'.format(g_mask))
 
     ## ==============================================
     ## write coast_array to file

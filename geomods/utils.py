@@ -180,7 +180,8 @@ def p_unzip(src_file, exts):
             zfs = z.namelist()
             for ext in exts:
                 for zf in zfs:
-                    if ext in zf:
+                    if ext == zf.split('.')[-1]:
+                        #if ext in zf:
                         src_procs.append(os.path.basename(zf))
                         with open(os.path.basename(zf), 'wb') as f:
                             f.write(z.read(zf))

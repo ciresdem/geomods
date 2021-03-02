@@ -1472,7 +1472,6 @@ class tnm:
     def _parse_dsTag(self, dsTag):
         sbDTag = dsTag['sbDatasetTag']
         meta = '{}{}?format=iso'.format(self._tnm_meta_base, dsTag['id'])
-
         this_xml = iso_xml(meta)
         h_epsg, v_epsg = this_xml.reference_system()
         if h_epsg is None: h_epsg = 'varies'
@@ -1487,21 +1486,20 @@ class tnm:
         data_link = '{}{}'.format(self._tnm_product_url, url_enc)
         this_geom = this_xml.bounds(geom=True)
         this_date = this_xml.date()
-        
-        if this_geom is not None:
-            return([{'Name': dsTag['title'],
-                     'ID': sbDTag, 
-                     'Date': this_date,
-                     'MetadataLink': meta,
-                     'MetadataDate': this_xml.xml_date(), 
-                     'DataLink': data_link,
-                     'IndexLink': '',
-                     'DataSource': 'tnm',
-                     'HorizontalDatum': h_epsg,
-                     'VerticalDatum': v_epsg,
-                     'LastUpdate': utils.this_date(),
-                     'Info': this_xml.abstract()}, this_geom.ExportToJson()])
-        else: return(None)
+        #if this_geom is not None:
+        return([{'Name': dsTag['title'],
+                 'ID': sbDTag, 
+                 'Date': this_date,
+                 'MetadataLink': meta,
+                 'MetadataDate': this_xml.xml_date(), 
+                 'DataLink': data_link,
+                 'IndexLink': '',
+                 'DataSource': 'tnm',
+                 'HorizontalDatum': h_epsg,
+                 'VerticalDatum': v_epsg,
+                 'LastUpdate': utils.this_date(),
+                 'Info': this_xml.abstract()}, this_geom])
+    #else: return(None)
 
     def _parse_ds(self, ds):
         _surveys = []
@@ -1525,19 +1523,28 @@ class tnm:
                 if 'isDefault' in f.keys():
                     formats = f['value']
                     break
+            #print(formats)
+            this_xml = iso_xml('{}{}?format=iso'.format(self._tnm_meta_base, ds['id']))
+            this_geom = this_xml.bounds(geom=True)
             mapServerUrl = ds['mapServerUrl']
             _s = self._parse_ds(ds)
             for _survey in _s:
-                if _survey is not None:
-                    #print(_survey)
-                    if _survey[0] is not None:
-                        if len(_survey) == 1:
-                            _survey = _survey[0]
+                if _survey[0] is not None:
+                    if len(_survey) == 1:
+                        _survey = _survey[0]
+                    self.FRED.layer.SetAttributeFilter("ID = '{}'".format(_survey[0]['ID']))
+                    if len(self.FRED.layer) == 0:
                         _survey[0]['DataType'] = formats
                         _survey[0]['IndexLink'] = mapServerUrl
-                        self.FRED.layer.SetAttributeFilter("ID = '{}'".format(ds['sbDatasetTag']))
-                        if len(self.FRED.layer) == 0:
-                            self._surveys.append(_survey)
+                        if _survey[1] is None:
+                            if this_geom is not None:
+                                _survey[1] = this_geom.ExportToJson()
+                            else: _survey[1] = None
+                        else: _survey[1] = _survey[1].ExportToJson()
+                        if _survey[1] is not None:
+                            self.FRED.layer.SetAttributeFilter("ID = '{}'".format(ds['sbDatasetTag']))
+                            if len(self.FRED.layer) == 0:
+                                self._surveys.append(_survey)
                 
         self.FRED._add_surveys(self._surveys)
         self.FRED._close_ds()
@@ -1548,6 +1555,8 @@ class tnm:
 
     def _parse_results(self, r, f = None, e = None, q = None):
         if self._verbose: utils.echo_msg('filtering TNM dataset results...')
+        e = e.split(',') if e is not None else None
+        f = f.split(',') if f is not None else None
         for surv in r:
     
             _data = {
@@ -1570,10 +1579,19 @@ class tnm:
 
             if len(_dataset_results) > 0:
                 for item in _dataset_results['items']:
+                    if _data['prodFormats'] is None:
+                        fmts = []
+                    else: fmts = _data['prodFormats'].split(',')
+                    f_url = None
                     if len(e) > 0:
                         for extent in e:
                             if item['extent'] == extent:
-                                f_url = item['downloadURL']
+                                for fmt in fmts:
+                                    if fmt in item['urls'].keys():
+                                        f_url = item['urls'][fmt]
+                                        break
+                                if f_url is None:
+                                    f_url = item['downloadURL']
                                 if item['format'] == 'IMG' or item['format'] == 'GeoTIFF':
                                     tnm_ds = 'ned'
                                 elif item['format'] == 'LAZ' or item['format'] == 'LAS':
@@ -1581,7 +1599,12 @@ class tnm:
                                 else: tnm_ds = 'tnm'
                                 self._data_urls.append([f_url, f_url.split('/')[-1], tnm_ds])
                     else:
-                        f_url = item['downloadURL']
+                        for fmt in fmts:
+                            if fmt in item['urls'].keys():
+                                f_url = item['urls'][fmt]
+                                break
+                        if f_url is None:
+                            f_url = item['downloadURL']
                         if item['format'] == 'IMG' or item['format'] == 'GeoTIFF':
                             tnm_ds = 'ned'
                         elif item['format'] == 'LAZ' or item['format'] == 'LAS':
