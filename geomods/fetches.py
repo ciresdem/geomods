@@ -389,29 +389,34 @@ class FRED:
         
     def _filter(self, region, where = [], layers = []):
         '''Search for data in the reference vector file'''
-
-        _boundsGeom = gdalfun.gdal_region2geom(region)
-        _results = []
-        if self._verbose: _progress = utils._progress('filtering {}...'.format(self.FREDloc))
         
-        #if self._verbose: utils.echo_msg('filtering {}...'.format(self.FREDloc))
+        _results = []
+        if region is not None:
+            _boundsGeom = gdalfun.gdal_region2geom(region)
+        else: _boundsGeom = None
+
+        if self._verbose: _progress = utils._progress('filtering {}...'.format(self.FREDloc))
         self._open_ds()
 
-        f = 0
-        
         for i, layer in enumerate(layers):
             if self._verbose: _progress.update_perc((i, len(layers)))
             this_layer = self.layer
             this_layer.SetAttributeFilter("DataSource = '{}'".format(layer))
             [this_layer.SetAttributeFilter('{}'.format(filt)) for filt in where]
             for feat in this_layer:
-                geom = feat.GetGeometryRef()
-                if geom is not None:
-                    if _boundsGeom.Intersects(geom):
-                        _results.append({})
-                        f_j = json.loads(feat.ExportToJson())
-                        for key in f_j['properties'].keys():
-                            _results[-1][key] = feat.GetField(key)
+                if _boundsGeom is not None:
+                    geom = feat.GetGeometryRef()
+                    if geom is not None:
+                        if _boundsGeom.Intersects(geom):
+                            _results.append({})
+                            f_j = json.loads(feat.ExportToJson())
+                            for key in f_j['properties'].keys():
+                                _results[-1][key] = feat.GetField(key)
+                else:
+                    _results.append({})
+                    f_j = json.loads(feat.ExportToJson())
+                    for key in f_j['properties'].keys():
+                        _results[-1][key] = feat.GetField(key)
                         
             this_layer = None
         self._close_ds()
@@ -502,6 +507,7 @@ class dc:
         ## ==============================================
         ## Digital Coast urls and directories
         ## ==============================================
+        self._dc_url = 'https://coast.noaa.gov'
         self._dc_htdata_url = 'https://coast.noaa.gov/htdata/'
         self._dc_dirs = ['lidar1_z', 'lidar2_z', 'lidar3_z', 'lidar4_z', 'raster1', 'raster2', 'raster5']
         self._outdir = os.path.join(os.getcwd(), 'dc')
@@ -514,12 +520,13 @@ class dc:
         self._data_urls = []
         self._surveys = []
         self._stop = callback
+
+        self._info = '''Lidar and Raster data from NOAA's Digital Coast'''
+        self._title = '''NOAA Digital Coast'''
+        self._usage = '''< dc >'''
+        self._urls = [self._dc_url, self._dc_htdata_url]
+        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
         
-        self._desc = '''NOAA Digital Coast
-        Lidar and Raster data from NOAA's Digital Coast
-
-        < dc >'''
-
     def _update(self):
         '''Update the FRED reference vector after scanning
         the relevant metadata from Digital Coast.'''
@@ -668,6 +675,7 @@ class nos:
         ## ==============================================
         ## NOS urls and directories
         ## ==============================================
+        self._nos_url = 'https://www.ngdc.noaa.gov/mgg/bathymetry/hydro.html'
         self._nos_xml_url = lambda nd: 'https://data.noaa.gov/waf/NOAA/NESDIS/NGDC/MGG/NOS/%siso_u/xml/' %(nd)
         self._nos_directories = [
             "B00001-B02000/", "D00001-D02000/", "F00001-F02000/", \
@@ -687,12 +695,13 @@ class nos:
         self._data_urls = []
         self._surveys = []
         self._stop = callback
+
+        self._info = '''Bathymetry surveys and data (xyz & BAG)'''
+        self._title = '''NOAA NOS Bathymetric Data'''
+        self._usage = '''< nos >'''
+        self._urls = [self._nos_url]
+        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
         
-        self._desc = '''NOAA NOS Bathymetric Data
-        Bathymetry surveys and data (xyz & BAG)
-
-        < nos >'''
-
     def _update(self):
         '''Crawl the NOS database and update/generate the NOS reference vector.'''
 
@@ -864,13 +873,12 @@ class charts():
         self._data_urls = []
         self._surveys = []
         self._stop = callback
-        
-        self._desc = '''NOAA Nautical CHARTS (RNC & ENC)
-        Raster and Vector U.S. Nautical Charts
 
-        < charts >'''
-        
-        self._info = ''
+        self._info = '''Raster and Vector U.S. Nautical Charts'''
+        self._title = '''NOAA Nautical CHARTS (RNC & ENC)'''
+        self._usage = '''< charts >'''
+        self._urls = [self._enc_data_catalog, self._rnc_data_catalog]
+        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
 
     def _update(self):
         '''Update or create the reference vector file'''
@@ -993,11 +1001,13 @@ class ncei_thredds:
         self._data_urls = []
         self._surveys = []
         self._stop = callback
-        
-        self._desc = ''
-        
-        self._info = ''
 
+        self._info = '''NOAA NCEI THREDDS DEM Catalog Access'''
+        self._title = '''NCEI THREDDS'''
+        self._usage = '''< ncei_thredds >'''
+        self._urls = [self._nt_catalog, self._ngdc_url]
+        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
+        
     def _parse_catalog(self, catalog_url):
 
         ntCatalog = iso_xml(catalog_url)
@@ -1154,15 +1164,11 @@ class mb:
         self._data_urls = []
         self._stop = callback
 
-        self._desc = '''NOAA MULTIBEAM survey data
-        Multibeam Bathymetric Data from NOAA.
-        In addition to deepwater data, the Multibeam Bathymetry Database (MBBDB) includes hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).
-
-        https://www.ngdc.noaa.gov/mgg/bathymetry/multibeam.html
-
-        < mb >'''
-
-        self.info = "NCEI is the U.S. national archive for multibeam bathymetric data and holds more than 9 million nautical miles of ship trackline data recorded from over 2400 cruises and received from sources worldwide. In addition to deepwater data, the Multibeam Bathymetry Database (MBBDB) includes hydrographic multibeam survey data from NOAA's National Ocean Service (NOS)."
+        self._info = '''NCEI is the U.S. national archive for multibeam bathymetric data and holds more than 9 million nautical miles of ship trackline data recorded from over 2400 cruises and received from sources worldwide. In addition to deepwater data, the Multibeam Bathymetry Database (MBBDB) includes hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
+        self._title = '''NOAA MULTIBEAM survey data'''
+        self._usage = '''< mb >'''
+        self._urls = [self._mb_data_url, self._mb_metadata_url, self._mb_autogrid]
+        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
         
     def _update(self):
 
@@ -1288,17 +1294,13 @@ class usace:
         self.FRED = FRED(verbose = self._verbose)
         self._data_urls = []
         self._stop = callback
-        
-        self._desc = '''USACE bathymetry surveys via eHydro
-        Bathymetric Channel surveys from USACE - U.S. only.
-        The hydrographic surveys provided by this application are to be used for informational purposes only and should not be used as a navigational aid. 
-        Channel conditions can change rapidly and the surveys may or may not be accurate.
 
-        https://navigation.usace.army.mil/Survey/Hydro
-
-        < usace >'''
-
-        self.info = ''
+        self._info = '''Bathymetric Channel surveys from USACE - U.S. only.
+The hydrographic surveys provided by this application are to be used for informational purposes only and should not be used as a navigational aid. Channel conditions can change rapidly and the surveys may or may not be accurate.'''
+        self._title = '''USACE bathymetry surveys via eHydro'''
+        self._usage = '''< usace >'''
+        self._urls = [self._usace_gj_url, self._usace_gs_api_url]
+        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
 
     def _update(self):
         self.FRED._open_ds()
@@ -1422,7 +1424,7 @@ class usace:
 ## The National Map (TNM) - USGS
 ##
 ## Fetch elevation data from The National Map
-## NED, 3DEP, Etc.
+## NED, 3DEP, NHD, Etc.
 ##
 ## TODO: Break up search regions on large regions 
 ##
@@ -1453,11 +1455,20 @@ class tnm:
         self._data_urls = []
         self._surveys = []
         self._stop = callback
+
+        self._info = '''Various datasets from USGS's National Map. The National Map is a collaborative effort among the USGS and other Federal, State, and local partners to improve and deliver topographic information for the Nation.
+\nDatasets: {}'''.format(self._fred_datasets())
+        self._title = '''The National Map (TNM) from USGS'''
+        self._usage = '''< tnm:formats=fmt,fmt:extents=ext,ext >'''
+        self._urls = [self._tnm_api_url]
+        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
         
-        self._desc = ''
-
-        self.info = ''
-
+    def _fred_datasets(self):
+        ids = {}
+        for r in self._filter_results():
+            ids[r['ID']] = r['DataType']
+        return(ids)
+        
     def _datasets(self):
         _req = fetch_req(self._tnm_dataset_url)
         if _req is not None:
@@ -1468,7 +1479,7 @@ class tnm:
         else: _datasets = None
 
         return(_datasets)
-
+    
     def _parse_dsTag(self, dsTag):
         sbDTag = dsTag['sbDatasetTag']
         meta = '{}{}?format=iso'.format(self._tnm_meta_base, dsTag['id'])
@@ -1523,7 +1534,6 @@ class tnm:
                 if 'isDefault' in f.keys():
                     formats = f['value']
                     break
-            #print(formats)
             this_xml = iso_xml('{}{}?format=iso'.format(self._tnm_meta_base, ds['id']))
             this_geom = this_xml.bounds(geom=True)
             mapServerUrl = ds['mapServerUrl']
@@ -1677,13 +1687,13 @@ class gmrt:
         self._data_urls = []
         self._surveys = []
         self._stop = callback
-        
-        self._desc = '''The Global Multi-Reosolution Topography Data Synthesis (GMRT) 
-        Global Elevation raster dataset via GMRT.
 
-        < gmrt >'''
-        
-        self.info = 'The Global Multi-Resolution Topography (GMRT) synthesis is a multi-resolutional compilation of edited multibeam sonar data collected by scientists and institutions worldwide, that is reviewed, processed and gridded by the GMRT Team and merged into a single continuously updated compilation of global elevation data. The synthesis began in 1992 as the Ridge Multibeam Synthesis (RMBS), was expanded to include multibeam bathymetry data from the Southern Ocean, and now includes bathymetry from throughout the global and coastal oceans.'
+        self._info = '''The Global Multi-Resolution Topography (GMRT) synthesis is a multi-resolutional compilation of edited multibeam sonar data collected by scientists and institutions worldwide, that is reviewed, processed and gridded by the GMRT Team and merged into a single continuously updated compilation of global elevation data. The synthesis began in 1992 as the Ridge Multibeam Synthesis (RMBS), was expanded to include multibeam bathymetry data from the Southern Ocean, and now includes bathymetry from throughout the global and coastal oceans.'''
+        self._title = '''The Global Multi-Reosolution Topography Data Synthesis (GMRT)'''
+        self._usage = '''< gmrt:layer=gmrt_layer >
+ :layer=[topo/topo-mask]'''
+        self._urls = [self._gmrt_grid_url, self._gmrt_grid_metadata_url]
+        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
         
     def _update(self):
         self.FRED._open_ds()
@@ -1805,13 +1815,12 @@ class mar_grav:
         self._data_urls = []
         self._surveys = []
         self._stop = callback
-        
-        self._desc = '''Marine Gravity from Sattelite Altimetry topographic data.
-        Elevation data from Scripps Marine Gravity dataset.
 
-        < mar_grav >'''
-        
-        self.info = ''
+        self._info = 'Elevation data from Scripps Marine Gravity dataset.'
+        self._title = '''Marine Gravity from Sattelite Altimetry topographic data.'''
+        self._usage = '''< mar_grav >'''
+        self._urls = [self._mar_grav_info_url, self._mar_grav_url]
+        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
         
     def _update(self):
 
@@ -1917,13 +1926,12 @@ class srtm_plus:
         self._data_urls = []
         self._surveys = []
         self._stop = callback
-        
-        self._desc = '''SRTM15+ elevation data (Scripps)
-        Global Bathymetry and Topography at 15 Arc Sec:SRTM15+
-    
-        < srtm_plus >'''
-        
-        self.info = ''
+
+        self._info = 'Global Bathymetry and Topography at 15 Arc Sec:SRTM15+'
+        self._title = '''SRTM15+ elevation data (Scripps).'''
+        self._usage = '''< srtm_plus >'''
+        self._urls = [self._srtm_info_url, self._srtm_url]
+        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
         
     def _update(self):
         self.FRED._open_ds()
@@ -2016,6 +2024,7 @@ class emodnet:
         ## ==============================================    
         self._emodnet_grid_url = 'https://ows.emodnet-bathymetry.eu/wcs?'
         self._emodnet_grid_cap = 'https://ows.emodnet-bathymetry.eu/wms?request=GetCapabilities&service=WMS'
+        self._emodnet_help_url = 'https://portal.emodnet-bathymetry.eu/help/help.html'
         self._outdir = os.path.join(os.getcwd(), 'emodnet')
 
         self.where = where
@@ -2026,15 +2035,12 @@ class emodnet:
         self._data_urls = []
         self._surveys = []
         self._stop = callback
-        
-        self._desc = '''EMODNET Elevation Data
-        European Bathymetry/Topographic data from EMODNET
 
-        https://portal.emodnet-bathymetry.eu/help/help.html
-
-        < emodnet >'''
-                
-        self.info = ''
+        self._info = 'European Bathymetry/Topographic data from EMODNET'
+        self._title = '''EMODNET Elevation Data.'''
+        self._usage = '''< emodnet >'''
+        self._urls = [self._emodnet_help_url, self._emodnet_grid_url, self._emodnet_grid_cap]
+        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
 
     def _update(self):
 
@@ -2174,6 +2180,7 @@ class hrdem():
         ## Reference vector and directories
         ## ==============================================
         self._hrdem_footprints_url = 'ftp://ftp.maps.canada.ca/pub/elevation/dem_mne/highresolution_hauteresolution/Datasets_Footprints.zip'
+        self._hrdem_info_url = 'https://open.canada.ca/data/en/dataset/957782bf-847c-4644-a757-e383c0057995#wb-auto-6'
         self._local_ref_vector = 'hrdem.gmt'
         if not os.path.exists(self._local_ref_vector):
             self.FRED = os.path.join(fetchdata, 'hrdem.gmt')
@@ -2191,10 +2198,12 @@ class hrdem():
         self._data_urls = []
         self._surveys = []
         self._stop = callback
-        
-        self._desc = ''
-                
-        self.info = ''
+
+        self._info = '''Collection of lidar-derived DTMs across Canada.'''
+        self._title = '''High Resolution DEMs from NCAR'''
+        self._usage = '''< hrdem >'''
+        self._urls = [self._hrdem_info_url, self._hrdem_footprints_url]
+        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
 
     def _update(self):
         self.FRED._open_ds()
@@ -2306,6 +2315,7 @@ class chs:
         #self._chs_api_url = "https://geoportal.gc.ca/arcgis/rest/services/FGP/CHS_NONNA_100/MapServer/0/query?"
         self._chs_url = 'https://data.chs-shc.ca/geoserver/wcs?'
         self._chs_grid_cap = 'https://data.chs-shc.ca/geoserver/wcs?request=GetCapabilities&service=WMS'
+        self._chs_info_url = 'https://open.canada.ca/data/en/dataset/d3881c4c-650d-4070-bf9b-1e00aabf0a1d'
         self._outdir = os.path.join(os.getcwd(), 'chs')
 
         self.where = where
@@ -2316,10 +2326,12 @@ class chs:
         self._data_urls = []
         self._surveys = []
         self._stop = callback
-        
-        self._desc = ''''''
-                
-        self.info = ''
+
+        self._info = '''CHS NONNA 10m and 100m Bathymetric Survey Grids; Non-Navigational gridded bathymetric data based on charts and soundings.'''
+        self._title = '''Bathymetric data from CHS'''
+        self._usage = '''< chs >'''
+        self._urls = [self._chs_info_url, self._chs_url, self._chs_grid_cap]
+        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
 
     def _update(self):
 
@@ -2453,7 +2465,8 @@ class ngs:
 
         ## ==============================================
         ## NGS URLs and directories
-        ## ==============================================    
+        ## ==============================================
+        self._ngs_url = 'http://geodesy.noaa.gov'
         self._ngs_search_url = 'http://geodesy.noaa.gov/api/nde/bounds?'
         self._outdir = os.path.join(os.getcwd(), 'ngs')
 
@@ -2465,13 +2478,12 @@ class ngs:
         self._data_urls = []
         self._surveys = []
         self._stop = callback
-        
-        self._desc = '''NOAA NGS Monument Data
-        Monument data from NOAA's Nagional Geodetic Survey (NGS) monument dataset.
 
-        < ngs >'''
-                
-        self.info = ''
+        self._info = '''Monument data from NOAA's Nagional Geodetic Survey (NGS) monument dataset.'''
+        self._title = '''NOAA NGS Monuments'''
+        self._usage = '''< ngs >'''
+        self._urls = [self._ngs_url, self._ngs_search_url]
+        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
 
     def _update(self):
 
@@ -2567,13 +2579,12 @@ class osm:
         self._data_urls = []
         self._surveys = []
         self._stop = callback
-        
-        self._desc = '''NOAA NGS Monument Data
-        Monument data from NOAA's Nagional Geodetic Survey (NGS) monument dataset.
 
-        < ngs >'''
-                
-        self.info = ''
+        self._info = '''Various datasets from Open Street Map Overpass API'''
+        self._title = '''Open Street Map (OSM) data'''
+        self._usage = '''< osm >'''
+        self._urls = [self._osm_api]
+        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
 
     def _update(self):
         pass
