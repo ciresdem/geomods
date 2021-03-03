@@ -613,7 +613,7 @@ class dc:
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
     ## ==============================================    
-    def _yield_xyz(self, entry, epsg = 4326):
+    def _yield_xyz(self, entry, epsg = 4326, z_region = None):
         src_dc = os.path.basename(entry[1])
         src_ext = src_dc.split('.')[-1].lower()
         if src_ext == 'laz' or src_ext == 'las': dt = 'lidar'
@@ -627,6 +627,9 @@ class dc:
                 xyzc['name'] = src_dc
                 xyzc['epsg'] = 4326
                 xyzc['warp'] = epsg
+                if z_region is not None:
+                    xyzc['upper_limit'] = z_region[1]
+                    xyzc['lower_limit'] = z_region[0]
                 for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, verbose = self._verbose):
                     yield(xyz)
         elif dt == 'raster':
@@ -645,13 +648,13 @@ class dc:
             
             if src_ds is not None:
                 srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
-                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = True):
+                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = True, z_region = z_region):
                     yield(xyz)
             src_ds = None
         utils.remove_glob(src_dc)
 
-    def _dump_xyz(self, entry, epsg = 4326, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(entry, epsg = epsg):
+    def _dump_xyz(self, entry, epsg = 4326, dst_port = sys.stdout, z_region = None):
+        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
             xyzfun.xyz_line(xyz, dst_port, False)
 
 ## =============================================================================
@@ -778,7 +781,7 @@ class nos:
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
     ## ==============================================    
-    def _yield_xyz(self, entry, datatype = None, epsg = 4326):
+    def _yield_xyz(self, entry, datatype = None, epsg = 4326, z_region = None):
         xyzc = copy.deepcopy(xyzfun._xyz_config)
         src_nos = os.path.basename(entry[1])
         dt = None
@@ -806,6 +809,9 @@ class nos:
                 xyzc['z-scale'] = -1
                 xyzc['epsg'] = 4326
                 xyzc['warp'] = epsg
+                if z_region is not None:
+                    xyzc['upper_limit'] = z_region[1]
+                    xyzc['lower_limit'] = z_region[0]
                 if os.path.exists(nos_f_r):
                     with open(nos_f_r, 'r') as in_n:
                         for xyz in xyzfun.xyz_parse(in_n, xyz_c = xyzc, region = self.region, verbose = self._verbose):
@@ -814,15 +820,6 @@ class nos:
             elif dt == 'grid_bag':
                 src_bag, nos_zips = utils.procs_unzip(src_nos, ['gdal', 'tif', 'img', 'bag', 'asc'])
                 nos_f = '{}.tmp'.format(os.path.basename(src_bag).split('.')[0])
-                xyzc['name'] = src_bag
-                xyzc['delim'] = ' '
-                xyzc['skip'] = 0
-                xyzc['xpos'] = 0
-                xyzc['ypos'] = 1
-                xyzc['zpos'] = 2
-                xyzc['z-scale'] = 1
-                xyzc['warp'] = None
-                xyzc['epsg'] = None
                 src_ds = gdal.Open(src_bag)
                 if src_ds is not None:
                     print(self.region)
@@ -831,15 +828,15 @@ class nos:
                     print(gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
                     srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
                     with open(nos_f, 'w') as cx:
-                        for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg):
+                        for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, z_region = z_region):
                             yield(xyz)
                     src_ds = None
                 utils.remove_glob(src_bag)
             utils.remove_glob(nos_f)
         utils.remove_glob(src_nos)
         
-    def _dump_xyz(self, entry, epsg = 4326, dst_port = sys.stdout):
-         for xyz in self._yield_xyz(entry, epsg = epsg):
+    def _dump_xyz(self, entry, epsg = 4326, dst_port = sys.stdout, z_region = None):
+         for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
              xyzfun.xyz_line(xyz, dst_port, False)
 
 ## =============================================================================
@@ -938,10 +935,13 @@ class charts():
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
     ## ==============================================
-    def _yield_xyz(self, entry, epsg = None):
+    def _yield_xyz(self, entry, epsg = None, z_region = None):
         xyzc = xyzfun._xyz_config
         xyzc['z-scale'] = -1
         xyzc['warp'] = epsg
+        if z_region is not None:
+            xyzc['upper_limit'] = z_region[1]
+            xyzc['lower_limit'] = z_region[0]
         src_zip = os.path.basename(entry[1])
         
         if fetch_file(entry[0], src_zip, callback = lambda: False, verbose = self._verbose) == 0:
@@ -970,8 +970,8 @@ class charts():
                 utils._clean_zips(src_zips)
         utils.remove_glob(src_zip)
         
-    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(entry, epsg = epsg):
+    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout, z_region = None):
+        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
             xyzfun.xyz_line(xyz, dst_port, False)
 
 ## =============================================================================
@@ -1105,7 +1105,7 @@ class ncei_thredds:
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
     ## ==============================================    
-    def _yield_xyz(self, entry, epsg = 4326):
+    def _yield_xyz(self, entry, epsg = 4326, z_region = None):
         src_dc = os.path.basename(entry[1])
         src_ext = src_dc.split('.')[-1]
         try:
@@ -1123,13 +1123,13 @@ class ncei_thredds:
 
         if src_ds is not None:
             srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_getEPSG(src_ds)))
-            for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose):
+            for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose, z_region = z_region):
                 yield(xyz)
         src_ds = None
         utils.remove_glob(src_dc)
 
-    def _dump_xyz(self, entry, epsg = 4326, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(entry, epsg = epsg):
+    def _dump_xyz(self, entry, epsg = 4326, dst_port = sys.stdout, z_region = None):
+        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
             xyzfun.xyz_line(xyz, dst_port, self._verbose)
             
 ## =============================================================================
@@ -1241,7 +1241,7 @@ class mb:
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
     ## ==============================================    
-    def _yield_xyz(self, entry, epsg = None):
+    def _yield_xyz(self, entry, epsg = None, z_region = None):
         xyzc = copy.deepcopy(xyzfun._xyz_config)
         src_mb = os.path.basename(entry[1])
 
@@ -1253,6 +1253,9 @@ class mb:
             xyzc['z-scale'] = 1
             xyzc['epsg'] = 4326
             xyzc['warp'] = epsg
+            if z_region is not None:
+                xyzc['upper_limit'] = z_region[1]
+                xyzc['lower_limit'] = z_region[0]
             mb_r = src_xyz
 
             with open(mb_r, 'r') as in_m:
@@ -1262,8 +1265,8 @@ class mb:
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_mb))
         utils.remove_glob(src_mb)
 
-    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(entry, epsg = epsg):
+    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout, z_region = None):
+        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
             xyzfun.xyz_line(xyz, dst_port, self._verbose)
 
 ## =============================================================================
@@ -1357,7 +1360,7 @@ The hydrographic surveys provided by this application are to be used for informa
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
     ## ==============================================    
-    def _yield_xyz(self, entry, epsg = None):
+    def _yield_xyz(self, entry, epsg = None, z_region = None):
         xyzc = copy.deepcopy(xyzfun._xyz_config)
         src_zip = os.path.basename(entry[1])
         xyzc['warp'] = epsg
@@ -1406,6 +1409,9 @@ The hydrographic surveys provided by this application are to be used for informa
                 if os.path.exists(src_usace):
                     with open(src_usace, 'r') as in_c:
                         xyzc['name'] = src_usace.split('.')[0]
+                        if z_region is not None:
+                            xyzc['upper_limit'] = z_region[1]
+                            xyzc['lower_limit'] = z_region[0]
                         for xyz in xyzfun.xyz_parse(in_c, xyz_c = xyzc, verbose = self._verbose):
                             yield(xyz)
                     utils.remove_glob(src_usace)
@@ -1415,8 +1421,8 @@ The hydrographic surveys provided by this application are to be used for informa
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(entry[0]))
         utils.remove_glob(src_zip)
 
-    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(entry, epsg = epsg):
+    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout, z_region = None):
+        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
             xyzfun.xyz_line(xyz, dst_port, False)
 
 ## =============================================================================
@@ -1628,7 +1634,7 @@ class tnm:
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
     ## ==============================================                
-    def _yield_xyz(self, entry, epsg = None):
+    def _yield_xyz(self, entry, epsg = None, z_region = None):
         '''yield the xyz data from the tnm fetch module'''
         
         if fetch_file(entry[0], entry[1], callback = lambda: False, verbose = self._verbose) == 0:
@@ -1643,7 +1649,7 @@ class tnm:
 
                 if src_ds is not None:
                     srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_getEPSG(src_ds)))
-                    for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose):
+                    for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose, z_region = z_region):
                         if xyz[2] != 0:
                             yield(xyz)
                     src_ds = None
@@ -1652,8 +1658,8 @@ class tnm:
                 utils._clean_zips(src_zips)
         utils.remove_glob(entry[1])
 
-    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(entry, epsg = epsg):
+    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout, z_region = None):
+        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
             xyzfun.xyz_line(xyz, dst_port, False)
             
 ## =============================================================================
@@ -1765,7 +1771,7 @@ class gmrt:
     ## as well as for processing incoming fetched data.
     ## `entry` is a an item from self._data_urls
     ## ==============================================    
-    def _yield_xyz(self, entry, epsg = 4326):
+    def _yield_xyz(self, entry, epsg = 4326, z_region = None):
         src_gmrt = 'gmrt_tmp.tif'
         if fetch_file(entry[0], src_gmrt, callback = lambda: False, verbose = self._verbose) == 0:
             try:
@@ -1773,14 +1779,14 @@ class gmrt:
             except: src_ds = None
             if src_ds is not None:
                 srcwin = gdalfun.gdal_srcwin(src_ds, self.region)
-                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose, warp = epsg):
+                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, verbose = self._verbose, warp = epsg, z_region = z_region):
                     yield(xyz)
             src_ds = None
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_gmrt))
         utils.remove_glob(src_gmrt)
 
-    def _dump_xyz(self, src_gmrt, epsg = 4326, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(src_gmrt, epsg):
+    def _dump_xyz(self, src_gmrt, epsg = 4326, z_region = None, dst_port = sys.stdout):
+        for xyz in self._yield_xyz(src_gmrt, epsg = epsg, z_region = z_region):
             xyzfun.xyz_line(xyz, dst_port, False)
 
 ## =============================================================================
@@ -1878,7 +1884,7 @@ class mar_grav:
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
     ## ==============================================
-    def _yield_xyz(self, entry, epsg = None):
+    def _yield_xyz(self, entry, epsg = None, z_region = None):
         if fetch_file(entry[0], os.path.basename(entry[1]), callback = lambda: False, verbose = self._verbose) == 0:
             xyzc = copy.deepcopy(xyzfun._xyz_config)
             xyzc['skip'] = 1
@@ -1886,13 +1892,16 @@ class mar_grav:
             xyzc['verbose'] = True
             xyzc['warp'] = epsg
             xyzc['name'] = '<mar_grav data-stream>'
+            if z_region is not None:
+                xyzc['upper_limit'] = z_region[1]
+                xyzc['lower_limit'] = z_region[0]
             with open(os.path.basename(entry[1]), 'r') as xyzf:
                 for xyz in xyzfun.xyz_parse(xyzf, xyz_c = xyzc, verbose = self._verbose):
                     yield(xyz)
         utils.remove_glob(os.path.basename(entry[1]))
     
-    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(entry, epsg = epsg):
+    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout, z_region = None):
+        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
             xyzfun.xyz_line(xyz, dst_port, False)
 
 ## =============================================================================
@@ -1987,7 +1996,7 @@ class srtm_plus:
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
     ## ==============================================
-    def _yield_xyz(self, entry, epsg = None):
+    def _yield_xyz(self, entry, epsg = None, z_region = None):
         if fetch_file(entry[0], os.path.basename(entry[1]), callback = lambda: False, verbose = self._verbose) == 0:
             xyzc = copy.deepcopy(xyzfun._xyz_config)
             xyzc['skip'] = 1
@@ -1995,13 +2004,16 @@ class srtm_plus:
             xyzc['verbose'] = True
             xyzc['warp'] = epsg
             xyzc['name'] = '<mar_grav data-stream>'
+            if z_region is not None:
+                xyzc['upper_limit'] = z_region[1]
+                xyzc['lower_limit'] = z_region[0]
             with open(os.path.basename(entry[1]), 'r') as xyzf:
                 for xyz in xyzfun.xyz_parse(xyzf, xyz_c = xyzc, verbose = self._verbose):
                     yield(xyz)
         utils.remove_glob(os.path.basename(entry[1]))
     
-    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(entry, epsg = epsg):
+    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout, z_region = None):
+        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
             xyzfun.xyz_line(xyz, dst_port, False)
 
 ## =============================================================================
@@ -2143,7 +2155,7 @@ class emodnet:
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
     ## ==============================================    
-    def _yield_xyz(self, entry, epsg = None):
+    def _yield_xyz(self, entry, epsg = None, z_region = None):
         src_emodnet = 'emodnet_tmp.tif'
         if fetch_file(entry[0], src_emodnet, callback = lambda: False, verbose = self._verbose) == 0:
             try:
@@ -2151,14 +2163,14 @@ class emodnet:
             except: src_ds = None
             if src_ds is not None:
                 srcwin = gdalfun.gdal_srcwin(src_ds, self.region)
-                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose):
+                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose, z_region = z_region):
                     yield(xyz)
                 src_ds = None
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_emodnet))
         utils.remove_glob(src_emodnet)
 
-    def _dump_xyz(self, src_emodnet, epsg = None, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(src_emodnet, epsg = epsg):
+    def _dump_xyz(self, src_emodnet, epsg = None, dst_port = sys.stdout, z_region = None):
+        for xyz in self._yield_xyz(src_emodnet, epsg = epsg, z_region = z_region):
             xyzfun.xyz_line(xyz, dst_port, False)
 
 ## =============================================================================
@@ -2267,7 +2279,7 @@ class hrdem():
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
     ## ==============================================    
-    def _yield_xyz(self, entry, epsg = 4326):
+    def _yield_xyz(self, entry, epsg = 4326, z_region = None):
         src_dc = os.path.basename(entry[1])
         src_ext = src_dc.split('.')[-1]
         try:
@@ -2285,13 +2297,13 @@ class hrdem():
 
         if src_ds is not None:
             srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_getEPSG(src_ds)))
-            for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose):
+            for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose, z_region = z_region):
                 yield(xyz)
         src_ds = None
         utils.remove_glob(src_dc)
 
-    def _dump_xyz(self, entry, epsg = 4326, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(entry, epsg = epsg):
+    def _dump_xyz(self, entry, epsg = 4326, dst_port = sys.stdout, z_region = None):
+        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
             xyzfun.xyz_line(xyz, dst_port, self._verbose)
             
 ## =============================================================================
@@ -2431,7 +2443,7 @@ class chs:
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
     ## ==============================================    
-    def _yield_xyz(self, entry, epsg = None):
+    def _yield_xyz(self, entry, epsg = None, z_region = None):
         src_chs = 'chs_tmp.tif'
         if fetch_file(entry[0], src_chs, callback = lambda: False, verbose = self._verbose) == 0:
             try:
@@ -2439,14 +2451,14 @@ class chs:
             except: src_ds = None
             if src_ds is not None:
                 srcwin = gdalfun.gdal_srcwin(src_ds, self.region)
-                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose):
+                for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose, z_region = z_region):
                     yield(xyz)
                 src_ds = None
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_emodnet))
         utils.remove_glob(src_emodnet)
 
-    def _dump_xyz(self, src_chs, epsg = None, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(src_chs, epsg = epsg):
+    def _dump_xyz(self, src_chs, epsg = None, dst_port = sys.stdout, z_region = None):
+        for xyz in self._yield_xyz(src_chs, epsg = epsg, z_region = z_region):
             xyzfun.xyz_line(xyz, dst_port, False)
             
 ## =============================================================================
@@ -2532,7 +2544,7 @@ class ngs:
             
         return(self._data_urls)
 
-    def _yield_xyz(self, entry, epsg = None):
+    def _yield_xyz(self, entry, epsg = None, z_region = None):
         src_ngs = 'ngs_tmp.json'
         r = []
         if fetch_file(entry[0], src_ngs, callback = lambda: False, verbose = self._verbose) == 0:
@@ -2541,8 +2553,8 @@ class ngs:
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_ngs))
         utils.remove_glob(src_ngs)
 
-    def _dump_xyz(self, src_emodnet, epsg = None, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(src_emodnet, epsg = epsg):
+    def _dump_xyz(self, src_emodnet, epsg = None, dst_port = sys.stdout, z_region = None):
+        for xyz in self._yield_xyz(src_emodnet, epsg = epsg, z_region = z_region):
             xyzfun.xyz_line(xyz, dst_port, False)
 
 ## =============================================================================
@@ -2680,7 +2692,7 @@ def fetch_inf_entry(entry = [], warp = None):
         out_inf['wkt'] = gdalfun.gdal_region2wkt(out_inf['minmax'])
     return(out_inf)
 
-def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, warp = None, verbose = False):
+def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, warp = None, verbose = False, z_region = None):
     '''yield the xyz data from the fetch module datalist entry
 
     yields [x, y, z, <w, ...>]'''
@@ -2695,13 +2707,13 @@ def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, warp = None, 
     r = fl._parse_results(fl._filter_results(), **args_d)
     
     for e in r:
-        for xyz in fl._yield_xyz(e, warp):
+        for xyz in fl._yield_xyz(e, warp = warp, z_region = z_region):
             yield(xyz + [entry[2]] if entry[2] is not None else xyz)
 
-def fetch_dump_entry(entry = ['nos:datatype=nos'], dst_port = sys.stdout, region = None, verbose = False):
+def fetch_dump_entry(entry = ['nos:datatype=nos'], dst_port = sys.stdout, region = None, verbose = False, z_region = None):
     '''dump the xyz data from the fetch module datalist entry to dst_port'''
     
-    for xyz in fetch_yield_entry(entry, region, verbose):
+    for xyz in fetch_yield_entry(entry, region, verbose, z_region):
         xyz_line(xyz, dst_port, False)
             
 ## =============================================================================

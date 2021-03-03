@@ -71,7 +71,7 @@ _dl_dl_h = {
     400: {
         'fmts': ['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs', 'hrdem', 'cudem'],
         'inf': lambda e, p: fetches.fetch_inf_entry(e, p),
-        'yield': lambda e, r, v, z, w, p: fetches.fetch_yield_entry(e, region = r, warp = p, verbose = v),
+        'yield': lambda e, r, v, z, w, p: fetches.fetch_yield_entry(e, region = r, warp = p, verbose = v, z_region = z),
     },
 }
 
