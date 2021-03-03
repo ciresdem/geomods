@@ -1907,7 +1907,9 @@ def waffles_cli(argv = sys.argv):
         opts = module.split(':')
         if opts[0] in _waffles_modules.keys():
             mod_opts[opts[0]] = list(opts[1:])
-        else: utils.echo_error_msg('invalid module name `{}`'.format(opts[0]))
+        else:
+            utils.echo_error_msg('invalid module name `{}`'.format(opts[0]))
+            sys.exit(-1)
 
         for key in mod_opts.keys():
             mod_opts[key] = [None if x == '' else x for x in mod_opts[key]]
