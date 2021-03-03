@@ -828,17 +828,20 @@ def waffles_gdal_grid(wg = _waffles_grid_info, alg_str = 'linear:radius=1'):
     parse the data through xyzfun.xyz_block to get weighted mean before
     building the GDAL dataset to pass into gdal_grid'''
 
+    _prog = utils._progress('running GDAL GRID {} algorithm @ {}...'.format(alg_str.split(':')[0], regions.region_format(wg['region'], 'fn')))
+    _prog_update = lambda x, y, z: _prog.update()
     region = waffles_proc_region(wg)
     dly = xyzfun.xyz_block(waffles_yield_datalist(wg), region, wg['inc'], weights = False if wg['weights'] is None else True)
     ds = gdalfun.xyz2gdal_ds(dly, '{}'.format(wg['name']))
     if ds.GetLayer().GetFeatureCount() == 0: return({},-1)
     xcount, ycount, dst_gt = gdalfun.gdal_region2gt(region, wg['inc'])
     gd_opts = gdal.GridOptions(outputType = gdal.GDT_Float32, noData = -9999, format = 'GTiff', \
-                               width = xcount, height = ycount, algorithm = alg_str, callback = gdalfun._gdal_progress if wg['verbose'] else None, \
+                               width = xcount, height = ycount, algorithm = alg_str, callback = _prog_update if wg['verbose'] else None, \
                                outputBounds = [region[0], region[3], region[1], region[2]])
     gdal.Grid('{}.tif'.format(wg['name']), ds, options = gd_opts)
     ds = None
     gdalfun.gdal_set_nodata('{}.tif'.format(wg['name']), -9999)
+    _prog.end(0, 'ran GDAL GRID {} algorithm @ {}.'.format(alg_str.split(':')[0], regions.region_format(wg['region'], 'fn')))
     return({'dem': ['{}.tif'.format(wg['name']), 'raster']}, 0)
 
 ## ==============================================
@@ -1444,7 +1447,7 @@ def waffles_gdal_md(in_gdal, wg, cudem = False):
 def waffles_queue(q):
     while True:
         this_wg = q.get()
-        dem = waffles_run(this_wg)
+        dem = waffle(this_wg)
 
         q.task_done()
         
@@ -1949,7 +1952,9 @@ def waffles_cli(argv = sys.argv):
     ## run waffles for each input region.
     ## ==============================================
     these_wgs = []
-    for this_region in these_regions:
+    if want_threads:
+        _prog = utils._progress('Amassing WAFFLES config info for {} regions...'.format(len(these_regions)))
+    for i, this_region in enumerate(these_regions):
         twg = waffles_config_copy(wg)
         twg['region'] = this_region
         if want_prefix or len(these_regions) > 1:
@@ -1969,9 +1974,12 @@ def waffles_cli(argv = sys.argv):
             else: utils.echo_error_msg('could not parse config.')
         else:
             if want_threads:
+                _prog.update_perc((i, len(these_regions)))
                 these_wgs.append(twg)
             else: dems = waffle(twg)
     if want_threads:
+        _prog.end(0, 'Amassed WAFFLES configs for {} regions.'.format(len(these_wgs)))
+        _prog = utils._progress('Generating {} DEMs...'.format(len(these_wgs)))
         wq = queue.Queue()
         num_threads = 2 if len(these_wgs) > 1 else len(these_wgs)
         for _ in range(num_threads):
@@ -1983,11 +1991,13 @@ def waffles_cli(argv = sys.argv):
         while True:
             #while not wq.empty():
             time.sleep(2)
-            utils.echo_msg_inline('generating dem(s) [{}/{}]'.format((len(these_wgs) - wq.qsize()) - num_threads,len(these_wgs)))
+            _prog.update_perc(((len(these_wgs) - wq.qsize()) - num_threads, len(these_wgs)))
+            #utils.echo_msg_inline('generating dem(s) [{}/{}]'.format((len(these_wgs) - wq.qsize()) - num_threads,len(these_wgs)))
             #if wq.qsize == 0:
             if (len(these_wgs) - wq.qsize()) - num_threads == len(these_wgs): break
             #if wq.empty(): break
-        utils.echo_msg('queue complete')
+        #utils.echo_msg('queue complete')
+        _prog.end(0, 'Generated {} DEMs'.format(len(these_wgs)))
         wq.join()
 
 ### End

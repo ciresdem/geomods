@@ -1772,7 +1772,7 @@ class gmrt:
     ## `entry` is a an item from self._data_urls
     ## ==============================================    
     def _yield_xyz(self, entry, epsg = 4326, z_region = None):
-        src_gmrt = 'gmrt_tmp.tif'
+        src_gmrt = 'gmrt_tmp_{}.tif'.format(regions.region_format(self.region, 'fn'))
         if fetch_file(entry[0], src_gmrt, callback = lambda: False, verbose = self._verbose) == 0:
             try:
                 src_ds = gdal.Open(src_gmrt)
@@ -2707,7 +2707,7 @@ def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, warp = None, 
     r = fl._parse_results(fl._filter_results(), **args_d)
     
     for e in r:
-        for xyz in fl._yield_xyz(e, warp = warp, z_region = z_region):
+        for xyz in fl._yield_xyz(e, epsg = warp, z_region = z_region):
             yield(xyz + [entry[2]] if entry[2] is not None else xyz)
 
 def fetch_dump_entry(entry = ['nos:datatype=nos'], dst_port = sys.stdout, region = None, verbose = False, z_region = None):

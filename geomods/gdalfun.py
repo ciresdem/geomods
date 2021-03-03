@@ -343,6 +343,7 @@ def gdal_srcwin(src_ds, region):
     this_size = [0 if x < 0 else x for x in ((this_end[0] - this_origin[0]), (this_end[1] - this_origin[1]))]
     if this_size[0] > ds_config['nx'] - this_origin[0]: this_size[0] = ds_config['nx'] - this_origin[0]
     if this_size[1] > ds_config['ny'] - this_origin[1]: this_size[1] = ds_config['ny'] - this_origin[1]
+    this_size = [0 if x < 0 else x for x in ((this_end[0] - this_origin[0]), (this_end[1] - this_origin[1]))]
     return(this_origin[0], this_origin[1], this_size[0], this_size[1])
 
 def gdal_sample_inc(src_grd, inc = 1, verbose = False):
@@ -1187,7 +1188,6 @@ def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = N
         src_srs.ImportFromEPSG(4326)
         src_srs.AutoIdentifyEPSG()
         srs_auth = src_srs.GetAuthorityCode(None)
-
         
     if srs_auth == warp: warp = None
 
