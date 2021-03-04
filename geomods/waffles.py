@@ -580,6 +580,7 @@ def waffles_spatial_metadata(wg, geojson = False):
                     utils.remove_glob('{}_poly.*'.format(twg['name']))
                 utils.remove_glob(ng)
     ds = None
+    utils.run_cmd('ogrinfo -dialect SQLITE -sql "UPDATE {} SET geometry = ST_MakeValid(geometry)" {}'.format(dst_layer, dst_vector))
     sm_out = {'sm': [dst_vector, 'vector']}
     if geojson:
         dst_gj = '{}_sm.inf'.format(wg['name'])
@@ -1413,10 +1414,10 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
         tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
         gdalfun.gdal_polygonize('{}.tif'.format(wg['name']), tmp_layer, verbose = wg['verbose'])        
         tmp_ds = None
-
     utils.run_cmd('ogr2ogr -dialect SQLITE -sql "SELECT * FROM tmp_c_{} WHERE DN=0 order by ST_AREA(geometry) desc limit 8" {}.shp tmp_c_{}.shp'\
                   .format(wg['name'], wg['name'], wg['name']), verbose = True)
     utils.remove_glob('tmp_c_{}.*'.format(wg['name']))
+    utils.run_cmd('ogrinfo -dialect SQLITE -sql "UPDATE {} SET geometry = ST_MakeValid(geometry)" {}.shp'.format(wg['name'], wg['name']))
                       
     coast_out = {
         'cst': ['{}.tif'.format(wg['name']), 'raster'],
@@ -1979,25 +1980,20 @@ def waffles_cli(argv = sys.argv):
             else: dems = waffle(twg)
     if want_threads:
         _prog.end(0, 'Amassed WAFFLES configs for {} regions.'.format(len(these_wgs)))
-        _prog = utils._progress('Generating {} DEMs...'.format(len(these_wgs)))
         wq = queue.Queue()
         num_threads = 2 if len(these_wgs) > 1 else len(these_wgs)
         for _ in range(num_threads):
             t = threading.Thread(target = waffles_queue, args = (wq, ))
             t.daemon = True
             t.start()
-
         [wq.put(x) for x in these_wgs]
-        while True:
-            #while not wq.empty():
-            time.sleep(2)
-            _prog.update_perc(((len(these_wgs) - wq.qsize()) - num_threads, len(these_wgs)))
-            #utils.echo_msg_inline('generating dem(s) [{}/{}]'.format((len(these_wgs) - wq.qsize()) - num_threads,len(these_wgs)))
-            #if wq.qsize == 0:
-            if (len(these_wgs) - wq.qsize()) - num_threads == len(these_wgs): break
-            #if wq.empty(): break
-        #utils.echo_msg('queue complete')
-        _prog.end(0, 'Generated {} DEMs'.format(len(these_wgs)))
+        #_prog = utils._progress('running WAFFLES module {} on {} regions...'.format(mod, len(these_wgs)))
+        #while True:
+        #    time.sleep(2)
+        #    _prog.update()
+        #    if wq.empty(): break
+        #    #if wq.qsize == 0: break
+        #_prog.end(0, 'running WAFFLES module {} on {} regions...'.format(mod, len(these_wgs)))
         wq.join()
 
 ### End

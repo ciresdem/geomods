@@ -49,31 +49,44 @@ from geomods import fetches
 _known_dl_delims = [' ']
 _dl_dl_h = {
     -1: {
+        'name': 'datalist',
         'fmts': ['datalist', 'mb-1'],
         'inf': lambda e, p: datalist_inf_entry(e),
         'yield': lambda e, r, v, z, w, p: datalist_yield_entry(e, r, v, z, w, p),
     },
+    -2: {
+        'name': 'archive',
+        'fmts': ['zip', 'gz'],
+        'inf': lambda e, p: archive_inf_entry(e),
+        'yield': lambda e, r, v, z, w, p: archive_yield_entry(e, r, v, z, w, p),
+    },
+    -4: {
+        'name': 'fetches',
+        'fmts': ['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs', 'hrdem', 'cudem'],
+        'inf': lambda e, p: fetches.fetch_inf_entry(e, p),
+        'yield': lambda e, r, v, z, w, p: fetches.fetch_yield_entry(e, region = r, warp = p, verbose = v, z_region = z),
+    },
     168: {
+        'name': 'xyz',
         'fmts': ['xyz', 'csv', 'dat', 'ascii'],
         'inf': lambda e, p: xyzfun.xyz_inf_entry(e),
         'yield': lambda e, r, v, z, w, p: xyzfun.xyz_yield_entry(e, region = r, verbose = v, z_region = z),
     },
     200: {
+        'name': 'gdal',
         'fmts': ['tif', 'img', 'grd', 'nc', 'vrt', 'bag'],
         'inf': lambda e, p: gdalfun.gdal_inf_entry(e, p),
         'yield': lambda e, r, v, z, w, p: gdalfun.gdal_yield_entry(e, region = r, verbose = v, z_region = z, epsg = p),
     },
     300: {
+        'name': 'lasf',
         'fmts': ['las', 'laz'],
         'inf': lambda e, p: lasfun.las_inf_entry(e),
         'yield': lambda e, r, v, z, w, p: lasfun.las_yield_entry(e, region = r, verbose = v, z_region = z),
     },
-    400: {
-        'fmts': ['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs', 'hrdem', 'cudem'],
-        'inf': lambda e, p: fetches.fetch_inf_entry(e, p),
-        'yield': lambda e, r, v, z, w, p: fetches.fetch_yield_entry(e, region = r, warp = p, verbose = v, z_region = z),
-    },
 }
+
+_unzip_dl = lambda e, k: utils.p_unzip(e, _dl_dl_h[k]['fmts'])
 
 _datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, _dl_dl_h[key]['fmts']) for key in _dl_dl_h])
 
@@ -162,6 +175,73 @@ def inf_entry(src_entry, overwrite = False, epsg = None):
 ## ==============================================
 ## datalists
 ## ==============================================
+def archive2dl(archive):
+
+    entries = []
+    for key in _dl_dl_h.keys():
+        these_entries = utils.p_unzip(archive, _dl_dl_h[key]['fmts'])
+        if len(these_entries) > 0:
+            [entries.append(entry2py(x)) for x in these_entries]
+    return(entries)
+
+def archive_inf(archive, inf_file = True, epsg = None, overwrite = False):
+    '''return the region of the datalist and generate
+    an associated `.inf` file if `inf_file` is True.'''
+
+    out_regions = []
+    dl_i = {'name': archive, 'minmax': None, 'numpts': 0, 'wkt': None}    
+    utils.echo_msg('generating inf for archive {}'.format(archive))
+
+    entries = archive2dl(archive)
+    for entry in entries:
+        entry_inf = inf_entry(entry, epsg = epsg, overwrite = overwrite)
+        if entry_inf is not None:
+            out_regions.append(entry_inf['minmax'][:6])
+            dl_i['numpts'] += entry_inf['numpts']
+            
+    out_regions = [x for x in out_regions if x is not None]
+    if len(out_regions) == 0:
+        dl_i['minmax'] = None
+    elif len(out_regions) == 1:
+        dl_i['minmax'] = out_regions[0]
+    else:
+        out_region = out_regions[0]
+        for x in out_regions[1:]:
+            out_region = regions.regions_merge(out_region, x)
+        dl_i['minmax'] = out_region
+
+    dl_i['wkt'] = gdalfun.gdal_region2wkt(dl_i['minmax'])
+    
+    if dl_i['minmax'] is not None and inf_file:
+        with open('{}.inf'.format(archive), 'w') as inf:
+            inf.write(json.dumps(dl_i))
+
+    [utils.remove_glob('{}'.format(x[0])) for x in entries]
+    [utils.remove_glob('{}.inf'.format(x[0])) for x in entries]
+    return(dl_i)
+
+def archive_inf_entry(e, inf_file = True, epsg = None, overwrite = False):
+    '''write an inf file for datalist entry e
+    
+    return the region [xmin, xmax, ymin, ymax]'''
+    
+    if e[0] is not None:
+        return(archive_inf(e[0], epsg = epsg, overwrite = overwrite))
+
+def archive_yield_entry(this_entry, region = None, verbose = False, z_region = None, w_region = None, epsg = None):
+    '''yield the xyz data from the datalist entry [entry/path, entry-format, entry-weight]
+
+    yields xyz line data [x, y, z, ...]'''
+
+    these_entries = archive2dl(this_entry[0])
+    for entry in these_entries:
+        entry[2] = this_entry[2]
+        if entry[1] != -1:
+            for xyz in _dl_dl_h[entry[1]]['yield'](entry, region, verbose, z_region, w_region, epsg):
+                yield(xyz)
+    [utils.remove_glob('{}'.format(x[0])) for x in these_entries]
+    [utils.remove_glob('{}.inf'.format(x[0])) for x in these_entries]
+   
 def datalist_inf(dl, inf_file = True, epsg = None, overwrite = False):
     '''return the region of the datalist and generate
     an associated `.inf` file if `inf_file` is True.'''
@@ -237,7 +317,7 @@ def datalist_major(dls, major = '.mjr.datalist', region = None):
         return(None)    
     return(major)
 
-def entry2py(dl_e):
+def entry2py(dl_e, w = 1):
     '''convert a datalist entry to python
 
     return the entry as a list [fn, fmt, wt, ...]'''
@@ -256,7 +336,7 @@ def entry2py(dl_e):
             else: see = se[-1]
             if see in _dl_dl_h[key]['fmts']:
                 entry.append(int(key))
-    if len(entry) < 3: entry.append(1)
+    if len(entry) < 3: entry.append(w)
     return(entry)
 
 def datalist2py(dl, region = None):
@@ -295,7 +375,6 @@ def datalist(dl, wt = None, pass_h = _dl_pass_h,
             this_entry[2] = wt if wt is None else wt * this_entry[2] 
             this_entry = this_entry[:3] + [' '.join(this_entry[3:]).split(',')] + [os.path.basename(dl).split('.')[0]]
             if not False in [x(this_entry) for x in pass_h]:
-                #if verbose and this_entry[1] == -1: utils.echo_msg('parsing datalist ({}) {}'.format(this_entry[2], this_entry[0]))
                 if this_entry[1] == -1:
                     if yield_dl_entry: yield(this_entry)
                     for entry in datalist(this_entry[0], wt = this_entry[2], pass_h = pass_h, yield_dl_entry = yield_dl_entry, verbose = verbose):

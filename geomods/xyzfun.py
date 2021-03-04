@@ -56,6 +56,7 @@ _xyz_config = {
 
 #_known_delims = [',', ' ', '\t', '/', ':']
 _known_delims = [',', '/', ':']
+_known_xyz_fmts = ['xyz', 'csv', 'dat', 'ascii']
 
 def xyz_line_delim(xyz):
     for delim in _known_delims:
@@ -252,9 +253,9 @@ def xyz_inf_entry(entry):
     returns the region [xmin, xmax, ymin, ymax, zmin, zmax] of the xyz entry'''
     
     with open(entry[0]) as infile:
-        #try:
-        minmax = mbsfun.mb_inf(infile)
-        #except: minmax = xyz_inf(infile)
+        try:
+            minmax = mbsfun.mb_inf(infile)
+        except: minmax = xyz_inf(infile)
     return(minmax)        
 
 def xyz_yield_entry(entry, region = None, verbose = False, z_region = None, epsg = None):

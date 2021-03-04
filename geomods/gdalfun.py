@@ -215,6 +215,9 @@ def gdal_region_warp(region, s_warp = 4326, t_warp = 4326):
     
     if t_warp is not None:
         dst_srs = osr.SpatialReference()
+        try:
+            dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+        except: pass
         dst_srs.ImportFromEPSG(int(t_warp))
         dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)        
         pointA = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(region[0], region[2]))
@@ -343,7 +346,6 @@ def gdal_srcwin(src_ds, region):
     this_size = [0 if x < 0 else x for x in ((this_end[0] - this_origin[0]), (this_end[1] - this_origin[1]))]
     if this_size[0] > ds_config['nx'] - this_origin[0]: this_size[0] = ds_config['nx'] - this_origin[0]
     if this_size[1] > ds_config['ny'] - this_origin[1]: this_size[1] = ds_config['ny'] - this_origin[1]
-    this_size = [0 if x < 0 else x for x in ((this_end[0] - this_origin[0]), (this_end[1] - this_origin[1]))]
     return(this_origin[0], this_origin[1], this_size[0], this_size[1])
 
 def gdal_sample_inc(src_grd, inc = 1, verbose = False):
@@ -491,14 +493,17 @@ def gdal_clip(src_gdal, src_ply = None, invert = False):
     tmp_gdal = 'tmp_clp_gd.tif'
     utils.run_cmd('ogr2ogr {} {} -clipsrc {} {} {} {}'.format(tmp_ply, src_ply, g_region[0], g_region[3], g_region[1], g_region[2]), verbose = True)
     if gi is not None and src_ply is not None:
-        gr_inv = '-i' if invert else ''
-        #gr_cmd = 'gdalwarp -cutline {} -cl tmp_clp_ply {} {}'.format(tmp_ply, src_gdal, tmp_gdal)
-        gr_cmd = 'gdal_rasterize -burn {} {} -l {} {} {}'\
-                 .format(gi['ndv'], gr_inv, os.path.basename(tmp_ply).split('.')[0], tmp_ply, src_gdal)
-        out, status = utils.run_cmd(gr_cmd, verbose = True)
+        #gr_inv = '-i' if invert else ''
+        if invert:
+            gr_cmd = 'gdalwarp -cutline {} -cl tmp_clp_ply {} {}'.format(tmp_ply, src_gdal, tmp_gdal)
+            out, status = utils.run_cmd(gr_cmd, verbose = True)
+            os.rename(tmp_gdal, src_gdal)
+        else:
+            gr_cmd = 'gdal_rasterize -burn {} -l {} {} {}'\
+                .format(gi['ndv'], os.path.basename(src_ply).split('.')[0], tmp_ply, src_gdal)
+            out, status = utils.run_cmd(gr_cmd, verbose = True)
+        utils.remove_glob('tmp_clp_ply.*')
     else: return(None)
-    utils.remove_glob('tmp_clp_ply.*')
-    #os.rename(tmp_gdal, src_gdal)
     return(out, status)
 
 def np_split(src_arr, sv = 0, nd = -9999):

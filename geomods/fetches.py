@@ -112,7 +112,7 @@ def fetch_ftp_file(src_url, dst_fn, params = None, callback = None, datatype = N
     if verbose: utils.echo_msg('fetched remote ftp file: {}.'.format(os.path.basename(src_url)))
     return(status)
 
-def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatype = None, overwrite = False, verbose = False):
+def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatype = None, overwrite = False, verbose = False, timeout = 140, read_timeout = 320):
     '''fetch src_url and save to dst_fn'''
     
     status = 0
@@ -130,7 +130,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
 
     if not os.path.exists(dst_fn) or overwrite:
         try:
-            with requests.get(src_url, stream = True, params = params, headers = r_headers, timeout=(45,320)) as req:
+            with requests.get(src_url, stream = True, params = params, headers = r_headers, timeout=(timeout,read_timeout)) as req:
                 req_h = req.headers
                 if req.status_code == 200:
                     curr_chunk = 0
@@ -211,9 +211,36 @@ class fetch_results(threading.Thread):
         
 ## =============================================================================
 ##
-## ISO XML Metadata parsing
+## XML Metadata parsing
 ##
 ## =============================================================================
+def xml2json(node):
+    texts = {}
+    for child in list(node):
+        child_key = lxml.etree.QName(child).localname
+        if 'name' in child.attrib.keys(): child_key = child.attrib['name']
+        if '{http://www.w3.org/1999/xlink}href' in child.attrib.keys():
+            href = child.attrib['{http://www.w3.org/1999/xlink}href']
+        else: href = None
+        if child.text is None or child.text.strip() == '':
+            #if child_key in texts.keys():
+            #    texts[child_key].append(xml2json(child))
+            #else:
+            if href is not None:
+                if child_key in texts.keys():
+                    texts[child_key].append(href)
+                else: texts[child_key] = [href]
+            else:
+                if child_key in texts.keys():
+                    ck = xml2json(child)
+                    texts[child_key][list(ck.keys())[0]].update(ck[list(ck.keys())[0]])
+                else: texts[child_key] = xml2json(child)
+        else:
+            if child_key in texts.keys():
+                texts[child_key].append(child.text)
+            else: texts[child_key] = [child.text]
+    return(texts)
+
 class iso_xml:
     def __init__(self, xml_url, timeout = 2, read_timeout = 10):
         self.url = xml_url
@@ -224,6 +251,7 @@ class iso_xml:
             'gco': 'http://www.isotc211.org/2005/gco',
             'gml': 'http://www.isotc211.org/2005/gml',
             'th': 'http://www.unidata.ucar.edu/namespaces/thredds/InvCatalog/v1.0',
+            'wms': 'http://www.opengis.net/wms',
         }
         
     def _fetch(self, timeout = 2, read_timeout = 10):
@@ -300,6 +328,109 @@ class iso_xml:
 
         return(dd)
 
+class WCS:
+    def __init__(self, url):
+        self.url = url
+        self.namespaces = {
+            'wms': 'http://www.opengis.net/wms',
+            'wcs': 'http://www.opengis.net/wcs/2.0',
+            'ows': 'http://www.opengis.net/ows/2.0',
+            'gml': 'http://www.opengis.net/gml/3.2',
+            'gmlcov': 'http://www.opengis.net/gmlcov/1.0',
+        }
+
+        self._get_capabilities()
+        self._s_version = self._si()['ServiceTypeVersion'][0]
+
+    def _get_capabilities(self):
+
+        _data = {
+            'request': 'GetCapabilities',
+            'service': 'WCS',
+        }
+
+        c = fetches.fetch_req(self.url, params = _data)
+        cx = lxml.etree.fromstring(c.text.encode('utf-8'))
+        self.service_provider = cx.find('.//ows:ServiceProvider', namespaces = self.namespaces)
+        self.service_identification = cx.find('.//ows:ServiceIdentification', namespaces = self.namespaces)
+        self.operations_metadata = cx.find('.//ows:OperationsMetadata', namespaces = self.namespaces)
+        self.service_metadata = cx.find('.//wcs:ServiceMetadata', namespaces = self.namespaces)
+        self.contents = cx.find('.//wcs:Contents', namespaces = self.namespaces)
+
+    def _contents(self):
+        c = []
+        for coverage in self.contents.xpath('//wcs:CoverageSummary', namespaces = self.namespaces):
+            c.append(xml2json(coverage))
+        return(c)
+
+    def _om(self):
+        return(xml2json(self.operations_metadata))
+
+    def _sp(self):
+        return(xml2json(self.service_provider))
+    
+    def _si(self):
+        return(xml2json(self.service_identification))
+        
+    def _describe_coverage(self, coverage):
+        c = self._contents()
+        c_d = {}
+        valid = False
+        for cc in c:
+            if coverage == cc['CoverageId']:
+                valid = True
+                c_d = cc
+                break
+
+        om = self._om()
+        
+        url = om['DescribeCoverage']['DCP']['HTTP']['Get'][0]
+
+        _data = {
+            'request': 'DescribeCoverage',
+            'service': 'WCS',
+            'version': self._s_version,
+            'CoverageID': coverage,
+            }
+        
+        d = fetches.fetch_req(url, params = _data)
+        d_r = lxml.etree.fromstring(d.text.encode('utf-8'))
+        cd = d_r.find('.//wcs:CoverageDescription', namespaces = self.namespaces)
+        d_r_d = xml2json(d_r.find('.//wcs:CoverageDescription', namespaces = self.namespaces))
+        return(d_r_d)
+
+    def _get_coverage_url(self, coverage, region):
+
+        cov_desc = self._describe_coverage(coverage)
+        fmt = cov_desc["ServiceParameters"]["nativeFormat"][0]
+        
+        hl = [float(x) for x in cov_desc["domainSet"]["RectifiedGrid"]["limits"]["GridEnvelope"]['high'][0].split()]
+        uc = [float(x) for x in cov_desc["boundedBy"]["Envelope"]["upperCorner"][0].split()]
+        lc = [float(x) for x in cov_desc["boundedBy"]["Envelope"]["lowerCorner"][0].split()]
+        ds_region = [lc[1], uc[1], lc[0], uc[0]]
+        resx = (uc[1] - lc[1]) / hl[0]
+        resy = (uc[0] - lc[0]) / hl[1]
+        
+        data = {
+            'request': 'GetCoverage',
+            'version': '1.0.0',
+            'service': 'WCS',
+            'resx': resx,
+            'resy': resy,
+            'crs': 'EPSG:4326',
+            'format': fmt,
+            'coverage': coverage,
+            'Identifier': coverage,
+            'bbox': regions.region_format(region, 'bbox'),
+        }
+
+        fetches.fetch_file("https://data.chs-shc.ca/geoserver/wcs?", 'test.tif', params = data, verbose = True)
+
+        try:
+            enc_data = urllib.urlencode(data)
+        except: enc_data = urllib.parse.urlencode(data)
+        return('{}{}'.format(self.url, enc_data))
+    
 ## =============================================================================
 ##
 ## Fetches Remote Elevation Datalist (FRED)
@@ -327,6 +458,11 @@ class FRED:
         if self._verbose: utils.echo_msg('using {}'.format(self.FREDloc))
         self.ds = None
         self.layer = None
+
+        self._fields = ['Name', 'ID', 'Date', 'Agency', 'MetadataLink',
+                        'MetadataDate', 'DataLink', 'IndexLink', 'Link',
+                        'DataType', 'DataSource', 'Resolution', 'HorizontalDatum',
+                        'VerticalDatum', 'LastUpdate', 'Etcetra', 'Info']
         
     def _create_ds(self):
         utils.remove_glob(self.FREDloc)
@@ -337,15 +473,19 @@ class FRED:
         self.layer.CreateField(ogr.FieldDefn('Name', ogr.OFTString))
         self.layer.CreateField(ogr.FieldDefn('ID', ogr.OFTString))
         self.layer.CreateField(ogr.FieldDefn('Date', ogr.OFTInteger))
+        self.layer.CreateField(ogr.FieldDefn('Agency', ogr.OFTString))
         self.layer.CreateField(ogr.FieldDefn('MetadataLink', ogr.OFTString))
         self.layer.CreateField(ogr.FieldDefn('MetadataDate', ogr.OFTString))
         self.layer.CreateField(ogr.FieldDefn('DataLink', ogr.OFTString))
         self.layer.CreateField(ogr.FieldDefn('IndexLink', ogr.OFTString))
+        self.layer.CreateField(ogr.FieldDefn('Link', ogr.OFTString))
         self.layer.CreateField(ogr.FieldDefn('DataType', ogr.OFTString))
         self.layer.CreateField(ogr.FieldDefn('DataSource', ogr.OFTString))
+        self.layer.CreateField(ogr.FieldDefn('Resolution', ogr.OFTString))
         self.layer.CreateField(ogr.FieldDefn('HorizontalDatum', ogr.OFTString))
         self.layer.CreateField(ogr.FieldDefn('VerticalDatum', ogr.OFTString))
         self.layer.CreateField(ogr.FieldDefn('LastUpdate', ogr.OFTString))
+        self.layer.CreateField(ogr.FieldDefn('Etcetra', ogr.OFTString))
         self.layer.CreateField(ogr.FieldDefn('Info', ogr.OFTString))
 
     def _open_ds(self, mode = 0):
@@ -375,10 +515,22 @@ class FRED:
         feat = ogr.Feature(layer_defn)
         geom = ogr.CreateGeometryFromJson(survey[1])
         feat.SetGeometry(geom)
-        [feat.SetField(key, survey[0][key]) for key in survey[0].keys()]
+        for field in self._fields:
+            try:
+                feat.SetField(field, survey[0][field])
+            except: feat.SetField(field, -1)
         self.layer.CreateFeature(feat)
         feat = None
 
+    def _edit_feature(self, feature, survey):
+        geom = ogr.CreateGeometryFromJson(survey[1])
+        feature.SetGeometry(geom)
+        for field in self._fields:
+            try:
+                feature.SetField(field, survey[0][field])
+            except: feature.SetField(field, -1)
+        self.layer.SetFeature(feature)
+        
     def _add_surveys(self, surveys):
         '''update or create a reference vector using a list of surveys'''
 
@@ -554,7 +706,7 @@ class dc:
                         else: dc[cols[j]] = cl[0].get('href')
                     else: dc[cols[j]] = cell.text_content()
                 if self._verbose: utils.echo_msg_inline('scanning {} surveys in {} [{:3}%] - {}.'.format(len(tr), ld, int((float(i)/len(tr)) * 100), dc['ID #']))
-                self.FRED.layer.SetAttributeFilter("ID = 'DC-{}'".format(dc['ID #']))
+                self.FRED.layer.SetAttributeFilter("ID = '{}'".format(dc['ID #']))
                 if len(self.FRED.layer) == 0:
                     if 'Metadata' in dc.keys():
                         this_xml = iso_xml(dc['Metadata'])
@@ -562,17 +714,21 @@ class dc:
                         geom = this_xml.bounds(geom=True)
                         if geom is not None:
                             self._surveys.append([{'Name': dc['Dataset Name'], 
-                                                   'ID': 'DC-{}'.format(dc['ID #']), 
+                                                   'ID': '{}'.format(dc['ID #']),
+                                                   'Agency': '',
                                                    'Date': this_xml.date(), 
                                                    'MetadataLink': dc['Metadata'],
                                                    'MetadataDate': this_xml.xml_date(), 
                                                    'DataLink': dc['https'],
                                                    'IndexLink': dc['Tile Index'],
+                                                   'Link': self._dc_url,
                                                    'DataType': ld.split("_")[0],
                                                    'DataSource': 'dc',
+                                                   'Resolution': '',
                                                    'HorizontalDatum': h_epsg,
                                                    'VerticalDatum': v_epsg,
                                                    'LastUpdate': utils.this_date(),
+                                                   'Etcetra': '',
                                                    'Info': this_xml.abstract()}, geom.ExportToJson()])
             if self._verbose: utils.echo_msg('scanning {} surveys in {} [ OK ].'.format(len(tr), ld))
             
@@ -729,7 +885,7 @@ class nos:
                 sid = survey[:-4]
                 perc = int((float(i)/len(rows)) * 100)
                 if self._verbose: utils.echo_msg_inline('scanning {} surveys in {} [{:3}%] - {}.'.format(len(rows), nosdir, perc, sid))
-                self.FRED.layer.SetAttributeFilter("ID = 'NOS-{}'".format(sid))
+                self.FRED.layer.SetAttributeFilter("ID = '{}'".format(sid))
 
                 if len(self.FRED.layer) == 0:
                     xml_url = xml_catalog + survey
@@ -746,17 +902,21 @@ class nos:
                     geom = this_xml.bounds(geom=True)
                     if geom is not None:
                         self._surveys.append([{'Name': this_xml.title(), 
-                                               'ID': 'NOS-{}'.format(sid), 
+                                               'ID': '{}'.format(sid),
+                                               'Agency': 'NOAA/NOS',
                                                'Date': this_xml.date(), 
                                                'MetadataLink': this_xml.url,
                                                'MetadataDate': this_xml.xml_date(), 
                                                'DataLink': ','.join(list(set(d_links))),
                                                'IndexLink': '',
+                                               'Link': '',
                                                'DataType': ','.join(list(set(d_types))),
                                                'DataSource': 'nos',
+                                               'Resolution': '',
                                                'HorizontalDatum': h_epsg,
                                                'VerticalDatum': v_epsg,
                                                'LastUpdate': utils.this_date(),
+                                               'Etcetra': '',
                                                'Info': this_xml.abstract()}, geom.ExportToJson()])
             if self._verbose: utils.echo_msg_inline('scanning {} surveys in {} [ OK ].\n'.format(len(rows), nosdir))
 
@@ -892,24 +1052,28 @@ class charts():
                 #perc = int((float(i)/len(charts)) * 100)
                 #if self._verbose: utils.echo_msg_inline('scanning {} surveys in {} [{:3}%] - {}.'.format(len(charts), dt, perc, title))
                 if self._verbose: _prog.update_perc((i, len(charts)), msg = '{} - {}'.format(_prog.opm, title))
-                self.FRED.layer.SetAttributeFilter("ID = 'CHARTS-{}'".format(title))
+                self.FRED.layer.SetAttributeFilter("ID = '{}'".format(title))
                 if len(self.FRED.layer) == 0:
                     h_epsg, v_epsg = this_xml.reference_system()
                     this_data = this_xml.linkages()
                     geom = this_xml.polygon(geom=True)
                     if geom is not None:
                         self._surveys.append([{'Name': title,
-                                               'ID': 'CHARTS-{}'.format(title), 
+                                               'ID': '{}'.format(title),
+                                               'Agency': 'NOAA',
                                                'Date': this_xml.date(), 
                                                'MetadataLink': this_xml.url,
                                                'MetadataDate': this_xml.xml_date(), 
                                                'DataLink': this_data,
                                                'IndexLink': '',
+                                               'Link': 'http://www.charts.noaa.gov/',
                                                'DataType': dt,
                                                'DataSource': 'charts',
+                                               'Resolution': '',
                                                'HorizontalDatum': h_epsg,
                                                'VerticalDatum': v_epsg,
                                                'LastUpdate': utils.this_date(),
+                                               'Etcetra': '',
                                                'Info': this_xml.abstract()}, geom.ExportToJson()])
                     
             if self._verbose:
@@ -1064,17 +1228,21 @@ class ncei_thredds:
                 #zvar = 'z' if zv is None else zv.text
                 if geom is not None:
                     self._surveys.append([{'Name': title,
-                                           'ID': this_id, 
+                                           'ID': this_id,
+                                           'Agency': 'NOAA',
                                            'Date': this_xml.date(), 
                                            'MetadataLink': this_xml.url,
                                            'MetadataDate': this_xml.xml_date(), 
                                            'DataLink': http_url,
                                            'IndexLink': wcs_url,
-                                           'DataType': zvar,
+                                           'Link': '',
+                                           'DataType': 'DEM',
                                            'DataSource': 'ncei_thredds',
+                                           'Resolution': '',
                                            'HorizontalDatum': h_epsg,
                                            'VerticalDatum': v_epsg,
                                            'LastUpdate': utils.this_date(),
+                                           'Etcetra': zvar,
                                            'Info': this_xml.abstract()}, geom.ExportToJson()])
                     
         if self._verbose: utils.echo_msg('scanning {} datasets in {} [OK]'.format(len(this_ds), this_ds[0].attrib['name']))
@@ -1178,17 +1346,21 @@ class mb:
             _surveys = [[
                 {
                     'Name': 'NOAA Multibeam', 
-                    'ID': 'MB-1', 
+                    'ID': 'MB-1',
+                    'Agency': 'NOAA',
                     'Date': utils.this_year(), 
                     'MetadataLink': self._mb_metadata_url,
                     'MetadataDate': utils.this_year(), 
                     'DataLink': self._mb_search_url,
                     'IndexLink': '',
+                    'Link': '',
                     'DataType': 'multibeam',
                     'DataSource': 'mb',
+                    'Resolution': '',
                     'HorizontalDatum': 4326,
                     'VerticalDatum': 1092,
                     'LastUpdate': utils.this_date(),
+                    'Etcetra': '',
                     'Info': self.info,
                 },
                 gdalfun.gdal_region2geom([-180,180,-90,90]).ExportToJson(),
@@ -1312,17 +1484,21 @@ The hydrographic surveys provided by this application are to be used for informa
             _surveys = [[
                 {
                     'Name': 'USACE E-Hydro', 
-                    'ID': 'USACE-1', 
+                    'ID': 'USACE-1',
+                    'Agency': 'USACE',
                     'Date': utils.this_year(), 
                     'MetadataLink': '',
                     'MetadataDate': utils.this_year(), 
                     'DataLink': self._usace_gs_api_url,
                     'IndexLink': self._usace_gj_url,
+                    'Link': '',
                     'DataType': 'usace',
                     'DataSource': 'usace',
+                    'Resolution': '',
                     'HorizontalDatum': 'varies',
                     'VerticalDatum': 'varies',
                     'LastUpdate': utils.this_date(),
+                    'Etcetra': '',
                     'Info': self.info,
                 },
                 gdalfun.gdal_region2geom([-162, -60, 16, 73]).ExportToJson(),
@@ -1505,16 +1681,20 @@ class tnm:
         this_date = this_xml.date()
         #if this_geom is not None:
         return([{'Name': dsTag['title'],
-                 'ID': sbDTag, 
+                 'ID': sbDTag,
+                 'Agency': '',
                  'Date': this_date,
                  'MetadataLink': meta,
                  'MetadataDate': this_xml.xml_date(), 
                  'DataLink': data_link,
                  'IndexLink': '',
+                 'Link': '',
                  'DataSource': 'tnm',
+                 'Resolution': '',
                  'HorizontalDatum': h_epsg,
                  'VerticalDatum': v_epsg,
                  'LastUpdate': utils.this_date(),
+                 'Etcetra': '',
                  'Info': this_xml.abstract()}, this_geom])
     #else: return(None)
 
@@ -1708,17 +1888,21 @@ class gmrt:
             self._surveys = [[
                 {
                     'Name': 'GMRT', 
-                    'ID': 'GMRT-1', 
+                    'ID': 'GMRT-1',
+                    'Agency': '',
                     'Date': utils.this_year(), 
                     'MetadataLink': self._gmrt_grid_metadata_url,
                     'MetadataDate': utils.this_year(), 
                     'DataLink': self._gmrt_grid_urls_url,
                     'IndexLink': '',
+                    'Link': '',
                     'DataType': 'raster',
                     'DataSource': 'gmrt',
+                    'Resolution': '',
                     'HorizontalDatum': 3857,
                     'VerticalDatum': 1092,
                     'LastUpdate': utils.this_date(),
+                    'Etcetra': '',
                     'Info': self.info,
                 },
                 gdalfun.gdal_region2geom([-180,180,-90,90]).ExportToJson(),
@@ -1836,17 +2020,21 @@ class mar_grav:
             self._surveys = [[
                 {
                     'Name': 'MAR_GRAV', 
-                    'ID': 'MAR_GRAV-1', 
+                    'ID': 'MAR_GRAV-1',
+                    'Agency': '',
                     'Date': utils.this_year(), 
                     'MetadataLink': self._mar_grav_info_url,
                     'MetadataDate': utils.this_year(), 
                     'DataLink': self._mar_grav_url,
                     'IndexLink': '',
+                    'Link': '',
                     'DataType': 'xyz',
                     'DataSource': 'mar_grav',
+                    'Resolution': '',
                     'HorizontalDatum': 4326,
                     'VerticalDatum': 1092,
                     'LastUpdate': utils.this_date(),
+                    'Etcetra': '',
                     'Info': self.info,
                 },
                 gdalfun.gdal_region2geom([-180,180,-90,90]).ExportToJson(),
@@ -1949,17 +2137,21 @@ class srtm_plus:
             self._surveys = [[
                 {
                     'Name': 'SRTM15+', 
-                    'ID': 'SRTM-1', 
+                    'ID': 'SRTM-1',
+                    'Agency': '',
                     'Date': utils.this_year(), 
                     'MetadataLink': self._srtm_info_url,
                     'MetadataDate': utils.this_year(), 
                     'DataLink': self._srtm_url,
                     'IndexLink': '',
+                    'Link': '',
                     'DataType': 'xyz',
                     'DataSource': 'srtm_plus',
+                    'Resolution': '',
                     'HorizontalDatum': 4326,
                     'VerticalDatum': 1092,
                     'LastUpdate': utils.this_date(),
+                    'Etcetra': '',
                     'Info': self.info,
                 },
                 gdalfun.gdal_region2geom([-180,180,-90,90]).ExportToJson(),
@@ -2083,17 +2275,21 @@ class emodnet:
                 geom = gdalfun.gdal_region2geom(region)
                 if geom is not None:
                     self._surveys.append([{'Name': title, 
-                                           'ID': '{}'.format(name), 
+                                           'ID': '{}'.format(name),
+                                           'Agency': '',
                                            'Date': utils.this_year(), 
                                            'MetadataLink': xml_url,
                                            'MetadataDate': utils.this_year(), 
                                            'DataLink': self._emodnet_grid_url,
                                            'IndexLink': '',
+                                           'Link': '',
                                            'DataType': dt,
                                            'DataSource': 'emodnet',
+                                           'Resolution': '',
                                            'HorizontalDatum': 4326,
                                            'VerticalDatum': 1092,
                                            'LastUpdate': utils.this_date(),
+                                           'Etcetra': '',
                                            'Info': abstract}, geom.ExportToJson()])
 
         self.FRED._add_surveys(self._surveys)
@@ -2243,17 +2439,21 @@ class hrdem():
                         geom = feature.GetGeometryRef()
                         if geom is not None:
                             self._surveys.append([{'Name': name, 
-                                                   'ID': feature.GetField('Project'), 
+                                                   'ID': feature.GetField('Project'),
+                                                   'Agency': 'NRCAN',
                                                    'Date': utils.this_year(), 
                                                    'MetadataLink': feature.GetField('Meta_dtm'),
                                                    'MetadataDate': utils.this_year(), 
                                                    'DataLink': data_link.replace('http', 'ftp'),
                                                    'IndexLink': self._hrdem_footprints_url,
+                                                   'Link': '',
                                                    'DataType': 'dtm',
                                                    'DataSource': 'hrdem',
+                                                   'Resolution': '',
                                                    'HorizontalDatum': feature.GetField('Coord_Sys').split(':')[-1],
                                                    'VerticalDatum': 'varies',
                                                    'LastUpdate': utils.this_date(),
+                                                   'Etcetra': '',
                                                    'Info': feature.GetField('Provider')}, geom.ExportToJson()])
 
             self.FRED._add_surveys(self._surveys)
@@ -2371,17 +2571,21 @@ class chs:
                 geom = gdalfun.gdal_region2geom(region)
                 if geom is not None:
                     self._surveys.append([{'Name': title, 
-                                           'ID': '{}'.format(name), 
+                                           'ID': '{}'.format(name),
+                                           'Agency': '',
                                            'Date': utils.this_year(), 
                                            'MetadataLink': xml_url,
                                            'MetadataDate': utils.this_year(), 
                                            'DataLink': self._chs_url,
                                            'IndexLink': '',
+                                           'Link': '',
                                            'DataType': dt,
                                            'DataSource': 'chs',
+                                           'Resolution': '',
                                            'HorizontalDatum': 4326,
                                            'VerticalDatum': 1092,
                                            'LastUpdate': utils.this_date(),
+                                           'Etcetra': '',
                                            'Info': abstract}, geom.ExportToJson()])
                     
         self.FRED._add_surveys(self._surveys)
@@ -2432,9 +2636,9 @@ class chs:
                 try:
                     enc_data = urllib.urlencode(data)
                 except: enc_data = urllib.parse.urlencode(data)
-                emodnet_wcs = '{}{}'.format(surv['DataLink'], enc_data)            
+                chs_wcs = '{}{}'.format(surv['DataLink'], enc_data)            
                 outf = 'chs_{}_{}.tif'.format(''.join('_'.join(surv['ID'].split()).split(':')), regions.region_format(self.region, 'fn'))
-                self._data_urls.append([emodnet_wcs, outf, 'chs'])
+                self._data_urls.append([chs_wcs, outf, 'chs'])
 
         return(self._data_urls)
 
@@ -2454,8 +2658,8 @@ class chs:
                 for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose, z_region = z_region):
                     yield(xyz)
                 src_ds = None
-        else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_emodnet))
-        utils.remove_glob(src_emodnet)
+        else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_chs))
+        utils.remove_glob(src_chs)
 
     def _dump_xyz(self, src_chs, epsg = None, dst_port = sys.stdout, z_region = None):
         for xyz in self._yield_xyz(src_chs, epsg = epsg, z_region = z_region):
@@ -2505,17 +2709,21 @@ class ngs:
             self._surveys = [[
                 {
                     'Name': 'NGS Monuments', 
-                    'ID': 'NGS-1', 
+                    'ID': 'NGS-1',
+                    'Agency': 'NGS',
                     'Date': utils.this_year(), 
                     'MetadataLink': '',
                     'MetadataDate': utils.this_year(), 
                     'DataLink': self._ngs_search_url,
                     'IndexLink': '',
+                    'Link': '',
                     'DataType': 'raster',
                     'DataSource': 'ngs',
+                    'Resolution': '',
                     'HorizontalDatum': '',
                     'VerticalDatum': '',
                     'LastUpdate': utils.this_date(),
+                    'Etcetra': '',
                     'Info': self.info,
                 },
                 gdalfun.gdal_region2geom([-162, -60, 16, 73]).ExportToJson(),

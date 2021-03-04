@@ -157,7 +157,6 @@ def gunzip(gz_file):
 
     return the extracted file name.'''
     
-    #import gzip
     if os.path.exists(gz_file):
         gz_split = gz_file.split('.')[:-1]
         guz_file = '{}.{}'.format(gz_split[0], gz_split[1])
@@ -173,7 +172,7 @@ def gunzip(gz_file):
         guz_file = None
     return(guz_file)
 
-def p_unzip(src_file, exts):
+def p_unzip(src_file, exts = None):
     src_procs = []
     if src_file.split('.')[-1].lower() == 'zip':
         with zipfile.ZipFile(src_file) as z:
@@ -185,6 +184,20 @@ def p_unzip(src_file, exts):
                         src_procs.append(os.path.basename(zf))
                         with open(os.path.basename(zf), 'wb') as f:
                             f.write(z.read(zf))
+    elif src_file.split('.')[-1] == 'gz':
+        tmp_proc = gunzip(src_file)
+        if tmp_proc is not None:
+            for ext in exts:
+                if ext == tmp_proc.split('.')[-1]:
+                    src_procs.append(os.path.basename(tmp_proc))
+                    break
+                else: remove_glob(tmp_proc)
+    else:
+        for ext in exts:
+            if ext == src_file.split('.')[-1]:
+                src_procs.append(src_file)
+                break
+        
     return(src_procs)
     
 def procs_unzip(src_file, exts):
@@ -205,13 +218,6 @@ def procs_unzip(src_file, exts):
                         with open(src_proc, 'wb') as f:
                             f.write(z.read(zf))
                         break
-        #zips = unzip(src_file)
-        # for ext in exts:
-        #     for zf in zips:
-        #         if ext in zf:
-        #             src_proc = zf
-        #             break
-        #         #else: remove_glob(zf)
     elif src_file.split('.')[-1] == 'gz':
         tmp_proc = gunzip(src_file)
         if tmp_proc is not None:
