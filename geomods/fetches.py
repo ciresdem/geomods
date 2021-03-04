@@ -85,8 +85,8 @@ def fetch_queue(q, p, s):
                     utils.echo_msg('processing local file: {}'.format(o_x_fn))
                     if not os.path.exists(o_x_fn):
                         with open(o_x_fn, 'w') as out_xyz:
-                            p._dump_xyz([fetch_args[0], fetch_args[1], fetch_args[-1]], epsg = 4326, dst_port = out_xyz)
-                else: s._dump_xyz([fetch_args[0], fetch_args[1], fetch_args[-1]], epsg = 4326)
+                            fetch_dump_xyz(fetch_args, module = p, epsg = 4326, dst_port = out_xyz)
+                else: fetch_dump_xyz(fetch_args, module = s, epsg = 4326)
                     
         q.task_done()
 
@@ -829,10 +829,6 @@ class dc:
             src_ds = None
         utils.remove_glob(src_dc)
 
-    def _dump_xyz(self, entry, epsg = 4326, dst_port = sys.stdout, z_region = None):
-        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
-            xyzfun.xyz_line(xyz, dst_port, False)
-
 ## =============================================================================
 ##
 ## NOS Fetch
@@ -1015,10 +1011,6 @@ class nos:
             utils.remove_glob(nos_f)
         utils.remove_glob(src_nos)
         
-    def _dump_xyz(self, entry, epsg = 4326, dst_port = sys.stdout, z_region = None):
-         for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
-             xyzfun.xyz_line(xyz, dst_port, False)
-
 ## =============================================================================
 ##
 ## Chart Fetch - ENC & RNC
@@ -1154,10 +1146,6 @@ class charts():
                 utils._clean_zips(src_zips)
         utils.remove_glob(src_zip)
         
-    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout, z_region = None):
-        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
-            xyzfun.xyz_line(xyz, dst_port, False)
-
 ## =============================================================================
 ##
 ## NCEI THREDDS Catalog (CUDEM)
@@ -1315,10 +1303,6 @@ class ncei_thredds:
                 yield(xyz)
         src_ds = None
         utils.remove_glob(src_dc)
-
-    def _dump_xyz(self, entry, epsg = 4326, dst_port = sys.stdout, z_region = None):
-        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
-            xyzfun.xyz_line(xyz, dst_port, self._verbose)
             
 ## =============================================================================
 ##
@@ -1456,10 +1440,6 @@ class mb:
             utils.remove_glob(src_xyz)
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_mb))
         utils.remove_glob(src_mb)
-
-    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout, z_region = None):
-        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
-            xyzfun.xyz_line(xyz, dst_port, self._verbose)
 
 ## =============================================================================
 ##
@@ -1616,10 +1596,6 @@ The hydrographic surveys provided by this application are to be used for informa
         
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(entry[0]))
         utils.remove_glob(src_zip)
-
-    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout, z_region = None):
-        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
-            xyzfun.xyz_line(xyz, dst_port, False)
 
 ## =============================================================================
 ##
@@ -1857,10 +1833,6 @@ class tnm:
                 utils.remove_glob(src_tnm)
                 utils._clean_zips(src_zips)
         utils.remove_glob(entry[1])
-
-    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout, z_region = None):
-        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
-            xyzfun.xyz_line(xyz, dst_port, False)
             
 ## =============================================================================
 ##
@@ -1989,10 +1961,6 @@ class gmrt:
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_gmrt))
         utils.remove_glob(src_gmrt)
 
-    def _dump_xyz(self, src_gmrt, epsg = 4326, z_region = None, dst_port = sys.stdout):
-        for xyz in self._yield_xyz(src_gmrt, epsg = epsg, z_region = z_region):
-            xyzfun.xyz_line(xyz, dst_port, False)
-
 ## =============================================================================
 ##
 ## mar_grav - Sattelite Altimetry Topography from Scripps
@@ -2108,10 +2076,6 @@ class mar_grav:
                     yield(xyz)
         utils.remove_glob(os.path.basename(entry[1]))
     
-    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout, z_region = None):
-        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
-            xyzfun.xyz_line(xyz, dst_port, False)
-
 ## =============================================================================
 ##
 ## SRTM Plus
@@ -2223,11 +2187,7 @@ class srtm_plus:
                 for xyz in xyzfun.xyz_parse(xyzf, xyz_c = xyzc, verbose = self._verbose):
                     yield(xyz)
         utils.remove_glob(os.path.basename(entry[1]))
-    
-    def _dump_xyz(self, entry, epsg = None, dst_port = sys.stdout, z_region = None):
-        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
-            xyzfun.xyz_line(xyz, dst_port, False)
-
+        
 ## =============================================================================
 ##
 ## EMODNET Fetch
@@ -2385,10 +2345,6 @@ class emodnet:
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_emodnet))
         utils.remove_glob(src_emodnet)
 
-    def _dump_xyz(self, src_emodnet, epsg = None, dst_port = sys.stdout, z_region = None):
-        for xyz in self._yield_xyz(src_emodnet, epsg = epsg, z_region = z_region):
-            xyzfun.xyz_line(xyz, dst_port, False)
-
 ## =============================================================================
 ##
 ## HRDEM Fetch - Canada High Resolution DEM dataset
@@ -2522,10 +2478,6 @@ class hrdem():
         src_ds = None
         utils.remove_glob(src_dc)
 
-    def _dump_xyz(self, entry, epsg = 4326, dst_port = sys.stdout, z_region = None):
-        for xyz in self._yield_xyz(entry, epsg = epsg, z_region = z_region):
-            xyzfun.xyz_line(xyz, dst_port, self._verbose)
-            
 ## =============================================================================
 ##
 ## CHS Fetch
@@ -2680,10 +2632,6 @@ class chs:
                 src_ds = None
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_chs))
         utils.remove_glob(src_chs)
-
-    def _dump_xyz(self, src_chs, epsg = None, dst_port = sys.stdout, z_region = None):
-        for xyz in self._yield_xyz(src_chs, epsg = epsg, z_region = z_region):
-            xyzfun.xyz_line(xyz, dst_port, False)
             
 ## =============================================================================
 ##
@@ -2780,10 +2728,6 @@ class ngs:
             for mm in r: yield([mm['lon'], mm['lat'], mm['geoidHt']])
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_ngs))
         utils.remove_glob(src_ngs)
-
-    def _dump_xyz(self, src_emodnet, epsg = None, dst_port = sys.stdout, z_region = None):
-        for xyz in self._yield_xyz(src_emodnet, epsg = epsg, z_region = z_region):
-            xyzfun.xyz_line(xyz, dst_port, False)
 
 ## =============================================================================
 ##
@@ -2941,12 +2885,20 @@ def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, warp = None, 
         for xyz in fl._yield_xyz(e, epsg = warp, z_region = z_region):
             yield(xyz + [entry[2]] if entry[2] is not None else xyz)
 
-def fetch_dump_entry(entry = ['nos:datatype=nos'], dst_port = sys.stdout, region = None, verbose = False, z_region = None):
+def fetch_dump_entry(entry = ['nos:datatype=nos'], dst_port = sys.stdout, region = None, warp = None, verbose = False, z_region = None):
     '''dump the xyz data from the fetch module datalist entry to dst_port'''
     
-    for xyz in fetch_yield_entry(entry, region, verbose, z_region):
+    for xyz in fetch_yield_entry(entry = entry, region = region, warp = warp, verbose = verbose, z_region = z_region):
         xyz_line(xyz, dst_port, False)
-            
+
+def fetch_dump_xyz(parsed_entry, module = None, epsg = 4326, z_region = None, dst_port = sys.stdout):
+    '''dump the parsed entry to xyz
+    use <fetch_module>._parse_results() to generate parsed entry'''
+
+    if module == None: module = _fetch_modules[parsed_entry[4]](None, [], None, False)    
+    for xyz in module._yield_xyz([parsed_entry[0], parsed_entry[1], parsed_entry[-1]], epsg = epsg, z_region = z_region):
+        xyzfun.xyz_line(xyz, dst_port, False)
+        
 ## =============================================================================
 ##
 ## Run fetches from command-line
