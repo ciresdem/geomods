@@ -106,7 +106,7 @@ def path_exists_or_url(src_str):
             #print(src_str, os.stat(src_str).st_size)
             return(True)
     if src_str[:4] == 'http': return(True)
-    if src_str.split(':')[0] in _dl_dl_h[400]['fmts']: return(True)
+    if src_str.split(':')[0] in _dl_dl_h[-4]['fmts']: return(True)
     #utils.echo_error_msg('invalid datafile/datalist: {}'.format(src_str))
     utils.echo_warning_msg('invalid datafile/datalist: {}'.format(src_str))
     return(False)
@@ -115,7 +115,7 @@ def intersect_p(r, e, p = None):
     '''return True if region r intersects with the wkt found in the 
     inf file for datalist entry e'''
 
-    if entry_exists_p(e[0]) or e[1] == 400:
+    if entry_exists_p(e[0]) or e[1] == -4:
         dl_i = inf_entry(e, epsg = p)
         r_geom = gdalfun.gdal_region2geom(r)
         e_geom = gdalfun.gdal_wkt2geom(dl_i['wkt']) if 'wkt' in dl_i.keys() else r_geom
@@ -164,7 +164,7 @@ def inf_entry(src_entry, overwrite = False, epsg = None):
     returns the region of the inf file.'''
     
     ei = {'name': src_entry, 'numpts': 0, 'minmax': [0,0,0,0,0,0], 'wkt': gdalfun.gdal_region2wkt([0,0,0,0,0,0])}
-    if entry_exists_p(src_entry[0]) or src_entry[1] == 400:
+    if entry_exists_p(src_entry[0]) or src_entry[1] == -4:
         path_i = src_entry[0] + '.inf'
         if not os.path.exists(path_i) or overwrite:
             ei = _dl_dl_h[src_entry[1]]['inf'](src_entry, epsg)

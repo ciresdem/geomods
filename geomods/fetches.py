@@ -538,7 +538,27 @@ class FRED:
         if self.layer is not None:
             [self.layer.SetFeature(ff) for ff in self.layer]
             [self._add_feature(i) for i in surveys]
+
+    def _get_region(self, where = [], layers = []):
+
+        out_regions = []
+        if self._verbose: _progress = utils._progress('gathering regions from {}...'.format(self.FREDloc))
+        self._open_ds()
         
+        for i, layer in enumerate(layers):
+            if self._verbose: _progress.update_perc((i, len(layers)))
+            this_layer = self.layer
+            this_layer.SetAttributeFilter("DataSource = '{}'".format(layer))
+            [this_layer.SetAttributeFilter('{}'.format(filt)) for filt in where]
+            for feat in this_layer:
+                geom = feat.GetGeometryRef()
+                wkt = geom.ExportToWkt()
+                this_region = ogr.CreateGeometryFromWkt(wkt).GetEnvelope()
+                if len(out_regions) > 0:
+                    out_regions = regions.regions_merge(out_regions, this_region)
+                else: out_regions = this_region
+        return(out_regions)
+            
     def _filter(self, region, where = [], layers = []):
         '''Search for data in the reference vector file'''
         
@@ -1379,8 +1399,7 @@ class mb:
         for surv in r:
             if self.region is None: return([])        
             _req = fetch_req(surv['DataLink'], params = {'geometry': regions.region_format(self.region, 'bbox')}, timeout = 20)
-            print(_req.url)
-            if _req is not None:
+            if _req is not None and _req.status_code == 200:
                 survey_list = _req.text.split('\n')[:-1]
                 for r in survey_list:
                     dst_pfn = r.split(' ')[0]
@@ -1394,6 +1413,7 @@ class mb:
                             these_surveys[survey][version].append([data_url.split(' ')[0], '/'.join([survey, dst_fn]), 'mb'])
                         else: these_surveys[survey][version] = [[data_url.split(' ')[0], '/'.join([survey, dst_fn]), 'mb']]
                     else: these_surveys[survey] = {version: [[data_url.split(' ')[0], '/'.join([survey, dst_fn]), 'mb']]}
+            else: utils.echo_error_msg('{}'.format(_req.reason))
                     
         for key in these_surveys.keys():
             if '2' in these_surveys[key].keys():
@@ -2891,7 +2911,7 @@ class osm:
             utils.run_cmd('ogr2ogr {}.shp {}.gmt'.format(os.path.join(self._outdir, out_fn), os.path.join(self._outdir, out_fn)), verbose = False)
             
 ## ==============================================
-## fetches processing (datalists fmt:400 - 499)
+## fetches processing (datalists fmt: -4)
 ## ==============================================
 def fetch_inf_entry(entry = [], warp = None):
     out_inf = {'minmax': [-180,180,-90,90], 'name': entry[0], 'pts': None, 'wkt': gdalfun.gdal_region2wkt([-180,180,-90,90])}
@@ -2905,10 +2925,13 @@ def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, warp = None, 
 
     yields [x, y, z, <w, ...>]'''
 
-    region = regions.region_warp(region, src_epsg = warp, dst_epsg = 4326)
     fetch_mod = entry[0].split(':')[0]
     fetch_args = entry[0].split(':')[1:]
 
+    if region is None:
+        region = _fetch_modules[fetch_mod](None, [], None, False).FRED._get_region([], [fetch_mod])
+
+    region = regions.region_warp(region, src_epsg = warp, dst_epsg = 4326)
     fl = _fetch_modules[fetch_mod](regions.region_buffer(region, 5, pct = True), [], lambda: False, verbose)
     args_d = utils.args2dict(fetch_args, {})
 
