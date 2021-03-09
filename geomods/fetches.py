@@ -1374,7 +1374,7 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
                 xyzc['lower_limit'] = z_region[0]
             
             if inc is not None:
-                xyz_dat = utils.yield_cmd('mblist -MX20 -OXYZ -I{} | gmt blockmedian -I{:.10f} {} -r'.format(src_mb, inc, regions.region_format(self.region, 'gmt')), verbose = self._verbose)
+                xyz_dat = utils.yield_cmd('mblist -MX20 -OXYZ -I{} | gmt blockmedian -I{:.10f} {} -r -V'.format(src_mb, inc, regions.region_format(self.region, 'gmt')), verbose = self._verbose)
             else:
                 xyzc['delim'] = '\t'
                 xyz_dat = utils.yield_cmd('mblist -MX20 -OXYZ -I{}'.format(src_mb))
