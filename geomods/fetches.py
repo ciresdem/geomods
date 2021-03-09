@@ -46,6 +46,7 @@ except: import queue as queue
 from geomods import utils
 from geomods import regions
 from geomods import gdalfun
+from geomods import gmtfun
 from geomods import xyzfun
 
 _version = '0.6.3'
@@ -63,7 +64,7 @@ _version = '0.6.3'
 ## =============================================================================
 r_headers = { 'User-Agent': 'GeoMods: Fetches v%s' %(_version) }
 
-def fetch_queue(q, p, s):
+def fetch_queue(q, fo, fg):
     '''fetch queue `q` of fetch results'''
     while True:
         fetch_args = q.get()
@@ -71,12 +72,12 @@ def fetch_queue(q, p, s):
         this_dt = fetch_args[4].lower()
         fetch_args[2] = None
         if not fetch_args[3]():
-            if p is None and s is None:
+            if not fg['proc_p'] and not fg['dump_p']:
                 if fetch_args[0].split(':')[0] == 'ftp':
                     fetch_ftp_file(*tuple(fetch_args))
                 else: fetch_file(*tuple(fetch_args))
             else:
-                if s is None:
+                if not fg['dump_p']:
                     if not os.path.exists(os.path.dirname(fetch_args[1])):
                         try:
                             os.makedirs(os.path.dirname(fetch_args[1]))
@@ -85,8 +86,8 @@ def fetch_queue(q, p, s):
                     utils.echo_msg('processing local file: {}'.format(o_x_fn))
                     if not os.path.exists(o_x_fn):
                         with open(o_x_fn, 'w') as out_xyz:
-                            fetch_dump_xyz(fetch_args, module = p, epsg = 4326, dst_port = out_xyz)
-                else: fetch_dump_xyz(fetch_args, module = s, epsg = 4326)                    
+                            fetch_dump_xyz(fetch_args, module = fo, epsg = 4326, z_region = fg['z_region'], inc = fg['inc'], dst_port = out_xyz)
+                else: fetch_dump_xyz(fetch_args, module = fo, epsg = 4326)
         q.task_done()
 
 def fetch_ftp_file(src_url, dst_fn, params = None, callback = None, datatype = None, overwrite = False, verbose = False):
@@ -169,26 +170,24 @@ def fetch_html(src_url):
 class fetch_results(threading.Thread):
     '''fetch results gathered from a fetch module.
     results is a list of URLs with data type'''
-    def __init__(self, results, region, out_dir, proc = None, stream = None, fetch_p = True, list_p = False, callback = lambda: False):
+    def __init__(self, results, region, out_dir, fetch_obj = None, fg = None, callback = lambda: False):
         threading.Thread.__init__(self)
         self.fetch_q = queue.Queue()
         self.results = results
         self.region = region
         self._outdir = out_dir
         self.stop_threads = callback
-        self.proc = proc
-        self.stream = stream
-        self.list_p = list_p
-        self.fetch_p = fetch_p
+        self.fetch_obj = fetch_obj
+        self.fg = fg
         
     def run(self):
         for _ in range(3):
-            t = threading.Thread(target = fetch_queue, args = (self.fetch_q, self.proc, self.stream))
+            t = threading.Thread(target = fetch_queue, args = (self.fetch_q, self.fetch_obj, self.fg))
             t.daemon = True
             t.start()
         for row in self.results:
-            if self.list_p: print(row[0])
-            if self.fetch_p: self.fetch_q.put([row[0], os.path.join(self._outdir, row[1]), self.region, self.stop_threads, row[2], False, True])
+            if self.fg['list_p']: print(row[0])
+            if self.fg['fetch_p']: self.fetch_q.put([row[0], os.path.join(self._outdir, row[1]), self.region, self.stop_threads, row[2], False, True])
         self.fetch_q.join()
         
 ## =============================================================================
@@ -678,12 +677,12 @@ _fetch_long_desc = lambda x: 'fetches modules:\n% fetches ... <mod>:key=val:key=
                          for key in x]))
 _fetch_short_desc = lambda x: ' '.join(['{}'.format(key) for key in x])
 
-def fetches_config(name = 'fetches', mods = ['gmrt'], region = None, where = [], fetch_p = True,
+def fetches_config(name = 'fetches', mods = ['gmrt'], region = None, where = [], fetch_p = True, inc = None,
                    index_p = False, list_p = False, proc_p = False, dump_p = False, update_p = False,
-                   verbose = True):
+                   z_region = None, verbose = True):
     return({'name': name, 'mods': mods, 'region': region, 'where': where,
-            'fetch_p': fetch_p, 'index_p': index_p, 'list_p': list_p,
-            'proc_p': proc_p, 'dump_p': dump_p, 'update_p': update_p,
+            'fetch_p': fetch_p, 'inc': inc, 'index_p': index_p, 'list_p': list_p,
+            'proc_p': proc_p, 'dump_p': dump_p, 'update_p': update_p, 'z_region': None,
             'verbose': verbose})
 
 ## =============================================================================
@@ -804,7 +803,7 @@ class dc:
     ## as well as for processing incoming fetched data.
     ## `entry` is list: [url, file-name, datatype]
     ## ==============================================    
-    def _yield_xyz(self, entry, epsg = 4326, z_region = None):
+    def _yield_xyz(self, entry, epsg = 4326, z_region = None, inc = None):
         src_dc = os.path.basename(entry[1])
         src_ext = src_dc.split('.')[-1].lower()
         if src_ext == 'laz' or src_ext == 'las': dt = 'lidar'
@@ -947,7 +946,7 @@ class nos:
     ## as well as for processing incoming fetched data.
     ## `entry` is list: [url, file-name, datatype]
     ## ==============================================    
-    def _yield_xyz(self, entry, epsg = 4326, z_region = None):
+    def _yield_xyz(self, entry, epsg = 4326, z_region = None, inc = None):
         xyzc = copy.deepcopy(xyzfun._xyz_config)
         src_nos = os.path.basename(entry[1])
         dt = None
@@ -1084,7 +1083,7 @@ class charts():
     ## as well as for processing incoming fetched data.
     ## `entry` is list: [url, file-name, datatype]
     ## ==============================================
-    def _yield_xyz(self, entry, epsg = None, z_region = None):
+    def _yield_xyz(self, entry, epsg = None, z_region = None, inc = None):
         xyzc = xyzfun._xyz_config
         xyzc['z-scale'] = -1
         xyzc['warp'] = epsg
@@ -1242,7 +1241,7 @@ community preparedness.'''
     ## as well as for processing incoming fetched data.
     ## `entry` is list: [url, file-name, datatype]
     ## ==============================================    
-    def _yield_xyz(self, entry, epsg = 4326, z_region = None):
+    def _yield_xyz(self, entry, epsg = 4326, z_region = None, inc = None):
         src_dc = os.path.basename(entry[1])
         src_ext = src_dc.split('.')[-1]
         try:
@@ -1358,7 +1357,7 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
     ## as well as for processing incoming fetched data.
     ## `entry` is list: [url, file-name, datatype]
     ## ==============================================    
-    def _yield_xyz(self, entry, epsg = None, z_region = None):
+    def _yield_xyz(self, entry, epsg = None, z_region = None, inc = None):
         xyzc = copy.deepcopy(xyzfun._xyz_config)
         src_mb = os.path.basename(entry[1])
 
@@ -1366,7 +1365,6 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
             src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
             out, status = utils.run_cmd('mblist -MX20 -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
             xyzc['name'] = src_mb
-            xyzc['delim'] = '\t'
             xyzc['z-scale'] = 1
             xyzc['epsg'] = 4326
             xyzc['warp'] = epsg
@@ -1375,9 +1373,16 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
                 xyzc['lower_limit'] = z_region[0]
             mb_r = src_xyz
 
-            with open(mb_r, 'r') as in_m:
-                 for xyz in xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose):
+            if inc is not None:
+                #print('gmt blockmean {} -I{:.10f} {} -r'.format(src_xyz, inc, regions.region_format(self.region, 'gmt')))
+                xyz_dat = utils.yield_cmd('gmt blockmedian {} -I{:.10f} {} -r'.format(src_xyz, inc, regions.region_format(self.region, 'gmt')))
+                for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, region = self.region, verbose = True):
                     yield(xyz)
+            else:
+                xyzc['delim'] = '\t'
+                with open(mb_r, 'r') as in_m:
+                    for xyz in xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose):
+                        yield(xyz)
             utils.remove_glob(src_xyz)
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_mb))
         utils.remove_glob(src_mb)
@@ -1455,7 +1460,7 @@ may or may not be accurate.'''
     ## as well as for processing incoming fetched data.
     ## `entry` is list: [url, file-name, datatype]
     ## ==============================================    
-    def _yield_xyz(self, entry, epsg = None, z_region = None):
+    def _yield_xyz(self, entry, epsg = None, z_region = None, inc = None):
         xyzc = copy.deepcopy(xyzfun._xyz_config)
         src_zip = os.path.basename(entry[1])
         xyzc['warp'] = epsg
@@ -1779,7 +1784,7 @@ and deliver topographic information for the Nation.'''
     ## as well as for processing incoming fetched data.
     ## `entry` is list: [url, file-name, datatype]
     ## ==============================================                
-    def _yield_xyz(self, entry, epsg = None, z_region = None):
+    def _yield_xyz(self, entry, epsg = None, z_region = None, inc = None):
         '''yield the xyz data from the tnm fetch module'''
         if fetch_file(entry[0], entry[1], callback = self._stop, verbose = self._verbose) == 0:
             datatype = entry[-1]
@@ -1891,7 +1896,7 @@ the global and coastal oceans.'''
     ## as well as for processing incoming fetched data.
     ## `entry` is a an item from self._data_urls
     ## ==============================================    
-    def _yield_xyz(self, entry, epsg = 4326, z_region = None):
+    def _yield_xyz(self, entry, epsg = 4326, z_region = None, inc = None):
         src_gmrt = 'gmrt_tmp_{}.tif'.format(regions.region_format(self.region, 'fn'))
         if fetch_file(entry[0], src_gmrt, callback = self._stop, verbose = self._verbose) == 0:
             try:
@@ -1977,7 +1982,7 @@ class mar_grav:
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
     ## ==============================================
-    def _yield_xyz(self, entry, epsg = None, z_region = None):
+    def _yield_xyz(self, entry, epsg = None, z_region = None, inc = None):
         if fetch_file(entry[0], os.path.basename(entry[1]), callback = self._stop, verbose = self._verbose) == 0:
             xyzc = copy.deepcopy(xyzfun._xyz_config)
             xyzc['skip'] = 1
@@ -2063,7 +2068,7 @@ class srtm_plus:
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
     ## ==============================================
-    def _yield_xyz(self, entry, epsg = None, z_region = None):
+    def _yield_xyz(self, entry, epsg = None, z_region = None, inc = None):
         if fetch_file(entry[0], os.path.basename(entry[1]), callback = self._stop, verbose = self._verbose) == 0:
             xyzc = copy.deepcopy(xyzfun._xyz_config)
             xyzc['skip'] = 1
@@ -2158,7 +2163,7 @@ class emodnet:
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
     ## ==============================================    
-    def _yield_xyz(self, entry, epsg = None, z_region = None):
+    def _yield_xyz(self, entry, epsg = None, z_region = None, inc = None):
         src_emodnet = 'emodnet_tmp.tif'
         if fetch_file(entry[0], src_emodnet, callback = self._stop, verbose = self._verbose) == 0:
             try:
@@ -2328,7 +2333,7 @@ class hrdem():
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
     ## ==============================================    
-    def _yield_xyz(self, entry, epsg = 4326, z_region = None):
+    def _yield_xyz(self, entry, epsg = 4326, z_region = None, inc = None):
         src_dc = os.path.basename(entry[1])
         src_ext = src_dc.split('.')[-1]
         try:
@@ -2678,11 +2683,11 @@ def fetch_dump_entry(entry = ['nos:datatype=nos'], dst_port = sys.stdout, region
     for xyz in fetch_yield_entry(entry = entry, region = region, warp = warp, verbose = verbose, z_region = z_region):
         xyz_line(xyz, dst_port, False)
 
-def fetch_dump_xyz(parsed_entry, module = None, epsg = 4326, z_region = None, dst_port = sys.stdout):
+def fetch_dump_xyz(parsed_entry, module = None, epsg = 4326, z_region = None, inc = None, dst_port = sys.stdout):
     '''dump the parsed entry to xyz
     use <fetch_module>._parse_results() to generate parsed entry'''
-    if module == None: module = _fetch_modules[parsed_entry[4]](None, [], None, False)    
-    for xyz in module._yield_xyz([parsed_entry[0], parsed_entry[1], parsed_entry[-1]], epsg = epsg, z_region = z_region):
+    if module == None: module = _fetch_modules[parsed_entry[4]](None, [], None, False)
+    for xyz in module._yield_xyz([parsed_entry[0], parsed_entry[1], parsed_entry[-1]], epsg = epsg, z_region = z_region, inc = inc):
         xyzfun.xyz_line(xyz, dst_port, False)
 
 def fetch_filter_results(region = None, where = None, mods = [], verbose = False):
@@ -2751,7 +2756,7 @@ def fetch(fg):
             ## dump_p will dump the xyz data from the fetch module to stdout
             ## proc_p will output the xyz data to file in _outdir
             ## ==============================================
-            fr = fetch_results(fl._parse_results(**args_d), this_region, fl._outdir, fl if fg['proc_p'] else None, fl if fg['dump_p'] else None, fg['fetch_p'], fg['list_p'], lambda: stop_threads)
+            fr = fetch_results(fl._parse_results(**args_d), this_region, fl._outdir, fl, fg, lambda: stop_threads)
             fr.daemon = True
             try:
                 fr.start()
@@ -2853,6 +2858,19 @@ def fetches_cli(argv = sys.argv):
         elif arg == '--where' or arg == '-W':
             fg['where'].append(argv[i + 1])
             i = i + 1
+        elif arg == '--increment' or arg == '-E':
+            fg['inc'] = gmtfun.gmt_inc2inc(argv[i+1])
+            i = i + 1
+        elif arg[:2] == '-E': fg['inc'] = gmtfun.gmt_inc2inc(arg[2:].split(':')[0])
+        elif arg == '--z-range' or arg == '-Z':
+            zr = argv[i + 1].split('/')
+            if len(zr) > 1:
+                fg['z_region'] = [None if x == '-' else float(x) for x in zr]
+            i = i + 1
+        elif arg[:2] == '-Z':
+            zr = arg[2:].split('/')
+            if len(zr) > 1:
+                fg['z_region'] = [None if x == '-' else float(x) for x in zr]
         elif arg == '--list' or arg == '-l':
             fg['list_p'] = True
             fg['fetch_p'] = False
