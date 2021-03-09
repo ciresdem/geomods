@@ -1349,9 +1349,11 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
             if '2' in these_surveys[key].keys():
                 for v2 in these_surveys[key]['2']:
                     yield(v2)
+                    return
             else:
                 for v1 in these_surveys[key]['1']:
                     yield(v1)
+                    return
 
     ## ==============================================
     ## Process results to xyz
@@ -1377,7 +1379,7 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
             mb_r = src_xyz
 
             with open(mb_r, 'r') as in_m:
-                for xyz in xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose):
+                 for xyz in xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose):
                     yield(xyz)
             utils.remove_glob(src_xyz)
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_mb))
