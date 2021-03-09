@@ -1362,8 +1362,9 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
         src_mb = os.path.basename(entry[1])
 
         if fetch_file(entry[0], src_mb, callback = self._stop, verbose = self._verbose) == 0:
-            src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
-            out, status = utils.run_cmd('mblist -MX20 -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
+            #src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
+            #mb_r = src_xyz
+            #out, status = utils.run_cmd('mblist -MX20 -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
             xyzc['name'] = src_mb
             xyzc['z-scale'] = 1
             xyzc['epsg'] = 4326
@@ -1371,19 +1372,20 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
             if z_region is not None:
                 xyzc['upper_limit'] = z_region[1]
                 xyzc['lower_limit'] = z_region[0]
-            mb_r = src_xyz
-
+            
             if inc is not None:
-                #print('gmt blockmean {} -I{:.10f} {} -r'.format(src_xyz, inc, regions.region_format(self.region, 'gmt')))
-                xyz_dat = utils.yield_cmd('gmt blockmedian {} -I{:.10f} {} -r'.format(src_xyz, inc, regions.region_format(self.region, 'gmt')))
-                for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, region = self.region, verbose = True):
-                    yield(xyz)
+                xyz_dat = utils.yield_cmd('mblist -MX20 -OXYZ -I{} | gmt blockmedian -I{:.10f} {} -r'.format(src_mb, inc, regions.region_format(self.region, 'gmt')), verbose = self._verbose)
             else:
                 xyzc['delim'] = '\t'
-                with open(mb_r, 'r') as in_m:
-                    for xyz in xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose):
-                        yield(xyz)
-            utils.remove_glob(src_xyz)
+                xyz_dat = utils.yield_cmd('mblist -MX20 -OXYZ -I{}'.format(src_mb))
+            for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, region = self.region, verbose = True):
+                yield(xyz)
+            # else:
+                
+            #     with open(mb_r, 'r') as in_m:
+            #         for xyz in xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose):
+            #             yield(xyz)
+            # utils.remove_glob(src_xyz)
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_mb))
         utils.remove_glob(src_mb)
 
