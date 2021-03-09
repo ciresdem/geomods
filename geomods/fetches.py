@@ -1349,12 +1349,10 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
             if '2' in these_surveys[key].keys():
                 for v2 in these_surveys[key]['2']:
                     yield(v2)
-                    return
             else:
                 for v1 in these_surveys[key]['1']:
                     yield(v1)
-                    return
-
+        return
     ## ==============================================
     ## Process results to xyz
     ## yield functions are used in waffles/datalists
