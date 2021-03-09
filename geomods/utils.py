@@ -28,6 +28,7 @@ import glob
 import math
 import zipfile
 import gzip
+import datetime
 import numpy as np
 
 ## ==============================================
@@ -39,47 +40,40 @@ def inc2str_inc(inc):
     '''convert a WGS84 geographic increment to a str_inc (e.g. 0.0000925 ==> `13`)
 
     returns a str representation of float(inc)'''
-    
     import fractions
     return(str(fractions.Fraction(str(inc * 3600)).limit_denominator(10)).replace('/', ''))
 
 def this_date():
     '''return the current date'''
-    
-    import datetime
     return(datetime.datetime.now().strftime('%Y%m%d%H%M%S'))
 
 def this_year():
     '''return the current year'''
-    
-    import datetime
     return(datetime.datetime.now().strftime('%Y'))
 
 def rm_f(f_str):
     '''os.remove f_str, pass if error'''
-    
     try:
         if os.path.exists(f_str):
             os.remove(f_str)
     except: pass
     return(0)
         
-def remove_glob(glob_str):
+def remove_glob(*args):
     '''glob `glob_str` and os.remove results, pass if error'''
-
-    try:
-        globs = glob.glob(glob_str)
-    except: globs = None
-    if globs is None: return(0)
-    for g in globs:
+    for glob_str in args:
         try:
-            os.remove(g)
+            globs = glob.glob(glob_str)
+            for g in globs:
+                if os.path.isdir(g):
+                    remove_globs('{}/*'.format(g))
+                    os.removedirs(g)
+                else: os.remove(g)
         except: pass
     return(0)
 
 def base_name(instr, extension):
     '''Return the basename of a file-string'''
-
     return(instr[:-len(extension)])
 
 def args2dict(args, dict_args = {}):
@@ -87,7 +81,6 @@ def args2dict(args, dict_args = {}):
     args are a list of ['key=val'] pairs
 
     returns a dictionary of the key/values'''
-    
     for arg in args:
         p_arg = arg.split('=')
         dict_args[p_arg[0]] = False if p_arg[1].lower() == 'false' else True if p_arg[1].lower() == 'true' else None if p_arg[1].lower() == 'none' else p_arg[1]
@@ -95,7 +88,6 @@ def args2dict(args, dict_args = {}):
 
 def int_or(val, or_val = None):
     '''returns val as int otherwise returns or_val'''
-    
     try:
         return(int(val))
     except: return(or_val)
@@ -104,7 +96,6 @@ def euc_dst(pnt0, pnt1):
     '''return the distance between pnt0 and pnt1,
     using the euclidean formula.
     `pnts` are geographic and result is in meters.'''
-    
     rad_m = 637100
     distance = math.sqrt(sum([(a - b) ** 2 for a, b in zip(pnt0, pnt1)]))
     return(rad_m * distance)
@@ -113,7 +104,6 @@ def hav_dst(pnt0, pnt1):
     '''return the distance between pnt0 and pnt1,
     using the haversine formula.
     `pnts` are geographic and result is in meters.'''
-    
     x0 = float(pnt0[0])
     y0 = float(pnt0[1])
     x1 = float(pnt1[0])
@@ -127,7 +117,6 @@ def hav_dst(pnt0, pnt1):
 
 def _clean_zips(zip_files):
     '''remove all files\directories in `zip_files`'''
-
     for i in zip_files:
         if os.path.isfile(i):
             os.remove(i)
@@ -144,8 +133,6 @@ def unzip(zip_file):
     '''unzip (extract) `zip_file`
 
     return a list of extracted file names.'''
-    
-    #import zipfile
     zip_ref = zipfile.ZipFile(zip_file)
     zip_files = zip_ref.namelist()
     zip_ref.extractall()
@@ -156,7 +143,6 @@ def gunzip(gz_file):
     '''gunzip `gz_file`
 
     return the extracted file name.'''
-    
     if os.path.exists(gz_file):
         gz_split = gz_file.split('.')[:-1]
         guz_file = '{}.{}'.format(gz_split[0], gz_split[1])
@@ -173,6 +159,7 @@ def gunzip(gz_file):
     return(guz_file)
 
 def p_unzip(src_file, exts = None):
+    '''unzip/gunzip src_file based on `exts`'''
     src_procs = []
     if src_file.split('.')[-1].lower() == 'zip':
         with zipfile.ZipFile(src_file) as z:
@@ -204,7 +191,6 @@ def procs_unzip(src_file, exts):
     '''unzip/gunzip src_file based on `exts`
     
     return the file associated with `exts`'''
-
     zips = []
     src_proc = None
     if src_file.split('.')[-1].lower() == 'zip':
@@ -235,7 +221,6 @@ def procs_unzip(src_file, exts):
 
 def err_fit_plot(xdata, ydata, out, fitfunc, dst_name = 'unc', xa = 'distance'):
     '''plot a best fit plot'''
-    
     try:
         import matplotlib
         matplotlib.use('Agg')
@@ -254,7 +239,6 @@ def err_fit_plot(xdata, ydata, out, fitfunc, dst_name = 'unc', xa = 'distance'):
 
 def err_scatter_plot(error_arr, dist_arr, dst_name = 'unc', xa = 'distance'):
     '''plot a scatter plot'''
-    
     try:
         import matplotlib
         matplotlib.use('Agg')
@@ -274,11 +258,7 @@ def err_scatter_plot(error_arr, dist_arr, dst_name = 'unc', xa = 'distance'):
 def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'distance'):
     '''calculate and plot the error coefficient given err_arr which is 
     a 2 col array with `err dist`'''
-
     from scipy import optimize
-
-    #np.seterr(divide='ignore', invalid='ignore')
-    
     error = err_arr[:,0]
     distance = err_arr[:,1]
     
@@ -332,15 +312,15 @@ def run_cmd(cmd, data_fun = None, verbose = False):
     >> data_fun = lambda p: datalist_dump(wg, dst_port = p, ...)
 
     returns [command-output, command-return-code]'''
-
     if verbose:
         #echo_msg('running cmd: {}...'.format(cmd.rstrip()))
         _prog = _progress('running cmd: {}...'.format(cmd.rstrip()[:20]))
     if data_fun is not None:
         pipe_stdin = subprocess.PIPE
     else: pipe_stdin = None
-    #p = subprocess.Popen(cmd, shell = True, stdin = pipe_stdin, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)
-    p = subprocess.Popen(cmd, shell = True, stdin = pipe_stdin, stdout = subprocess.PIPE, close_fds = True)    
+    if verbose:
+        p = subprocess.Popen(cmd, shell = True, stdin = pipe_stdin, stdout = subprocess.PIPE, close_fds = True)
+    else: p = subprocess.Popen(cmd, shell = True, stdin = pipe_stdin, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)
 
     if data_fun is not None:
         if verbose: echo_msg('piping data to cmd subprocess...')
@@ -348,22 +328,18 @@ def run_cmd(cmd, data_fun = None, verbose = False):
         p.stdin.close()
     
     while p.poll() is None:
-        #rl = p.stderr.readline()
         if verbose:
+            #rl = p.stderr.readline()
             time.sleep(2)
-            #echo_msg(rl.decode('utf-8').strip('\n'))
             #sys.stderr.write('\x1b[2K\r')
             #sys.stderr.write(rl.decode('utf-8'))
             _prog.update()
-    #if verbose:
-    #    sys.stderr.write(p.stderr.read().decode('utf-8'))
+    #if verbose: sys.stderr.write(p.stderr.read().decode('utf-8'))
 
     out = p.stdout.read()
-    #p.stderr.close()
+    if not verbose: p.stderr.close()
     p.stdout.close()
-    if verbose:
-        #echo_msg('ran cmd: {} and returned {}.'.format(cmd.rstrip(), p.returncode))
-        _prog.end(p.returncode, 'ran cmd: {}... and returned {}.'.format(cmd.rstrip()[:20], p.returncode))
+    if verbose: _prog.end(p.returncode, 'ran cmd: {}... and returned {}.'.format(cmd.rstrip()[:20], p.returncode))
     return(out, p.returncode)
 
 def yield_cmd(cmd, data_fun = None, verbose = False):
@@ -417,10 +393,10 @@ def config_check(chk_vdatum = False, verbose = False):
     ae = '.exe' if host_os == 'win32' else ''
 
     #if chk_vdatum: _waff_co['VDATUM'] = vdatum(verbose=verbose).vdatum_path
-    _waff_co['GDAL'] = cmd_check('gdal_grid{}'.format(ae), 'gdal_grid --version')
-    _waff_co['GMT'] = cmd_check('gmt{}'.format(ae), 'gmt --version')
-    _waff_co['MBGRID'] = cmd_check('mbgrid{}'.format(ae), 'mbgrid -version 2>&1 | grep Version')
-    _waff_co['LASTOOLS'] = cmd_check('las2txt{}'.format(ae), 'las2txt -version 2>&1 | awk \'{print $5}\'')
+    _waff_co['GDAL'] = cmd_check('gdal_grid{}'.format(ae), 'gdal_grid --version').decode()
+    _waff_co['GMT'] = cmd_check('gmt{}'.format(ae), 'gmt --version').decode()
+    _waff_co['MBGRID'] = cmd_check('mbgrid{}'.format(ae), 'mbgrid -version 2>&1 | grep Version').decode()
+    _waff_co['LASTOOLS'] = cmd_check('las2txt{}'.format(ae), 'las2txt -version 2>&1 | awk \'{print $5}\'').decode()
     _waff_co['GEOMODS'] = str(_version)
     return(_waff_co)
     
@@ -502,13 +478,13 @@ class _progress:
             sys.stderr.write('\r[\033[36m{:^5.2f}%\033[m] {:40}\r'.format(self.perc(p), msg if msg is not None else self.opm))
         else: self.update()
         
-    def update(self):
+    def update(self, msg = None):
 
         self.pc = (self.count % self.tw)
         self.sc = (self.count % (self.tw + 1))
             
         self._clear_stderr()
-        sys.stderr.write('\r[\033[36m{:6}\033[m] {:40}\r'.format(self.spinner[self.sc], self.opm))
+        sys.stderr.write('\r[\033[36m{:6}\033[m] {:40}\r'.format(self.spinner[self.sc], msg if msg is not None else self.opm))
         
         if self.count == self.tw: self.spin_way = self.sub_one
         if self.count == 0: self.spin_way = self.add_one

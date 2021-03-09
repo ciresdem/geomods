@@ -242,7 +242,7 @@ def gdal_ogr_regions(src_ds):
                 these_regions.append(penv)
         poly = None
     return(these_regions)
-    
+
 def gdal_create_polygon(coords, xpos = 1, ypos = 0):
     '''convert coords to Wkt
 
@@ -775,8 +775,7 @@ def gdal_gdal2gdal(src_grd, dst_fmt = 'GTiff', epsg = 4326, dst_gdal = None, co 
         if dst_gdal is None:
             dst_gdal = '{}.{}'.format(os.path.basename(src_grd).split('.')[0], gdal_fext(dst_fmt))
         if not co:
-            gdal2gdal_cmd = ('gdal_translate {} {} -f {}\
-            '.format(src_grd, dst_gdal, dst_fmt))
+            gdal2gdal_cmd = ('gdal_translate {} {} -f {}'.format(src_grd, dst_gdal, dst_fmt))
         else:
             gdal2gdal_cmd = ('gdal_translate {} {} -f {} -co TILED=YES -co COMPRESS=DEFLATE\
             '.format(src_grd, dst_gdal, dst_fmt))

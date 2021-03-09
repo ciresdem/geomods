@@ -46,7 +46,6 @@ setuptools.setup(
         'requests',
         'lxml',
         'matplotlib',
-        'affine',
     ], 
     entry_points = {
         'console_scripts': [

@@ -21,8 +21,6 @@
 ##
 ## current fetch modules: dc, nos, mb, charts, usace, srtm_cgiar, srtm_plus, tnm, gmrt, emodnet, mar_grav, osm
 ##
-## Possible BAG errors with GDAL >= 3
-##
 ### Code:
 
 import os
@@ -32,7 +30,6 @@ import time
 import requests
 import ftplib
 import urllib
-
 import lxml.html as lh
 import lxml.etree
 import json
@@ -51,7 +48,7 @@ from geomods import regions
 from geomods import gdalfun
 from geomods import xyzfun
 
-_version = '0.6.0'
+_version = '0.6.2'
 
 ## =============================================================================
 ##
@@ -59,12 +56,15 @@ _version = '0.6.0'
 ##
 ## Generic fetching and processing functions, etc.
 ##
+## The `fetch_results` class will fetch a list of fetch results [[url, file-name, data-type]...]
+## in a queue `fetch_queue` using 3 threads; set `p` and `s` as a fetch module object to processes
+## and dump XYZ data from the fetched results, respectively. Use `fetch_file` to fetch single files.
+##
 ## =============================================================================
 r_headers = { 'User-Agent': 'GeoMods: Fetches v%s' %(_version) }
 
 def fetch_queue(q, p, s):
     '''fetch queue `q` of fetch results'''
-    
     while True:
         fetch_args = q.get()
         this_region = fetch_args[2]
@@ -86,13 +86,11 @@ def fetch_queue(q, p, s):
                     if not os.path.exists(o_x_fn):
                         with open(o_x_fn, 'w') as out_xyz:
                             fetch_dump_xyz(fetch_args, module = p, epsg = 4326, dst_port = out_xyz)
-                else: fetch_dump_xyz(fetch_args, module = s, epsg = 4326)
-                    
+                else: fetch_dump_xyz(fetch_args, module = s, epsg = 4326)                    
         q.task_done()
 
 def fetch_ftp_file(src_url, dst_fn, params = None, callback = None, datatype = None, overwrite = False, verbose = False):
     '''fetch an ftp file via urllib'''
-    
     status = 0
     f = None
     halt = callback
@@ -114,20 +112,15 @@ def fetch_ftp_file(src_url, dst_fn, params = None, callback = None, datatype = N
 
 def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatype = None, overwrite = False, verbose = False, timeout = 140, read_timeout = 320):
     '''fetch src_url and save to dst_fn'''
-    
     status = 0
     req = None
     halt = callback
 
-    if verbose:
-        #utils.echo_msg('fetching remote file: {}...'.format(os.path.basename(src_url)))
-        progress = utils._progress('fetching remote file: {}...'.format(os.path.basename(src_url)))
-
+    if verbose: progress = utils._progress('fetching remote file: {}...'.format(os.path.basename(src_url)))
     if not os.path.exists(os.path.dirname(dst_fn)):
         try:
             os.makedirs(os.path.dirname(dst_fn))
         except: pass 
-
     if not os.path.exists(dst_fn) or overwrite:
         try:
             with requests.get(src_url, stream = True, params = params, headers = r_headers, timeout=(timeout,read_timeout)) as req:
@@ -136,29 +129,19 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
                     curr_chunk = 0
                     with open(dst_fn, 'wb') as local_file:
                         for chunk in req.iter_content(chunk_size = 8196):
+                            if halt(): break
                             if verbose: progress.update()
-                            if chunk:
-                                if halt(): 
-                                    status = -1
-                                    break
-                                local_file.write(chunk)
+                            if chunk: local_file.write(chunk)
                 else: utils.echo_error_msg('server returned: {}'.format(req.status_code))
-                
         except Exception as e:
             utils.echo_error_msg(e)
             status = -1
-    #else:
-    #    #if os.path.exists(dst_fn): return(status)
-    #    status = -1
     if not os.path.exists(dst_fn) or os.stat(dst_fn).st_size ==  0: status = -1
-    if verbose:
-        #utils.echo_msg('fetched remote file: {}.'.format(os.path.basename(dst_fn)))
-        progress.end(status, 'fetched remote file: {}.'.format(os.path.basename(dst_fn)))
+    if verbose: progress.end(status, 'fetched remote file: {}.'.format(os.path.basename(dst_fn)))
     return(status)
 
 def fetch_req(src_url, params = None, tries = 5, timeout = 2, read_timeout = 10):
     '''fetch src_url and return the requests object'''
-
     if tries <= 0:
         utils.echo_error_msg('max-tries exhausted')
         return(None)
@@ -168,7 +151,6 @@ def fetch_req(src_url, params = None, tries = 5, timeout = 2, read_timeout = 10)
 
 def fetch_nos_xml(src_url, timeout = 2, read_timeout = 10, verbose = False):
     '''fetch src_url and return it as an XML object'''
-
     results = lxml.etree.fromstring('<?xml version="1.0"?><!DOCTYPE _[<!ELEMENT _ EMPTY>]><_/>'.encode('utf-8'))
     try:
         req = fetch_req(src_url, timeout = timeout, read_timeout = read_timeout)
@@ -179,7 +161,6 @@ def fetch_nos_xml(src_url, timeout = 2, read_timeout = 10, verbose = False):
         
 def fetch_html(src_url):
     '''fetch src_url and return it as an HTML object'''
-    
     req = fetch_req(src_url, timeout = 2)
     if req:
         return(lh.document_fromstring(req.text))
@@ -188,8 +169,7 @@ def fetch_html(src_url):
 class fetch_results(threading.Thread):
     '''fetch results gathered from a fetch module.
     results is a list of URLs with data type'''
-    
-    def __init__(self, results, region, out_dir, proc = None, stream = None, vdc = None, callback = lambda: False):
+    def __init__(self, results, region, out_dir, proc = None, stream = None, fetch_p = True, list_p = False, callback = lambda: False):
         threading.Thread.__init__(self)
         self.fetch_q = queue.Queue()
         self.results = results
@@ -198,15 +178,17 @@ class fetch_results(threading.Thread):
         self.stop_threads = callback
         self.proc = proc
         self.stream = stream
+        self.list_p = list_p
+        self.fetch_p = fetch_p
         
     def run(self):
         for _ in range(3):
             t = threading.Thread(target = fetch_queue, args = (self.fetch_q, self.proc, self.stream))
             t.daemon = True
             t.start()
-
-        fq = [[row[0], os.path.join(self._outdir, row[1]), self.region, self.stop_threads, row[2]] for row in self.results]
-        [self.fetch_q.put([row[0], os.path.join(self._outdir, row[1]), self.region, self.stop_threads, row[2], False, True]) for row in self.results]
+        for row in self.results:
+            if self.list_p: print(row[0])
+            if self.fetch_p: self.fetch_q.put([row[0], os.path.join(self._outdir, row[1]), self.region, self.stop_threads, row[2], False, True])
         self.fetch_q.join()
         
 ## =============================================================================
@@ -214,8 +196,10 @@ class fetch_results(threading.Thread):
 ## XML Metadata parsing
 ##
 ## =============================================================================
-def xml2json(node):
+def xml2py(node):
+    '''parse an xml file into a python dictionary'''
     texts = {}
+    if node is None: return(None)
     for child in list(node):
         child_key = lxml.etree.QName(child).localname
         if 'name' in child.attrib.keys(): child_key = child.attrib['name']
@@ -223,18 +207,15 @@ def xml2json(node):
             href = child.attrib['{http://www.w3.org/1999/xlink}href']
         else: href = None
         if child.text is None or child.text.strip() == '':
-            #if child_key in texts.keys():
-            #    texts[child_key].append(xml2json(child))
-            #else:
             if href is not None:
                 if child_key in texts.keys():
                     texts[child_key].append(href)
                 else: texts[child_key] = [href]
             else:
                 if child_key in texts.keys():
-                    ck = xml2json(child)
+                    ck = xml2py(child)
                     texts[child_key][list(ck.keys())[0]].update(ck[list(ck.keys())[0]])
-                else: texts[child_key] = xml2json(child)
+                else: texts[child_key] = xml2py(child)
         else:
             if child_key in texts.keys():
                 texts[child_key].append(child.text)
@@ -317,39 +298,27 @@ class iso_xml:
         return(linkage)
     
     def data_links(self):
-        dd = {}
-        
+        dd = {}        
         dfs = self.xml_doc.findall('.//gmd:MD_Format/gmd:name/gco:CharacterString', namespaces = self.namespaces)
         dus = self.xml_doc.findall('.//gmd:onLine/gmd:CI_OnlineResource/gmd:linkage/gmd:URL', namespaces =  self.namespaces)
-
         if dfs is not None:
             for i,j in enumerate(dfs):
                 dd[j.text] = dus[i].text
-
         return(dd)
 
 class WCS:
     def __init__(self, url):
         self.url = url
         self.namespaces = {
-            'wms': 'http://www.opengis.net/wms',
-            'wcs': 'http://www.opengis.net/wcs/2.0',
-            'ows': 'http://www.opengis.net/ows/2.0',
-            'gml': 'http://www.opengis.net/gml/3.2',
-            'gmlcov': 'http://www.opengis.net/gmlcov/1.0',
-        }
-
+            'wms': 'http://www.opengis.net/wms', 'wcs': 'http://www.opengis.net/wcs/2.0',
+            'ows': 'http://www.opengis.net/ows/2.0', 'gml': 'http://www.opengis.net/gml/3.2',
+            'gmlcov': 'http://www.opengis.net/gmlcov/1.0'}
         self._get_capabilities()
         self._s_version = self._si()['ServiceTypeVersion'][0]
 
     def _get_capabilities(self):
-
-        _data = {
-            'request': 'GetCapabilities',
-            'service': 'WCS',
-        }
-
-        c = fetches.fetch_req(self.url, params = _data)
+        _data = {'request': 'GetCapabilities', 'service': 'WCS'}
+        c = fetch_req(self.url, params = _data)
         cx = lxml.etree.fromstring(c.text.encode('utf-8'))
         self.service_provider = cx.find('.//ows:ServiceProvider', namespaces = self.namespaces)
         self.service_identification = cx.find('.//ows:ServiceIdentification', namespaces = self.namespaces)
@@ -360,22 +329,28 @@ class WCS:
     def _contents(self):
         c = []
         for coverage in self.contents.xpath('//wcs:CoverageSummary', namespaces = self.namespaces):
-            c.append(xml2json(coverage))
+            c.append(xml2py(coverage))
         return(c)
 
     def _om(self):
-        return(xml2json(self.operations_metadata))
+        return(xml2py(self.operations_metadata))
 
     def _sp(self):
-        return(xml2json(self.service_provider))
+        return(xml2py(self.service_provider))
     
     def _si(self):
-        return(xml2json(self.service_identification))
-        
+        return(xml2py(self.service_identification))
+    
+    def fix_coverage_id(self, coverage):
+        return(':'.join(coverage.split('__')))
+
+    def unfix_coverage_id(self, coverage):
+        return('__'.join(coverage.split(':')))
+
     def _describe_coverage(self, coverage):
-        c = self._contents()
         c_d = {}
         valid = False
+        c = self._contents()
         for cc in c:
             if coverage == cc['CoverageId']:
                 valid = True
@@ -383,53 +358,41 @@ class WCS:
                 break
 
         om = self._om()
-        
         url = om['DescribeCoverage']['DCP']['HTTP']['Get'][0]
-
-        _data = {
-            'request': 'DescribeCoverage',
-            'service': 'WCS',
-            'version': self._s_version,
-            'CoverageID': coverage,
-            }
-        
-        d = fetches.fetch_req(url, params = _data)
+        _data = {'request': 'DescribeCoverage', 'service': 'WCS',
+            'version': self._s_version, 'CoverageID': self.unfix_coverage_id(coverage)}
+        d = fetch_req(url, params = _data)
         d_r = lxml.etree.fromstring(d.text.encode('utf-8'))
         cd = d_r.find('.//wcs:CoverageDescription', namespaces = self.namespaces)
-        d_r_d = xml2json(d_r.find('.//wcs:CoverageDescription', namespaces = self.namespaces))
-        return(d_r_d)
+        return(xml2py(d_r.find('.//wcs:CoverageDescription', namespaces = self.namespaces)))
 
-    def _get_coverage_url(self, coverage, region):
-
+    def _get_coverage_region(self, cov_desc):
+        uc = [float(x) for x in cov_desc["boundedBy"]["Envelope"]["upperCorner"][0].split()]
+        lc = [float(x) for x in cov_desc["boundedBy"]["Envelope"]["lowerCorner"][0].split()]
+        return([lc[1], uc[1], lc[0], uc[0]])
+    
+    def _get_coverage_url(self, coverage, region = None):
+        dl_coverage = self.fix_coverage_id(coverage)
         cov_desc = self._describe_coverage(coverage)
-        fmt = cov_desc["ServiceParameters"]["nativeFormat"][0]
-        
+        fmt = cov_desc["ServiceParameters"]["nativeFormat"][0]        
         hl = [float(x) for x in cov_desc["domainSet"]["RectifiedGrid"]["limits"]["GridEnvelope"]['high'][0].split()]
         uc = [float(x) for x in cov_desc["boundedBy"]["Envelope"]["upperCorner"][0].split()]
         lc = [float(x) for x in cov_desc["boundedBy"]["Envelope"]["lowerCorner"][0].split()]
         ds_region = [lc[1], uc[1], lc[0], uc[0]]
         resx = (uc[1] - lc[1]) / hl[0]
         resy = (uc[0] - lc[0]) / hl[1]
-        
-        data = {
-            'request': 'GetCoverage',
-            'version': '1.0.0',
-            'service': 'WCS',
-            'resx': resx,
-            'resy': resy,
-            'crs': 'EPSG:4326',
-            'format': fmt,
-            'coverage': coverage,
-            'Identifier': coverage,
-            'bbox': regions.region_format(region, 'bbox'),
-        }
-
-        fetches.fetch_file("https://data.chs-shc.ca/geoserver/wcs?", 'test.tif', params = data, verbose = True)
-
+        data = {'request': 'GetCoverage', 'version': '1.0.0', 'service': 'WCS',
+                'resx': resx, 'resy': resy, 'crs': 'EPSG:4326', 'format': fmt,
+                'coverage': coverage, 'Identifier': coverage}
+        if region is not None: data['bbox'] = regions.region_format(region, 'bbox')        
         try:
             enc_data = urllib.urlencode(data)
         except: enc_data = urllib.parse.urlencode(data)
         return('{}{}'.format(self.url, enc_data))
+    
+    def fetch_coverage(coverage, region = None):
+        c_url = self._get_coverage_url(coverage, region)
+        return(fetch_file(c_url, '{}_{}.tif'.format(coverage, regions.region_format(region, 'fn')), params = data, verbose = True))
     
 ## =============================================================================
 ##
@@ -437,20 +400,19 @@ class WCS:
 ##
 ## the reference vector location and related functions
 ##
-## the reference vector has the following fields:
-## Name, ID, Date, Metadata, DataLink, IndexLink, DataType, DataSource
-##
 ## =============================================================================
 this_dir, this_filename = os.path.split(__file__)
 fetchdata = os.path.join(this_dir, 'data')
 
 class FRED:
-    def __init__(self, verbose = False):
+    def __init__(self, verbose = False, local = False):
         self._verbose = verbose
         self.fetchdata = os.path.join(this_dir, 'data')
         self.driver = ogr.GetDriverByName('GeoJSON')
         self.fetch_v = 'FRED.geojson'
-        if os.path.exists(self.fetch_v):
+        if local:
+            self.FREDloc = self.fetch_v
+        elif os.path.exists(self.fetch_v):
             self.FREDloc = self.fetch_v
         elif os.path.exists(os.path.join(self.fetchdata, self.fetch_v)):
             self.FREDloc = os.path.join(self.fetchdata, self.fetch_v)
@@ -458,7 +420,8 @@ class FRED:
         if self._verbose: utils.echo_msg('using {}'.format(self.FREDloc))
         self.ds = None
         self.layer = None
-
+        self.open_p = False
+        
         self._fields = ['Name', 'ID', 'Date', 'Agency', 'MetadataLink',
                         'MetadataDate', 'DataLink', 'IndexLink', 'Link',
                         'DataType', 'DataSource', 'Resolution', 'HorizontalDatum',
@@ -466,8 +429,7 @@ class FRED:
         
     def _create_ds(self):
         utils.remove_glob(self.FREDloc)
-        self.ds = self.driver.CreateDataSource(self.FREDloc)
-        
+        self.ds = self.driver.CreateDataSource(self.FREDloc)        
         self.layer = self.ds.CreateLayer('FRED', None, ogr.wkbMultiPolygon)
         ldfn = self.layer.GetLayerDefn()
         self.layer.CreateField(ogr.FieldDefn('Name', ogr.OFTString))
@@ -488,63 +450,92 @@ class FRED:
         self.layer.CreateField(ogr.FieldDefn('Etcetra', ogr.OFTString))
         self.layer.CreateField(ogr.FieldDefn('Info', ogr.OFTString))
 
+    def _add_survey(self, Name = 'fetches', ID = None, Date = None, Agency = None, MetadataLink = None,
+                    MetadataDate = None, DataLink = None, IndexLink = None, Link = None, DataType = None,
+                    DataSource = None, Resolution = None, HorizontalDatum = None, VerticalDatum = None,
+                    Lastupdate = None, Etcetra = None, Info = None, geom = None):
+        if not self.open_p: return(None)
+        if geom is not None and self.layer is not None:
+            self._add_feature([
+                {'Name': Name, 'ID': ID, 'Agency': Agency,
+                 'Date': Date, 'MetadataLink': MetadataLink,
+                 'MetadataDate': MetadataDate, 'DataLink': DataLink,
+                 'IndexLink': IndexLink, 'Link': Link, 'DataType': DataType,
+                 'DataSource': DataSource, 'Resolution': Resolution,
+                 'HorizontalDatum': HorizontalDatum, 'VerticalDatum': VerticalDatum,
+                 'LastUpdate': utils.this_date(), 'Etcetra': Etcetra, 'Info': Info},
+                geom.ExportToJson()
+            ])
+            [self.layer.SetFeature(ff) for ff in self.layer]
+        else: return(None)
+        
     def _open_ds(self, mode = 0):
-        try:
-            self.ds = self.driver.Open(self.FREDloc, mode)
-        except: self.ds = None
-        if self.ds is None:
-            self._create_ds()
-        self.layer = self.ds.GetLayer()
+        if not self.open_p:
+            try:
+                self.ds = self.driver.Open(self.FREDloc, mode)
+            except: self.ds = None
+            if self.ds is None:
+                self._create_ds()
+            self.layer = self.ds.GetLayer()
+            self.open_p = True
+            return(0)
+        else: return(-1)
         
     def _close_ds(self):
-        self.layer = None
-        self.ds = None
-
+        self.layer = self.ds = None
+        self.open_p = False
+        return(0)
+        
     def _get_fields(self):
-        schema = []
-        ldefn = self.layer.GetLayerDefn()
-        for n in range(ldefn.GetFieldCount()):
-            fdefn = ldefn.GetFieldDefn(n)
-            schema.append(fdefn.name)
-        return(schema)
+        if self.open_p:
+            schema = []
+            ldefn = self.layer.GetLayerDefn()
+            for n in range(ldefn.GetFieldCount()):
+                fdefn = ldefn.GetFieldDefn(n)
+                schema.append(fdefn.name)
+            return(schema)
+        else: return(-1)
         
     def _add_feature(self, survey):
         '''add a survey to the reference vector layer'''
-
-        layer_defn = self.layer.GetLayerDefn()
-        feat = ogr.Feature(layer_defn)
-        geom = ogr.CreateGeometryFromJson(survey[1])
-        feat.SetGeometry(geom)
-        for field in self._fields:
-            try:
-                feat.SetField(field, survey[0][field])
-            except: feat.SetField(field, -1)
-        self.layer.CreateFeature(feat)
-        feat = None
+        if self.open_p:
+            layer_defn = self.layer.GetLayerDefn()
+            feat = ogr.Feature(layer_defn)
+            geom = ogr.CreateGeometryFromJson(survey[1])
+            feat.SetGeometry(geom)
+            for field in self._fields:
+                try:
+                    feat.SetField(field, survey[0][field])
+                except: feat.SetField(field, -1)
+            self.layer.CreateFeature(feat)
+            feat = None
+            return(0)
+        else: return(-1)
 
     def _edit_feature(self, feature, survey):
-        geom = ogr.CreateGeometryFromJson(survey[1])
-        feature.SetGeometry(geom)
-        for field in self._fields:
-            try:
-                feature.SetField(field, survey[0][field])
-            except: feature.SetField(field, -1)
-        self.layer.SetFeature(feature)
-        
+        if self.open_p:
+            geom = ogr.CreateGeometryFromJson(survey[1])
+            feature.SetGeometry(geom)
+            for field in self._fields:
+                try:
+                    feature.SetField(field, survey[0][field])
+                except: feature.SetField(field, -1)
+            self.layer.SetFeature(feature)
+            return(0)
+        else: return(-1)
+
     def _add_surveys(self, surveys):
         '''update or create a reference vector using a list of surveys'''
-
-        self._open_ds(1)
-        if self.layer is not None:
-            [self.layer.SetFeature(ff) for ff in self.layer]
-            [self._add_feature(i) for i in surveys]
+        if self.open_p:
+            if self.layer is not None:
+                for survey in surveys:
+                    self._add_survey(**survey)
+            return(0)
+        else: return(-1)
 
     def _get_region(self, where = [], layers = []):
-
         out_regions = []
         if self._verbose: _progress = utils._progress('gathering regions from {}...'.format(self.FREDloc))
-        self._open_ds()
-        
         for i, layer in enumerate(layers):
             if self._verbose: _progress.update_perc((i, len(layers)))
             this_layer = self.layer
@@ -558,23 +549,35 @@ class FRED:
                     out_regions = regions.regions_merge(out_regions, this_region)
                 else: out_regions = this_region
         return(out_regions)
-            
-    def _filter(self, region, where = [], layers = []):
-        '''Search for data in the reference vector file'''
+
+    def _attribute_filter(self, where = []):
+        if self.open_p:
+            attr_str = []
+            [attr_str.append(f) for f in where]
+            wf = ' AND '.join(attr_str)
+            self.layer.SetAttributeFilter(wf)
+            return(0)
+        else: return(-1)
         
+    def _filter(self, region = None, where = [], layers = []):
+        '''Search for data in the reference vector file'''
         _results = []
         if region is not None:
             _boundsGeom = gdalfun.gdal_region2geom(region)
         else: _boundsGeom = None
 
         if self._verbose: _progress = utils._progress('filtering {}...'.format(self.FREDloc))
-        self._open_ds()
+        if not self.open_p:
+            self._open_ds()
+            close_p = True
+        else: close_p = False
 
         for i, layer in enumerate(layers):
             if self._verbose: _progress.update_perc((i, len(layers)))
             this_layer = self.layer
-            this_layer.SetAttributeFilter("DataSource = '{}'".format(layer))
-            [this_layer.SetAttributeFilter('{}'.format(filt)) for filt in where]
+            where.append("DataSource = '{}'".format(layer))
+            if self._verbose: utils.echo_msg('FRED filter: {}'.format(where))
+            self._attribute_filter(where = where)
             for feat in this_layer:
                 if _boundsGeom is not None:
                     geom = feat.GetGeometryRef()
@@ -591,11 +594,16 @@ class FRED:
                         _results[-1][key] = feat.GetField(key)
                         
             this_layer = None
-        self._close_ds()
-        if self._verbose:
-            #utils.echo_msg('filtered \033[1m{}\033[m data files from FRED'.format(len(_results)))
-            _progress.end(0, 'filtered \033[1m{}\033[m data files from FRED'.format(len(_results)))
+        if close_p: self._close_ds()
+        if self._verbose: _progress.end(0, 'filtered \033[1m{}\033[m data records from FRED'.format(len(_results)))
         return(_results)
+
+## ==============================================
+## lambdas for the FRED using the module object `mod`
+## ==============================================
+_filter_FRED = lambda mod: mod.FRED._filter(mod.region, mod.where, [mod._name])
+_update_FRED = lambda mod, s: mod.FRED._add_surveys(s)
+_filter_FRED_index = lambda mod: [utils.echo_msg(json.dumps(f, indent = 2)) for f in _filter_FRED(mod)]
 
 ## heaps of thanks to https://github.com/fitnr/stateplane
 FIPS_TO_EPSG = {
@@ -635,16 +643,14 @@ FIPS_TO_EPSG = {
 ## =============================================================================
 ##
 ## Fetches Modules
-## Each module should have at class with a self._update function that returns a list of survey dictionaries,
-## a self._parse_results function that returns a list of urls to remote data files parsed from the reference vector,
-## and a self._yield_xyz function to yield the xyz data from the downloaded remote data files.
+## Each module should have at class with a self._update function that updates the FRED reference vector,
+## a self._parse_results function that parses the FRED feature record and yields a list of url lists
+## e.g. `[url, file-name, datatype]`.
+## and a self._yield_xyz function to yield the xyz data from the url list.
 ##
-## self._update returns list of surveys
-## -- surveys is a list of dictionaries/geometry with field-value pairs:
-## [ {'Name': 'fetch_data', etc.} wkt_geom ...]
-## self._parse_results returns list of urls
-## -- urls is a list of [[url, file-name, file-type] ...]
-## self._yield_xyz yields xyz data
+## self._update updates FRED
+## self._parse_results yields [[url, file-name, datatype] ...]
+## self._yield_xyz yields xyz data from the results
 ##
 ## =============================================================================
 _fetch_modules = {'dc': lambda r, f, c, v: dc(r, f, c, v),
@@ -662,15 +668,35 @@ _fetch_modules = {'dc': lambda r, f, c, v: dc(r, f, c, v),
                   'chs': lambda r, f, c, v: chs(r, f, c, v),
                   'hrdem': lambda r, f, c, v: hrdem(r, f, c, v),
                   }
-_fetch_long_desc = lambda x: 'fetches modules:\n% fetches ... <mod>:key=val:key=val...\n\n  ' + '\n  '.join(['\033[1m{:14}\033[0m{}\n'.format(key, x[key](None, [], None, False)._desc) for key in x]) + '\n'
-_fetch_short_desc = lambda x: ', '.join(['{}'.format(key) for key in x])
+
+_fetch_long_desc = lambda x: 'fetches modules:\n% fetches ... <mod>:key=val:key=val...\n\n  {}\n'\
+    .format('\n  '.join(['\033[1m{:14}\033[0m{}\n\n{}\n\no {}\n\n{}\n'\
+                         .format(key, x[key](None, [], None, False)._title,
+                                 x[key](None, [], None, False)._info,
+                                 '\no '.join(x[key](None, [], None, False)._urls),
+                                 x[key](None, [], None, False)._usage)
+                         for key in x]))
+_fetch_short_desc = lambda x: ' '.join(['{}'.format(key) for key in x])
+
+def fetches_config(name = 'fetches', mods = ['gmrt'], region = None, where = [], fetch_p = True,
+                   index_p = False, list_p = False, proc_p = False, dump_p = False, update_p = False,
+                   verbose = True):
+    return({'name': name, 'mods': mods, 'region': region, 'where': where,
+            'fetch_p': fetch_p, 'index_p': index_p, 'list_p': list_p,
+            'proc_p': proc_p, 'dump_p': dump_p, 'update_p': update_p,
+            'verbose': verbose})
 
 ## =============================================================================
 ##
 ## Digital Coast ('dc')
+## fetches-dc
+## Raster and Lidar data from NOAAs Digital Coast
 ##
+## FRED holds the dataset level, fetch the index shapefile to parse the individual
+## data files...
+##
+## - check bounds in xml for slr dems
 ## =============================================================================
-
 class dc:
     def __init__(self, extent = None, where = [], callback = None, verbose = True):
         self._verbose = verbose
@@ -686,35 +712,42 @@ class dc:
         
         self.where = where
         self.region = extent
-        if self.region is not None:
-            self._boundsGeom = gdalfun.gdal_region2geom(self.region)
         self.FRED = FRED(verbose = self._verbose)
-        self._data_urls = []
-        self._surveys = []
         self._stop = callback
 
+        self._name = 'dc'
         self._info = '''Lidar and Raster data from NOAA's Digital Coast'''
         self._title = '''NOAA Digital Coast'''
         self._usage = '''< dc >'''
         self._urls = [self._dc_url, self._dc_htdata_url]
-        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
+        self._update_if_not_in_FRED()
+        
+    def _update_if_not_in_FRED(self):
+        self.FRED._open_ds()
+        self.FRED._attribute_filter("DataSource = '{}'".format(self._name))
+        if len(self.FRED.layer) == 0:
+            self.FRED._close_ds()
+            self._update()
+        self.FRED._close_ds()
         
     def _update(self):
         '''Update the FRED reference vector after scanning
         the relevant metadata from Digital Coast.'''
-        
-        if self._verbose: utils.echo_msg('updating Digital Coast fetch module')
-        self.FRED._open_ds()
+        self.FRED = FRED(verbose = self._verbose, local = True)
+        self.FRED._open_ds(1)
         for ld in self._dc_dirs:
             cols = []
+            surveys = []
             page = fetch_html(self._dc_htdata_url + ld)
             if page is None: continue
-            tables = page.xpath('//table')
-            tr = tables[0].xpath('.//tr')
+            tr = page.xpath('//table')[0].xpath('.//tr')
             if len(tr) <= 0: continue
             [cols.append(i.text_content()) for i in tr[0]]
-            if self._verbose: utils.echo_msg_inline('scanning {} surveys in {} [    ].'.format(len(tr), ld))
+            
+            if self._verbose: _prog = utils._progress('scanning {} datasets in {}...'.format(len(tr), ld))
             for i in range(1, len(tr)):
+                if self._stop(): break
+                if self._verbose: _prog.update_perc((i, len(tr))) #dc['ID #']))
                 cells = tr[i].getchildren()
                 dc = {}
                 for j, cell in enumerate(cells):
@@ -725,69 +758,51 @@ class dc:
                             dc['Metadata'] = cl[0].get('href')
                         else: dc[cols[j]] = cl[0].get('href')
                     else: dc[cols[j]] = cell.text_content()
-                if self._verbose: utils.echo_msg_inline('scanning {} surveys in {} [{:3}%] - {}.'.format(len(tr), ld, int((float(i)/len(tr)) * 100), dc['ID #']))
-                self.FRED.layer.SetAttributeFilter("ID = '{}'".format(dc['ID #']))
-                if len(self.FRED.layer) == 0:
+                self.FRED._attribute_filter(["ID = '{}'".format(dc['ID #'])])
+                if self.FRED.layer is None or len(self.FRED.layer) == 0:
                     if 'Metadata' in dc.keys():
                         this_xml = iso_xml(dc['Metadata'])
                         h_epsg, v_epsg = this_xml.reference_system()
                         geom = this_xml.bounds(geom=True)
                         if geom is not None:
-                            self._surveys.append([{'Name': dc['Dataset Name'], 
-                                                   'ID': '{}'.format(dc['ID #']),
-                                                   'Agency': '',
-                                                   'Date': this_xml.date(), 
-                                                   'MetadataLink': dc['Metadata'],
-                                                   'MetadataDate': this_xml.xml_date(), 
-                                                   'DataLink': dc['https'],
-                                                   'IndexLink': dc['Tile Index'],
-                                                   'Link': self._dc_url,
-                                                   'DataType': ld.split("_")[0],
-                                                   'DataSource': 'dc',
-                                                   'Resolution': '',
-                                                   'HorizontalDatum': h_epsg,
-                                                   'VerticalDatum': v_epsg,
-                                                   'LastUpdate': utils.this_date(),
-                                                   'Etcetra': '',
-                                                   'Info': this_xml.abstract()}, geom.ExportToJson()])
-            if self._verbose: utils.echo_msg('scanning {} surveys in {} [ OK ].'.format(len(tr), ld))
-            
-        self.FRED._add_surveys(self._surveys)
+                            if self._verbose: _prog.update_perc((i, len(tr)), msg = '{} ** adding: {} **'.format(_prog.opm, dc['ID #']))
+                            surveys.append({'Name': dc['Dataset Name'], 'ID': dc['ID #'], 'Date': this_xml.date(),
+                                            'MetadataLink': dc['Metadata'], 'MetadataDate': this_xml.xml_date(),
+                                            'DataLink': dc['https'], 'IndexLink': dc['Tile Index'], 'Link': self._dc_url,
+                                            'DataType': ld.split('_')[0], 'DataSource': 'dc', 'HorizontalDatum': h_epsg,
+                                            'VerticalDatum': v_epsg, 'Info': this_xml.abstract(), 'geom': geom})
+            self.FRED._add_surveys(surveys)
+            if self._verbose:
+                _prog.end(0, 'scanned {} datasets in {}.'.format(len(tr), ld))
+                utils.echo_msg('added {} surveys from {}'.format(len(surveys), ld))
         self.FRED._close_ds()
-        return(self._surveys)
 
-    def _filter_results(self):
-        return(self.FRED._filter(self.region, self.where, ['dc']))
-    
-    def _parse_results(self, r):
-        for surv in r:
+    def _parse_results(self):
+        for surv in _filter_FRED(self):
+            if self._stop(): break
             surv_shp_zip = os.path.basename(surv['IndexLink'])
-            if fetch_file(surv['IndexLink'], surv_shp_zip, verbose = False) == 0:
+            if fetch_file(surv['IndexLink'], surv_shp_zip, callback = self._stop, verbose = self._verbose) == 0:
                 v_shps = utils.p_unzip(surv_shp_zip, ['.shp', '.shx', '.dbf', '.prj'])
                 v_shp = None
                 for v in v_shps:
-                    if '.shp' in v: v_shp = v
+                    if v.split('.')[-1] == '.shp': v_shp = v
                 try:
                     v_ds = ogr.Open(v_shp)
-                except: v_ds = None
-                if v_ds is not None:
                     slay1 = v_ds.GetLayer(0)
                     for sf1 in slay1:
+                        if self._stop(): break
                         geom = sf1.GetGeometryRef()
-                        if geom.Intersects(self._boundsGeom):
-                            tile_url = sf1.GetField('URL').strip()
-                            #self._data_urls.append([tile_url, '{}/{}'.format(surv['ID'], tile_url.split('/')[-1]), surv['DataType']])
-                            yield([tile_url, '{}/{}'.format(surv['ID'], tile_url.split('/')[-1]), surv['DataType']])
+                        if geom.Intersects(gdalfun.gdal_region2geom(self.region)):
+                            yield([sf1.GetField('URL').strip(), '{}/{}'.format(surv['ID'], tile_url.split('/')[-1]), surv['DataType']])
                     v_ds = slay1 = None
-                [utils.remove_glob(v) for v in v_shps]
-
-                utils.remove_glob(surv_shp_zip)
-        #return(self._data_urls)
+                except: pass
+                utils.remove_glob(surv_shp_zip, *v_shps)
 
     ## ==============================================
     ## Process results to xyz
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
+    ## `entry` is list: [url, file-name, datatype]
     ## ==============================================    
     def _yield_xyz(self, entry, epsg = 4326, z_region = None):
         src_dc = os.path.basename(entry[1])
@@ -796,7 +811,7 @@ class dc:
         elif src_ext == 'tif' or src_ext == 'img': dt = 'raster'
         else: dt = None
         if dt == 'lidar':
-            if fetch_file(entry[0], src_dc, callback = lambda: False, verbose = self._verbose) == 0:
+            if fetch_file(entry[0], src_dc, callback = self._stop, verbose = self._verbose) == 0:
                 xyz_dat = utils.yield_cmd('las2txt -stdout -parse xyz -keep_xy {} -keep_class {} -i {}\
                 '.format(regions.region_format(self.region, 'te'), '2 29', src_dc), verbose = False)
                 xyzc = copy.deepcopy(xyzfun._xyz_config)
@@ -812,7 +827,7 @@ class dc:
             try:
                 src_ds = gdal.Open(entry[0])
             except Exception as e:
-                fetch_file(entry[0], src_dc, callback = lambda: False, verbose = self._verbose)
+                fetch_file(entry[0], src_dc, callback = self._stop, verbose = self._verbose)
                 try:
                     src_ds = gdal.Open(src_dc)
                 except Exception as e:
@@ -842,7 +857,6 @@ class dc:
 ## =============================================================================
 class nos:
     '''Fetch NOS BAG and XYZ sounding data from NOAA'''
-    
     def __init__(self, extent = None, where = [], callback = None, verbose = True):
         self._verbose = verbose
         if self._verbose: utils.echo_msg('loading NOS fetch module...')
@@ -864,104 +878,80 @@ class nos:
 
         self.where = where
         self.region = extent
-        if self.region is not None:
-            self._boundsGeom = gdalfun.gdal_region2geom(self.region)
         self.FRED = FRED(verbose = self._verbose)
-        self._data_urls = []
-        self._surveys = []
         self._stop = callback
 
+        self._name = 'nos'
         self._info = '''Bathymetry surveys and data (xyz & BAG)'''
         self._title = '''NOAA NOS Bathymetric Data'''
         self._usage = '''< nos >'''
         self._urls = [self._nos_url]
-        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
+        self._update_if_not_in_FRED()
+        
+    def _update_if_not_in_FRED(self):
+        self.FRED._open_ds()
+        self.FRED._attribute_filter("DataSource = '{}'".format(self._name))
+        if len(self.FRED.layer) == 0:
+            self.FRED._close_ds()
+            self._update()
+        self.FRED._close_ds()
         
     def _update(self):
         '''Crawl the NOS database and update/generate the NOS reference vector.'''
-
-        ## ==============================================
-        ## load the reference vector if it exists and
-        ## scan the remote nos directories
-        ## ==============================================
-        self.FRED._open_ds()
-        
-        for j in self._nos_directories:
-            nosdir = j
+        self.FRED._open_ds(1)
+        for nosdir in self._nos_directories:
+            if self._stop(): break
+            surveys = []
             xml_catalog = self._nos_xml_url(nosdir)
             page = fetch_html(xml_catalog)
             rows = page.xpath('//a[contains(@href, ".xml")]/@href')
-            if self._verbose: utils.echo_msg_inline('scanning {} surveys in {} [    ].'.format(len(rows), nosdir))
+            if self._verbose: _prog = utils._progress('scanning {} surveys in {}...'.format(len(rows), nosdir))
 
-            ## ==============================================
-            ## Parse each survey found in the directory
-            ## and append it to the surveys list
-            ## ==============================================
             for i, survey in enumerate(rows):
+                if self._stop(): break
                 sid = survey[:-4]
-                perc = int((float(i)/len(rows)) * 100)
-                if self._verbose: utils.echo_msg_inline('scanning {} surveys in {} [{:3}%] - {}.'.format(len(rows), nosdir, perc, sid))
-                self.FRED.layer.SetAttributeFilter("ID = '{}'".format(sid))
-
-                if len(self.FRED.layer) == 0:
-                    xml_url = xml_catalog + survey
-                    this_xml = iso_xml(xml_url)
+                if self._verbose: _prog.update_perc((i, len(rows)))
+                self.FRED._attribute_filter(["ID = '{}'".format(sid)])
+                if self.FRED.layer is None or len(self.FRED.layer) == 0:
+                    this_xml = iso_xml(xml_catalog + survey)
                     h_epsg, v_epsg = this_xml.reference_system()
                     this_data = this_xml.data_links()
-
                     d_links = []
                     d_types = []
+                    
                     for key in this_data.keys():
                         if key in ['GEODAS_XYZ', 'BAG', 'GRID_BAG']:
                             d_links.append(this_data[key])
                             d_types.append(key)
                     geom = this_xml.bounds(geom=True)
                     if geom is not None:
-                        self._surveys.append([{'Name': this_xml.title(), 
-                                               'ID': '{}'.format(sid),
-                                               'Agency': 'NOAA/NOS',
-                                               'Date': this_xml.date(), 
-                                               'MetadataLink': this_xml.url,
-                                               'MetadataDate': this_xml.xml_date(), 
-                                               'DataLink': ','.join(list(set(d_links))),
-                                               'IndexLink': '',
-                                               'Link': '',
-                                               'DataType': ','.join(list(set(d_types))),
-                                               'DataSource': 'nos',
-                                               'Resolution': '',
-                                               'HorizontalDatum': h_epsg,
-                                               'VerticalDatum': v_epsg,
-                                               'LastUpdate': utils.this_date(),
-                                               'Etcetra': '',
-                                               'Info': this_xml.abstract()}, geom.ExportToJson()])
-            if self._verbose: utils.echo_msg_inline('scanning {} surveys in {} [ OK ].\n'.format(len(rows), nosdir))
-
-        self.FRED._add_surveys(self._surveys)
+                        surveys.append({'Name': this_xml.title(), 'ID': sid, 'Agency': 'NOAA/NOS', 'Date': this_xml.date(),
+                                        'MetadataLink': this_xml.url, 'MetadataDate': this_xml.xml_date(), 'DataLink': ','.join(list(set(d_links))),
+                                        'DataType': ','.join(list(set(d_types))), 'DataSource': 'nos', 'HorizontalDatum': h_epsg,
+                                        'VerticalDatum': v_epsg, 'Info': this_xml.abstract(), 'geom': geom})
+            if self._verbose:
+                _prog.end(0, 'scanned {} surveys in {}.'.format(len(rows), nosdir))
+                utils.echo_msg('added {} surveys from {}'.format(len(surveys), nosdir))
+            self.FRED._add_surveys(surveys)
         self.FRED._close_ds()
-        return(self._surveys)
     
-    def _filter_results(self):
-        return(self.FRED._filter(self.region, self.where, ['nos']))
-                
-    def _parse_results(self, r):
+    def _parse_results(self):
         '''Search the NOS reference vector and append the results
         to the results list.'''
-
-        for surv in r:
-            fldata = surv['DataLink'].split(',')
-            [self._data_urls.append([i, i.split('/')[-1], surv['DataType']]) if i != '' else None for i in fldata]
-        return(self._data_urls)
+        for surv in _filter_FRED(self):
+            yield([self._data_urls.append([i, i.split('/')[-1], surv['DataType']]) if i != '' else None for i in surv['DataLink'].split(',')])
             
     ## ==============================================
     ## Process results to xyz
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
+    ## `entry` is list: [url, file-name, datatype]
     ## ==============================================    
-    def _yield_xyz(self, entry, datatype = None, epsg = 4326, z_region = None):
+    def _yield_xyz(self, entry, epsg = 4326, z_region = None):
         xyzc = copy.deepcopy(xyzfun._xyz_config)
         src_nos = os.path.basename(entry[1])
         dt = None
-        if fetch_file(entry[0], src_nos, callback = lambda: False, verbose = self._verbose) == 0:
+        if fetch_file(entry[0], src_nos, callback = self._stop, verbose = self._verbose) == 0:
             src_ext = src_nos.split('.')
             if len(src_ext) > 2:
                 if src_ext[-2] == 'bag': dt = 'grid_bag'
@@ -973,10 +963,7 @@ class nos:
                 else: dt = None
             else: dt = None
             if dt == 'geodas_xyz':
-                nos_f, nos_zips = utils.procs_unzip(src_nos, ['xyz', 'dat'])
-                nos_f_r = nos_f
-
-                xyzc['name'] = nos_f_r
+                nos_fns = utils.p_unzip(src_nos, ['xyz', 'dat'])
                 xyzc['delim'] = ','
                 xyzc['skip'] = 1
                 xyzc['xpos'] = 2
@@ -988,27 +975,29 @@ class nos:
                 if z_region is not None:
                     xyzc['upper_limit'] = z_region[1]
                     xyzc['lower_limit'] = z_region[0]
-                if os.path.exists(nos_f_r):
-                    with open(nos_f_r, 'r') as in_n:
-                        for xyz in xyzfun.xyz_parse(in_n, xyz_c = xyzc, region = self.region, verbose = self._verbose):
-                            yield(xyz)
-                    
+                for nos_f_r in nos_fns:
+                    xyzc['name'] = nos_f_r
+                    if os.path.exists(nos_f_r):
+                        with open(nos_f_r, 'r') as in_n:
+                            for xyz in xyzfun.xyz_parse(in_n, xyz_c = xyzc, region = self.region, verbose = self._verbose):
+                                yield(xyz)
+                utils.remove_glob(*nos_fns)
+                #[utils.remove_glob(x) for x in nos_fns]
+
             elif dt == 'grid_bag':
-                src_bag, nos_zips = utils.procs_unzip(src_nos, ['gdal', 'tif', 'img', 'bag', 'asc'])
+                src_bags = utils.p_unzip(src_nos, ['gdal', 'tif', 'img', 'bag', 'asc'])
+
                 nos_f = '{}.tmp'.format(os.path.basename(src_bag).split('.')[0])
-                src_ds = gdal.Open(src_bag)
-                if src_ds is not None:
-                    print(self.region)
-                    print(gdalfun.gdal_get_epsg(src_ds))
-                    print(epsg)
-                    print(gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
-                    srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
-                    with open(nos_f, 'w') as cx:
-                        for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, z_region = z_region):
-                            yield(xyz)
-                    src_ds = None
-                utils.remove_glob(src_bag)
-            utils.remove_glob(nos_f)
+                for src_bag in src_bags:
+                    try:
+                        src_ds = gdal.Open(src_bag)
+                        srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
+                        with open(nos_f, 'w') as cx:
+                            for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, z_region = z_region):
+                                yield(xyz)
+                        src_ds = None
+                    except: pass
+                utils.remove_glob(*src_bags)
         utils.remove_glob(src_nos)
         
 ## =============================================================================
@@ -1020,7 +1009,6 @@ class nos:
 ## =============================================================================
 class charts():
     '''Fetch digital chart data from NOAA'''
-    
     def __init__(self, extent = None, where = [], callback = None, verbose = True):
         self._verbose = verbose
         if self._verbose: utils.echo_msg('loading CHARTS fetch module...')
@@ -1028,6 +1016,7 @@ class charts():
         ## ==============================================
         ## Chart URLs and directories
         ## ==============================================
+        self._charts_url = 'http://www.charts.noaa.gov/'
         self._enc_data_catalog = 'http://www.charts.noaa.gov/ENCs/ENCProdCat_19115.xml'
         self._rnc_data_catalog = 'http://www.charts.noaa.gov/RNCs/RNCProdCat_19115.xml'
         self._outdir = os.path.join(os.getcwd(), 'charts')
@@ -1036,80 +1025,64 @@ class charts():
 
         self.where = where
         self.region = extent
-        if self.region is not None:
-            self._boundsGeom = gdalfun.gdal_region2geom(self.region)
         self.FRED = FRED(verbose = self._verbose)
-        self._data_urls = []
-        self._surveys = []
         self._stop = callback
 
+        self._name = 'charts'
         self._info = '''Raster and Vector U.S. Nautical Charts'''
         self._title = '''NOAA Nautical CHARTS (RNC & ENC)'''
         self._usage = '''< charts >'''
         self._urls = [self._enc_data_catalog, self._rnc_data_catalog]
-        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
+        self._update_if_not_in_FRED()
+        
+    def _update_if_not_in_FRED(self):
+        self.FRED._open_ds()
+        self.FRED._attribute_filter("DataSource = '{}'".format(self._name))
+        if len(self.FRED.layer) == 0:
+            self.FRED._close_ds()
+            self._update()
+        self.FRED._close_ds()
 
     def _update(self):
         '''Update or create the reference vector file'''
-        
-        self.FRED._open_ds()
+        self.FRED._open_ds(1)
         for dt in self._dt_xml.keys():
-            #utils.echo_msg('updating {}'.format(dt))
+            surveys = []
             this_xml = iso_xml(self._dt_xml[dt], timeout = 1000, read_timeout = 2000)
             charts = this_xml.xml_doc.findall('.//{*}has', namespaces = this_xml.namespaces)
             _prog = utils._progress('scanning {} surveys in {}.'.format(len(charts), dt))
             for i, chart in enumerate(charts):
                 this_xml.xml_doc = chart
                 title = this_xml.title()
-                #perc = int((float(i)/len(charts)) * 100)
-                #if self._verbose: utils.echo_msg_inline('scanning {} surveys in {} [{:3}%] - {}.'.format(len(charts), dt, perc, title))
-                if self._verbose: _prog.update_perc((i, len(charts)), msg = '{} - {}'.format(_prog.opm, title))
-                self.FRED.layer.SetAttributeFilter("ID = '{}'".format(title))
-                if len(self.FRED.layer) == 0:
+                if self._verbose: _prog.update_perc((i, len(charts)))
+                self.FRED._attribute_filter(["ID = '{}'".format(title)])
+                if self.FRED.layer is None or len(self.FRED.layer) == 0:
                     h_epsg, v_epsg = this_xml.reference_system()
                     this_data = this_xml.linkages()
                     geom = this_xml.polygon(geom=True)
                     if geom is not None:
-                        self._surveys.append([{'Name': title,
-                                               'ID': '{}'.format(title),
-                                               'Agency': 'NOAA',
-                                               'Date': this_xml.date(), 
-                                               'MetadataLink': this_xml.url,
-                                               'MetadataDate': this_xml.xml_date(), 
-                                               'DataLink': this_data,
-                                               'IndexLink': '',
-                                               'Link': 'http://www.charts.noaa.gov/',
-                                               'DataType': dt,
-                                               'DataSource': 'charts',
-                                               'Resolution': '',
-                                               'HorizontalDatum': h_epsg,
-                                               'VerticalDatum': v_epsg,
-                                               'LastUpdate': utils.this_date(),
-                                               'Etcetra': '',
-                                               'Info': this_xml.abstract()}, geom.ExportToJson()])
-                    
+                        surveys.append({'Name': title, 'ID': title, 'Agency': 'NOAA', 'Date': this_xml.date(),
+                                        'MetadataLink': this_xml.url, 'MetadataDate': this_xml.xml_date(),
+                                        'DataLink': this_data, 'Link': self._charts_url, 'DataType': dt,
+                                        'DataSource': 'charts', 'HorizontalDatum': h_epsg, 'VerticalDatum': v_epsg,
+                                        'Info': this_xml.abstract, 'geom': geom})
+            self.FRED._add_surveys(surveys)
             if self._verbose:
-                #utils.echo_msg('scanning {} surveys in {} [ OK ].\n'.format(len(charts), dt))
                 _prog.end(0, 'scanned {} surveys in {}'.format(len(charts), dt))
-        self.FRED._add_surveys(self._surveys)
+                utils.echo_msg('added {} surveys from {}'.format(len(surveys), dt))
         self.FRED._close_ds()
-        return(self._surveys)
-
-    def _filter_results(self):
-        return(self.FRED._filter(self.region, self.where, ['charts']))
-
-    def _parse_results(self, r):
+        
+    def _parse_results(self):
         '''Search for data in the reference vector file'''
-
-        for surv in r:
-            fldata = surv['DataLink'].split(',')
-            [self._data_urls.append([i, i.split('/')[-1], surv['DataType']]) if i != '' else None for i in fldata]
-        return(self._data_urls)
+        for surv in _filter_FRED(self):
+            for i in surv['DataLink'].split(','):
+                yield([i, i.split('/')[-1], surv['DataType']])
 
     ## ==============================================
     ## Process results to xyz
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
+    ## `entry` is list: [url, file-name, datatype]
     ## ==============================================
     def _yield_xyz(self, entry, epsg = None, z_region = None):
         xyzc = xyzfun._xyz_config
@@ -1120,30 +1093,27 @@ class charts():
             xyzc['lower_limit'] = z_region[0]
         src_zip = os.path.basename(entry[1])
         
-        if fetch_file(entry[0], src_zip, callback = lambda: False, verbose = self._verbose) == 0:
+        if fetch_file(entry[0], src_zip, callback = self._stop, verbose = self._verbose) == 0:
             if entry[-1].lower() == 'enc':
-                src_ch, src_zips = utils.procs_unzip(src_zip, ['.000'])
-                dst_xyz = src_ch.split('.')[0] + '.xyz'
-                ds_ogr = ogr.Open(src_ch)
-                layer_s = ds_ogr.GetLayerByName('SOUNDG')
-                if layer_s is not None:
-                    with open(dst_xyz, 'w') as o_xyz:
-                        for f in layer_s:
-                            g = json.loads(f.GetGeometryRef().ExportToJson())
-                            for xyz in g['coordinates']:
-                                xyzfun.xyz_line([float(x) for x in xyz], o_xyz, False)
-
-                ds_ogr = layer_s = None
-                ch_f_r = dst_xyz
-
-                if os.path.exists(ch_f_r):
-                    with open(ch_f_r, 'r') as in_c:
-                        for xyz in xyzfun.xyz_parse(in_c, xyz_c = xyzc, verbose = self._verbose):
-                            yield(xyz)
-
-                utils.remove_glob(src_ch)
-                utils.remove_glob(dst_xyz)
-                utils._clean_zips(src_zips)
+                src_encs = utils.p_unzip(src_zip, ['000'])
+                for src_ch in src_encs:
+                    dst_xyz = src_ch.split('.')[0] + '.xyz'
+                    try:
+                        ds_ogr = ogr.Open(src_ch)
+                        layer_s = ds_ogr.GetLayerByName('SOUNDG')
+                        if layer_s is not None:
+                            with open(dst_xyz, 'w') as o_xyz:
+                                for f in layer_s:
+                                    g = json.loads(f.GetGeometryRef().ExportToJson())
+                                    for xyz in g['coordinates']:
+                                        xyzfun.xyz_line([float(x) for x in xyz], o_xyz, False)
+                        ds_ogr = layer_s = None
+                    except: pass
+                    if os.path.exists(dst_xyz):
+                        with open(dst_xyz, 'r') as in_c:
+                            for xyz in xyzfun.xyz_parse(in_c, xyz_c = xyzc, verbose = self._verbose):
+                                yield(xyz)
+                utils.remove_glob(dst_xyz, *src_encs)
         utils.remove_glob(src_zip)
         
 ## =============================================================================
@@ -1153,7 +1123,6 @@ class charts():
 ## =============================================================================
 class ncei_thredds:
     '''Fetch DEMs from NCEI THREDDS Catalog'''
-    
     def __init__(self, extent = None, where = [], callback = None, verbose = True):
         self._verbose = verbose
         if self._verbose: utils.echo_msg('loading NCEI_THREDDS fetch module...')
@@ -1167,21 +1136,32 @@ class ncei_thredds:
         
         self.where = where
         self.region = extent
-        if self.region is not None:
-            self._boundsGeom = gdalfun.gdal_region2geom(self.region)
         self.FRED = FRED(verbose = self._verbose)
-        self._data_urls = []
-        self._surveys = []
         self._stop = callback
 
-        self._info = '''NOAA NCEI THREDDS DEM Catalog Access'''
+        self._name = 'ncei_thredds'
+        self._info = '''NOAA NCEI THREDDS DEM Catalog Access.
+Digital Elevation Models around the world at various resolutions and extents.
+NCEI builds and distributes high-resolution, coastal digital elevation models (DEMs) that integrate ocean 
+bathymetry and land topography supporting NOAA's mission to understand and predict changes in Earth's environment, 
+and conserve and manage coastal and marine resources to meet our Nation's economic, social, and environmental needs.
+\nDEMs are used for coastal process modeling (tsunami inundation, storm surge, sea-level rise, contaminant dispersal, 
+etc.), ecosystems management and habitat research, coastal and marine spatial planning, and hazard mitigation and 
+community preparedness.'''
         self._title = '''NCEI THREDDS'''
         self._usage = '''< ncei_thredds >'''
         self._urls = [self._nt_catalog, self._ngdc_url]
-        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
+        self._update_if_not_in_FRED()
+        
+    def _update_if_not_in_FRED(self):
+        self.FRED._open_ds()
+        self.FRED._attribute_filter("DataSource = '{}'".format(self._name))
+        if len(self.FRED.layer) == 0:
+            self.FRED._close_ds()
+            self._update()
+        self.FRED._close_ds()
         
     def _parse_catalog(self, catalog_url):
-
         ntCatalog = iso_xml(catalog_url)
         ntCatRefs = ntCatalog.xml_doc.findall('.//th:catalogRef', namespaces = ntCatalog.namespaces)
         for ntCatRef in ntCatRefs:
@@ -1195,15 +1175,14 @@ class ncei_thredds:
         ntCatXml = iso_xml(catalog_url)
         this_ds = ntCatXml.xml_doc.findall('.//th:dataset', namespaces = ntCatXml.namespaces)
         this_ds_services = ntCatXml.xml_doc.findall('.//th:service', namespaces = ntCatXml.namespaces)
+        if self._verbose: _prog = utils._progress('scanning {} datasets in {}...'.format(len(this_ds), this_ds[0].attrib['name']))
         for i, node in enumerate(this_ds):
+            surveys = []
             this_title = node.attrib['name']
             this_id = node.attrib['ID']
-
-            perc = int((float(i)/len(this_ds)) * 100)
-            if self._verbose: utils.echo_msg_inline('scanning {} datasets in {} [{:3}%] - {}.'.format(len(this_ds), this_ds[0].attrib['name'], perc, this_title))
-            
-            self.FRED.layer.SetAttributeFilter("ID = '{}'".format(this_id))
-            if len(self.FRED.layer) == 0:            
+            if self._verbose: _prog.update_perc((i, len(this_ds)))
+            self.FRED._attribute_filter(["ID = '{}'".format(this_id)])
+            if self.FRED.layer is None or len(self.FRED.layer) == 0:
                 subCatRefs = node.findall('.//th:catalogRef', namespaces = ntCatXml.namespaces)
                 if len(subCatRefs) > 0:
                     self._parse_catalog(catalog_url)
@@ -1224,8 +1203,6 @@ class ncei_thredds:
                 this_xml = iso_xml(iso_url)
                 title = this_xml.title()
                 h_epsg, v_epsg = this_xml.reference_system()
-                #this_data = this_xml.linkages()
-                geom = this_xml.bounds(geom=True)
 
                 zv = this_xml.xml_doc.findall('.//gmd:dimension/gmd:MD_Band/gmd:sequenceIdentifier/gco:MemberName/gco:aName/gco:CharacterString', namespaces = this_xml.namespaces)
                 if zv is not None:
@@ -1233,53 +1210,37 @@ class ncei_thredds:
                         if zvs.text == 'bathy' or zvs.text == 'Band1' or zvs.text == 'z':
                             zvar = zvs.text
                         else: zvar = 'z'
-                #zvar = 'z' if zv is None else zv.text
+                geom = this_xml.bounds(geom=True)
                 if geom is not None:
-                    self._surveys.append([{'Name': title,
-                                           'ID': this_id,
-                                           'Agency': 'NOAA',
-                                           'Date': this_xml.date(), 
-                                           'MetadataLink': this_xml.url,
-                                           'MetadataDate': this_xml.xml_date(), 
-                                           'DataLink': http_url,
-                                           'IndexLink': wcs_url,
-                                           'Link': '',
-                                           'DataType': 'DEM',
-                                           'DataSource': 'ncei_thredds',
-                                           'Resolution': '',
-                                           'HorizontalDatum': h_epsg,
-                                           'VerticalDatum': v_epsg,
-                                           'LastUpdate': utils.this_date(),
-                                           'Etcetra': zvar,
-                                           'Info': this_xml.abstract()}, geom.ExportToJson()])
-                    
-        if self._verbose: utils.echo_msg('scanning {} datasets in {} [OK]'.format(len(this_ds), this_ds[0].attrib['name']))
-            
+                    surveys.append({'Name': title, 'ID': this_id, 'Agency': 'NOAA', 'Date': this_xml.date(),
+                                    'MetadataLink': this_xml.url, 'MetadataDate': this_xml.xml_date(),
+                                    'DataLink': http_url, 'IndexLink': wcs_url, 'Link': self._nt_catalog,
+                                    'DataType': 'raster', 'DataSource': 'ncei_thredds', 'HorizontalDatum': h_epsg,
+                                    'VerticalDatum': v_epsg, 'Etcetra': zvar, 'Info': this_xml.abstract(), 'geom': geom})
+        self.FRED._add_surveys(surveys)
+        if self._verbose:
+            _prog.end(0, 'scanned {} datasets in {}.'.format(len(this_ds), this_ds[0].attrib['name']))
+            utils.echo_msg('added {} surveys from {}'.format(len(surveys), this_ds[0].attrib['name']))
+        
     def _update(self):
-        self.FRED._open_ds()
+        self.FRED._open_ds(1)
         self._parse_catalog(self._nt_catalog)
-        self.FRED._add_surveys(self._surveys)
         self.FRED._close_ds()
-        return(self._surveys)
     
-    def _filter_results(self):
-        return(self.FRED._filter(self.region, self.where, ['ncei_thredds']))
-
-    def _parse_results(self, r):
+    def _parse_results(self):
         '''Search for data in the reference vector file'''
-
-        for surv in r:
-            fldata = surv['DataLink'].split(',')
+        for surv in _filter_FRED(self):
             #wcs_url = "{}?request=GetCoverage&version=1.0.0&service=WCS&coverage={}&bbox={}&format=NetCDF3"\
             #    .format(surv['IndexLink'], surv['DataType'], regions.region_format(self.region, 'bbox'))
-            [self._data_urls.append([i, i.split('/')[-1], surv['DataType']]) if i != '' else None for i in fldata]
-            self._data_urls.append([surv['IndexLink'], surv['DataLink'].split('/')[-1], surv['DataType']])
-        return(self._data_urls)
+            for d in surv['DataLink'].split(','):
+                if d != '':
+                    yield[d, d.split('/')[-1], surv['DataType']]
 
     ## ==============================================
     ## Process results to xyz
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
+    ## `entry` is list: [url, file-name, datatype]
     ## ==============================================    
     def _yield_xyz(self, entry, epsg = 4326, z_region = None):
         src_dc = os.path.basename(entry[1])
@@ -1287,7 +1248,7 @@ class ncei_thredds:
         try:
             src_ds = gdal.Open(entry[0])
         except Exception as e:
-            fetch_file(entry[0], src_dc, callback = lambda: False, verbose = self._verbose)
+            fetch_file(entry[0], src_dc, callback = self._stop, verbose = self._verbose)
             try:
                 src_ds = gdal.Open(src_dc)
             except Exception as e:
@@ -1314,7 +1275,6 @@ class ncei_thredds:
 ## =============================================================================
 class mb:
     '''Fetch multibeam bathymetry from NOAA'''
-    
     def __init__(self, extent = None, where = [], callback = None, verbose = True):
         self._verbose = verbose
         if self._verbose: utils.echo_msg('loading Multibeam fetch module...')
@@ -1330,57 +1290,43 @@ class mb:
 
         self.where = where
         self.region = extent
-        if self.region is not None:
-            self._boundsGeom = gdalfun.gdal_region2geom(self.region)
         self.FRED = FRED(verbose = self._verbose)
-        self._data_urls = []
         self._stop = callback
 
-        self._info = '''NCEI is the U.S. national archive for multibeam bathymetric data and holds more than 9 million nautical miles of ship trackline data recorded from over 2400 cruises and received from sources worldwide. In addition to deepwater data, the Multibeam Bathymetry Database (MBBDB) includes hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
+        self._name = 'mb'
+        self._info = '''NCEI is the U.S. national archive for multibeam bathymetric data and holds 
+more than 9 million nautical miles of ship trackline data recorded from over 2400 cruises and received 
+from sources worldwide. In addition to deepwater data, the Multibeam Bathymetry Database (MBBDB) includes 
+hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
         self._title = '''NOAA MULTIBEAM survey data'''
         self._usage = '''< mb >'''
         self._urls = [self._mb_data_url, self._mb_metadata_url, self._mb_autogrid]
-        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
+        self._update_if_not_in_FRED()
+        
+    def _update_if_not_in_FRED(self):
+        self.FRED._open_ds()
+        self.FRED._attribute_filter("DataSource = '{}'".format(self._name))
+        if len(self.FRED.layer) == 0:
+            self.FRED._close_ds()
+            self._update()
+        self.FRED._close_ds()
         
     def _update(self):
-
-        self.FRED._open_ds()
-        self.FRED.layer.SetAttributeFilter("ID = '{}'".format('MB-1'))
-        if len(self.FRED.layer) == 0:
-            _surveys = [[
-                {
-                    'Name': 'NOAA Multibeam', 
-                    'ID': 'MB-1',
-                    'Agency': 'NOAA',
-                    'Date': utils.this_year(), 
-                    'MetadataLink': self._mb_metadata_url,
-                    'MetadataDate': utils.this_year(), 
-                    'DataLink': self._mb_search_url,
-                    'IndexLink': '',
-                    'Link': '',
-                    'DataType': 'multibeam',
-                    'DataSource': 'mb',
-                    'Resolution': '',
-                    'HorizontalDatum': 4326,
-                    'VerticalDatum': 1092,
-                    'LastUpdate': utils.this_date(),
-                    'Etcetra': '',
-                    'Info': self.info,
-                },
-                gdalfun.gdal_region2geom([-180,180,-90,90]).ExportToJson(),
-            ]]
-            self.FRED._add_surveys(_surveys)
+        self.FRED._open_ds(1)
+        self.FRED._attribute_filter(["ID = '{}'".format('MB-1')])
+        if self.FRED.layer is None or len(self.FRED.layer) == 0:
+            self.FRED._add_survey(Name = 'NOAA Multibeam', ID = 'MB-1', Agency = 'NOAA', Date = utils.this_year(),
+                                  MetadataLink = self._mb_metadata_url, MetadataDate = utils.this_year(),
+                                  DataLink = self._mb_search_url, DataType = 'multibeam', DataSource = 'mb',
+                                  HorizontalDatum = 4326, VerticalDatum = 1092, Info = self._info,
+                                  geom = gdalfun.gdal_region2geom([-180,180,-90,90]))
         self.FRED._close_ds()
-        return(_surveys)
-
-    def _filter_results(self):
-        return(self.FRED._filter(self.region, self.where, ['mb']))
         
-    def _parse_results(self, r, processed = False):
+    def _parse_results(self, processed = False):
         '''Run the MB (multibeam) fetching module.'''
         these_surveys = {}
         these_versions = {}
-        for surv in r:
+        for surv in _filter_FRED(self):
             if self.region is None: return([])        
             _req = fetch_req(surv['DataLink'], params = {'geometry': regions.region_format(self.region, 'bbox')}, timeout = 20)
             if _req is not None and _req.status_code == 200:
@@ -1402,20 +1348,16 @@ class mb:
         for key in these_surveys.keys():
             if '2' in these_surveys[key].keys():
                 for v2 in these_surveys[key]['2']:
-                    self._data_urls.append(v2)
-                #print(these_surveys[key]['2'])
+                    yield(v2)
             else:
                 for v1 in these_surveys[key]['1']:
-                    self._data_urls.append(v1)
-                    #self._data_urls.append(these_surveys[key]['1'])
-            #self._data_urls.append([data_url.split(' ')[0], '/'.join([survey, dst_fn]), 'mb'])
-
-        return(self._data_urls)
+                    yield(v1)
 
     ## ==============================================
     ## Process results to xyz
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
+    ## `entry` is list: [url, file-name, datatype]
     ## ==============================================    
     def _yield_xyz(self, entry, epsg = None, z_region = None):
         xyzc = copy.deepcopy(xyzfun._xyz_config)
@@ -1450,7 +1392,6 @@ class mb:
 ## =============================================================================
 class usace:
     '''Fetch USACE bathymetric surveys'''
-    
     def __init__(self, extent = None, where = [], callback = None, verbose = True):
         self._verbose = verbose
         if self._verbose: utils.echo_msg('loading USACE fetch module...')
@@ -1464,77 +1405,56 @@ class usace:
 
         self.where = where
         self.region = extent
-        if self.region is not None:
-            self._boundsGeom = gdalfun.gdal_region2geom(self.region)
         self.FRED = FRED(verbose = self._verbose)
-        self._data_urls = []
         self._stop = callback
 
+        self._name = 'usace'
         self._info = '''Bathymetric Channel surveys from USACE - U.S. only.
-The hydrographic surveys provided by this application are to be used for informational purposes only and should not be used as a navigational aid. Channel conditions can change rapidly and the surveys may or may not be accurate.'''
+The hydrographic surveys provided by this application are to be used for informational purposes only 
+and should not be used as a navigational aid. Channel conditions can change rapidly and the surveys
+may or may not be accurate.'''
         self._title = '''USACE bathymetry surveys via eHydro'''
         self._usage = '''< usace >'''
         self._urls = [self._usace_gj_url, self._usace_gs_api_url]
-        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
-
-    def _update(self):
+        self._update_if_not_in_FRED()
+        
+    def _update_if_not_in_FRED(self):
         self.FRED._open_ds()
-        self.FRED.layer.SetAttributeFilter("ID = '{}'".format('USACE-1'))
+        self.FRED._attribute_filter("DataSource = '{}'".format(self._name))
         if len(self.FRED.layer) == 0:
-            _surveys = [[
-                {
-                    'Name': 'USACE E-Hydro', 
-                    'ID': 'USACE-1',
-                    'Agency': 'USACE',
-                    'Date': utils.this_year(), 
-                    'MetadataLink': '',
-                    'MetadataDate': utils.this_year(), 
-                    'DataLink': self._usace_gs_api_url,
-                    'IndexLink': self._usace_gj_url,
-                    'Link': '',
-                    'DataType': 'usace',
-                    'DataSource': 'usace',
-                    'Resolution': '',
-                    'HorizontalDatum': 'varies',
-                    'VerticalDatum': 'varies',
-                    'LastUpdate': utils.this_date(),
-                    'Etcetra': '',
-                    'Info': self.info,
-                },
-                gdalfun.gdal_region2geom([-162, -60, 16, 73]).ExportToJson(),
-            ]]
-            self.FRED._add_surveys(_surveys)
+            self.FRED._close_ds()
+            self._update()
         self.FRED._close_ds()
-        return(_surveys)
         
-    def _filter_results(self):
-        return(self.FRED._filter(self.region, self.where, ['usace']))
+    def _update(self):
+        self.FRED._open_ds(1)
+        self.FRED._attribute_filter(["ID = '{}'".format('USACE-1')])
+        if self.FRED.layer is None or len(self.FRED.layer) == 0:
+            self.FRED._add_survey(Name = 'USACE E-Hydro', ID = 'USACE-1', Agency = 'USACE', Date = utils.this_year(),
+                                  DataLink = self._usace_gs_api_url, IndexLink = self._usace_gj_url, DataType = 'xyz',
+                                  DataSource = 'usace', Info = self._info, geom = gdalfun.gdal_region2geom([-162,-60,16,73]))
+        self.FRED._close_ds()
         
-    def _parse_results(self, r, stype = None):
+    def _parse_results(self, stype = None):
         '''Run the USACE fetching module'''
-
-        for surv in r:
-            _data = {
-                'geometry': regions.region_format(self.region, 'bbox'),
-                'inSR':4326,
-                'outSR':4326,
-                'f':'pjson',
-            }
-            self._req = fetch_req(surv['DataLink'], params = _data)
-            if self._req is not None:
+        for surv in _filter_FRED(self):
+            _data = {'geometry': regions.region_format(self.region, 'bbox'), 'inSR':4326, 'outSR':4326, 'f':'pjson'}
+            _req = fetch_req(surv['DataLink'], params = _data)
+            if _req is not None and _req.status_code == 200:
                 survey_list = self._req.json()
                 for feature in survey_list['features']:
                     fetch_fn = feature['attributes']['SOURCEDATALOCATION']
                     if stype is not None:
                         if feature['attributes']['SURVEYTYPE'].lower() == stype.lower():
-                            self._data_urls.append([fetch_fn, fetch_fn.split('/')[-1], 'usace'])
-                    else: self._data_urls.append([fetch_fn, fetch_fn.split('/')[-1], 'usace'])
-        return(self._data_urls)
-
+                            yield([fetch_fn, fetch_fn.split('/')[-1], 'usace'])
+                    else: yield([fetch_fn, fetch_fn.split('/')[-1], 'usace'])
+            else: utils.echo_error_msg('{}'.format(_req.reason))
+            
     ## ==============================================
     ## Process results to xyz
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
+    ## `entry` is list: [url, file-name, datatype]
     ## ==============================================    
     def _yield_xyz(self, entry, epsg = None, z_region = None):
         xyzc = copy.deepcopy(xyzfun._xyz_config)
@@ -1542,8 +1462,6 @@ The hydrographic surveys provided by this application are to be used for informa
         xyzc['warp'] = epsg
         
         if fetch_file(entry[0], src_zip, callback = self._stop, verbose = self._verbose) == 0:
-
-            ## attempt to discover the state plane zone from xml
             src_xmls = utils.p_unzip(src_zip, ['.xml', '.XML'])
             for src_xml in src_xmls:
                 this_xml = lxml.etree.parse(src_xml)
@@ -1567,18 +1485,19 @@ The hydrographic surveys provided by this application are to be used for informa
                         xyzc['epsg'] = None
                 utils.remove_glob(src_xml)
 
-            ## otherwise attempt to discover state plane zone from vector
             if xyzc['epsg'] is None:
                 this_geom = gdalfun.gdal_region2geom(this_xml_region)
                 sp_fn = os.path.join(fetchdata, 'stateplane.geojson')
-                sp = ogr.Open(sp_fn)
-                layer = sp.GetLayer()
+                try:
+                    sp = ogr.Open(sp_fn)
+                    layer = sp.GetLayer()
                 
-                for feature in layer:
-                    geom = feature.GetGeometryRef()
-                    if this_geom.Intersects(geom):
-                        xyzc['epsg'] = feature.GetField('EPSG')
-                sp = None
+                    for feature in layer:
+                        geom = feature.GetGeometryRef()
+                        if this_geom.Intersects(geom):
+                            xyzc['epsg'] = feature.GetField('EPSG')
+                    sp = None
+                except: pass
                         
             src_usaces = utils.p_unzip(src_zip, ['.XYZ', '.xyz', '.dat'])
             for src_usace in src_usaces:
@@ -1591,9 +1510,7 @@ The hydrographic surveys provided by this application are to be used for informa
                         for xyz in xyzfun.xyz_parse(in_c, xyz_c = xyzc, verbose = self._verbose):
                             yield(xyz)
                     utils.remove_glob(src_usace)
-
-            #utils._clean_zips(src_zips)
-        
+                    
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(entry[0]))
         utils.remove_glob(src_zip)
 
@@ -1604,12 +1521,9 @@ The hydrographic surveys provided by this application are to be used for informa
 ## Fetch elevation data from The National Map
 ## NED, 3DEP, NHD, Etc.
 ##
-## TODO: Break up search regions on large regions 
-##
 ## =============================================================================
 class tnm:
     '''Fetch elevation data from The National Map'''
-    
     def __init__(self, extent = None, where = [], callback = None, verbose = True):
         self._verbose = verbose
         if self._verbose: utils.echo_msg('loading The National Map fetch module...')
@@ -1621,217 +1535,270 @@ class tnm:
         self._tnm_dataset_url = 'https://tnmaccess.nationalmap.gov/api/v1/datasets?'
         self._tnm_product_url = 'https://tnmaccess.nationalmap.gov/api/v1/products?'
         self._tnm_meta_base = 'https://www.sciencebase.gov/catalog/item/'
+        self._elev_ds = ['National Elevation Dataset (NED) 1 arc-second', 'Digital Elevation Model (DEM) 1 meter',
+                         'National Elevation Dataset (NED) 1/3 arc-second', 'National Elevation Dataset (NED) 1/9 arc-second',
+                         'National Elevation Dataset (NED) Alaska 2 arc-second', 'Alaska IFSAR 5 meter DEM',
+                         'Original Product Resolution (OPR) Digital Elevation Model (DEM)', 'Ifsar Digital Surface Model (DSM)',
+                         'Ifsar Orthorectified Radar Image (ORI)', 'Lidar Point Cloud (LPC)',
+                         'National Hydrography Dataset Plus High Resolution (NHDPlus HR)', 'National Hydrography Dataset (NHD) Best Resolution',
+                         'National Watershed Boundary Dataset (WBD)', 'USDA National Agriculture Imagery Program (NAIP)',
+                         'Topobathymetric Lidar DEM', 'Topobathymetric Lidar Point Cloud']
         self._outdir = os.path.join(os.getcwd(), 'tnm')
-        self._tnm_ds = []
-        self._tnm_df = []
 
         self.where = where
         self.region = extent
-        if self.region is not None:
-            self._boundsGeom = gdalfun.gdal_region2geom(self.region)
         self.FRED = FRED(verbose = self._verbose)
-        self._data_urls = []
-        self._surveys = []
         self._stop = callback
 
-        self._info = '''Various datasets from USGS's National Map. The National Map is a collaborative effort among the USGS and other Federal, State, and local partners to improve and deliver topographic information for the Nation.
-\nDatasets: {}'''.format(self._fred_datasets())
+        self._name = 'tnm'
+        self._info = '''Various datasets from USGS's National Map. The National Map is a 
+collaborative effort among the USGS and other Federal, State, and local partners to improve
+and deliver topographic information for the Nation.'''
+        ## \nDatasets: {}'''.format(self._fred_datasets())
         self._title = '''The National Map (TNM) from USGS'''
         self._usage = '''< tnm:formats=fmt,fmt:extents=ext,ext >'''
         self._urls = [self._tnm_api_url]
-        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
+        self._update_if_not_in_FRED()
+        
+    def _update_if_not_in_FRED(self):
+        self.FRED._open_ds()
+        self.FRED._attribute_filter("DataSource = '{}'".format(self._name))
+        if len(self.FRED.layer) == 0:
+            self.FRED._close_ds()
+            self._update()
+        self.FRED._close_ds()
         
     def _fred_datasets(self):
         ids = {}
-        for r in self._filter_results():
+        for r in self.FRED._filter(self.region, self.where, ['tnm']):
             ids[r['ID']] = r['DataType']
         return(ids)
-        
-    def _datasets(self):
+
+    def _datasets(self, dataset = None):
         _req = fetch_req(self._tnm_dataset_url)
-        if _req is not None:
+        if _req is not None and _req.status_code == 200:
             try:
                 _datasets = _req.json()
+                if dataset is not None:
+                    for ds in _datasets:
+                        tags = ds['tags']
+                        if len(tags) > 0:
+                            for t in tags:
+                                if dataset == t['sbDatasetTag']:
+                                    _datasets = t
+                                    break
+                        else:
+                            if dataset == ds['sbDatasetTag']:
+                                _datasets = ds
+                                break
             except Exception as e:
                 utils.echo_error_msg('try again, {}'.format(e))
         else: _datasets = None
-
         return(_datasets)
     
-    def _parse_dsTag(self, dsTag):
-        sbDTag = dsTag['sbDatasetTag']
-        meta = '{}{}?format=iso'.format(self._tnm_meta_base, dsTag['id'])
-        this_xml = iso_xml(meta)
-        h_epsg, v_epsg = this_xml.reference_system()
-        if h_epsg is None: h_epsg = 'varies'
-        if v_epsg is None: v_epsg = 'varies'
-        _data = {
-            'max': 10000,
-            'datasets': sbDTag,
-        }
-        try:
-            url_enc = urllib.urlencode(_data)
-        except: url_enc = urllib.parse.urlencode(_data)
-        data_link = '{}{}'.format(self._tnm_product_url, url_enc)
-        this_geom = this_xml.bounds(geom=True)
-        this_date = this_xml.date()
-        #if this_geom is not None:
-        return([{'Name': dsTag['title'],
-                 'ID': sbDTag,
-                 'Agency': '',
-                 'Date': this_date,
-                 'MetadataLink': meta,
-                 'MetadataDate': this_xml.xml_date(), 
-                 'DataLink': data_link,
-                 'IndexLink': '',
-                 'Link': '',
-                 'DataSource': 'tnm',
-                 'Resolution': '',
-                 'HorizontalDatum': h_epsg,
-                 'VerticalDatum': v_epsg,
-                 'LastUpdate': utils.this_date(),
-                 'Etcetra': '',
-                 'Info': this_xml.abstract()}, this_geom])
-    #else: return(None)
-
-    def _parse_ds(self, ds):
-        _surveys = []
-        try:
-            dsTags = ds['tags']
-        except: dsTags = []
-        if len(dsTags) > 0:
-            for tag in dsTags:
-                _surveys.append(self._parse_ds(tag))
-        else: _surveys.append(self._parse_dsTag(ds))
-        return(_surveys)
-        
-    def _update(self):
-        _surveys = []
-        _s = {}
-        self.FRED._open_ds()
+    def _dataset_tags():
         tnm_ds = self._datasets()
-        for i, ds in enumerate(tnm_ds):
-            formats = ''
-            for f in ds['formats']:
-                if 'isDefault' in f.keys():
-                    formats = f['value']
+        dsTags = []
+        for ds in tnm_ds:
+            tags = ds['tags']
+            if len(tags) > 0:
+                for t in tags:
+                    dsTags.append(t['sbDatasetTag'])
+            else: dsTags.append(ds['sbDatasetTag'])
+        return(dsTags)
+
+    def _update_dataset(self, ds, fmt, geom, h_epsg, v_epsg):
+        self.FRED._attribute_filter(["ID = '{}'".format(ds['id'])])
+        if self.FRED.layer is None or len(self.FRED.layer) == 0:
+            if 'IMG' in fmt or 'TIFF' in fmt:
+                datatype = 'raster'
+            elif 'LAS' in fmt or 'LAZ' in fmt:
+                datatype = 'lidar'
+            else: datatype = 'tnm'
+            try:
+                url_enc = urllib.urlencode({'datasets': ds['sbDatasetTag']})
+            except: url_enc = urllib.parse.urlencode({'datasets': ds['sbDatasetTag']})
+            try:
+                pubDate = ds['lastPublishedDate']
+            except: pubDate = utils.this_year()
+            try:
+                metadataDate = ds['lastUpdatedDate']
+            except: metadataDate = utils.this_year()            
+            if geom is not None:
+                self.FRED._add_survey(Name = ds['sbDatasetTag'], ID = ds['id'], Agency = 'USGS', Date = pubDate,
+                                      MetadataLink = ds['infoUrl'], MetadataDate = metadataDate,
+                                      DataLink = '{}{}'.format(self._tnm_product_url, url_enc), Link = ds['dataGovUrl'], Resolution = ','.join(ds['extents']),
+                                      DataType = datatype, DataSource = 'tnm', HorizontalDatum = h_epsg,
+                                      VerticalDatum = v_epsg, Etcetra = fmt, Info = ds['refreshCycle'], geom = geom)
+
+    ## ==============================================
+    ## update the FRED geojson with each TNM dataset
+    ## each dataset will have any number of products, which get parsed for the data-link
+    ## in _parse_results().
+    ## ==============================================
+    def _update(self):
+        '''Update FRED with each dataset in TNM'''
+        datasets = self._datasets()
+        self.FRED._open_ds(1)
+        if self._verbose: _prog = utils._progress('scanning {} datasets from TNM...'.format(len(datasets)))
+        for i, ds in enumerate(datasets):
+            if self._verbose: _prog.update_perc((i, len(datasets)))
+            for fmt in ds['formats']:
+                if 'isDefault' in fmt.keys():
+                    fmt = fmt['value']
                     break
             this_xml = iso_xml('{}{}?format=iso'.format(self._tnm_meta_base, ds['id']))
-            this_geom = this_xml.bounds(geom=True)
-            mapServerUrl = ds['mapServerUrl']
-            _s = self._parse_ds(ds)
-            for _survey in _s:
-                if _survey[0] is not None:
-                    if len(_survey) == 1:
-                        _survey = _survey[0]
-                    self.FRED.layer.SetAttributeFilter("ID = '{}'".format(_survey[0]['ID']))
-                    if len(self.FRED.layer) == 0:
-                        _survey[0]['DataType'] = formats
-                        _survey[0]['IndexLink'] = mapServerUrl
-                        if _survey[1] is None:
-                            if this_geom is not None:
-                                _survey[1] = this_geom.ExportToJson()
-                            else: _survey[1] = None
-                        else: _survey[1] = _survey[1].ExportToJson()
-                        if _survey[1] is not None:
-                            self.FRED.layer.SetAttributeFilter("ID = '{}'".format(ds['sbDatasetTag']))
-                            if len(self.FRED.layer) == 0:
-                                self._surveys.append(_survey)
-                
-        self.FRED._add_surveys(self._surveys)
+            geom = this_xml.bounds(geom = True)
+            h_epsg, v_epsg = this_xml.reference_system()
+            tags = ds['tags']
+            if len(tags) > 0:
+                for tag in tags:
+                    self._update_dataset(tag, fmt, geom, h_epsg, v_epsg)
+            else: self._update_dataset(ds, fmt, geom, h_epsg, v_epsg)
+        if self._verbose: _prog.end(0, 'scanned {} datasets from TNM'.format(len(datasets)))
         self.FRED._close_ds()
-        return(_surveys)
-        
-    def _filter_results(self):
-        return(self.FRED._filter(self.region, self.where, ['tnm']))
 
-    def _parse_results(self, r, f = None, e = None, q = None):
-        if self._verbose: utils.echo_msg('filtering TNM dataset results...')
+    def _parse_results(self, f = None, e = None, q = None):
+        '''parse the tnm results from FRED,
+        creates a generator yielding [url, file-name, data-type]'''
         e = e.split(',') if e is not None else None
         f = f.split(',') if f is not None else None
-        for surv in r:
-    
-            _data = {
-                'bbox': regions.region_format(self.region, 'bbox'),
-            }
-            if q is not None: _data['q'] = str(q)
-            if f is None:
-                _data['prodFormats'] = surv['DataType']
-            else: _data['prodFormats'] = ','.join(f)
-            if e is None: e = []
+        for surv in _filter_FRED(self):
+            print(surv)
+            offset = 0
+            total = 0
+            while True:
+                _dataset_results = []
+                _data = {'bbox': regions.region_format(self.region, 'bbox'), 'max': 100, 'offset': offset}
+                if q is not None: _data['q'] = str(q)
+                if f is None:
+                    _data['prodFormats'] = surv['Etcetra']
+                else: _data['prodFormats'] = ','.join(f)
+                if e is None: e = []
+
+                _req = fetch_req(surv['DataLink'], params = _data)
+                if _req is not None and _req.status_code == 200:
+                    try:
+                        _dataset_results = _req.json()
+                        total = _dataset_results['total']
+                    except ValueError: utils.echo_error_msg('tnm server error, try again')
+                    except Exception as e: utils.echo_error_msg('error, {}'.format(e))
+                
+                if len(_dataset_results) > 0:
+                    for item in _dataset_results['items']:
+                        if _data['prodFormats'] is None:
+                            fmts = []
+                        else: fmts = _data['prodFormats'].split(',')
+                        f_url = None
+                        if len(e) > 0:
+                            for extent in e:
+                                if item['extent'] == extent:
+                                    for fmt in fmts:
+                                        if fmt in item['urls'].keys():
+                                            f_url = item['urls'][fmt]
+                                            break
+                                    if f_url is None: f_url = item['downloadURL']
+                                    yield([f_url, f_url.split('/')[-1], surv['DataType']])
+                        else:
+                            for fmt in fmts:
+                                if fmt in item['urls'].keys():
+                                    f_url = item['urls'][fmt]
+                                    break
+                            if f_url is None:  f_url = item['downloadURL']
+                            yield([f_url, f_url.split('/')[-1], surv['DataType']])
+                offset += 100
+                if offset >= total: break
+
+    ## ==============================================
+    ## _update_prods() and _parse_prods_results() will update FRED with every product as a feature, rather than
+    ## the default of each feature being a TNM dataset. _update_prods() takes much longer time to gather the
+    ## products for each dataset and recording them in FRED, though the parsing of results is much faster.
+    ## For our purposes, we wont be using most of what's available on TNM, so it is a bit of a waste to store
+    ## all their datasets, which are already stored online, in FRED. This means user-time for fetches TNM is a
+    ## bit slower, however storage costs are minimal and fewer updates may be necesary...
+    ## ==============================================                
+    def _update_prods(self):
+        '''updated FRED with each product file available from TNM'''
+        for dsTag in self._elev_ds:
+            offset = 0
+            utils.echo_msg('processing TNM dataset {}...'.format(dsTag))
+            _req = fetch_req(self._tnm_product_url, params = {'max': 1, 'datasets': dsTag})
+            try:
+                _dsTag_results = _req.json()
+            except ValueError: utils.echo_error_msg('tnm server error, try again')
+            except Exception as e: utils.echo_error_msg('error, {}'.format(e))
+            total = _dsTag_results['total']
+            if self._verbose: _prog = utils._progress('gathering {} products from {}...'.format(total, dsTag))
             
-            _req = fetch_req(surv['DataLink'], params = _data)
-            _dataset_results = []
-
-            if _req is not None:
+            ds = self._datasets(dataset = dsTag)
+            this_xml = iso_xml('{}{}?format=iso'.format(self._tnm_meta_base, ds['id']))
+            h_epsg, v_epsg = this_xml.reference_system()
+            
+            while True:
+                _data = {'max': 100, 'datasets': dsTag, 'offset': offset}
+                _req = fetch_req(self._tnm_product_url, params = _data)
                 try:
-                    _dataset_results = _req.json()
+                    _dsTag_results = _req.json()
                 except ValueError: utils.echo_error_msg('tnm server error, try again')
-                except Exception as e: utils.echo_error_msg('error, {}'.format(e))                
+                except Exception as e: utils.echo_error_msg('error, {}'.format(e))
+                if self._verbose: _prog.update_perc((offset,total), msg = 'gathering {} products from {}...'.format(total, dsTag))
+                
+                for i, item in enumerate(_dsTag_results['items']):
+                    if self._verbose: _prog.update_perc((i+offset,total), msg = 'gathering {} products from {}...'.format(total, dsTag))
+                    try:
+                        self.FRED.layer.SetAttributeFilter("ID = '{}'".format(item['sourceId']))
+                    except: pass
+                    if self.FRED.layer is None or len(self.FRED.layer) == 0:
+                        bbox = item['boundingBox']
+                        geom = gdalfun.gdal_region2geom([bbox['minX'], bbox['maxX'], bbox['minY'], bbox['maxY']])
 
-            if len(_dataset_results) > 0:
-                for item in _dataset_results['items']:
-                    if _data['prodFormats'] is None:
-                        fmts = []
-                    else: fmts = _data['prodFormats'].split(',')
-                    f_url = None
-                    if len(e) > 0:
-                        for extent in e:
-                            if item['extent'] == extent:
-                                for fmt in fmts:
-                                    if fmt in item['urls'].keys():
-                                        f_url = item['urls'][fmt]
-                                        break
-                                if f_url is None:
-                                    f_url = item['downloadURL']
-                                if item['format'] == 'IMG' or item['format'] == 'GeoTIFF':
-                                    tnm_ds = 'ned'
-                                elif item['format'] == 'LAZ' or item['format'] == 'LAS':
-                                    tnm_ds = 'lidar'
-                                else: tnm_ds = 'tnm'
-                                self._data_urls.append([f_url, f_url.split('/')[-1], tnm_ds])
-                    else:
-                        for fmt in fmts:
-                            if fmt in item['urls'].keys():
-                                f_url = item['urls'][fmt]
-                                break
-                        if f_url is None:
-                            f_url = item['downloadURL']
                         if item['format'] == 'IMG' or item['format'] == 'GeoTIFF':
-                            tnm_ds = 'ned'
+                            tnm_ds = 'raster'
                         elif item['format'] == 'LAZ' or item['format'] == 'LAS':
                             tnm_ds = 'lidar'
                         else: tnm_ds = 'tnm'
-                        self._data_urls.append([f_url, f_url.split('/')[-1], tnm_ds])
-        return(self._data_urls)
-    
+
+                        if geom is not None:
+                            self.FRED._add_survey(Name = item['title'], ID = item['sourceId'], Agency = 'USGS', Date = item['publicationDate'],
+                                                  MetadataLink = item['metaUrl'], MetadataDate = item['dateCreated'],
+                                                  DataLink = item['downloadURL'], Link = item['sourceOriginId'], Resolution = item['extent'],
+                                                  DataType = tnm_ds, DataSource = 'tnm', HorizontalDatum = h_epsg,
+                                                  VerticalDatum = v_epsg, Etcetra = dsTag, Info = item['moreInfo'], geom = geom)
+                offset += 100
+                if total - offset <= 0: break
+            if self._verbose: _prog.end(0, 'gathered {} products from {}'.format(total, dsTag))
+                           
+    def _parse_prods_results(self, r, f = None, e = None, q = None):
+        for surv in _filter_FRED(self):
+            for d in surv['DataLink'].split(','):
+                if d != '':
+                    yield[d, d.split('/')[-1], surv['DataType']]
+        
     ## ==============================================
     ## Process results to xyz
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
+    ## `entry` is list: [url, file-name, datatype]
     ## ==============================================                
     def _yield_xyz(self, entry, epsg = None, z_region = None):
         '''yield the xyz data from the tnm fetch module'''
-        
-        if fetch_file(entry[0], entry[1], callback = lambda: False, verbose = self._verbose) == 0:
+        if fetch_file(entry[0], entry[1], callback = self._stop, verbose = self._verbose) == 0:
             datatype = entry[-1]
-            if datatype == 'ned':
-                src_tnm, src_zips = utils.procs_unzip(entry[1], ['tif', 'img', 'gdal', 'asc', 'bag'])
-                try:
-                    src_ds = gdal.Open(src_tnm)
-                except:
-                    utils.echo_error_msg('could not read tnm data: {}'.format(src_tnm))
-                    src_ds = None
-
-                if src_ds is not None:
-                    srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_getEPSG(src_ds)))
-                    for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose, z_region = z_region):
-                        if xyz[2] != 0:
-                            yield(xyz)
-                    src_ds = None
-
-                utils.remove_glob(src_tnm)
-                utils._clean_zips(src_zips)
+            if datatype == 'raster':
+                src_tnms = utils.p_unzip(entry[1], ['tif', 'img', 'gdal', 'asc', 'bag'])
+                for src_tnm in src_tnms:
+                    try:
+                        src_ds = gdal.Open(src_tnm)
+                        if src_ds is not None:
+                            srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_getEPSG(src_ds)))
+                            for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose, z_region = z_region):
+                                if xyz[2] != 0:
+                                    yield(xyz)
+                        src_ds = None
+                    except:
+                        utils.echo_error_msg('could not read tnm data: {}'.format(src_tnm))
+                        src_ds = None
+                    utils.remove_glob(src_tnm)
         utils.remove_glob(entry[1])
             
 ## =============================================================================
@@ -1844,7 +1811,6 @@ class tnm:
 ## =============================================================================
 class gmrt:
     '''Fetch raster data from the GMRT'''
-    
     def __init__(self, extent = None, where = [], callback = None, verbose = True):
         self._verbose = verbose
         if self._verbose: utils.echo_msg('loading GMRT fetch module...')
@@ -1859,69 +1825,51 @@ class gmrt:
 
         self.where = where
         self.region = extent
-        if self.region is not None:
-            self._boundsGeom = gdalfun.gdal_region2geom(self.region)
         self.FRED = FRED(verbose = self._verbose)
-        self._data_urls = []
-        self._surveys = []
         self._stop = callback
 
-        self._info = '''The Global Multi-Resolution Topography (GMRT) synthesis is a multi-resolutional compilation of edited multibeam sonar data collected by scientists and institutions worldwide, that is reviewed, processed and gridded by the GMRT Team and merged into a single continuously updated compilation of global elevation data. The synthesis began in 1992 as the Ridge Multibeam Synthesis (RMBS), was expanded to include multibeam bathymetry data from the Southern Ocean, and now includes bathymetry from throughout the global and coastal oceans.'''
+        self._name = 'gmrt'
+        self._info = '''The Global Multi-Resolution Topography (GMRT) synthesis is a multi-resolutional 
+compilation of edited multibeam sonar data collected by scientists and institutions worldwide, that is 
+reviewed, processed and gridded by the GMRT Team and merged into a single continuously updated compilation 
+of global elevation data. The synthesis began in 1992 as the Ridge Multibeam Synthesis (RMBS), was expanded 
+to include multibeam bathymetry data from the Southern Ocean, and now includes bathymetry from throughout 
+the global and coastal oceans.'''
         self._title = '''The Global Multi-Reosolution Topography Data Synthesis (GMRT)'''
         self._usage = '''< gmrt:layer=gmrt_layer >
  :layer=[topo/topo-mask]'''
         self._urls = [self._gmrt_grid_url, self._gmrt_grid_metadata_url]
-        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
+        self._update_if_not_in_FRED()
+        
+    def _update_if_not_in_FRED(self):
+        self.FRED._open_ds()
+        self.FRED._attribute_filter("DataSource = '{}'".format(self._name))
+        if len(self.FRED.layer) == 0:
+            self.FRED._close_ds()
+            self._update()
+        self.FRED._close_ds()
         
     def _update(self):
-        self.FRED._open_ds()
-        self.FRED.layer.SetAttributeFilter("ID = '{}'".format('GMRT-1'))
-        if len(self.FRED.layer) == 0:
-            self._surveys = [[
-                {
-                    'Name': 'GMRT', 
-                    'ID': 'GMRT-1',
-                    'Agency': '',
-                    'Date': utils.this_year(), 
-                    'MetadataLink': self._gmrt_grid_metadata_url,
-                    'MetadataDate': utils.this_year(), 
-                    'DataLink': self._gmrt_grid_urls_url,
-                    'IndexLink': '',
-                    'Link': '',
-                    'DataType': 'raster',
-                    'DataSource': 'gmrt',
-                    'Resolution': '',
-                    'HorizontalDatum': 3857,
-                    'VerticalDatum': 1092,
-                    'LastUpdate': utils.this_date(),
-                    'Etcetra': '',
-                    'Info': self.info,
-                },
-                gdalfun.gdal_region2geom([-180,180,-90,90]).ExportToJson(),
-            ]]
-            self.FRED._add_surveys(self._surveys)
+        self.FRED._open_ds(1)
+        self.FRED._attribute_filter(["ID = '{}'".format('GMRT-1')])
+        if self.FRED.layer is None or len(self.FRED.layer) == 0:
+            self.FRED._add_survey(Name = 'GMRT', ID = 'GMRT-1', Date = utils.this_year(),
+                                  MetadataLink = self._gmrt_grid_metadata_url, MetadataDate = utils.this_year(),
+                                  DataLink = self._gmrt_grid_urls_url, DataType = 'raster', DataSource = 'gmrt',
+                                  HorizontalDatum = 3857, VerticalDatum = 1092, Info = self._info,
+                                  geom = gdalfun.gdal_region2geom([-180,180,-90,90]))
         self.FRED._close_ds()
-        return(self._surveys)
 
-    def _filter_results(self):
-        return(self.FRED._filter(self.region, self.where, ['gmrt']))
-    
-    def _parse_results(self, r, fmt = 'geotiff', res = 'max', layer = 'topo'):
+    def _parse_results(self, fmt = 'geotiff', res = 'max', layer = 'topo'):
         '''Run the GMRT fetching module'''
         if layer != 'topo' and layer != 'topo-mask': layer = 'topo'
-        for surv in r:
-            _data = {
-                'north':self.region[3],
-                'west':self.region[0],
-                'south':self.region[2],
-                'east':self.region[1],
-                'mformat':'json',
-                'resolution':res,
-                'format':fmt,
-            }
-            #                'layer': layer,
+        for surv in _filter_FRED(self):
+            _data = {'north':self.region[3], 'west':self.region[0],
+                     'south':self.region[2], 'east':self.region[1],
+                     'mformat':'json', 'resolution':res, 'format':fmt}
+            
             _req = fetch_req(surv['DataLink'], params = _data, tries = 10, timeout = 2)
-            if _req is not None:
+            if _req is not None and _req.status_code == 200:
                 gmrt_urls = _req.json()
                 for url in gmrt_urls:
                     opts = {}
@@ -1929,17 +1877,14 @@ class gmrt:
                     for url_opt in url.split('?')[1].split('&'):
                         opt_kp = url_opt.split('=')
                         opts[opt_kp[0]] = opt_kp[1]
-
                     opts['layer'] = layer
                     try:
                         url_enc = urllib.urlencode(opts)
                     except: url_enc = urllib.parse.urlencode(opts)
-
                     this_url = '{}?{}'.format(url_base, url_enc)
                     url_region = [float(opts['west']), float(opts['east']), float(opts['south']), float(opts['north'])]
                     outf = 'gmrt_{}_{}.{}'.format(opts['layer'], regions.region_format(url_region, 'fn'), gdalfun.gdal_fext(opts['format']))
-                    self._data_urls.append([this_url, outf, 'gmrt'])
-        return(self._data_urls)
+                    yield([this_url, outf, 'gmrt'])
 
     ## ==============================================
     ## Process results to xyz
@@ -1949,7 +1894,7 @@ class gmrt:
     ## ==============================================    
     def _yield_xyz(self, entry, epsg = 4326, z_region = None):
         src_gmrt = 'gmrt_tmp_{}.tif'.format(regions.region_format(self.region, 'fn'))
-        if fetch_file(entry[0], src_gmrt, callback = lambda: False, verbose = self._verbose) == 0:
+        if fetch_file(entry[0], src_gmrt, callback = self._stop, verbose = self._verbose) == 0:
             try:
                 src_ds = gdal.Open(src_gmrt)
             except: src_ds = None
@@ -1972,8 +1917,7 @@ class gmrt:
 ##
 ## =============================================================================
 class mar_grav:
-    '''Fetch mar_grav sattelite altimetry topography'''
-    
+    '''Fetch mar_grav sattelite altimetry topography'''    
     def __init__(self, extent = None, where = [], callback = None, verbose = True):
         self._verbose = verbose
         if self._verbose: utils.echo_msg('loading mar_grav fetch module...')
@@ -1987,73 +1931,47 @@ class mar_grav:
 
         self.where = where
         self.region = extent
-        if self.region is not None:
-            self._boundsGeom = gdalfun.gdal_region2geom(self.region)
         self.FRED = FRED(verbose = self._verbose)
-        self._data_urls = []
-        self._surveys = []
         self._stop = callback
 
+        self._name = 'mar_grav'
         self._info = 'Elevation data from Scripps Marine Gravity dataset.'
         self._title = '''Marine Gravity from Sattelite Altimetry topographic data.'''
         self._usage = '''< mar_grav >'''
         self._urls = [self._mar_grav_info_url, self._mar_grav_url]
-        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
+        self._update_if_not_in_FRED()
+        
+    def _update_if_not_in_FRED(self):
+        self.FRED._open_ds()
+        self.FRED._attribute_filter("DataSource = '{}'".format(self._name))
+        if len(self.FRED.layer) == 0:
+            self.FRED._close_ds()
+            self._update()
+        self.FRED._close_ds()
         
     def _update(self):
-
-        self.FRED._open_ds()
-        self.FRED.layer.SetAttributeFilter("ID = '{}'".format('MAR_GRAV-1'))
-        if len(self.FRED.layer) == 0:
-            self._surveys = [[
-                {
-                    'Name': 'MAR_GRAV', 
-                    'ID': 'MAR_GRAV-1',
-                    'Agency': '',
-                    'Date': utils.this_year(), 
-                    'MetadataLink': self._mar_grav_info_url,
-                    'MetadataDate': utils.this_year(), 
-                    'DataLink': self._mar_grav_url,
-                    'IndexLink': '',
-                    'Link': '',
-                    'DataType': 'xyz',
-                    'DataSource': 'mar_grav',
-                    'Resolution': '',
-                    'HorizontalDatum': 4326,
-                    'VerticalDatum': 1092,
-                    'LastUpdate': utils.this_date(),
-                    'Etcetra': '',
-                    'Info': self.info,
-                },
-                gdalfun.gdal_region2geom([-180,180,-90,90]).ExportToJson(),
-            ]]
-            self.FRED._add_surveys(self._surveys)
+        self.FRED._open_ds(1)
+        self.FRED._attribute_filter(["ID = '{}'".format('MAR_GRAV-1')])
+        if self.FRED.layer is None or len(self.FRED.layer) == 0:
+            self.FRED._add_survey(Name = 'MAR_GRAV', ID = 'MAR_GRAV-1', Date = utils.this_year(),
+                                  MetadataLink = self._mar_grav_info_url, MetadataDate = utils.this_year(),
+                                  DataLink = self._mar_grav_url, DataType = 'xyz', DataSource = 'mar_grav',
+                                  HorizontalDatum = 4326, VerticalDatum = 1092, Info = self._info,
+                                  geom = gdalfun.gdal_region2geom([-180,180,-90,90]))
         self.FRED._close_ds()
-        return(self._surveys)
         
-    def _filter_results(self):
-        return(self.FRED._filter(self.region, self.where, ['mar_grav']))
-        
-    def _parse_results(self, r):
+    def _parse_results(self):
         '''Run the mar_grav fetching module.'''
-
-        for surv in r:        
-            _data = {
-                'north':self.region[3],
-                'west':self.region[0],
-                'south':self.region[2],
-                'east':self.region[1],
-                'mag':1,
-            }
-
+        for surv in _filter_FRED(self):
+            _data = {'north':self.region[3], 'west':self.region[0],
+                     'south':self.region[2], 'east':self.region[1],
+                     'mag':1}
             try:
                 url_enc = urllib.urlencode(_data)
             except: url_enc = urllib.parse.urlencode(_data)
-            
             url = '{}?{}'.format(surv['DataLink'], url_enc)
             outf = 'mar_grav_{}.xyz'.format(regions.region_format(self.region, 'fn'))
-            self._data_urls.append([url, outf, 'mar_grav'])
-        return(self._data_urls)
+            yield([url, outf, 'mar_grav'])
         
     ## ==============================================
     ## Process results to xyz
@@ -2061,7 +1979,7 @@ class mar_grav:
     ## as well as for processing incoming fetched data.
     ## ==============================================
     def _yield_xyz(self, entry, epsg = None, z_region = None):
-        if fetch_file(entry[0], os.path.basename(entry[1]), callback = lambda: False, verbose = self._verbose) == 0:
+        if fetch_file(entry[0], os.path.basename(entry[1]), callback = self._stop, verbose = self._verbose) == 0:
             xyzc = copy.deepcopy(xyzfun._xyz_config)
             xyzc['skip'] = 1
             xyzc['x-off'] = -360
@@ -2084,10 +2002,9 @@ class mar_grav:
 ## https://topex.ucsd.edu/WWW_html/srtm15_plus.html
 ## http://topex.ucsd.edu/sandwell/publications/180_Tozer_SRTM15+.pdf
 ##
-## =============================================================================
+## =============================================================================        
 class srtm_plus:
     '''Fetch SRTM15+ data'''
-    
     def __init__(self, extent = None, where = [], callback = None, verbose = True):
         self._verbose = verbose
         if self._verbose: utils.echo_msg('loading SRTM+ fetch module...')
@@ -2101,71 +2018,46 @@ class srtm_plus:
 
         self.where = where
         self.region = extent
-        if self.region is not None:
-            self._boundsGeom = gdalfun.gdal_region2geom(self.region)
         self.FRED = FRED(verbose = self._verbose)
-        self._data_urls = []
-        self._surveys = []
         self._stop = callback
 
+        self._name = 'srtm_plus'
         self._info = 'Global Bathymetry and Topography at 15 Arc Sec:SRTM15+'
         self._title = '''SRTM15+ elevation data (Scripps).'''
         self._usage = '''< srtm_plus >'''
         self._urls = [self._srtm_info_url, self._srtm_url]
-        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
+        self._update_if_not_in_FRED()
+        
+    def _update_if_not_in_FRED(self):
+        self.FRED._open_ds()
+        self.FRED._attribute_filter("DataSource = '{}'".format(self._name))
+        if len(self.FRED.layer) == 0:
+            self.FRED._close_ds()
+            self._update()
+        self.FRED._close_ds()
         
     def _update(self):
-        self.FRED._open_ds()
-        self.FRED.layer.SetAttributeFilter("ID = '{}'".format('SRTM-1'))
-        if len(self.FRED.layer) == 0:
-            self._surveys = [[
-                {
-                    'Name': 'SRTM15+', 
-                    'ID': 'SRTM-1',
-                    'Agency': '',
-                    'Date': utils.this_year(), 
-                    'MetadataLink': self._srtm_info_url,
-                    'MetadataDate': utils.this_year(), 
-                    'DataLink': self._srtm_url,
-                    'IndexLink': '',
-                    'Link': '',
-                    'DataType': 'xyz',
-                    'DataSource': 'srtm_plus',
-                    'Resolution': '',
-                    'HorizontalDatum': 4326,
-                    'VerticalDatum': 1092,
-                    'LastUpdate': utils.this_date(),
-                    'Etcetra': '',
-                    'Info': self.info,
-                },
-                gdalfun.gdal_region2geom([-180,180,-90,90]).ExportToJson(),
-            ]]
-            self.FRED._add_surveys(self._surveys)
+        self.FRED._open_ds(1)
+        self.FRED._attribute_filter(["ID = '{}'".format('SRTM-1')])
+        if self.FRED.layer is None or len(self.FRED.layer) == 0:
+            self.FRED._add_survey(Name = 'SRTM15+', ID = 'SRTM-1', Date = utils.this_year(),
+                                  MetadataLink = self._srtm_info_url, MetadataDate = utils.this_year(),
+                                  DataLink = self._srtm_url, DataType = 'xyz', DataSource = 'srtm_plus',
+                                  HorizontalDatum = 4326, VerticalDatum = 1092, Info = self._info,
+                                  geom = gdalfun.gdal_region2geom([-180,180,-90,90]))
         self.FRED._close_ds()
-        return(self._surveys)
         
-    def _filter_results(self):
-        return(self.FRED._filter(self.region, self.where, ['srtm_plus']))
-        
-    def _parse_results(self, r):
+    def _parse_results(self):
         '''Run the srtm+ fetching module.'''
-
-        for surv in r:        
-            _data = {
-                'north':self.region[3],
-                'west':self.region[0],
-                'south':self.region[2],
-                'east':self.region[1],
-            }
-
+        for surv in _filter_FRED(self):
+            _data = {'north':self.region[3], 'west':self.region[0],
+                     'south':self.region[2], 'east':self.region[1]}
             try:
                 url_enc = urllib.urlencode(_data)
             except: url_enc = urllib.parse.urlencode(_data)
-            
             url = '{}?{}'.format(surv['DataLink'], url_enc)
             outf = 'srtm_plus_{}.xyz'.format(regions.region_format(self.region, 'fn'))
-            self._data_urls.append([url, outf, 'mar_grav'])
-        return(self._data_urls)
+            yield([url, outf, 'mar_grav'])
         
     ## ==============================================
     ## Process results to xyz
@@ -2173,7 +2065,7 @@ class srtm_plus:
     ## as well as for processing incoming fetched data.
     ## ==============================================
     def _yield_xyz(self, entry, epsg = None, z_region = None):
-        if fetch_file(entry[0], os.path.basename(entry[1]), callback = lambda: False, verbose = self._verbose) == 0:
+        if fetch_file(entry[0], os.path.basename(entry[1]), callback = self._stop, verbose = self._verbose) == 0:
             xyzc = copy.deepcopy(xyzfun._xyz_config)
             xyzc['skip'] = 1
             xyzc['x-off'] = -360
@@ -2197,8 +2089,7 @@ class srtm_plus:
 ##
 ## =============================================================================
 class emodnet:
-    '''Fetch raster data from the EMODNET DTM'''
-    
+    '''Fetch raster data from the EMODNET DTM'''    
     def __init__(self, extent = None, where = [], callback = None, verbose = True):
         self._verbose = verbose
         if self._verbose: utils.echo_msg('loading EMODNET fetch module...')
@@ -2213,118 +2104,55 @@ class emodnet:
 
         self.where = where
         self.region = extent
-        if self.region is not None:
-            self._boundsGeom = gdalfun.gdal_region2geom(self.region)
         self.FRED = FRED(verbose = self._verbose)
-        self._data_urls = []
-        self._surveys = []
         self._stop = callback
 
+        self._name = 'emodnet'
         self._info = 'European Bathymetry/Topographic data from EMODNET'
         self._title = '''EMODNET Elevation Data.'''
         self._usage = '''< emodnet >'''
         self._urls = [self._emodnet_help_url, self._emodnet_grid_url, self._emodnet_grid_cap]
-        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
+        self._update_if_not_in_FRED()
+        
+    def _update_if_not_in_FRED(self):
+        self.FRED._open_ds()
+        self.FRED._attribute_filter("DataSource = '{}'".format(self._name))
+        if len(self.FRED.layer) == 0:
+            self.FRED._close_ds()
+            self._update()
+        self.FRED._close_ds()
 
     def _update(self):
-
-        self.FRED._open_ds()
-        xml_cap = iso_xml(self._emodnet_grid_cap).xml_doc.find('{http://www.opengis.net/wms}Capability')
-        layer = xml_cap.find('{http://www.opengis.net/wms}Layer')
-        layers = layer.findall('{http://www.opengis.net/wms}Layer')
-        for l in layers:
-            name = l.find('{http://www.opengis.net/wms}Name').text
-            if name != 'emodnet:mean': continue
-            
-            self.FRED.layer.SetAttributeFilter("ID = '{}'".format('{}'.format(name)))
-            if len(self.FRED.layer) == 0:
-                xml = l.find('{http://www.opengis.net/wms}MetadataURL')
-                xml_res = xml.find('{http://www.opengis.net/wms}OnlineResource')
-                xml_url = xml_res.get('{http://www.w3.org/1999/xlink}href')
-                
-                title = l.find('{http://www.opengis.net/wms}Title').text
-                abstract = l.find('{http://www.opengis.net/wms}Abstract').text
-                bb = l.find('{http://www.opengis.net/wms}EX_GeographicBoundingBox')
-                region = [float(x) for x in [bb[0].text, bb[1].text, bb[2].text, bb[3].text]]
-                try:
-                    dl = urllib.urlencode({'coverage': name, 'Identifier': name})
-                except: dl = urllib.parse.urlencode({'coverage': name, 'Identifier': name})
-                
-                kws = l.find('{http://www.opengis.net/wms}KeywordList')
-                dt = 'unknown' if len(kws) == 0 else kws[-1].text
-                geom = gdalfun.gdal_region2geom(region)
-                if geom is not None:
-                    self._surveys.append([{'Name': title, 
-                                           'ID': '{}'.format(name),
-                                           'Agency': '',
-                                           'Date': utils.this_year(), 
-                                           'MetadataLink': xml_url,
-                                           'MetadataDate': utils.this_year(), 
-                                           'DataLink': self._emodnet_grid_url,
-                                           'IndexLink': '',
-                                           'Link': '',
-                                           'DataType': dt,
-                                           'DataSource': 'emodnet',
-                                           'Resolution': '',
-                                           'HorizontalDatum': 4326,
-                                           'VerticalDatum': 1092,
-                                           'LastUpdate': utils.this_date(),
-                                           'Etcetra': '',
-                                           'Info': abstract}, geom.ExportToJson()])
-
-        self.FRED._add_surveys(self._surveys)
+        self.FRED._open_ds(1)
+        emod_wcs = WCS(self._emodnet_grid_url)
+        contents = emod_wcs._contents()
+        if self._verbose: _prog = utils._progress('Scanning {} WCS coverages from {}...'.format(len(contents), self._emodnet_grid_url))
+        for i, layer in enumerate(contents):
+            if self._verbose: _prog.update_perc((i, len(contents)))
+            self.FRED._attribute_filter(["ID = '{}'".format(layer['CoverageId'][0])])
+            if self.FRED.layer is None or len(self.FRED.layer) == 0:
+                d = emod_wcs._describe_coverage(layer['CoverageId'][0])
+                if d is not None:
+                    ds_region = emod_wcs._get_coverage_region(d)
+                    geom = gdalfun.gdal_region2geom(ds_region)
+                    url = emod_wcs._get_coverage_url(layer['CoverageId'][0], region = ds_region)
+                    self.FRED._add_survey(Name = d['name'][0], ID = layer['CoverageId'][0], Date = utils.this_year(), MetadataLink = layer['Metadata'],
+                                          MetadataDate = utils.this_year(), DataLink = url, DataType = 'raster',
+                                          DataSource = 'emodnet', HorizontalDatum = 4326, VerticalDatum = 1092,
+                                          Info = layer['Abstract'], geom = geom)
+        if self._verbose: _prog.end(0, 'Scanned {} WCS coverages from {}'.format(len(contents), self._emodnet_grid_url))
         self.FRED._close_ds()
-        return(self._surveys)
         
-    def _filter_results(self):
-        return(self.FRED._filter(self.region, self.where, ['emodnet']))
-        
-    def _parse_results(self, r):
-        '''Run the EMODNET fetching module'''
-
-        for surv in r:
-            desc_data = {
-                'request': 'DescribeCoverage',
-                'CoverageID': surv['ID'],
-                'version': '2.0.1',
-                'service': 'WCS',
-                }
-
-            desc_req = fetch_req(surv['DataLink'], params = desc_data)
-            desc_results = lxml.etree.fromstring(desc_req.text.encode('utf-8'))
-            g_env = desc_results.findall('.//{http://www.opengis.net/gml/3.2}GridEnvelope')[0]
-            hl = [float(x) for x in g_env.find('{http://www.opengis.net/gml/3.2}high').text.split()]
-
-            g_bbox = desc_results.findall('.//{http://www.opengis.net/gml/3.2}Envelope')[0]
-            lc = [float(x) for x in  g_bbox.find('{http://www.opengis.net/gml/3.2}lowerCorner').text.split()]
-            uc = [float(x) for x in g_bbox.find('{http://www.opengis.net/gml/3.2}upperCorner').text.split()]
-
-            ds_region = [lc[1], uc[1], lc[0], uc[0]]
-            resx = (uc[1] - lc[1]) / hl[0]
-            resy = (uc[0] - lc[0]) / hl[1]
-
-            if regions.regions_intersect_ogr_p(self.region, ds_region):
-                data = {
-                    'request': 'GetCoverage',
-                    'version': '1.0.0',
-                    'service': 'WCS',
-                    'resx': resx,
-                    'resy': resy,
-                    'crs': 'EPSG:4326',
-                    'format': 'GeoTIFF',
-                    'coverage': surv['ID'],
-                    'Identifier': surv['ID'],
-                    'bbox': regions.region_format(self.region, 'bbox'),
-                }
-
-                try:
-                    enc_data = urllib.urlencode(data)
-                except: enc_data = urllib.parse.urlencode(data)
-                emodnet_wcs = '{}{}'.format(surv['DataLink'], enc_data)            
-                outf = 'emodnet_{}.tif'.format(regions.region_format(self.region, 'fn'))
-                self._data_urls.append([emodnet_wcs, outf, 'emodnet'])
-
-        return(self._data_urls)
+    def _parse_results(self):        
+        emod_wcs = WCS(self._emodnet_grid_url)
+        for surv in _filter_FRED(self):
+            d = emod_wcs._describe_coverage(surv['ID'])
+            if d is not None:
+                ds_region = emod_wcs._get_coverage_region(d)
+                if regions.regions_intersect_ogr_p(self.region, ds_region):
+                    emod_url = emod_wcs._get_coverage_url(surv['ID'], region = self.region)
+                    outf = 'emodnet_{}.tif'.format(regions.region_format(self.region, 'fn'))
+                    yield([emod_url, outf, surv['DataType']])
 
     ## ==============================================
     ## Process results to xyz
@@ -2333,7 +2161,7 @@ class emodnet:
     ## ==============================================    
     def _yield_xyz(self, entry, epsg = None, z_region = None):
         src_emodnet = 'emodnet_tmp.tif'
-        if fetch_file(entry[0], src_emodnet, callback = lambda: False, verbose = self._verbose) == 0:
+        if fetch_file(entry[0], src_emodnet, callback = self._stop, verbose = self._verbose) == 0:
             try:
                 src_ds = gdal.Open(src_emodnet)
             except: src_ds = None
@@ -2355,7 +2183,6 @@ class emodnet:
 ## =============================================================================
 class hrdem():
     '''Fetch HRDEM data from Canada (NRCAN)'''
-    
     def __init__(self, extent = None, where = [], callback = None, verbose = True):
         self._verbose = verbose
         if self._verbose: utils.echo_msg('loading HRDEM fetch module...')
@@ -2371,85 +2198,132 @@ class hrdem():
         else: self.FRED = self._local_ref_vector
         self._outdir = os.path.join(os.getcwd(), 'hrdem')
         
-        self._has_vector = True if os.path.exists(self.FRED) else False
-        if not self._has_vector: self.FRED = 'hrdem.gmt'
-
         self.where = where
         self.region = extent
-        if self.region is not None:
-            self._boundsGeom = gdalfun.gdal_region2geom(self.region)
         self.FRED = FRED(verbose = self._verbose)
-        self._data_urls = []
-        self._surveys = []
         self._stop = callback
 
+        self._name = 'hrdem'
         self._info = '''Collection of lidar-derived DTMs across Canada.'''
         self._title = '''High Resolution DEMs from NCAR'''
         self._usage = '''< hrdem >'''
         self._urls = [self._hrdem_info_url, self._hrdem_footprints_url]
-        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
-
+        self._update_if_not_in_FRED()
+        
+    def _update_if_not_in_FRED(self):
+        self.FRED._open_ds()
+        self.FRED._attribute_filter("DataSource = '{}'".format(self._name))
+        if len(self.FRED.layer) == 0:
+            self.FRED._close_ds()
+            self._update()
+        self.FRED._close_ds()
+        
     def _update(self):
         self.FRED._open_ds()
         v_zip = os.path.basename(self._hrdem_footprints_url)
         status = fetch_ftp_file(self._hrdem_footprints_url, v_zip, verbose = True)
-        v_shps = utils.p_unzip(v_zip, ['.shp', '.shx', '.dbf', '.prj'])
+        v_shps = utils.p_unzip(v_zip, ['shp', 'shx', 'dbf', 'prj'])
+        v_shp = None
+        for v in v_shps:
+            if '.shp' in v: v_shp = v
+        shp_regions = gdalfun.gdal_ogr_regions(v_shp)
+        shp_region = []
+        for this_region in shp_regions:
+            if len(shp_region) > 0:
+                shp_region = regions.regions_merge(shp_region, this_region)
+            else: shp_region = this_region
+        geom = gdalfun.gdal_region2geom(shp_region)
+        
+        self.FRED._attribute_filter(["ID = '{}'".format('HRDEM-1')])
+        if self.FRED.layer is None or len(self.FRED.layer) == 0:
+            self.FRED._add_survey(Name = 'High-Resolution DEM (Canada)', ID = 'HRDEM-1', Agency = 'NRCAN', Date = utils.this_year(),
+                                  MetadataLink = self._hrdem_info_url, MetadataDate = utils.this_year(),
+                                  DataLink = self._hrdem_footprints_url, IndexLink = self._hrdem_footprints_url,
+                                  DataType = 'raster', DataSource = 'hrdem', Info = 'Canada Only', geom = geom)
+        utils.remove_glob(v_zip, *v_shps)
+        self.FRED._close_ds()
+
+    def _parse_results(self):
+        for surv in _filter_FRED(self):
+            status = fetch_ftp_file(surv['IndexLink'], v_zip, verbose = self._verbose)
+            v_shps = utils.p_unzip(v_zip, ['shp', 'shx', 'dbf', 'prj'])
+            v_shp = None
+            for v in v_shps:
+                if v.split('.')[-1] == 'shp':
+                    v_shp = v
+                    break
+            try:
+                v_ds = ogr.Open(v_shp)
+            except:
+                v_ds = None
+                status = -1
+            if v_ds is not None:
+                layer = v_ds.GetLayer()
+                try:
+                    self.FRED.layer.SetAttributeFilter("Name = '{}'".format(name))
+                except: pass                
+                fcount = layer.GetFeatureCount()
+                for f in range(0, fcount):
+                    feature = layer[f]
+                    if data_link is not None:
+                        geom = feature.GetGeometryRef()
+                        if geom.Intersects(gdalfun.gdal_region2geom(self.region)):
+                            data_link = feature.GetField('Ftp_dtm').replace('http', 'ftp')
+                            yield([data_link, data_link.split('/')[-1], surv['DataType']])
+            utils.remove_glob(v_zip, *v_shps)
+                                
+    ## ==============================================
+    ## _update_all() and _parse_results_all() will update FRED with all the data
+    ## from the hrdem footprints, which can take a long time and use a lot of FRED
+    ## space, which is mostly unncessary, as the footprints are fairly quick to download
+    ## and process on the spot for the most part.
+    ## use thse *_all functions to revert back to having all the data in the FRED...
+    ## ==============================================
+    def _update_all(self):
+        self.FRED._open_ds(1)
+        v_zip = os.path.basename(self._hrdem_footprints_url)
+        status = fetch_ftp_file(self._hrdem_footprints_url, v_zip, verbose = True)
+        v_shps = utils.p_unzip(v_zip, ['shp', 'shx', 'dbf', 'prj'])
         v_shp = None
         for v in v_shps:
             if '.shp' in v: v_shp = v
         try:
             v_ds = ogr.Open(v_shp)
-        except: v_ds = None
+        except:
+            v_ds = None
+            status = -1
         if v_ds is not None:
             layer = v_ds.GetLayer()
             fcount = layer.GetFeatureCount()
+            if self._verbose: _prog = utils._progress('scanning {} datasets...'.format(fcount))
             for f in range(0, fcount):
                 feature = layer[f]
                 name = feature.GetField('Tile_name')
-                perc = (f/fcount) * 100.
-                if self._verbose: utils.echo_msg_inline('scanning {} datasets [{:3}%] - {}.'.format(fcount, perc, name))
-                self.FRED.layer.SetAttributeFilter("Name = '{}'".format('{}'.format(name)))
-                if len(self.FRED.layer) == 0:                
+                if self._verbose: _prog.update_perc((f, fcount))
+                try:
+                    self.FRED.layer.SetAttributeFilter("Name = '{}'".format(name))
+                except: pass
+                if self.FRED.layer is None or len(self.FRED.layer) == 0:
                     data_link = feature.GetField('Ftp_dtm')
                     if data_link is not None:
                         geom = feature.GetGeometryRef()
-                        if geom is not None:
-                            self._surveys.append([{'Name': name, 
-                                                   'ID': feature.GetField('Project'),
-                                                   'Agency': 'NRCAN',
-                                                   'Date': utils.this_year(), 
-                                                   'MetadataLink': feature.GetField('Meta_dtm'),
-                                                   'MetadataDate': utils.this_year(), 
-                                                   'DataLink': data_link.replace('http', 'ftp'),
-                                                   'IndexLink': self._hrdem_footprints_url,
-                                                   'Link': '',
-                                                   'DataType': 'dtm',
-                                                   'DataSource': 'hrdem',
-                                                   'Resolution': '',
-                                                   'HorizontalDatum': feature.GetField('Coord_Sys').split(':')[-1],
-                                                   'VerticalDatum': 'varies',
-                                                   'LastUpdate': utils.this_date(),
-                                                   'Etcetra': '',
-                                                   'Info': feature.GetField('Provider')}, geom.ExportToJson()])
+                        self.FRED._add_survey(Name = name, ID = feature.GetField('Project'), Agency = 'NRCAN', Date = utils.this_year(),
+                                              MetadataLink = feature.GetField('Meta_dtm'), MetadataDate = utils.this_year(),
+                                              DataLink = data_link.replace('http', 'ftp'), IndexLink = self._hrdem_footprints_url,
+                                              DataType = 'raster', DataSource = 'hrdem', HorizontalDatum = feature.GetField('Coord_Sys').split(':')[-1],
+                                              Info = feature.GetField('Provider'), geom = geom)
 
-            self.FRED._add_surveys(self._surveys)
-            if self._verbose: utils.echo_msg_inline('scanning {} datasets [OK]'.format(fcount))
-        [utils.remove_glob(v) for v in v_shps]
-        utils.remove_glob(v_zip)
+            if self._verbose: _prog.end('scanned {} datasets.'.format(fcount))
+        utils.remove_glob(v_zip, *v_shps)
         self.FRED._close_ds()
-        return(self._surveys)
 
-    def _filter_results(self):
-        return(self.FRED._filter(self.region, self.where, ['hrdem']))
-
-    def _parse_results(self, r):
-        '''Search for data in the reference vector file'''
-
-        for surv in r:
-            fldata = surv['DataLink'].split(',')
-            [self._data_urls.append([i, i.split('/')[-1], surv['DataType']]) if i != '' else None for i in fldata]
-        return(self._data_urls)
-
+    def _parse_results_all(self):
+        '''Parse the results of a filtered FRED'''
+        for surv in _filter_FRED(self):
+            for d in surv['DataLink'].split(','):
+                if d != '':
+                    yield[d, d.split('/')[-1], surv['DataType']]
+                    
     ## ==============================================
     ## Process results to xyz
     ## yield functions are used in waffles/datalists
@@ -2461,7 +2335,7 @@ class hrdem():
         try:
             src_ds = gdal.Open(entry[0])
         except Exception as e:
-            fetch_file(entry[0], src_dc, callback = lambda: False, verbose = self._verbose)
+            fetch_file(entry[0], src_dc, callback = self._stop, verbose = self._verbose)
             try:
                 src_ds = gdal.Open(src_dc)
             except Exception as e:
@@ -2485,6 +2359,8 @@ class hrdem():
 ## fetch bathymetric soundings from the Canadian Hydrographic Service (CHS) - Canada Only
 ## https://open.canada.ca/data/en/dataset/d3881c4c-650d-4070-bf9b-1e00aabf0a1d
 ##
+## NONNA 10 and NONNA 100
+##
 ## =============================================================================
 class chs:
     '''Fetch raster data from CHS'''
@@ -2496,123 +2372,74 @@ class chs:
         ## ==============================================
         ## CHS URLs and directories
         ## ==============================================
-        #self._chs_api_url = "https://geoportal.gc.ca/arcgis/rest/services/FGP/CHS_NONNA_100/MapServer/0/query?"
         self._chs_url = 'https://data.chs-shc.ca/geoserver/wcs?'
         self._chs_grid_cap = 'https://data.chs-shc.ca/geoserver/wcs?request=GetCapabilities&service=WMS'
         self._chs_info_url = 'https://open.canada.ca/data/en/dataset/d3881c4c-650d-4070-bf9b-1e00aabf0a1d'
+        self._chs_api_url = "https://geoportal.gc.ca/arcgis/rest/services/FGP/CHS_NONNA_100/MapServer/0/query?"
         self._outdir = os.path.join(os.getcwd(), 'chs')
 
         self.where = where
         self.region = extent
-        if self.region is not None:
-            self._boundsGeom = gdalfun.gdal_region2geom(self.region)
         self.FRED = FRED(verbose = self._verbose)
-        self._data_urls = []
         self._surveys = []
         self._stop = callback
 
+        self._name = 'chs'
         self._info = '''CHS NONNA 10m and 100m Bathymetric Survey Grids; Non-Navigational gridded bathymetric data based on charts and soundings.'''
         self._title = '''Bathymetric data from CHS'''
         self._usage = '''< chs >'''
         self._urls = [self._chs_info_url, self._chs_url, self._chs_grid_cap]
-        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
-
-    def _update(self):
-
+        self._update_if_not_in_FRED()
+        
+    def _update_if_not_in_FRED(self):
         self.FRED._open_ds()
-        xml_cap = iso_xml(self._chs_grid_cap).xml_doc.find('{http://www.opengis.net/wms}Capability')
-        layer = xml_cap.find('{http://www.opengis.net/wms}Layer')
-        layers = layer.findall('{http://www.opengis.net/wms}Layer')
-        for l in layers:
-            name = l.find('{http://www.opengis.net/wms}Name').text
-
-            self.FRED.layer.SetAttributeFilter("ID = '{}'".format('{}'.format(name)))            
-            if len(self.FRED.layer) == 0:
-                xml_url = ''
-                title = l.find('{http://www.opengis.net/wms}Title').text
-                abstract = l.find('{http://www.opengis.net/wms}Abstract').text
-                bb = l.find('{http://www.opengis.net/wms}EX_GeographicBoundingBox')
-                region = [float(x) for x in [bb[0].text, bb[1].text, bb[2].text, bb[3].text]]
-                try:
-                    dl = urllib.urlencode({'coverage': name, 'Identifier': name})
-                except: dl = urllib.parse.urlencode({'coverage': name, 'Identifier': name})
-                
-                kws = l.find('{http://www.opengis.net/wms}KeywordList')
-                dt = 'unknown' if len(kws) == 0 else kws[-1].text
-                if dt == 'CarisTiles': continue
-                geom = gdalfun.gdal_region2geom(region)
-                if geom is not None:
-                    self._surveys.append([{'Name': title, 
-                                           'ID': '{}'.format(name),
-                                           'Agency': '',
-                                           'Date': utils.this_year(), 
-                                           'MetadataLink': xml_url,
-                                           'MetadataDate': utils.this_year(), 
-                                           'DataLink': self._chs_url,
-                                           'IndexLink': '',
-                                           'Link': '',
-                                           'DataType': dt,
-                                           'DataSource': 'chs',
-                                           'Resolution': '',
-                                           'HorizontalDatum': 4326,
-                                           'VerticalDatum': 1092,
-                                           'LastUpdate': utils.this_date(),
-                                           'Etcetra': '',
-                                           'Info': abstract}, geom.ExportToJson()])
-                    
-        self.FRED._add_surveys(self._surveys)
+        self.FRED._attribute_filter("DataSource = '{}'".format(self._name))
+        if len(self.FRED.layer) == 0:
+            self.FRED._close_ds()
+            self._update()
         self.FRED._close_ds()
-        return(self._surveys)
         
-    def _filter_results(self):
-        return(self.FRED._filter(self.region, self.where, ['chs']))
+    def _update(self):
+        self.FRED._open_ds(1)
+        chs_wcs = WCS(self._chs_url)
+        contents = chs_wcs._contents()
+        if self._verbose: _prog = utils._progress('Scanning {} WCS coverages from {}...'.format(len(contents), self._chs_url))
+        for i, layer in enumerate(contents):
+            if self._verbose: _prog.update_perc((i, len(contents)))
+            self.FRED._attribute_filter(["ID = '{}'".format(layer['CoverageId'][0])])
+            if self.FRED.layer is None or len(self.FRED.layer) == 0:
+                
+                d = chs_wcs._describe_coverage(layer['CoverageId'][0])
+                if d is not None:
+                    ds_region = chs_wcs._get_coverage_region(d)
+                    geom = gdalfun.gdal_region2geom(ds_region)
+                    url = chs_wcs._get_coverage_url(layer['CoverageId'][0], region = ds_region)
+                    try:
+                        name = d['name'][0]
+                    except: name = d['CoverageId'][0]
+                    try:
+                        meta = layer['Metadata']
+                    except: meta = None
+                    try:
+                        info = layer['Abstract']
+                    except: info = None
+                    self.FRED._add_survey(Name = name, ID = layer['CoverageId'][0], Date = utils.this_year(), MetadataLink = meta,
+                                          MetadataDate = utils.this_year(), DataLink = url, DataType = 'raster',
+                                          DataSource = 'chs', HorizontalDatum = 4326, VerticalDatum = 1092,
+                                          Info = info, geom = geom)
+        if self._verbose: _prog.end(0, 'Scanned {} WCS coverages from {}'.format(len(contents), self._chs_url))
+        self.FRED._close_ds()
         
-    def _parse_results(self, r):
-        '''Run the CHS fetching module'''
-
-        for surv in r:
-            desc_data = {
-                'request': 'DescribeCoverage',
-                'CoverageID': surv['ID'],
-                'version': '2.0.1',
-                'service': 'WCS',
-                }
-
-            desc_req = fetch_req(surv['DataLink'], params = desc_data)
-            desc_results = lxml.etree.fromstring(desc_req.text.encode('utf-8'))
-            g_env = desc_results.findall('.//{http://www.opengis.net/gml/3.2}GridEnvelope')[0]
-            hl = [float(x) for x in g_env.find('{http://www.opengis.net/gml/3.2}high').text.split()]
-
-            g_bbox = desc_results.findall('.//{http://www.opengis.net/gml/3.2}Envelope')[0]
-            lc = [float(x) for x in  g_bbox.find('{http://www.opengis.net/gml/3.2}lowerCorner').text.split()]
-            uc = [float(x) for x in g_bbox.find('{http://www.opengis.net/gml/3.2}upperCorner').text.split()]
-
-            ds_region = [lc[1], uc[1], lc[0], uc[0]]
-            resx = (uc[1] - lc[1]) / hl[0]
-            resy = (uc[0] - lc[0]) / hl[1]
-
-            if regions.regions_intersect_ogr_p(self.region, ds_region):
-                data = {
-                    'request': 'GetCoverage',
-                    'version': '1.0.0',
-                    'service': 'WCS',
-                    'resx': resx,
-                    'resy': resy,
-                    'crs': 'EPSG:4326',
-                    'format': 'GeoTIFF',
-                    'coverage': surv['ID'],
-                    'Identifier': surv['ID'],
-                    'bbox': regions.region_format(self.region, 'bbox'),
-                }
-
-                try:
-                    enc_data = urllib.urlencode(data)
-                except: enc_data = urllib.parse.urlencode(data)
-                chs_wcs = '{}{}'.format(surv['DataLink'], enc_data)            
-                outf = 'chs_{}_{}.tif'.format(''.join('_'.join(surv['ID'].split()).split(':')), regions.region_format(self.region, 'fn'))
-                self._data_urls.append([chs_wcs, outf, 'chs'])
-
-        return(self._data_urls)
+    def _parse_results(self):        
+        chs_wcs = WCS(self._chs_url)
+        for surv in _filter_FRED(self):
+            d = chs_wcs._describe_coverage(surv['ID'])
+            if d is not None:
+                ds_region = chs_wcs._get_coverage_region(d)
+                if regions.regions_intersect_ogr_p(self.region, ds_region):
+                    chs_url = chs_wcs._get_coverage_url(surv['ID'], region = self.region)
+                    outf = 'chs_{}.tif'.format(regions.region_format(self.region, 'fn'))
+                    yield([chs_url, outf, surv['DataType']])
 
     ## ==============================================
     ## Process results to xyz
@@ -2621,7 +2448,7 @@ class chs:
     ## ==============================================    
     def _yield_xyz(self, entry, epsg = None, z_region = None):
         src_chs = 'chs_tmp.tif'
-        if fetch_file(entry[0], src_chs, callback = lambda: False, verbose = self._verbose) == 0:
+        if fetch_file(entry[0], src_chs, callback = self._stop, verbose = self._verbose) == 0:
             try:
                 src_ds = gdal.Open(src_chs)
             except: src_ds = None
@@ -2642,7 +2469,6 @@ class chs:
 ## =============================================================================
 class ngs:
     '''Fetch NGS monuments from NOAA'''
-    
     def __init__(self, extent = None, where = [], callback = None, verbose = True):
         self._verbose = verbose
         if self._verbose: utils.echo_msg('loading NGS Monument fetch module...')
@@ -2656,74 +2482,52 @@ class ngs:
 
         self.where = where
         self.region = extent
-        if self.region is not None:
-            self._boundsGeom = gdalfun.gdal_region2geom(self.region)
         self.FRED = FRED(verbose = self._verbose)
-        self._data_urls = []
-        self._surveys = []
         self._stop = callback
 
+        ## ==============================================
+        ## Metadata, usage, etc.
+        ## ==============================================
+        self._name = 'ngs'
         self._info = '''Monument data from NOAA's Nagional Geodetic Survey (NGS) monument dataset.'''
         self._title = '''NOAA NGS Monuments'''
         self._usage = '''< ngs >'''
         self._urls = [self._ngs_url, self._ngs_search_url]
-        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
-
-    def _update(self):
-
-        self.FRED._open_ds(1)
-        self.FRED.layer.SetAttributeFilter("ID = '{}'".format('NGS-1'))
+        self._update_if_not_in_FRED()
+        
+    def _update_if_not_in_FRED(self):
+        self.FRED._open_ds()
+        self.FRED._attribute_filter("DataSource = '{}'".format(self._name))
         if len(self.FRED.layer) == 0:
-            self._surveys = [[
-                {
-                    'Name': 'NGS Monuments', 
-                    'ID': 'NGS-1',
-                    'Agency': 'NGS',
-                    'Date': utils.this_year(), 
-                    'MetadataLink': '',
-                    'MetadataDate': utils.this_year(), 
-                    'DataLink': self._ngs_search_url,
-                    'IndexLink': '',
-                    'Link': '',
-                    'DataType': 'raster',
-                    'DataSource': 'ngs',
-                    'Resolution': '',
-                    'HorizontalDatum': '',
-                    'VerticalDatum': '',
-                    'LastUpdate': utils.this_date(),
-                    'Etcetra': '',
-                    'Info': self.info,
-                },
-                gdalfun.gdal_region2geom([-162, -60, 16, 73]).ExportToJson(),
-            ]]
-            self.FRED._add_surveys(self._surveys)
+            self.FRED._close_ds()
+            self._update()
         self.FRED._close_ds()
-        return(self._surveys)
         
-    def _filter_results(self):
-        return(self.FRED._filter(self.region, self.where, ['ngs']))
+    def _update(self):
+        self.FRED._open_ds(1)
+        self.FRED._attribute_filter(["ID = '{}'".format('NGS-1')])
+        if self.FRED.layer is None or len(self.FRED.layer) == 0:
+            self.FRED._add_survey(Name = 'NGS Monuments', ID = 'NGS-1', Agency = 'NGS', Date = utils.this_year(),
+                                  MetadataDate = utils.this_year(), DataLink = self._ngs_search_url,
+                                  DataType = 'raster', DataSource = self._name, Info = self._info,
+                                  geom = gdalfun.gdal_region2geom([-162, -60, 16, 73]))
+        self.FRED._close_ds()
         
-    def _parse_results(self, r):
-        '''Run the NGS (monuments) fetching module.'''
-
-        for surv in r:
-            _data = { 'maxlon':self.region[0],
-                      'minlon':self.region[1],
-                      'maxlat':self.region[3],
-                      'minlat':self.region[2] }
-
+    def _parse_results(self):
+        '''Parse the NGS (monuments) data.'''
+        for surv in _filter_FRED(self):
+            _data = { 'maxlon':self.region[0], 'minlon':self.region[1],
+                      'maxlat':self.region[3], 'minlat':self.region[2] }
             try:
                 ngs_data = urllib.urlencode(_data)
             except: ngs_data = urllib.parse.urlencode(_data)
             ngs_url = '{}{}'.format(surv['DataLink'], ngs_data)
-            self._data_urls.append([ngs_url, 'ngs_results_{}.json'.format(regions.region_format(self.region, 'fn')), 'ngs'])
-            
-        return(self._data_urls)
+            yield([ngs_url, 'ngs_results_{}.json'.format(regions.region_format(self.region, 'fn')), 'ngs'])
 
     def _yield_xyz(self, entry, epsg = None, z_region = None):
         src_ngs = 'ngs_tmp.json'
         r = []
-        if fetch_file(entry[0], src_ngs, callback = lambda: False, verbose = self._verbose) == 0:
+        if fetch_file(entry[0], src_ngs, callback = self._stop, verbose = self._verbose) == 0:
             with open(src_ngs, 'r') as json_file: r = json.load(json_file)
             for mm in r: yield([mm['lon'], mm['lat'], mm['geoidHt']])
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_ngs))
@@ -2739,7 +2543,6 @@ class ngs:
 ## =============================================================================
 class osm:
     '''Fetch OSM data'''
-    
     def __init__(self, extent = None, where = [], callback = None):
         self._verbose = True
         if self._verbose: utils.echo_msg('loading OSM fetch module...')
@@ -2749,32 +2552,21 @@ class osm:
         ## ==============================================    
         self._osm_api = 'https://lz4.overpass-api.de/api/interpreter'
         self._outdir = os.path.join(os.getcwd(), 'osm')
-        self.osm_types = {
-            'highway': ['LINESTRING'],
-            'waterway': ['LINESTRING'],
-            'building': ['POLYGON'],
-        }
-
+        self.osm_types = {'highway': ['LINESTRING'], 'waterway': ['LINESTRING'], 'building': ['POLYGON']}
+        
         self.where = where
         self.region = extent
-        if self.region is not None:
-            self._boundsGeom = gdalfun.gdal_region2geom(self.region)
         self.FRED = FRED(verbose = self._verbose)
-        self._data_urls = []
-        self._surveys = []
         self._stop = callback
 
+        self._name ='osm'
         self._info = '''Various datasets from Open Street Map Overpass API'''
         self._title = '''Open Street Map (OSM) data'''
         self._usage = '''< osm >'''
         self._urls = [self._osm_api]
-        self._desc = '{}\n\n{}\n\n{}\n\n{}'.format(self._title, self._info, '\n'.join(self._urls), self._usage)
-
+ 
     def _update(self):
         pass
-
-    def _filter_results(self):
-        return(self.FRED._filter(self.region, self.where, ['ngs']))
 
     def _parse_results(self):
         return(self._data_urls)
@@ -2868,7 +2660,6 @@ def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, warp = None, 
     '''yield the xyz data from the fetch module datalist entry
 
     yields [x, y, z, <w, ...>]'''
-
     fetch_mod = entry[0].split(':')[0]
     fetch_args = entry[0].split(':')[1:]
 
@@ -2879,25 +2670,112 @@ def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, warp = None, 
     fl = _fetch_modules[fetch_mod](regions.region_buffer(region, 5, pct = True), [], lambda: False, verbose)
     args_d = utils.args2dict(fetch_args, {})
 
-    r = fl._parse_results(fl._filter_results(), **args_d)
-    
-    for e in r:
+    for e in fl._parse_results():
         for xyz in fl._yield_xyz(e, epsg = warp, z_region = z_region):
             yield(xyz + [entry[2]] if entry[2] is not None else xyz)
 
 def fetch_dump_entry(entry = ['nos:datatype=nos'], dst_port = sys.stdout, region = None, warp = None, verbose = False, z_region = None):
     '''dump the xyz data from the fetch module datalist entry to dst_port'''
-    
     for xyz in fetch_yield_entry(entry = entry, region = region, warp = warp, verbose = verbose, z_region = z_region):
         xyz_line(xyz, dst_port, False)
 
 def fetch_dump_xyz(parsed_entry, module = None, epsg = 4326, z_region = None, dst_port = sys.stdout):
     '''dump the parsed entry to xyz
     use <fetch_module>._parse_results() to generate parsed entry'''
-
     if module == None: module = _fetch_modules[parsed_entry[4]](None, [], None, False)    
     for xyz in module._yield_xyz([parsed_entry[0], parsed_entry[1], parsed_entry[-1]], epsg = epsg, z_region = z_region):
         xyzfun.xyz_line(xyz, dst_port, False)
+
+def fetch_filter_results(region = None, where = None, mods = [], verbose = False):
+    '''return the filtered results from FRED'''
+    return(FRED(verbose)._filter(region, where, mods))
+
+def fetch_update_FRED(surveys):
+    FRED(verbose)._add_surveys(surveys)
+
+## ==============================================
+## Run the Fetch Module(s)
+## ==============================================
+def fetch(fg):
+    out_results = []
+    stop_threads = False
+    if fg is None:
+        utils.echo_error_msg('invalid configuration, {}'.format(fg))
+        sys.exit(-1)
+        
+    for fetch_mod in fg['mods'].keys():
+        if stop_threads: break
+        status = 0
+        args = tuple(fg['mods'][fetch_mod])
+        
+        if fg['region'] is None or fg['region'][0] is None:
+            this_region = None
+        else: this_region = regions.region_buffer(fg['region'], 5, pct = True)
+        fl = _fetch_modules[fetch_mod](this_region, fg['where'], lambda: stop_threads, fg['verbose'])
+        args_d = utils.args2dict(args)
+        if fg['verbose']: _prog = utils._progress('running FETCHES module < {} > with {} [{}]...'.format(fetch_mod, args, args_d))
+
+        ## ==============================================
+        ## Run update in a thread to cleanly close FRED
+        ## ============================================== 
+        if fg['update_p']:
+            t = threading.Thread(target = fl._update, args = ())
+            t.daemon = True
+            try:
+                t.start()
+                while True:
+                    time.sleep(2)
+                    if fg['verbose']: _prog.update(msg='updating FETCHES module < {} >...'.format(fetch_mod))
+                    if not t.is_alive():
+                        break
+            except (KeyboardInterrupt, SystemExit):
+                utils.echo_error_msg('user breakage...please wait while fetches exits.')
+                stop_threads = True
+                status = -1
+            except Exception as e:
+                utils.echo_error_msg(e)
+                stop_threads = True
+                status = -1
+            t.join()
+            if fg['verbose']: _prog.end(status, 'updated FETCHES module < {} >.'.format(fetch_mod))
+            
+        if this_region is not None:
+            if fg['index_p']:
+                _filter_FRED_index(fl)
+                continue
+            ## ==============================================    
+            ## Fetch the data
+            ## fetching will be done in a queue with 3 threads fetching the data at a time.
+            ##
+            ## fetch_p must be true to fetch the data to _outdir
+            ## list_p will list the urls
+            ## dump_p will dump the xyz data from the fetch module to stdout
+            ## proc_p will output the xyz data to file in _outdir
+            ## ==============================================
+            fr = fetch_results(fl._parse_results(**args_d), this_region, fl._outdir, fl if fg['proc_p'] else None, fl if fg['dump_p'] else None, fg['fetch_p'], fg['list_p'], lambda: stop_threads)
+            fr.daemon = True
+            try:
+                fr.start()
+                while True:
+                    time.sleep(2)
+                    if fg['verbose']: _prog.update()
+                    if not fr.is_alive():
+                        break
+            except (KeyboardInterrupt, SystemExit):
+                utils.echo_error_msg('user breakage...please wait for while fetches exits.')
+                stop_threads = True
+                status = -1
+                while not fr.fetch_q.empty():
+                    try:
+                        fr.fetch_q.get(False)
+                    except Empty: continue
+                    fr.fetch_q.task_done()
+            except Exception as e:
+                stop_threads = True
+                status = -1
+                utils.echo_error_msg(e)
+            fr.join()
+        if fg['verbose']: _prog.end(status, 'ran FETCHES module < {} > with {} [{}]...'.format(fetch_mod, args, fg))
         
 ## =============================================================================
 ##
@@ -2914,14 +2792,17 @@ General Options:
 \t\t\tor an OGR-compatible vector file with regional polygons. 
 \t\t\tIf a vector file is supplied it will search each region found therein.
   -W, --where\t\trestricted_where: Attribute query (like SQL WHERE)
+  -F, --fg-config\tA fetches config JSON file. If supplied, will overwrite all other options.
+\t\t\tgenerate a fetches_config JSON file using the --config flag.
 
   -l, --list\t\tReturn a list of fetch URLs in the given region.
-  -i, --index\t\tPrint the fetch results.
   -p, --process\t\tProcess fetched elevation data to ASCII XYZ format in WGS84.
   -d, --dump\t\tDump the XYZ elevation data in WGS84 to stdout.
   -u, --update\t\tUpdate the Fetches Remote Elevation Datalist.
+  -i, --index\t\tPrint the fetch FRED results in the given region.
 
   --help\t\tPrint the usage text
+  --config\t\tSave the fetches config JSON
   --version\t\tPrint the version information
 
 Modules (see fetches --modules <module-name> for more info):
@@ -2936,7 +2817,6 @@ Examples:
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
 '''.format(os.path.basename(sys.argv[0]),
            _fetch_short_desc(_fetch_modules),
-           _fetch_short_desc(_fetch_modules),
            os.path.basename(sys.argv[0]),
            os.path.basename(sys.argv[0]), 
            os.path.basename(sys.argv[0]), 
@@ -2944,18 +2824,20 @@ CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
            os.path.basename(sys.argv[0]))
 
 def fetches_cli(argv = sys.argv):
+    '''run fetches from command-line
+    generates a fetches_config from the command-line options
+    and either outputs or runs the fetches_config
+    on each region supplied (multiple regions can be supplied
+    by using a vector file as the -R option.)
+    See `fetches_cli_usage` for full cli options.'''
+    fg = fetches_config()
+    fg_user = None
     status = 0
-    extent = None
-    want_list = False
-    want_index = False
-    want_proc = False
-    want_dump = False
-    want_update = False
-    stop_threads = False
-    these_regions = []
+    region = None
     mod_opts = {}
     verbose = True
-    w = []
+    want_config = False
+    use_local = False
     
     ## ==============================================
     ## process Command-Line
@@ -2965,29 +2847,38 @@ def fetches_cli(argv = sys.argv):
         arg = argv[i]
 
         if arg == '--region' or arg == '-R':
-            extent = str(argv[i + 1])
+            region = str(argv[i + 1])
             i = i + 1
         elif arg[:2] == '-R':
-            extent = str(arg[2:])
+            region = str(arg[2:])
         elif arg == '--where' or arg == '-W':
-            w.append(argv[i + 1])
+            fg['where'].append(argv[i + 1])
             i = i + 1
         elif arg == '--list' or arg == '-l':
-            want_list = True
+            fg['list_p'] = True
+            fg['fetch_p'] = False
         elif arg == '--index' or arg == '-i':
-            want_index = True
+            fg['index_p'] = True
+            fg['fetch_p'] = False
         elif arg == '--process' or arg == '-p':
-            want_proc = True
+            fg['proc_p'] = True
+            fg['fetch_p'] = True
         elif arg == '--dump' or arg == '-d':
-            want_dump = True
+            fg['dump_p'] = True
+            fg['fetch_p'] = True
         elif arg == '--update' or arg == '-u':
-            want_update = True
+            fg['update_p'] = True
+        elif arg == '--fg-config' or arg == '-F':
+            fg_user = argv[i + 1]
+            i += 1
+        elif arg[:2] == '-F': fg_user = arg[2:]
         elif arg == '--help' or arg == '-h':
             sys.stderr.write(_usage)
             sys.exit(1)
         elif arg == '--version' or arg == '-v':
             sys.stdout.write('{}\n'.format( _version))
             sys.exit(0)
+        elif arg == '--config': want_config = True
         elif arg == '--modules' or arg == '-m':
             try:
                 if argv[i + 1] in _fetch_modules.keys():
@@ -3003,6 +2894,25 @@ def fetches_cli(argv = sys.argv):
         i = i + 1
 
     ## ==============================================
+    ## load the user fg json and run fetches with that.
+    ## ==============================================
+    if fg_user is not None:
+        if os.path.exists(fg_user):
+            try:
+                with open(fg_user, 'r') as fgj:
+                    fg = json.load(fgj)
+                    fg = fetches_config(**fg)
+                    fetch(fg)
+                    sys.exit(0)
+            except Exception as e:
+                fg = fetches_config(**fg)
+                utils.echo_error_msg(e)
+                sys.exit(-1)
+        else:
+            utils.echo_error_msg('specified json file does not exist, {}'.format(fg_user))
+            sys.exit(0)
+        
+    ## ==============================================
     ## use all modules if none specified
     ## ==============================================
     if len(mod_opts) == 0:
@@ -3015,83 +2925,38 @@ def fetches_cli(argv = sys.argv):
     for key in mod_opts.keys():
         mod_opts[key] = [None if x == '' else x for x in mod_opts[key]]
 
+    fg['mods'] = mod_opts
+
     ## ==============================================
     ## process input region(s)
     ## ==============================================
-    if extent is not None:
+    if region is not None:
         try:
-            these_regions = [[float(x) for x in extent.split('/')]]
-        except ValueError: these_regions = gdalfun.gdal_ogr_regions(extent)
+            these_regions = [[float(x) for x in region.split('/')]]
+        except ValueError: these_regions = gdalfun.gdal_ogr_regions(region)
         if len(these_regions) == 0: status = -1
         for this_region in these_regions:
             if not regions.region_valid_p(this_region): status = -1
         utils.echo_msg('loaded {} region(s)'.format(len(these_regions)))
-    else: these_regions = [[-180, 180, -90, 90]]
+    else: these_regions = [None]
+    if len(these_regions) == 0: utils.echo_error_msg('failed to parse region(s), {}'.format(region))
 
     ## ==============================================
     ## fetch some data in each of the input regions
     ## ==============================================
+    these_fgs = []
     for rn, this_region in enumerate(these_regions):
-        if stop_threads: return
-
-        ## ==============================================
-        ## Run the Fetch Module(s)
-        ## ==============================================
-        for fetch_mod in mod_opts.keys():
-            status = 0
-            args = tuple(mod_opts[fetch_mod])
-            #utils.echo_msg('running fetch module {} on region {} ({}/{})...\
-            _prog = utils._progress('running fetch module {} on region {} ({}/{})...\
-            '.format(fetch_mod, regions.region_format(this_region, 'str'), rn+1, len(these_regions)))
-            fl = _fetch_modules[fetch_mod](regions.region_buffer(this_region, 5, pct = True), w, lambda: stop_threads, verbose)
-            args_d = utils.args2dict(args)
-
-            if want_update:
-                fl._update()
-                continue
-            #try:
-            ir = fl._filter_results()
-            if want_index:
-                for result in ir:
-                    print(json.dumps(result, indent=4))
-                continue
-            r = fl._parse_results(ir, **args_d)
-            #utils.echo_msg('found {} data files.'.format(len(r)))
-            if want_list:
-                for result in r:
-                    print(result[0])
-                continue
-            #except ValueError as e:
-            #    utils.echo_error_msg('something went wrong, {}'.format(e))
-            #    sys.exit(-1)
-            #except Exception as e:
-            #    utils.echo_error_msg('{}'.format(e))
-            #    sys.exit(-1)
-            
-            fr = fetch_results(r, this_region, fl._outdir, fl if want_proc else None, fl if want_dump else None, lambda: stop_threads)
-            fr.daemon = True
-            try:
-                fr.start()
-                while True:
-                    time.sleep(2)
-                    _prog.update()
-                    #sys.stderr.write('\x1b[2K\r')
-                    #perc = float((len(r) - fr.fetch_q.qsize())) / len(r) * 100 if len(r) > 0 else 1
-                    #sys.stderr.write('fetches: fetching remote data files [{}%]'.format(perc))
-                    #sys.stderr.flush()
-                    if not fr.is_alive():
-                        break
-            except (KeyboardInterrupt, SystemExit):
-                utils.echo_error_msg('user breakage...please wait for while fetches exits.')
-                stop_threads = True
-                status = -1
-                while not fr.fetch_q.empty():
-                    try:
-                        fr.fetch_q.get(False)
-                    except Empty: continue
-                    fr.fetch_q.task_done()
-            fr.join()
-            #utils.echo_msg('ran fetch module {} on region {} ({}/{})...\
-            _prog.end(status, 'ran fetch module {} on region {} ({}/{})...\
-            '.format(fetch_mod, regions.region_format(this_region, 'str'), rn+1, len(these_regions)))            
+        tfg = fetches_config(**fg)
+        if this_region is None: tfg['fetch_p'] = False
+        tfg['region'] = this_region
+        tfg['name'] = 'fetches_{}_{}'.format('' if this_region is None else regions.region_format(this_region, 'fn'), utils.this_year())
+        tfg = fetches_config(**tfg)
+        if want_config:
+            if tfg is not None:
+                utils.echo_msg(json.dumps(tfg, indent = 2, sort_keys = True))
+                with open('{}.json'.format(tfg['name']), 'w') as fg_json:
+                    utils.echo_msg('generating fetches config file: {}.json'.format(tfg['name']))
+                    fg_json.write(json.dumps(tfg, indent = 2, sort_keys = True))
+            else: utils.echo_error_msg('could not parse config.')
+        else: fetch(tfg)
 ### End
