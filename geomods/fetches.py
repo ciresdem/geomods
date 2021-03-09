@@ -682,7 +682,7 @@ def fetches_config(name = 'fetches', mods = ['gmrt'], region = None, where = [],
                    z_region = None, verbose = True):
     return({'name': name, 'mods': mods, 'region': region, 'where': where,
             'fetch_p': fetch_p, 'inc': inc, 'index_p': index_p, 'list_p': list_p,
-            'proc_p': proc_p, 'dump_p': dump_p, 'update_p': update_p, 'z_region': None,
+            'proc_p': proc_p, 'dump_p': dump_p, 'update_p': update_p, 'z_region': z_region,
             'verbose': verbose})
 
 ## =============================================================================
