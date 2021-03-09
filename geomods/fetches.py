@@ -1327,7 +1327,7 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
         these_surveys = {}
         these_versions = {}
         for surv in _filter_FRED(self):
-            if self.region is None: return([])        
+            if self.region is None: break
             _req = fetch_req(surv['DataLink'], params = {'geometry': regions.region_format(self.region, 'bbox')}, timeout = 20)
             if _req is not None and _req.status_code == 200:
                 survey_list = _req.text.split('\n')[:-1]
@@ -1352,7 +1352,6 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
             else:
                 for v1 in these_surveys[key]['1']:
                     yield(v1)
-        return
     ## ==============================================
     ## Process results to xyz
     ## yield functions are used in waffles/datalists
