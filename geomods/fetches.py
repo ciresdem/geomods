@@ -48,7 +48,7 @@ from geomods import regions
 from geomods import gdalfun
 from geomods import xyzfun
 
-_version = '0.6.2'
+_version = '0.6.3'
 
 ## =============================================================================
 ##
@@ -1377,7 +1377,7 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
             mb_r = src_xyz
 
             with open(mb_r, 'r') as in_m:
-                for xyz in xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose):
+'                for xyz in xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose):
                     yield(xyz)
             utils.remove_glob(src_xyz)
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_mb))
