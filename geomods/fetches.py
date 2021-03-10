@@ -1285,6 +1285,7 @@ class mb:
         self._mb_metadata_url = "https://data.noaa.gov/waf/NOAA/NESDIS/NGDC/MGG/Multibeam/iso/"
         self._mb_search_url = "https://maps.ngdc.noaa.gov/mapviewer-support/multibeam/files.groovy?"
         self._mb_autogrid = "https://www.ngdc.noaa.gov/maps/autogrid/"
+        self._mb_html = "https://www.ngdc.noaa.gov/"
         self._outdir = os.path.join(os.getcwd(), 'mb')
 
         self.where = where
@@ -1351,6 +1352,7 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
             else:
                 for v1 in these_surveys[key]['1']:
                     yield(v1)
+                    
     ## ==============================================
     ## Process results to xyz
     ## yield functions are used in waffles/datalists
@@ -1361,9 +1363,35 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
         xyzc = copy.deepcopy(xyzfun._xyz_config)
         src_mb = os.path.basename(entry[1])
 
+        # split_entry = entry[0].split('/')
+        # ship = split_entry[6]
+        # survey = split_entry[7]
+        # survey_html = '{}ships/{}/{}_mb.html'.format(self._mb_html, ship, survey)
+        # surv_ = fetch_html(survey_html)
+
+        # #print(surv_.xpath("//t[@id == 'summary']"))
+        
+        # for i in surv_.get_element_by_id('summary'):
+        #     if i.text == 'Multibeam Bathymetry':
+        #         for j in i.find_class('content'):
+        #             print(j)
+        #         #content = i.find_class('content')
+        #         #print(content)
+        #         #if len(content) > 0:
+        #         #print(content)
+        #         #tr = i.xpath('//table')[0].xpath('.//tr')
+        #         #if len(tr) > 0:
+        #         #    print(tr[0].text)
+        
+        #     #tr = page.xpath('//table')[0].xpath('.//tr')
+        # #if len(tr) <= 0: continue
+
+        # #[cols.append(i.text_content()) for i in tr[0]]
+
         if fetch_file(entry[0], src_mb, callback = self._stop, verbose = self._verbose) == 0:
             src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
-            out, status = utils.run_cmd('mblist -MX20 -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
+            
+            out, status = utils.run_cmd('mblist -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
             if status == 0:
                 xyzc['name'] = src_mb
                 xyzc['z-scale'] = 1
