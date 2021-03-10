@@ -1362,32 +1362,65 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
         src_mb = os.path.basename(entry[1])
 
         if fetch_file(entry[0], src_mb, callback = self._stop, verbose = self._verbose) == 0:
-            #src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
+            src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
             #mb_r = src_xyz
-            #out, status = utils.run_cmd('mblist -MX20 -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
-            xyzc['name'] = src_mb
-            xyzc['z-scale'] = 1
-            xyzc['epsg'] = 4326
-            xyzc['warp'] = epsg
-            if z_region is not None:
-                xyzc['upper_limit'] = z_region[1]
-                xyzc['lower_limit'] = z_region[0]
-            
-            if inc is not None:
-                xyz_dat = utils.yield_cmd('mblist -MX20 -OXYZ -I{} | gmt blockmedian -I{:.10f} {} -r -V'.format(src_mb, inc, regions.region_format(self.region, 'gmt')), verbose = self._verbose)
-            else:
+            out, status = utils.run_cmd('mblist -MX20 -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
+            if status == 0:
+                xyzc['name'] = src_mb
+                xyzc['z-scale'] = 1
+                xyzc['epsg'] = 4326
+                xyzc['warp'] = epsg
+                if z_region is not None:
+                    xyzc['upper_limit'] = z_region[1]
+                    xyzc['lower_limit'] = z_region[0]
+
+                #if inc is not None:
+                #xyz_dat = utils.yield_cmd('mblist -MX20 -OXYZ -I{} | gmt blockmedian -I{:.10f} {} -r -V'.format(src_mb, inc, regions.region_format(self.region, 'gmt')), verbose = self._verbose)
+                #xyz_dat = utils.yield_cmd('mblist -MX20 -OXYZ -I{}'.format(src_mb))
+                #else:
                 xyzc['delim'] = '\t'
-                xyz_dat = utils.yield_cmd('mblist -MX20 -OXYZ -I{}'.format(src_mb))
-            for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, region = self.region, verbose = True):
-                yield(xyz)
-            # else:
+
+                with open(src_xyz, 'r') as in_m:
+                    #xyz_dat = xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose)
+                    xyz_func = lambda p: xyzfun.xyz_dump(in_m, xyz_c = xyzc, region = self.region, verbose = False, dst_port = p)
+                    if inc is not None:
+                        xyzc['delim'] = None
+                        out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
+                        #xyz_func = lambda p: xyzfun.xyz_dump(xyz_dat, xyz_c = xyzc, region = self.region, verbose = self._verbose, dst_port = p)
+                        for xyz in utils.yield_cmd('gmt blockmedian -I{:.10f} {} -r -V'.format(inc, regions.region_format(self.region, 'gmt')), verbose = self._verbose, data_fun = xyz_func):
+                            yield([float(x) for x in xyz.split()])
+
+                    else:
+                        xyz_dat = xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose)
+                        for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, region = self.region, verbose = True):
+                            yield(xyz)
+                            #yield(xyz)
                 
-            #     with open(mb_r, 'r') as in_m:
-            #         for xyz in xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose):
-            #             yield(xyz)
-            # utils.remove_glob(src_xyz)
+                #xyz_dat = utils.yield_cmd('mblist -MX20 -OXYZ -I{}'.format(src_mb), verbose = True)
+                #xyz_p = xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, region = self.region, verbose = True)
+                #xyz_pd = lambda x: xyzfun.xyz_dump_entry()
+                # if inc is not None:
+                #     xyzc['delim'] = None
+                #     out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
+                #     xyz_func = lambda p: xyzfun.xyz_dump(xyz_dat, xyz_c = xyzc, region = self.region, verbose = self._verbose, dst_port = p)
+                #     for xyz in utils.yield_cmd('gmt blockmedian -I{:.10f} {} -r -V'.format(inc, regions.region_format(self.region, 'gmt')), verbose = self._verbose, data_fun = xyz_func):
+                #         yield([float(x) for x in xyz.split()])
+                # else:
+                #     for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, region = self.region, verbose = True):
+                #         yield(xyz)
+                #for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, region = self.region, verbose = True):
+                #    yield(xyz)
+                # else:
+
+                #     with open(mb_r, 'r') as in_m:
+                #         for xyz in xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose):
+                #             yield(xyz)
+                #utils.remove_glob(src_xyz)
+                utils.remove_glob(src_mb, src_xyz)
+            else:
+                utils.echo_error_msg('failed to process local file, {}...'.format(src_mb))
+                utils.remove_glob(src_xyz)
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_mb))
-        utils.remove_glob(src_mb)
 
 ## =============================================================================
 ##

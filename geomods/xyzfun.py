@@ -140,16 +140,23 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
                 yield(this_xyz)
         else: skip -= 1
     if verbose:
+        if ln == 0: status = -1
+        else: status = 0
         utils.echo_msg('parsed {} data records from {}'.format(ln, xyz_c['name']))
-        #progress.end(0, 'parsed {} data records from {}'.format(ln, xyz_c['name']))
+        #progress.end(status, 'parsed {} data records from {}'.format(ln, xyz_c['name']))
 
+def xyz_dump(src_xyz, xyz_c = _xyz_config, region = None, verbose = False, dst_port = sys.stdout):
+    '''dump the xyz data from the xyz datalist entry to dst_port'''    
+    for xyz in xyz_parse(src_xyz, xyz_c, region, verbose):
+        xyz_line(xyz, dst_port, True)
+        
 def xyz2py(src_xyz):
     '''return src_xyz as a python list'''
     
     xyzpy = []
     return([xyzpy.append(xyz) for xyz in xyz_parse(src_xyz)])
 
-def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False, verbose = False):
+def xyz_block(src_xyz, region, inc, weights = False, verbose = False):
     '''block the src_xyz data to the mean block value
 
     yields the xyz value for each block with data'''
@@ -164,16 +171,16 @@ def xyz_block(src_xyz, region, inc, dst_xyz = sys.stdout, weights = False, verbo
         x = this_xyz[0]
         y = this_xyz[1]
         z = this_xyz[2]
-        if weights:
-            w = this_xyz[3]
-            z = z * w
+        if weights: z * this_xyz[3]
+        #w = this_xyz[3]
+        #z = z * w
         if x > region[0] and x < region[1]:
             if y > region[2] and y < region[3]:
                 xpos, ypos = gdalfun._geo2pixel(x, y, dst_gt)
                 try:
                     sumArray[ypos, xpos] += z
                     ptArray[ypos, xpos] += 1
-                    if weights: wtArray[ypos, xpos] += w
+                    if weights: wtArray[ypos, xpos] += this_xyz[3]
                 except: pass
     ptArray[ptArray == 0] = np.nan
     if weights:
