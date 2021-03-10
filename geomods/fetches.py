@@ -1418,7 +1418,7 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
                 #utils.remove_glob(src_xyz)
                 utils.remove_glob(src_mb, src_xyz)
             else:
-                utils.echo_error_msg('failed to process local file, {}...'.format(src_mb))
+                utils.echo_error_msg('failed to process local file, {} [{}]...'.format(src_mb, entry[0]))
                 utils.remove_glob(src_xyz)
         else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_mb))
 
