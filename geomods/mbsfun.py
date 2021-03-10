@@ -40,6 +40,15 @@ def mb_inf(src_xyz, src_fmt = 168):
     utils.run_cmd('mbdatalist -O -F{} -I{}'.format(src_fmt, src_xyz.name), verbose = False)
     return(mb_inf_parse('{}.inf'.format(src_xyz.name)))
 
+def mb_inf_data_format(src_inf):
+    with open(src_inf) as iob:
+        for il in iob:
+            til = il.split()
+            if len(til) > 1:
+                if til[0] == 'MBIO':
+                    return(til[4])
+                    
+
 def mb_inf_parse(src_inf):
     xyzi = {'name': src_inf, 'numpts': 0, 'minmax': [0,0,0,0,0,0], 'wkt': gdalfun.gdal_region2wkt([0,0,0,0,0,0])}
     dims = []

@@ -48,6 +48,7 @@ from geomods import regions
 from geomods import gdalfun
 from geomods import gmtfun
 from geomods import xyzfun
+from geomods import mbsfun
 
 _version = '0.6.3'
 
@@ -82,11 +83,13 @@ def fetch_queue(q, fo, fg):
                         try:
                             os.makedirs(os.path.dirname(fetch_args[1]))
                         except: pass
-                    o_x_fn = '.'.join(fetch_args[1].split('.')[:-1]) + '.xyz'
+                    #o_x_fn = '.'.join(fetch_args[1].split('.')[:-1]) + '.xyz'
+                    o_x_fn = fetch_args[1] + '.xyz'
                     utils.echo_msg('processing local file: {}'.format(o_x_fn))
                     if not os.path.exists(o_x_fn):
                         with open(o_x_fn, 'w') as out_xyz:
                             fetch_dump_xyz(fetch_args, module = fo, epsg = 4326, z_region = fg['z_region'], inc = fg['inc'], dst_port = out_xyz)
+                        if os.stat(o_x_fn).st_size == 0: utils.remove_glob(o_x_fn)
                 else: fetch_dump_xyz(fetch_args, module = fo, epsg = 4326)
         q.task_done()
 
@@ -1389,9 +1392,15 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
         # #[cols.append(i.text_content()) for i in tr[0]]
 
         if fetch_file(entry[0], src_mb, callback = self._stop, verbose = self._verbose) == 0:
-            src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
+            #src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
+            src_xyz = os.path.basename(src_mb) + '.xyz'
             
             out, status = utils.run_cmd('mblist -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
+            if status != 0:
+                if fetch_file('{}.inf'.format(entry[0]), '{}.inf'.format(src_mb), callback = self._stop, verbose = self._verbose) == 0:
+                    mb_fmt = mbsfun.mb_inf_data_format('{}.inf'.format(src_mb))
+                    utils.remove_glob('{}.inf'.format(entry[0]))
+                out, status = utils.run_cmd('mblist -F{} -OXYZ -I{}  > {}'.format(mb_fmt, src_mb, src_xyz), verbose = False)
             if status == 0:
                 xyzc['name'] = src_mb
                 xyzc['z-scale'] = 1
@@ -1411,8 +1420,7 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
                             yield([float(x) for x in xyz.split()])
 
                     else:
-                        xyz_dat = xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose)
-                        for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, region = self.region, verbose = True):
+                        for xyz in xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose):
                             yield(xyz)
                 utils.remove_glob(src_mb, src_xyz)
             else:
@@ -1421,11 +1429,8 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
                     mb_err.write('{}\n'.format(','.join([src_mb, entry[0]])))
                 os.rename(src_mb, os.path.join(self._outdir, src_mb))
                 utils.remove_glob(src_xyz)
-        else:
-            utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_mb))
-            #with open('{}'.format(os.path.join(self._outdir, 'fetch_{}_{}.err'.format(self._name, regions.region_format(self.region, 'fn')))), 'a') as mb_err:
-            #    mb_err.write(','.join([str(x) for x in entry]))
-
+        else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_mb))
+        
 ## =============================================================================
 ##
 ## USACE Fetch

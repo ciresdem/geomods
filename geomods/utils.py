@@ -354,18 +354,20 @@ def yield_cmd(cmd, data_fun = None, verbose = False):
         pipe_stdin = subprocess.PIPE
     else: pipe_stdin = None
     p = subprocess.Popen(cmd, shell = True, stdin = pipe_stdin, stdout = subprocess.PIPE, close_fds = True)
-
+    
     if data_fun is not None:
         if verbose: echo_msg('piping data to cmd subprocess...')
         data_fun(p.stdin)
         p.stdin.close()
 
-    while True:
+    while p.poll() is None:
+        #while True:
         line = p.stdout.readline().decode('utf-8')
         if not line: break
         else: yield(line)
+    line = p.stdout.read().decode('utf-8')
+    #yield(line)
     p.stdout.close()
-
     if verbose: echo_msg('ran cmd: {} and returned {}.'.format(cmd.rstrip(), p.returncode))
 
 def cmd_check(cmd_str, cmd_vers_str):
