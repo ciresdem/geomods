@@ -1390,7 +1390,7 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
             else:
                 utils.echo_error_msg('failed to process local file, {} [{}]...'.format(src_mb, entry[0]))
                 with open('{}'.format(os.path.join(self._outdir, 'fetch_{}_{}.err'.format(self._name, regions.region_format(self.region, 'fn')))), 'a') as mb_err:
-                    mb_err.write(','.join([src_mb, entry[0]]))
+                    mb_err.write('{}\n'.format(','.join([src_mb, entry[0]])))
                 os.rename(src_mb, os.path.join(self._outdir, src_mb))
                 utils.remove_glob(src_xyz)
         else:
