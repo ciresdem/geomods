@@ -1363,7 +1363,6 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
 
         if fetch_file(entry[0], src_mb, callback = self._stop, verbose = self._verbose) == 0:
             src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
-            #mb_r = src_xyz
             out, status = utils.run_cmd('mblist -MX20 -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
             if status == 0:
                 xyzc['name'] = src_mb
@@ -1374,19 +1373,12 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
                     xyzc['upper_limit'] = z_region[1]
                     xyzc['lower_limit'] = z_region[0]
 
-                #if inc is not None:
-                #xyz_dat = utils.yield_cmd('mblist -MX20 -OXYZ -I{} | gmt blockmedian -I{:.10f} {} -r -V'.format(src_mb, inc, regions.region_format(self.region, 'gmt')), verbose = self._verbose)
-                #xyz_dat = utils.yield_cmd('mblist -MX20 -OXYZ -I{}'.format(src_mb))
-                #else:
                 xyzc['delim'] = '\t'
-
                 with open(src_xyz, 'r') as in_m:
-                    #xyz_dat = xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose)
                     xyz_func = lambda p: xyzfun.xyz_dump(in_m, xyz_c = xyzc, region = self.region, verbose = False, dst_port = p)
                     if inc is not None:
                         xyzc['delim'] = None
                         out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
-                        #xyz_func = lambda p: xyzfun.xyz_dump(xyz_dat, xyz_c = xyzc, region = self.region, verbose = self._verbose, dst_port = p)
                         for xyz in utils.yield_cmd('gmt blockmedian -I{:.10f} {} -r -V'.format(inc, regions.region_format(self.region, 'gmt')), verbose = self._verbose, data_fun = xyz_func):
                             yield([float(x) for x in xyz.split()])
 
@@ -1394,33 +1386,17 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
                         xyz_dat = xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose)
                         for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, region = self.region, verbose = True):
                             yield(xyz)
-                            #yield(xyz)
-                
-                #xyz_dat = utils.yield_cmd('mblist -MX20 -OXYZ -I{}'.format(src_mb), verbose = True)
-                #xyz_p = xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, region = self.region, verbose = True)
-                #xyz_pd = lambda x: xyzfun.xyz_dump_entry()
-                # if inc is not None:
-                #     xyzc['delim'] = None
-                #     out, status = utils.run_cmd('gmt gmtset IO_COL_SEPARATOR = SPACE', verbose = False)
-                #     xyz_func = lambda p: xyzfun.xyz_dump(xyz_dat, xyz_c = xyzc, region = self.region, verbose = self._verbose, dst_port = p)
-                #     for xyz in utils.yield_cmd('gmt blockmedian -I{:.10f} {} -r -V'.format(inc, regions.region_format(self.region, 'gmt')), verbose = self._verbose, data_fun = xyz_func):
-                #         yield([float(x) for x in xyz.split()])
-                # else:
-                #     for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, region = self.region, verbose = True):
-                #         yield(xyz)
-                #for xyz in xyzfun.xyz_parse(xyz_dat, xyz_c = xyzc, region = self.region, verbose = True):
-                #    yield(xyz)
-                # else:
-
-                #     with open(mb_r, 'r') as in_m:
-                #         for xyz in xyzfun.xyz_parse(in_m, xyz_c = xyzc, region = self.region, verbose = self._verbose):
-                #             yield(xyz)
-                #utils.remove_glob(src_xyz)
                 utils.remove_glob(src_mb, src_xyz)
             else:
                 utils.echo_error_msg('failed to process local file, {} [{}]...'.format(src_mb, entry[0]))
+                with open('{}'.format(os.path.join(self._outdir, 'fetch_{}_{}.err'.format(self._name, regions.region_format(self.region, 'fn')))), 'a') as mb_err:
+                    mb_err.write(','.join([src_mb, entry[0]]))
+                os.rename(src_mb, os.path.join(self._outdir, src_mb))
                 utils.remove_glob(src_xyz)
-        else: utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_mb))
+        else:
+            utils.echo_error_msg('failed to fetch remote file, {}...'.format(src_mb))
+            #with open('{}'.format(os.path.join(self._outdir, 'fetch_{}_{}.err'.format(self._name, regions.region_format(self.region, 'fn')))), 'a') as mb_err:
+            #    mb_err.write(','.join([str(x) for x in entry]))
 
 ## =============================================================================
 ##
