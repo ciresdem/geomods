@@ -1395,7 +1395,7 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
             #src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
             src_xyz = os.path.basename(src_mb) + '.xyz'
             
-            out, status = utils.run_cmd('mblist -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
+            out, status = utils.run_cmd('mblist -MA -OXYZ -I{}  > {}'.format(src_mb, src_xyz), verbose = False)
             if status != 0:
                 if fetch_file('{}.inf'.format(entry[0]), '{}.inf'.format(src_mb), callback = self._stop, verbose = self._verbose) == 0:
                     mb_fmt = mbsfun.mb_inf_data_format('{}.inf'.format(src_mb))
