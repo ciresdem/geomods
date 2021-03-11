@@ -1400,7 +1400,7 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
                 if fetch_file('{}.inf'.format(entry[0]), '{}.inf'.format(src_mb), callback = self._stop, verbose = self._verbose) == 0:
                     mb_fmt = mbsfun.mb_inf_data_format('{}.inf'.format(src_mb))
                     utils.remove_glob('{}.inf'.format(entry[0]))
-                out, status = utils.run_cmd('mblist -F{} -OXYZ -I{}  > {}'.format(mb_fmt, src_mb, src_xyz), verbose = False)
+                out, status = utils.run_cmd('mblist -F{} -MA -OXYZ -I{}  > {}'.format(mb_fmt, src_mb, src_xyz), verbose = False)
             if status == 0:
                 xyzc['name'] = src_mb
                 xyzc['z-scale'] = 1
