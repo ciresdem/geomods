@@ -1673,7 +1673,7 @@ and deliver topographic information for the Nation.'''
                 metadataDate = ds['lastUpdatedDate']
             except: metadataDate = utils.this_year()            
             if geom is not None:
-                self.FRED._add_survey(Name = ds['sbDatasetTag'], ID = ds['id'], Agency = 'USGS', Date = pubDate,
+                self.FRED._add_survey(Name = ds['sbDatasetTag'], ID = ds['id'], Agency = 'USGS', Date = pubDate[-4:],
                                       MetadataLink = ds['infoUrl'], MetadataDate = metadataDate,
                                       DataLink = '{}{}'.format(self._tnm_product_url, url_enc), Link = ds['dataGovUrl'], Resolution = ','.join(ds['extents']),
                                       DataType = datatype, DataSource = 'tnm', HorizontalDatum = h_epsg,
