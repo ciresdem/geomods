@@ -1473,16 +1473,19 @@ def waffle(wg):
                 ## ==============================================
                 if this_wg['sample'] is not None:
                     if this_wg['verbose']: utils.echo_msg('resampling {}...'.format(this_dem))
-                    if this_wg['gc']['GMT'] is not None:
-                        gmtfun.gmt_sample_inc(this_dem, inc = this_wg['sample'], verbose = this_wg['verbose'])
-                        if this_wg['mask']:
-                            if this_wg['verbose']: utils.echo_msg('resampling {}...'.format(this_dem_msk))
-                            gmtfun.gmt_sample_inc(this_dem_msk, inc = this_wg['sample'], verbose = this_wg['verbose'])
-                    else:
-                        out, status = utils.run_cmd('gdalwarp -tr {:.10f} {:.10f} {} -r bilinear -te {} tmp.tif\
-                        '.format(inc, inc, src_grd, regions.region_format(waffles_proc_region(this_wg)), verbose = verbose))
-                        if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
-
+                    # if this_wg['gc']['GMT'] is not None:
+                    #     gmtfun.gmt_sample_inc(this_dem, inc = this_wg['sample'], verbose = this_wg['verbose'])
+                    #     if this_wg['mask']:
+                    #         if this_wg['verbose']: utils.echo_msg('resampling {}...'.format(this_dem_msk))
+                    #         gmtfun.gmt_sample_inc(this_dem_msk, inc = this_wg['sample'], verbose = this_wg['verbose'])
+                    # else:
+                    out, status = utils.run_cmd('gdalwarp -tr {:.10f} {:.10f} {} -r bilinear -te {} _tmp.tif\
+                    '.format(this_wg['sample'], this_wg['sample'], this_dem, regions.region_format(waffles_proc_region(this_wg), 'te'), verbose = this_wg['verbose']))
+                    if status == 0: os.rename('_tmp.tif', '{}'.format(this_dem))
+                    if this_wg['mask']:
+                        out_status = utils.run_cmd('gdalwarp -tr {:.10f} {:.10f} {} -r bilinear -te {} _tmp_msk.tif\
+                        '.format(this_wg['sample'], this_wg['sample'], this_dem_msk, regions.region_format(waffles_proc_region(this_wg), 'te'), verbose = this_wg['verbose']))
+                        if status == 0: os.rename('_tmp_msk.tif', '{}'.format(this_dem_msk))
                 gdalfun.gdal_set_epsg(this_dem, this_wg['epsg'])
 
                 ## ==============================================
