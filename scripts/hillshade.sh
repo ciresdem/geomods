@@ -80,7 +80,7 @@ fi
 if [ ! $cpt ] ; then
     gmin=$(gdalinfo $ingrd -stats | grep MINIMUM | cut -d= -f2)
     gmax=$(gdalinfo $ingrd -stats | grep MAXIMUM | cut -d= -f2)
-    colortable.py -min $gmin -max $gmax > colors.txt
+    colortable.py --min $gmin --max $gmax > colors.txt
     cpt=colors.txt
 fi
 
