@@ -63,12 +63,14 @@ import sys
 import os
 import time
 import copy
-import shutil
 
+## ==============================================
+## queues and threading
+## ==============================================
+import threading
 try:
     import Queue as queue
 except: import queue as queue
-import threading
 
 ## ==============================================
 ## import gdal, etc.
@@ -654,7 +656,8 @@ def waffles_mbgrid(wg, dist = '10/3', tension = 35, use_datalists = False):
 
     gmtfun.gmt_grd2gdal('{}.grd'.format(wg['name']))
     utils.remove_glob('*.cmd', '*.mb-1', '{}.grd'.format(wg['name']))
-    if use_datalists and not wg['archive']: shutil.rmtree('archive')
+    if use_datalists and not wg['archive']: utils.remove_glob('archive')
+
     if wg['mask']:
         num_grd = '{}_num.grd'.format(wg['name'])
         dst_msk = '{}_msk.tif=gd+n-9999:GTiff'.format(wg['name'])
@@ -1244,27 +1247,25 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
                 gdb_bn = os.path.basename('.'.join(gdb_zip.split('.')[:-1]))
                 gdb = gdb_bn + '.gdb'
 
-                utils.run_cmd('ogr2ogr {}_NHDArea.shp {} NHDArea -clipdst {} -overwrite 2>&1'.format(gdb_bn, gdb, regions.region_format(wg['region'], 'ul_lr')), verbose = False)
+                utils.run_cmd('ogr2ogr {}_NHDArea.shp {} NHDArea -clipdst {} -overwrite 2>&1\
+                '.format(gdb_bn, gdb, regions.region_format(wg['region'], 'ul_lr')), verbose = False)
                 if os.path.exists('{}_NHDArea.shp'.format(gdb_bn)):
                     r_shp.append('{}_NHDArea.shp'.format(gdb_bn))
-                utils.run_cmd('ogr2ogr {}_NHDPlusBurnWaterBody.shp {} NHDPlusBurnWaterBody -clipdst {} -overwrite 2>&1'.format(gdb_bn, gdb, regions.region_format(wg['region'], 'ul_lr')), verbose = False)
+                utils.run_cmd('ogr2ogr {}_NHDPlusBurnWaterBody.shp {} NHDPlusBurnWaterBody -clipdst {} -overwrite 2>&1\
+                '.format(gdb_bn, gdb, regions.region_format(wg['region'], 'ul_lr')), verbose = False)
                 if os.path.exists('{}_NHDPlusBurnWaterBody.shp'.format(gdb_bn)):
                     r_shp.append('{}_NHDPlusBurnWaterBody.shp'.format(gdb_bn))
-                utils.run_cmd('ogr2ogr {}_NHDWaterBody.shp {} NHDWaterBody -where "FType = 390" -clipdst {} -overwrite 2>&1'.format(gdb_bn, gdb, regions.region_format(wg['region'], 'ul_lr')), verbose = False)
+                utils.run_cmd('ogr2ogr {}_NHDWaterBody.shp {} NHDWaterBody -where "FType = 390" -clipdst {} -overwrite 2>&1\
+                '.format(gdb_bn, gdb, regions.region_format(wg['region'], 'ul_lr')), verbose = False)
                 if os.path.exists('{}_NHDWaterBody.shp'.format(gdb_bn)):
                     r_shp.append('{}_NHDWaterBody.shp'.format(gdb_bn))
-                #shutil.rmtree(gdb)
-                #utils.remove_glob('{}*'.format(gdb))
                 utils.remove_glob(gbd)
             else: utils.echo_error_msg('unable to fetch {}'.format(result))
 
             [utils.run_cmd('ogr2ogr -skipfailures -update -append nhdArea_merge.shp {} 2>&1'.format(shp), verbose = False) for shp in r_shp]
             utils.run_cmd('gdal_rasterize -burn 1 nhdArea_merge.shp {}'.format(u_mask), verbose = True)
             utils.remove_glob('nhdArea_merge.*', 'NHD_*', *r_shp)
-            #utils.remove_glob(gdb_zip)
-            #utils.remove_glob('{}*'.format(gdb_bn))
-            #[utils.remove_glob('{}*'.format(shp[:-3])) for shp in r_shp]
-            #utils.remove_glob('NHD_*')
+
         ## ==============================================
         ## update wet/dry mask with nhd data
         ## ==============================================
