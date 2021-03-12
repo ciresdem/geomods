@@ -25,12 +25,16 @@
 ## imports
 import os
 
+## ==============================================
 ## import gdal/numpy
+## ==============================================
 import ogr
 import osr
 import numpy as np
 
+## ==============================================
 ## import geomods
+## ==============================================
 from geomods import utils
 
 def region_valid_p(region):

@@ -20,10 +20,18 @@
 ### Commentary:
 ### Code:
 
+## ==============================================
+## import gdal/numpy
+## ==============================================
 import gdal
 import ogr
 import numpy as np
+
+## ==============================================
+## import geomods
+## ==============================================
 from geomods import utils
+from geomods import regions
 from geomods import gdalfun
 
 ## ==============================================
@@ -50,7 +58,7 @@ def mb_inf_data_format(src_inf):
                     
 
 def mb_inf_parse(src_inf):
-    xyzi = {'name': src_inf, 'numpts': 0, 'minmax': [0,0,0,0,0,0], 'wkt': gdalfun.gdal_region2wkt([0,0,0,0,0,0])}
+    xyzi = {'name': src_inf, 'numpts': 0, 'minmax': [0,0,0,0,0,0], 'wkt': regions.region2wkt([0,0,0,0,0,0])}
     dims = []
     this_row = 0
     
@@ -85,7 +93,7 @@ def mb_inf_parse(src_inf):
 
     xinc = (xyzi['minmax'][1] - xyzi['minmax'][0]) / dims[0]
     yinc = (xyzi['minmax'][2] - xyzi['minmax'][3]) / dims[1]
-    xcount, ycount, dst_gt = gdalfun.gdal_region2gt(xyzi['minmax'], xinc, y_inc = yinc)
+    xcount, ycount, dst_gt = regions.region2gt(xyzi['minmax'], xinc, y_inc = yinc)
     ds_config = gdalfun.gdal_set_infos(dims[0], dims[1], dims[1] * dims[0], dst_gt, gdalfun.gdal_sr_wkt(4326), gdal.GDT_Float32, 0, 'GTiff')
 
     driver = gdal.GetDriverByName('MEM')

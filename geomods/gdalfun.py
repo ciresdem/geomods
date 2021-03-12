@@ -23,14 +23,20 @@
 ### Code:
 
 import os
+import sys
+import json
 
+## ==============================================
+## import gdal/numpy
+## ==============================================
 import gdal
 import ogr
 import osr
-import sys
 import numpy as np
-import json
 
+## ==============================================
+## import geomods
+## ==============================================
 from geomods import xyzfun
 from geomods import utils
 

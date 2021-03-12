@@ -23,12 +23,19 @@
 import sys
 import copy
 import json
-import numpy as np
-from scipy import spatial
+
+## ==============================================
+## import gdal/numpy
+## ==============================================
 import gdal
 import ogr
 import osr
+import numpy as np
+from scipy import spatial
 
+## ==============================================
+## import geomods
+## ==============================================
 from geomods import utils
 from geomods import regions
 from geomods import mbsfun
@@ -147,7 +154,6 @@ def xyz_dump(src_xyz, xyz_c = _xyz_config, region = None, verbose = False, dst_p
         
 def xyz2py(src_xyz):
     '''return src_xyz as a python list'''
-    
     xyzpy = []
     return([xyzpy.append(xyz) for xyz in xyz_parse(src_xyz)])
 
@@ -249,7 +255,6 @@ def xyz_inf_entry(entry):
     '''find the region of the xyz datalist entry
     
     returns the region [xmin, xmax, ymin, ymax, zmin, zmax] of the xyz entry'''
-    
     with open(entry[0]) as infile:
         try:
             minmax = mbsfun.mb_inf(infile)

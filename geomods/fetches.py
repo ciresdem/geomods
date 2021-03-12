@@ -26,23 +26,35 @@
 import os
 import sys
 import time
+import copy
 
+## ==============================================
+## networking/etc
+## ==============================================
 import requests
 import ftplib
 import urllib
 import lxml.html as lh
 import lxml.etree
 import json
-import copy
 
-import ogr
-import gdal
-
+## ==============================================
+## queues and threading
+## ==============================================
 import threading
 try:
     import Queue as queue
 except: import queue as queue
 
+## ==============================================
+## import gdal/numpy
+## ==============================================
+import ogr
+import gdal
+
+## ==============================================
+## import geomods
+## ==============================================
 from geomods import utils
 from geomods import regions
 from geomods import gdalfun

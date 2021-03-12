@@ -26,13 +26,19 @@ import json
 import struct
 import time
 import re
+
+## ==============================================
+## import gdal/numpy
+## ==============================================
 import numpy as np
 from scipy import spatial
 
+## ==============================================
+## import geomods
+## ==============================================
 from geomods import utils
 from geomods import regions
 from geomods import xyzfun
-from geomods import gdalfun
 
 ## ==============================================
 ## las-file processing (datalists fmt:300)
@@ -64,8 +70,8 @@ def las_inf(src_las):
     try:
         out_hull = [pts[i] for i in spatial.ConvexHull(pts, qhull_options='Qt').vertices]
         out_hull.append(out_hull[0])
-        lasi['wkt'] = gdalfun.gdal_create_polygon(out_hull, xpos = 0, ypos = 1)
-    except: lasi['wkt'] = gdalfun.gdal_region2wkt(lasi['minmax'])
+        lasi['wkt'] = utils.create_wkt_polygon(out_hull, xpos = 0, ypos = 1)
+    except: lasi['wkt'] = regions.region2wkt(lasi['minmax'])
 
     if lasi['numpts'] > 0:
         with open('{}.inf'.format(src_las), 'w') as inf:

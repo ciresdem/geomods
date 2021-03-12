@@ -34,6 +34,9 @@ import sys
 import glob
 import json
 
+## ==============================================
+## import geomods
+## ==============================================
 from geomods import utils
 from geomods import regions
 from geomods import gdalfun
