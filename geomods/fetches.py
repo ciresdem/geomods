@@ -2525,7 +2525,7 @@ class ngs:
         ## NGS URLs and directories
         ## ==============================================
         self._ngs_url = 'http://geodesy.noaa.gov'
-        self._ngs_search_url = 'http://geodesy.noaa.gov/api/nde/bounds?'
+        self._ngs_search_url = 'https://geodesy.noaa.gov/api/nde/bounds?'
         self._outdir = os.path.join(os.getcwd(), 'ngs')
 
         self.where = where
