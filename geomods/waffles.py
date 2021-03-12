@@ -644,7 +644,7 @@ def waffles_mbgrid(wg, dist = '10/3', tension = 35, use_datalists = False):
 
     region = waffles_proc_region(wg)
     region = regions.region_buffer(region, wg['inc'] * -.5)
-    xsize, ysize, gt = gdalfun.gdal_region2gt(waffles_proc_region(wg), wg['inc'])
+    xsize, ysize, gt = regions.region2gt(waffles_proc_region(wg), wg['inc'])
     
     if len(dist.split('/')) == 1: dist = dist + '/2'
     mbgrid_cmd = ('mbgrid -I{} {} -D{}/{} -O{} -A2 -G100 -F1 -N -C{} -S0 -X0.1 -T{} {} \
@@ -749,7 +749,7 @@ def waffles_gdal_grid(wg, alg_str = 'linear:radius=1'):
     dly = xyzfun.xyz_block(waffles_yield_datalist(wg), region, wg['inc'], weights = False if wg['weights'] is None else True)
     ds = gdalfun.xyz2gdal_ds(dly, '{}'.format(wg['name']))
     if ds.GetLayer().GetFeatureCount() == 0: return({},-1)
-    xcount, ycount, dst_gt = gdalfun.gdal_region2gt(region, wg['inc'])
+    xcount, ycount, dst_gt = regions.region2gt(region, wg['inc'])
     gd_opts = gdal.GridOptions(outputType = gdal.GDT_Float32, noData = -9999, format = 'GTiff', \
                                width = xcount, height = ycount, algorithm = alg_str, callback = _prog_update if wg['verbose'] else None, \
                                outputBounds = [region[0], region[3], region[1], region[2]])
@@ -1199,8 +1199,8 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
         if wg['weights']: dly = xyzfun.xyz_block(dly, waffles_dist_region(cwg), cwg['inc'], weights = True)
         gdalfun.gdal_xyz2gdal(dly, w_mask, waffles_dist_region(cwg), cwg['inc'], dst_format = cwg['fmt'], mode = 'w', verbose = cwg['verbose'])
     else:
-        gdalfun.gdal_region2ogr(waffles_dist_region(wg), 'region_buff.shp')
-        xsize, ysize, gt = gdalfun.gdal_region2gt(waffles_dist_region(wg), wg['inc'])
+        regions.region2ogr(waffles_dist_region(wg), 'region_buff.shp')
+        xsize, ysize, gt = regions.region2gt(waffles_dist_region(wg), wg['inc'])
         utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn -9999 -a_nodata -9999 -ot Int32 -co COMPRESS=DEFLATE -a_srs EPSG:{} region_buff.shp {}'\
                       .format(xsize, ysize, regions.region_format(waffles_dist_region(wg), 'te'), wg['epsg'], w_mask), verbose = False)
 
@@ -1210,7 +1210,7 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
     ds = gdal.Open(w_mask)
     if ds is not None:
         ds_config = gdalfun.gdal_gather_infos(ds)
-        region = gdalfun.gdal_gt2region(ds_config)
+        region = regions.gt2region(ds_config)
         dst_gt = ds_config['geoT']        
         coast_array = ds.GetRasterBand(1).ReadAsArray(0, 0, ds_config['nx'], ds_config['ny'])
         ds = None
@@ -1229,8 +1229,8 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
     ## ==============================================
     if want_nhd:
         u_mask = '{}_u.tif'.format(wg['name'])
-        gdalfun.gdal_region2ogr(waffles_dist_region(wg), 'region_buff.shp')
-        xsize, ysize, gt = gdalfun.gdal_region2gt(waffles_proc_region(wg), wg['inc'])
+        regions.region2ogr(waffles_dist_region(wg), 'region_buff.shp')
+        xsize, ysize, gt = regions.region2gt(waffles_proc_region(wg), wg['inc'])
         utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn -9999 -a_nodata -9999 -ot Int32 -co COMPRESS=DEFLATE -a_srs EPSG:{} region_buff.shp {}'\
                       .format(xsize, ysize, regions.region_format(waffles_dist_region(wg), 'te'), wg['epsg'], u_mask), verbose = False)
         utils.remove_glob('region_buff.*')
@@ -1273,7 +1273,7 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
         c_ds_arr = c_ds.GetRasterBand(1).ReadAsArray()
         c_ds = gdal.Open(u_mask)
         for this_xyz in gdalfun.gdal_parse(c_ds):
-            xpos, ypos = gdalfun._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
+            xpos, ypos = utils._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
             try:
                 if coast_array[ypos, xpos] == ds_config['ndv']:
                     if this_xyz[2] == 1: coast_array[ypos, xpos] = 0
@@ -1304,7 +1304,7 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
     c_ds_arr = c_ds.GetRasterBand(1).ReadAsArray()
     c_ds = gdal.Open(g_mask)
     for this_xyz in gdalfun.gdal_parse(c_ds):
-        xpos, ypos = gdalfun._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
+        xpos, ypos = utils._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
         try:
             if coast_array[ypos, xpos] == ds_config['ndv']:
                 if this_xyz[2] == 1: coast_array[ypos, xpos] = 0
@@ -1398,7 +1398,7 @@ def waffle(wg):
     ## skip if wg['overwrite'] is False and file exists
     ## ==============================================
     if wg['chunk'] is not None:
-        xcount, ycount, dst_gt = gdalfun.gdal_region2gt(wg['region'], wg['inc'])
+        xcount, ycount, dst_gt = regions.region2gt(wg['region'], wg['inc'])
         s_regions = regions.region_chunk(wg['region'], wg['inc'], (xcount/wg['chunk'])+1)
     else: s_regions = [wg['region']]
 
@@ -1839,7 +1839,15 @@ def waffles_cli(argv = sys.argv):
             sys.stderr.write(waffles_cli_usage)
             utils.echo_error_msg('''must specify a datalist/entry, try gmrt or srtm for global data.''')
             sys.exit(-1)
-            
+
+    ## ==============================================
+    ## check the increment
+    ## ==============================================
+    if wg['inc'] is None:
+        sys.stderr.write(waffles_cli_usage)
+        utils.echo_error_msg('''must specify a gridding increment.''')
+        sys.exit(-1)
+    
     ## ==============================================
     ## set the datalists and names
     ## ==============================================
@@ -1851,7 +1859,7 @@ def waffles_cli(argv = sys.argv):
     if region is not None:
         try:
             these_regions = [[float(x) for x in region.split('/')]]
-        except ValueError: these_regions = gdalfun.gdal_ogr_regions(region)
+        except ValueError: these_regions = regions.gdal_ogr_regions(region)
         except Exception as e:
             utils.echo_error_msg('failed to parse region(s), {}'.format(e))
     else: these_regions = [None]

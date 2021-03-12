@@ -31,6 +31,7 @@ import sys
 import numpy as np
 import json
 
+from geomods import xyzfun
 from geomods import utils
 
 ## ==============================================
@@ -45,8 +46,7 @@ def gdal_fext(src_drv_name):
     '''find the common file extention given a GDAL driver name
     older versions of gdal can't do this, so fallback to known standards.
 
-    returns list of known file extentions or None'''
-    
+    returns list of known file extentions or None'''    
     fexts = None
     try:
         drv = gdal.GetDriverByName(src_drv_name)
@@ -60,54 +60,6 @@ def gdal_fext(src_drv_name):
         elif src_drv_name.lower() == 'netcdf': fext = 'nc'
         else: fext = 'gdal'
         return(fext)
-
-def _geo2pixel(geo_x, geo_y, geoTransform):
-   '''convert a geographic x,y value to a pixel location of geoTransform'''
-   
-   if geoTransform[2] + geoTransform[4] == 0:
-       pixel_x = ((geo_x - geoTransform[0]) / geoTransform[1]) + .5
-       pixel_y = ((geo_y - geoTransform[3]) / geoTransform[5]) + .5
-   else: pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt(geoTransform))
-   return(int(pixel_x), int(pixel_y))
-
-def _geo2pixel_affine(geo_x, geo_y, geoTransform):
-    '''convert a geographic x,y value to a pixel location of geoTransform'''
-    
-    import affine
-    forward_transform = affine.Affine.from_gdal(*geoTransform)
-    reverse_transform = ~forward_transform
-    pixel_x, pixel_y = reverse_transform * (geo_x, geo_y)
-    pixel_x, pixel_y = int(pixel_x + 0.5), int(pixel_y + 0.5)
-    return(pixel_x, pixel_y)
-
-def _pixel2geo(pixel_x, pixel_y, geoTransform):
-    '''convert a pixel location to geographic coordinates given geoTransform'''
-    
-    geo_x, geo_y = _apply_gt(pixel_x, pixel_y, geoTransform)
-    return(geo_x, geo_y)
-
-def _apply_gt(in_x, in_y, geoTransform):
-    '''apply geotransform to in_x,in_y'''
-    
-    out_x = geoTransform[0] + int(in_x + 0.5) * geoTransform[1] + int(in_y + 0.5) * geoTransform[2]
-    out_y = geoTransform[3] + int(in_x + 0.5) * geoTransform[4] + int(in_y + 0.5) * geoTransform[5]
-
-    return(out_x, out_y)
-
-def _invert_gt(geoTransform):
-    '''invert the geotransform'''
-    
-    det = geoTransform[1] * geoTransform[5] - geoTransform[2] * geoTransform[4]
-    if abs(det) < 0.000000000000001: return
-    invDet = 1.0 / det
-    outGeoTransform = [0, 0, 0, 0, 0, 0]
-    outGeoTransform[1] = geoTransform[5] * invDet
-    outGeoTransform[4] = -geoTransform[4] * invDet
-    outGeoTransform[2] = -geoTransform[2] * invDet
-    outGeoTransfrom[5] = geoTransform[1] * invDet
-    outGeoTransform[0] = (geoTransform[2] * geoTransform[3] - geoTransform[0] * geoTransform[5]) * invDet
-    outGeoTransform[3] = (-geoTransform[1] * geoTransform[3] + geoTransform[0] * geoTransform[4]) * invDet
-    return(outGeoTransform)
     
 ## ==============================================
 ## GDAL projections metadata and regions
@@ -116,7 +68,6 @@ def gdal_sr_wkt(epsg, esri = False):
     '''convert an epsg code to wkt
 
     returns the sr Wkt or None'''
-    
     try:
         sr = osr.SpatialReference()
         sr.ImportFromEPSG(int(epsg))
@@ -128,7 +79,6 @@ def gdal_prj_file(dst_fn, epsg):
     '''generate a .prj file given an epsg code
 
     returns 0'''
-    
     with open(dst_fn, 'w') as out:
         out.write(gdal_sr_wkt(int(epsg), True))
     return(0)
@@ -137,7 +87,6 @@ def gdal_set_epsg(src_fn, epsg = 4326):
     '''set the projection of gdal file src_fn to epsg
 
     returns status-code (0 == success)'''
-
     try:
         ds = gdal.Open(src_fn, gdal.GA_Update)
     except: ds = None
@@ -149,7 +98,6 @@ def gdal_set_epsg(src_fn, epsg = 4326):
 
 def gdal_get_epsg(src_ds):
     '''returns the EPSG of the given gdal data-source'''
-    
     ds_config = gdal_gather_infos(src_ds)
     ds_region = gdal_gt2region(ds_config)
     src_srs = osr.SpatialReference()
@@ -166,7 +114,6 @@ def gdal_set_nodata(src_fn, nodata = -9999):
     '''set the nodata value of gdal file src_fn
 
     returns 0'''
-
     try:
         ds = gdal.Open(src_fn, gdal.GA_Update)
     except: ds = None
@@ -177,181 +124,25 @@ def gdal_set_nodata(src_fn, nodata = -9999):
         return(0)
     else: return(None)
 
-def gdal_gt2region(ds_config):
-    '''convert a gdal geo-tranform to a region [xmin, xmax, ymin, ymax] via a data-source config dict.
-
-    returns region of gdal data-source'''
-    
-    geoT = ds_config['geoT']
-    return([geoT[0], geoT[0] + geoT[1] * ds_config['nx'], geoT[3] + geoT[5] * ds_config['ny'], geoT[3]])
-
-def gdal_region2gt(region, inc, y_inc = None):
-    '''return a count info and a gdal geotransform based on extent and cellsize
-
-    returns a list [xcount, ycount, geot]'''
-
-    if y_inc is None: y_inc = inc * -1.
-    dst_gt = (region[0], inc, 0, region[3], 0, y_inc)
-    
-    this_origin = _geo2pixel(region[0], region[3], dst_gt)
-    this_end = _geo2pixel(region[1], region[2], dst_gt)
-    this_size = (this_end[0] - this_origin[0], this_end[1] - this_origin[1])
-    
-    return(this_size[0], this_size[1], dst_gt)
-
-def gdal_region_warp(region, s_warp = 4326, t_warp = 4326):
-    '''warp region from source `s_warp` to target `t_warp`, using EPSG keys
-
-    returns the warped region'''
-
-    if s_warp is None or s_warp == t_warp: return(region)
-    
-    src_srs = osr.SpatialReference()
-    src_srs.ImportFromEPSG(int(s_warp))
-
-    try:
-        src_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
-    except: pass
-    
-    if t_warp is not None:
-        dst_srs = osr.SpatialReference()
-        try:
-            dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
-        except: pass
-        dst_srs.ImportFromEPSG(int(t_warp))
-        dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)        
-        pointA = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(region[0], region[2]))
-        pointB = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(region[1], region[3]))
-        pointA.Transform(dst_trans)
-        pointB.Transform(dst_trans)
-        region = [pointA.GetX(), pointB.GetX(), pointA.GetY(), pointB.GetY()]
-    return(region)
-
-def gdal_ogr_regions(src_ds):
-    '''return the region(s) of the ogr dataset'''
-    
-    these_regions = []
-    if os.path.exists(src_ds):
-        poly = ogr.Open(src_ds)
-        if poly is not None:
-            p_layer = poly.GetLayer(0)
-            for pf in p_layer:
-                pgeom = pf.GetGeometryRef()
-                pwkt = pgeom.ExportToWkt()
-                penv = ogr.CreateGeometryFromWkt(pwkt).GetEnvelope()
-                these_regions.append(penv)
-        poly = None
-    return(these_regions)
-
-def gdal_create_polygon(coords, xpos = 1, ypos = 0):
-    '''convert coords to Wkt
-
-    returns polygon as wkt'''
-    
-    ring = ogr.Geometry(ogr.wkbLinearRing)
-    for coord in coords: ring.AddPoint(coord[xpos], coord[ypos])
-    poly = ogr.Geometry(ogr.wkbPolygon)
-    poly.AddGeometry(ring)
-    poly_wkt = poly.ExportToWkt()
-    poly = None
-    return(poly_wkt)
-
-def gdal_wkt2geom(wkt):
-    return(ogr.CreateGeometryFromWkt(wkt))
-
-def gdal_region2wkt(region):
-
-    eg = [[region[2], region[0]], [region[2], region[1]],
-          [region[3], region[1]], [region[3], region[0]],
-          [region[2], region[0]]]
-    return(gdal_create_polygon(eg))
-    
-def gdal_region2geom(region):
-    '''convert an extent [west, east, south, north] to an OGR geometry
-
-    returns ogr geometry'''
-    
-    eg = [[region[2], region[0]], [region[2], region[1]],
-          [region[3], region[1]], [region[3], region[0]],
-          [region[2], region[0]]]
-    geom = ogr.CreateGeometryFromWkt(gdal_create_polygon(eg))
-    return(geom)
-
-def gdal_region2ogr(region, dst_ogr, append = False):
-    '''convert a region string to an OGR vector'''
-
-    dst_wkt = gdal_region2wkt(region)
-    
-    driver = ogr.GetDriverByName('ESRI Shapefile')
-
-    if os.path.exists(dst_ogr):
-        driver.DeleteDataSource(dst_ogr)
-        
-    dst_ds = driver.CreateDataSource(dst_ogr)
-    dst_lyr = dst_ds.CreateLayer(dst_ogr, geom_type = ogr.wkbPolygon)
-
-    dst_lyr.CreateField(ogr.FieldDefn('id', ogr.OFTInteger))
-    dst_feat = ogr.Feature(dst_lyr.GetLayerDefn())
-    dst_feat.SetGeometryDirectly(ogr.CreateGeometryFromWkt(dst_wkt))
-    dst_feat.SetField('id', 1)
-    dst_lyr.CreateFeature(dst_feat)
-    dst_feat = None
-
-    dst_ds = None
-
-def gdal_region(src_ds, warp = None):
-    '''return the extent of the src_fn gdal file.
-    warp should be an epsg to warp the region to.
-
-    returns the region of the gdal data-source'''
-    
-    ds_config = gdal_gather_infos(src_ds)
-    ds_region = gdal_gt2region(ds_config)
-    src_srs = osr.SpatialReference()
-    try:
-        src_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
-    except: pass
-    src_srs.ImportFromWkt(ds_config['proj'])
-    src_srs.AutoIdentifyEPSG()
-    srs_auth = src_srs.GetAuthorityCode(None)
-    
-    if srs_auth is None or srs_auth == warp: warp = None
-
-    if warp is not None:
-        dst_srs = osr.SpatialReference()
-        dst_srs.ImportFromEPSG(int(warp))
-        try:
-            dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
-        except: pass
-        dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
-
-        pointA = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(ds_region[0], ds_region[2]))
-        pointB = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(ds_region[1], ds_region[3]))
-        pointA.Transform(dst_trans)
-        pointB.Transform(dst_trans)
-        ds_region = [pointA.GetX(), pointB.GetX(), pointA.GetY(), pointB.GetY()]
-    return(ds_region)
-
 def gdal_srcwin(src_ds, region):
     '''given a gdal file src_fn and a region [w, e, s, n],
     output the appropriate gdal srcwin.
 
     returns the gdal srcwin'''
-
     ds_config = gdal_gather_infos(src_ds)
     geoT = ds_config['geoT']
 
-    this_origin = [0 if x < 0 else x for x in _geo2pixel(region[0], region[3], geoT)]
-    this_end = [0 if x < 0 else x for x in _geo2pixel(region[1], region[2], geoT)]
+    this_origin = [0 if x < 0 else x for x in utils._geo2pixel(region[0], region[3], geoT)]
+    this_end = [0 if x < 0 else x for x in utils._geo2pixel(region[1], region[2], geoT)]
     this_size = [0 if x < 0 else x for x in ((this_end[0] - this_origin[0]), (this_end[1] - this_origin[1]))]
     if this_size[0] > ds_config['nx'] - this_origin[0]: this_size[0] = ds_config['nx'] - this_origin[0]
     if this_size[1] > ds_config['ny'] - this_origin[1]: this_size[1] = ds_config['ny'] - this_origin[1]
     return(this_origin[0], this_origin[1], this_size[0], this_size[1])
 
 def gdal_sample_inc(src_grd, inc = 1, verbose = False):
-    '''resamele src_grd to toggle between grid-node and pixel-node grid registration.'''
-    
-    out, status = utils.run_cmd('gdalwarp -tr {:.10f} {:.10f} {} -r bilinear -te -R{} -r -Gtmp.tif=gd+n-9999:GTiff'.format(inc, inc, src_grd, src_grd), verbose = verbose)
+    '''resamele src_grd to toggle between grid-node and pixel-node grid registration.'''    
+    out, status = utils.run_cmd('gdalwarp -tr {:.10f} {:.10f} {} -r bilinear -te -R{} -r -Gtmp.tif=gd+n-9999:GTiff\
+    '.format(inc, inc, src_grd, src_grd), verbose = verbose)
     if status == 0: os.rename('tmp.tif', '{}'.format(src_grd))
     return(status)
 
@@ -362,7 +153,6 @@ def gdal_infos(src_fn, region = None, scan = False):
     '''scan gdal file src_fn and gather region info.
 
     returns region dict.'''
-    
     if os.path.exists(src_fn):
         try:
             ds = gdal.Open(src_fn)
@@ -378,7 +168,6 @@ def gdal_gather_infos(src_ds, region = None, scan = False):
     '''gather information from `src_ds` GDAL dataset
 
     returns gdal_config dict.'''
-
     gt = src_ds.GetGeoTransform()
     if region is not None:
         srcwin = gdal_srcwin(src_ds, region)
@@ -410,14 +199,12 @@ def gdal_set_infos(nx, ny, nb, geoT, proj, dt, ndv, fmt):
     '''set a datasource config dictionary
 
     returns gdal_config dict.'''
-    
     return({'nx': nx, 'ny': ny, 'nb': nb, 'geoT': geoT, 'proj': proj, 'dt': dt, 'ndv': ndv, 'fmt': fmt})
 
 def gdal_cpy_infos(src_config):
     '''copy src_config
 
     returns copied src_config dict.'''
-    
     dst_config = {}
     for dsc in src_config.keys():
         dst_config[dsc] = src_config[dsc]
@@ -430,7 +217,6 @@ def gdal_write (src_arr, dst_gdal, ds_config, dst_fmt = 'GTiff'):
     '''write src_arr to gdal file dst_gdal using src_config
 
     returns [output-gdal, status-code]'''
-    
     driver = gdal.GetDriverByName(dst_fmt)
     if os.path.exists(dst_gdal):
         try:
@@ -452,8 +238,7 @@ def gdal_null(dst_fn, region, inc, nodata = -9999, outformat = 'GTiff'):
     '''generate a `null` grid with gdal
 
     returns [output-gdal, status-code]'''
-    
-    xcount, ycount, dst_gt = gdal_region2gt(region, inc)
+    xcount, ycount, dst_gt = regions.region2gt(region, inc)
     null_array = np.zeros((ycount, xcount))
     null_array[null_array == 0] = nodata
     ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(4326), gdal.GDT_Float32, -9999, outformat)
@@ -466,7 +251,6 @@ def gdal_cut(src_gdal, region, dst_fn):
     '''cut src_fn gdal file to srcwin and output dst_fn gdal file
 
     returns [output-gdal, status-code]'''
-
     try:
         src_ds = gdal.Open(src_gdal)
     except: src_ds = None
@@ -510,7 +294,6 @@ def np_split(src_arr, sv = 0, nd = -9999):
     '''split numpy `src_arr` by `sv` (turn u/l into `nd`)
 
     returns [upper_array, lower_array]'''
-    
     try:
         sv = int(sv)
     except: sv = 0
@@ -544,8 +327,7 @@ def gdal_split(src_gdal, split_value = 0):
 def gdal_crop(src_ds):
     '''crop `src_ds` GDAL datasource by it's NoData value. 
 
-    returns [cropped array, cropped_gdal_config].'''
-    
+    returns [cropped array, cropped_gdal_config].'''    
     ds_config = gdal_gather_infos(src_ds)
     ds_arr = src_ds.GetRasterBand(1).ReadAsArray()
 
@@ -573,7 +355,6 @@ def gdal_crop(src_ds):
 def gdal_mask(src_gdal, dst_gdal, invert = False):
     '''transform src_gdal to a raster mask (1 = data; 0 = nodata)
     if invert is True, 1 = nodata, 0 = data.'''
-    
     try:
         ds = gdal.Open(src_gdal)
     except: ds = None
@@ -595,7 +376,6 @@ def gdal_mask(src_gdal, dst_gdal, invert = False):
     else: return(-1, -1)
 
 def gdal_mask_analysis(src_gdal, region = None):
-
     ds_config = gdal_gather_infos(src_gdal)
     if region is not None:
         srcwin = gdal_srcwin(src_gdal, region)
@@ -610,7 +390,6 @@ def gdal_mask_analysis(src_gdal, region = None):
     return(msk_sum, msk_max, msk_perc)
 
 def gdal_prox_analysis(src_gdal, region = None):
-
     ds_config = gdal_gather_infos(src_gdal)
     if region is not None:
         srcwin = gdal_srcwin(src_gdal, region)
@@ -625,8 +404,7 @@ def gdal_prox_analysis(src_gdal, region = None):
 def gdal_proximity(src_fn, dst_fn):
     '''compute a proximity grid via GDAL
 
-    return 0 if success else None'''
-    
+    return 0 if success else None'''    
     prog_func = None
     dst_ds = None
     try:
@@ -653,7 +431,6 @@ def gdal_yield_query(src_xyz, src_grd, out_form):
     out_form dictates return values
 
     yields out_form results'''
-    
     try:
         ds = gdal.Open(src_grd)
     except: ds = None
@@ -673,7 +450,7 @@ def gdal_yield_query(src_xyz, src_grd, out_form):
             except: z = ds_nd
 
             if x > ds_gt[0] and y < float(ds_gt[3]):
-                xpos, ypos = _geo2pixel(x, y, ds_gt)
+                xpos, ypos = utils._geo2pixel(x, y, ds_gt)
                 try: 
                     g = tgrid[ypos, xpos]
                 except: g = ds_nd
@@ -697,7 +474,6 @@ def gdal_query(src_xyz, src_grd, out_form):
     return(np.array(xyzl))
                     
 def gdal_yield_mw_srcwin(src_gdal, n_chunk = 10, step = 5):
-
     ds_config = gdal_infos(src_gdal)
     gt = ds_config['geoT']
     x_chunk = n_chunk
@@ -736,7 +512,6 @@ def gdal_chunks(src_fn, n_chunk):
     '''split `src_fn` GDAL file into chunks with `n_chunk` cells squared.
 
     returns a list of chunked filenames.'''
-    
     o_chunks = []
     try:
         src_ds = gdal.Open(src_fn)
@@ -747,7 +522,7 @@ def gdal_chunks(src_fn, n_chunk):
         gt = ds_config['geoT']
         c_n = 0
         for srcwin in gdal_yield_mw_srcwin(src_fn, n_chunk = n_chunk, step = n_chunk):
-            this_geo_x_origin, this_geo_y_origin = _pixel2geo(srcwin[0], srcwin[1], gt)
+            this_geo_x_origin, this_geo_y_origin = utils._pixel2geo(srcwin[0], srcwin[1], gt)
             dst_gt = [this_geo_x_origin, float(gt[1]), 0.0, this_geo_y_origin, 0.0, float(gt[5])]
             band_data = band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
             if not np.all(band_data == band_data[0,:]):
@@ -925,7 +700,7 @@ def gdal_filter_outliers(src_gdal, dst_gdal, threshhold = None, slp_threshhold =
         for srcwin in gdal_yield_mw_srcwin(src_gdal, n_chunk = n_chunk, step = n_step):
             band_data = band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
             band_data[band_data == ds_config['ndv']] = np.nan
-            this_geo_x_origin, this_geo_y_origin = _pixel2geo(srcwin[0], srcwin[1], gt)
+            this_geo_x_origin, this_geo_y_origin = utils._pixel2geo(srcwin[0], srcwin[1], gt)
             dst_gt = [this_geo_x_origin, float(gt[1]), 0.0, this_geo_y_origin, 0.0, float(gt[5])]
 
             dst_config = gdal_cpy_infos(ds_config)
@@ -1017,12 +792,11 @@ def gdal_ogr_mask_union(src_layer, src_field, dst_defn = None):
     return(out_feat)
 
 def ogr_clip(src_ogr, dst_ogr, clip_region = None, dn = "ESRI Shapefile"):
-    
     driver = ogr.GetDriverByName(dn)
     ds = driver.Open(src_ogr, 0)
     layer = ds.GetLayer()
 
-    gdal_region2ogr(clip_region, 'tmp_clip.shp')
+    regions.region2ogr(clip_region, 'tmp_clip.shp')
     c_ds = driver.Open('tmp_clip.shp', 0)
     c_layer = c_ds.GetLayer()
     
@@ -1034,7 +808,6 @@ def ogr_clip(src_ogr, dst_ogr, clip_region = None, dn = "ESRI Shapefile"):
     ds = c_ds = dst_ds = None
 
 def ogr_empty_p(src_ogr):
-
     driver = ogr.GetDriverByName('ESRI Shapefile')
     ds = driver.Open(src_ogr, 0)
 
@@ -1051,8 +824,7 @@ def ogr_remove_ds(src_ds, src_fmt = 'ESRI Shapefile'):
     drv.DeleteDataSource(src_ds)
 
 def ogr_get_fields(src_ds):
-    '''return the field names in src_ds ogr vector'''
-    
+    '''return the field names in src_ds ogr vector'''  
     schema = []
     try:
         ds = ogr.Open(src_ds)
@@ -1109,7 +881,7 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format = 'GTiff', mode = '
 
     returns output, status'''
     
-    xcount, ycount, dst_gt = gdal_region2gt(region, inc)
+    xcount, ycount, dst_gt = regions.region2gt(region, inc)
     if verbose:
         #utils.echo_msg('gridding data with mode: {} to {}'.format(mode, dst_gdal))
         #utils.echo_msg('grid size: {}/{}'.format(ycount, xcount))
@@ -1127,7 +899,7 @@ def gdal_xyz2gdal(src_xyz, dst_gdal, region, inc, dst_format = 'GTiff', mode = '
         z = this_xyz[2]
         if x > region[0] and x < region[1]:
             if y > region[2] and y < region[3]:
-                xpos, ypos = _geo2pixel(x, y, dst_gt)
+                xpos, ypos = utils._geo2pixel(x, y, dst_gt)
                 try:
                     if mode == 'm' or mode == 'w':
                         sumArray[ypos, xpos] += z
@@ -1155,7 +927,7 @@ def gdal_xyz_mask(src_xyz, dst_gdal, region, inc, dst_format='GTiff', epsg = 432
 
     yields the xyz data'''
     
-    xcount, ycount, dst_gt = gdal_region2gt(region, inc)
+    xcount, ycount, dst_gt = regions.region2gt(region, inc)
     ptArray = np.zeros((ycount, xcount))
     ds_config = gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt, gdal_sr_wkt(epsg), gdal.GDT_Float32, -9999, 'GTiff')
     for this_xyz in src_xyz:
@@ -1164,7 +936,7 @@ def gdal_xyz_mask(src_xyz, dst_gdal, region, inc, dst_format='GTiff', epsg = 432
         y = this_xyz[1]
         if x > region[0] and x < region[1]:
             if y > region[2] and y < region[3]:
-                xpos, ypos = _geo2pixel(x, y, dst_gt)
+                xpos, ypos = utils._geo2pixel(x, y, dst_gt)
                 try:
                     ptArray[ypos, xpos] = 1
                 except: pass
@@ -1229,7 +1001,7 @@ def gdal_parse(src_ds, dump_nodata = False, srcwin = None, mask = None, warp = N
             z = band_data[x_i]
             if '{:g}'.format(z) not in nodata:
                 ln += 1
-                geo_x,geo_y = _pixel2geo(x, y, gt)
+                geo_x,geo_y = utils._pixel2geo(x, y, gt)
                 if warp is not None:
                     point = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(geo_x, geo_y))
                     point.Transform(dst_trans)
@@ -1361,7 +1133,6 @@ def gdal_inf(src_ds, warp = None, overwrite = False):
     '''generate an info (.inf) file from a src_gdal file using gdal
 
     returns the region [xmin, xmax, ymin, ymax] of src_ds'''
-    
     utils.echo_msg('generating inf file for {}'.format(src_ds.GetDescription()))
     gdali = {}
     gdali['name'] = src_ds.GetDescription()
@@ -1401,7 +1172,7 @@ def gdal_inf(src_ds, warp = None, overwrite = False):
         geom = feat.GetGeometryRef()
         wkt = geom.ExportToWkt()
         gdali['wkt'] = wkt
-    except: gdali['wkt'] = gdal_region2wkt(gdali['minmax'])
+    except: gdali['wkt'] = regions.region2wkt(gdali['minmax'])
     tmp_ds = ds = None
     
     with open('{}.inf'.format(src_ds.GetDescription()), 'w') as inf:
@@ -1413,7 +1184,6 @@ def gdal_inf_entry(entry, warp = None):
     ''' scan a gdal entry and find it's region
 
     returns the region [xmin, xmax, ymin, ymax] of the gdal entry'''
-
     try:
         ds = gdal.Open(entry[0])
     except: ds = None
@@ -1427,7 +1197,6 @@ def gdal_yield_entry(entry, region = None, verbose = False, z_region = None, eps
     '''yield the xyz data from the datalist entry.
 
     yields [x, y, z, <w, ...>]'''
-
     try:
         ds = gdal.Open(entry[0])
     except: ds = None
@@ -1438,5 +1207,9 @@ def gdal_yield_entry(entry, region = None, verbose = False, z_region = None, eps
         for xyz in gdal_parse(ds, dump_nodata = False, srcwin = srcwin, warp = epsg, verbose = verbose, z_region = z_region):
             yield(xyz + [entry[2]] if entry[2] is not None else xyz)
         ds = None
-        
+
+def gdal_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, epsg = None, z_region = None):
+    '''dump the xyz data from the gdal entry to dst_port'''
+    for xyz in gdal_yield_entry(entry, region, verbose, epsg, z_region):
+        xyzfun.xyz_line(xyz, dst_port, True)
 ### End

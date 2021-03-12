@@ -251,7 +251,7 @@ class iso_xml:
         nl = self.xml_doc.find('.//gmd:northBoundLatitude/gco:Decimal', namespaces = self.namespaces)                           
         if wl is not None and el is not None and sl is not None and nl is not None:
             region = [float(wl.text), float(el.text), float(sl.text), float(nl.text)]
-            if geom: return(gdalfun.gdal_region2geom([float(wl.text), float(el.text), float(sl.text), float(nl.text)]))
+            if geom: return(regions.region2geom([float(wl.text), float(el.text), float(sl.text), float(nl.text)]))
             else: return(region)
         else: return(None)
 
@@ -261,7 +261,7 @@ class iso_xml:
         if polygon is not None:
             nodes = polygon.findall('.//{*}pos', namespaces = self.namespaces)
             [opoly.append([float(x) for x in node.text.split()]) for node in nodes]
-            if geom: return(gdalfun.gdal_wkt2geom(gdalfun.gdal_create_polygon(opoly)))
+            if geom: return(gdalfun.gdal_wkt2geom(utils.create_wkt_polygon(opoly)))
             else: return(opoly)
         else: return(None)
         
@@ -565,7 +565,7 @@ class FRED:
         '''Search for data in the reference vector file'''
         _results = []
         if region is not None:
-            _boundsGeom = gdalfun.gdal_region2geom(region)
+            _boundsGeom = regions.region2geom(region)
         else: _boundsGeom = None
 
         if self._verbose: _progress = utils._progress('filtering {}...'.format(self.FREDloc))
@@ -794,7 +794,7 @@ class dc:
                     for sf1 in slay1:
                         if self._stop(): break
                         geom = sf1.GetGeometryRef()
-                        if geom.Intersects(gdalfun.gdal_region2geom(self.region)):
+                        if geom.Intersects(regions.region2geom(self.region)):
                             yield([sf1.GetField('URL').strip(), '{}/{}'.format(surv['ID'], tile_url.split('/')[-1]), surv['DataType']])
                     v_ds = slay1 = None
                 except: pass
@@ -840,7 +840,7 @@ class dc:
                 src_ds = None
             
             if src_ds is not None:
-                srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
+                srcwin = gdalfun.gdal_srcwin(src_ds, regions.region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
                 for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = True, z_region = z_region):
                     yield(xyz)
             src_ds = None
@@ -993,7 +993,7 @@ class nos:
                 for src_bag in src_bags:
                     try:
                         src_ds = gdal.Open(src_bag)
-                        srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
+                        srcwin = gdalfun.gdal_srcwin(src_ds, regions.region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))
                         with open(nos_f, 'w') as cx:
                             for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, z_region = z_region):
                                 yield(xyz)
@@ -1261,7 +1261,7 @@ community preparedness.'''
             src_ds = None
 
         if src_ds is not None:
-            srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_getEPSG(src_ds)))
+            srcwin = gdalfun.gdal_srcwin(src_ds, regions.region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_getEPSG(src_ds)))
             for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose, z_region = z_region):
                 yield(xyz)
         src_ds = None
@@ -1322,7 +1322,7 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
                                   MetadataLink = self._mb_metadata_url, MetadataDate = utils.this_year(),
                                   DataLink = self._mb_search_url, DataType = 'multibeam', DataSource = 'mb',
                                   HorizontalDatum = 4326, VerticalDatum = 1092, Info = self._info,
-                                  geom = gdalfun.gdal_region2geom([-180,180,-90,90]))
+                                  geom = regions.region2geom([-180,180,-90,90]))
         self.FRED._close_ds()
         
     def _parse_results(self, processed = False):
@@ -1480,7 +1480,7 @@ may or may not be accurate.'''
         if self.FRED.layer is None or len(self.FRED.layer) == 0:
             self.FRED._add_survey(Name = 'USACE E-Hydro', ID = 'USACE-1', Agency = 'USACE', Date = utils.this_year(),
                                   DataLink = self._usace_gs_api_url, IndexLink = self._usace_gj_url, DataType = 'xyz',
-                                  DataSource = 'usace', Info = self._info, geom = gdalfun.gdal_region2geom([-162,-60,16,73]))
+                                  DataSource = 'usace', Info = self._info, geom = regions.region2geom([-162,-60,16,73]))
         self.FRED._close_ds()
         
     def _parse_results(self, stype = None):
@@ -1534,7 +1534,7 @@ may or may not be accurate.'''
                 utils.remove_glob(src_xml)
 
             if xyzc['epsg'] is None:
-                this_geom = gdalfun.gdal_region2geom(this_xml_region)
+                this_geom = regions.region2geom(this_xml_region)
                 sp_fn = os.path.join(fetchdata, 'stateplane.geojson')
                 try:
                     sp = ogr.Open(sp_fn)
@@ -1798,7 +1798,7 @@ and deliver topographic information for the Nation.'''
                     except: pass
                     if self.FRED.layer is None or len(self.FRED.layer) == 0:
                         bbox = item['boundingBox']
-                        geom = gdalfun.gdal_region2geom([bbox['minX'], bbox['maxX'], bbox['minY'], bbox['maxY']])
+                        geom = regions.region2geom([bbox['minX'], bbox['maxX'], bbox['minY'], bbox['maxY']])
 
                         if item['format'] == 'IMG' or item['format'] == 'GeoTIFF':
                             tnm_ds = 'raster'
@@ -1838,7 +1838,7 @@ and deliver topographic information for the Nation.'''
                     try:
                         src_ds = gdal.Open(src_tnm)
                         if src_ds is not None:
-                            srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_getEPSG(src_ds)))
+                            srcwin = gdalfun.gdal_srcwin(src_ds, regions.region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_getEPSG(src_ds)))
                             for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose, z_region = z_region):
                                 if xyz[2] != 0:
                                     yield(xyz)
@@ -1905,7 +1905,7 @@ the global and coastal oceans.'''
                                   MetadataLink = self._gmrt_grid_metadata_url, MetadataDate = utils.this_year(),
                                   DataLink = self._gmrt_grid_urls_url, DataType = 'raster', DataSource = 'gmrt',
                                   HorizontalDatum = 3857, VerticalDatum = 1092, Info = self._info,
-                                  geom = gdalfun.gdal_region2geom([-180,180,-90,90]))
+                                  geom = regions.region2geom([-180,180,-90,90]))
         self.FRED._close_ds()
 
     def _parse_results(self, fmt = 'geotiff', res = 'max', layer = 'topo'):
@@ -2005,7 +2005,7 @@ class mar_grav:
                                   MetadataLink = self._mar_grav_info_url, MetadataDate = utils.this_year(),
                                   DataLink = self._mar_grav_url, DataType = 'xyz', DataSource = 'mar_grav',
                                   HorizontalDatum = 4326, VerticalDatum = 1092, Info = self._info,
-                                  geom = gdalfun.gdal_region2geom([-180,180,-90,90]))
+                                  geom = regions.region2geom([-180,180,-90,90]))
         self.FRED._close_ds()
         
     def _parse_results(self):
@@ -2092,7 +2092,7 @@ class srtm_plus:
                                   MetadataLink = self._srtm_info_url, MetadataDate = utils.this_year(),
                                   DataLink = self._srtm_url, DataType = 'xyz', DataSource = 'srtm_plus',
                                   HorizontalDatum = 4326, VerticalDatum = 1092, Info = self._info,
-                                  geom = gdalfun.gdal_region2geom([-180,180,-90,90]))
+                                  geom = regions.region2geom([-180,180,-90,90]))
         self.FRED._close_ds()
         
     def _parse_results(self):
@@ -2182,7 +2182,7 @@ class emodnet:
                 d = emod_wcs._describe_coverage(layer['CoverageId'][0])
                 if d is not None:
                     ds_region = emod_wcs._get_coverage_region(d)
-                    geom = gdalfun.gdal_region2geom(ds_region)
+                    geom = regions.region2geom(ds_region)
                     url = emod_wcs._get_coverage_url(layer['CoverageId'][0], region = ds_region)
                     self.FRED._add_survey(Name = d['name'][0], ID = layer['CoverageId'][0], Date = utils.this_year(), MetadataLink = layer['Metadata'],
                                           MetadataDate = utils.this_year(), DataLink = url, DataType = 'raster',
@@ -2280,7 +2280,7 @@ class hrdem():
             if len(shp_region) > 0:
                 shp_region = regions.regions_merge(shp_region, this_region)
             else: shp_region = this_region
-        geom = gdalfun.gdal_region2geom(shp_region)
+        geom = regions.region2geom(shp_region)
         
         self.FRED._attribute_filter(["ID = '{}'".format('HRDEM-1')])
         if self.FRED.layer is None or len(self.FRED.layer) == 0:
@@ -2315,7 +2315,7 @@ class hrdem():
                     feature = layer[f]
                     if data_link is not None:
                         geom = feature.GetGeometryRef()
-                        if geom.Intersects(gdalfun.gdal_region2geom(self.region)):
+                        if geom.Intersects(regions.region2geom(self.region)):
                             data_link = feature.GetField('Ftp_dtm').replace('http', 'ftp')
                             yield([data_link, data_link.split('/')[-1], surv['DataType']])
             utils.remove_glob(v_zip, *v_shps)
@@ -2394,7 +2394,7 @@ class hrdem():
             src_ds = None
 
         if src_ds is not None:
-            srcwin = gdalfun.gdal_srcwin(src_ds, gdalfun.gdal_region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_getEPSG(src_ds)))
+            srcwin = gdalfun.gdal_srcwin(src_ds, regions.region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_getEPSG(src_ds)))
             for xyz in gdalfun.gdal_parse(src_ds, srcwin = srcwin, warp = epsg, verbose = self._verbose, z_region = z_region):
                 yield(xyz)
         src_ds = None
@@ -2460,7 +2460,7 @@ class chs:
                 d = chs_wcs._describe_coverage(layer['CoverageId'][0])
                 if d is not None:
                     ds_region = chs_wcs._get_coverage_region(d)
-                    geom = gdalfun.gdal_region2geom(ds_region)
+                    geom = regions.region2geom(ds_region)
                     url = chs_wcs._get_coverage_url(layer['CoverageId'][0], region = ds_region)
                     try:
                         name = d['name'][0]
@@ -2558,7 +2558,7 @@ class ngs:
             self.FRED._add_survey(Name = 'NGS Monuments', ID = 'NGS-1', Agency = 'NGS', Date = utils.this_year(),
                                   MetadataDate = utils.this_year(), DataLink = self._ngs_search_url,
                                   DataType = 'raster', DataSource = self._name, Info = self._info,
-                                  geom = gdalfun.gdal_region2geom([-162, -60, 16, 73]))
+                                  geom = regions.region2geom([-162, -60, 16, 73]))
         self.FRED._close_ds()
         
     def _parse_results(self):
@@ -2698,10 +2698,10 @@ class osm:
 ## fetches processing (datalists fmt: -4)
 ## ==============================================
 def fetch_inf_entry(entry = [], warp = None):
-    out_inf = {'minmax': [-180,180,-90,90], 'name': entry[0], 'pts': None, 'wkt': gdalfun.gdal_region2wkt([-180,180,-90,90])}
+    out_inf = {'minmax': [-180,180,-90,90], 'name': entry[0], 'pts': None, 'wkt': regions.region2wkt([-180,180,-90,90])}
     if warp is not None:
         out_inf['minmax'] = regions.region_warp(out_inf['minmax'], 4326, warp)
-        out_inf['wkt'] = gdalfun.gdal_region2wkt(out_inf['minmax'])
+        out_inf['wkt'] = regions.region2wkt(out_inf['minmax'])
     return(out_inf)
 
 def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, warp = None, verbose = False, z_region = None):

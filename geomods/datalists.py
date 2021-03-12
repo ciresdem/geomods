@@ -100,8 +100,8 @@ def intersect_p(r, e, p = None):
     inf file for datalist entry e'''
     if entry_exists_p(e[0]) or e[1] == -4:
         dl_i = inf_entry(e, epsg = p)
-        r_geom = gdalfun.gdal_region2geom(r)
-        e_geom = gdalfun.gdal_wkt2geom(dl_i['wkt']) if 'wkt' in dl_i.keys() else r_geom
+        r_geom = regions.region2geom(r)
+        e_geom = regions.wkt2geom(dl_i['wkt']) if 'wkt' in dl_i.keys() else r_geom
         return(regions.geoms_intersect_p(r_geom, e_geom))
     else: return(False)
 
@@ -122,7 +122,7 @@ def inf_parse(src_inf):
     '''parse an inf file (mbsystem or gmt)
     
     returns region: [xmin, xmax, ymin, ymax, zmin, zmax]'''
-    xyzi = {'name': src_inf, 'numpts': 0, 'minmax': [0,0,0,0,0,0], 'wkt': gdalfun.gdal_region2wkt([0,0,0,0,0,0])}
+    xyzi = {'name': src_inf, 'numpts': 0, 'minmax': [0,0,0,0,0,0], 'wkt': regions.region2wkt([0,0,0,0,0,0])}
     try:
         with open(src_inf) as iob:
             xyzi = json.load(iob)
@@ -143,7 +143,7 @@ def inf_entry(src_entry, overwrite = False, epsg = None):
     with minmax info, etc.
 
     returns the region of the inf file.'''
-    ei = {'name': src_entry, 'numpts': 0, 'minmax': [0,0,0,0,0,0], 'wkt': gdalfun.gdal_region2wkt([0,0,0,0,0,0])}
+    ei = {'name': src_entry, 'numpts': 0, 'minmax': [0,0,0,0,0,0], 'wkt': regions.region2wkt([0,0,0,0,0,0])}
     if entry_exists_p(src_entry[0]) or src_entry[1] == -4:
         path_i = src_entry[0] + '.inf'
         if not os.path.exists(path_i) or overwrite:
@@ -188,7 +188,7 @@ def archive_inf(archive, inf_file = True, epsg = None, overwrite = False):
             out_region = regions.regions_merge(out_region, x)
         dl_i['minmax'] = out_region
 
-    dl_i['wkt'] = gdalfun.gdal_region2wkt(dl_i['minmax'])
+    dl_i['wkt'] = regions.region2wkt(dl_i['minmax'])
     
     if dl_i['minmax'] is not None and inf_file:
         with open('{}.inf'.format(archive), 'w') as inf:
@@ -244,7 +244,7 @@ def datalist_inf(dl, inf_file = True, epsg = None, overwrite = False):
             out_region = regions.regions_merge(out_region, x)
         dl_i['minmax'] = out_region
 
-    dl_i['wkt'] = gdalfun.gdal_region2wkt(dl_i['minmax'])
+    dl_i['wkt'] = regions.region2wkt(dl_i['minmax'])
     
     if dl_i['minmax'] is not None and inf_file:
         with open('{}.inf'.format(dl), 'w') as inf:
@@ -568,7 +568,7 @@ def datalists_cli(argv = sys.argv):
     if i_region is not None:
         try:
             these_regions = [[float(x) for x in i_region.split('/')]]
-        except ValueError: these_regions = gdalfun.gdal_ogr_regions(i_region)
+        except ValueError: these_regions = regions.gdal_ogr_regions(i_region)
         except Exception as e:
             utils.echo_error_msg('failed to parse region(s), {}'.format(e))
         #else: these_regions = [[-180,180,-90,90]]

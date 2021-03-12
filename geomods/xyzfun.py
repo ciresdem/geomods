@@ -31,7 +31,6 @@ import osr
 
 from geomods import utils
 from geomods import regions
-from geomods import gdalfun
 from geomods import mbsfun
 
 ## ==============================================
@@ -156,7 +155,7 @@ def xyz_block(src_xyz, region, inc, weights = False, verbose = False):
     '''block the src_xyz data to the mean block value
 
     yields the xyz value for each block with data'''    
-    xcount, ycount, dst_gt = gdalfun.gdal_region2gt(region, inc)
+    xcount, ycount, dst_gt = regions.region2gt(region, inc)
     sumArray = np.zeros((ycount, xcount))
     gdt = gdal.GDT_Float32
     ptArray = np.zeros((ycount, xcount))
@@ -171,7 +170,7 @@ def xyz_block(src_xyz, region, inc, weights = False, verbose = False):
         #z = z * w
         if x > region[0] and x < region[1]:
             if y > region[2] and y < region[3]:
-                xpos, ypos = gdalfun._geo2pixel(x, y, dst_gt)
+                xpos, ypos = utils._geo2pixel(x, y, dst_gt)
                 try:
                     sumArray[ypos, xpos] += z
                     ptArray[ypos, xpos] += 1
@@ -190,7 +189,7 @@ def xyz_block(src_xyz, region, inc, weights = False, verbose = False):
     
     for y in range(0, ycount):
         for x in range(0, xcount):
-            geo_x, geo_y = gdalfun._pixel2geo(x, y, dst_gt)
+            geo_x, geo_y = utils._pixel2geo(x, y, dst_gt)
             z = outarray[y,x]
             if z != -9999:
                 yield([geo_x, geo_y, z])
@@ -239,11 +238,11 @@ def xyz_inf(src_xyz):
         try:
             out_hull = [pts[i] for i in spatial.ConvexHull(pts, qhull_options='Qt').vertices]
             out_hull.append(out_hull[0])
-            xyzi['wkt'] = gdalfun.gdal_create_polygon(out_hull, xpos = 0, ypos = 1)
+            xyzi['wkt'] = regions.create_wkt_polygon(out_hull, xpos = 0, ypos = 1)
 
             with open('{}.inf'.format(src_xyz.name), 'w') as inf:
                 inf.write(json.dumps(xyzi))
-        except: xyzi['wkt'] = gdalfun.gdal_region2wkt(xyzi['minmax'])
+        except: xyzi['wkt'] = regions.region2wkt(xyzi['minmax'])
     return(xyzi)
             
 def xyz_inf_entry(entry):
@@ -274,11 +273,5 @@ def xyz_yield_entry(entry, region = None, verbose = False, z_region = None, epsg
 def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, z_region = None):
     '''dump the xyz data from the xyz datalist entry to dst_port'''
     for xyz in xyz_yield_entry(entry, region, verbose, z_region):
-        xyz_line(xyz, dst_port, True, None)
-
-def gdal_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, epsg = None, z_region = None):
-    '''dump the xyz data from the gdal entry to dst_port'''
-    for xyz in gdalfun.gdal_yield_entry(entry, region, verbose, epsg, z_region):
-        xyz_line(xyz, dst_port, True)
-        
+        xyz_line(xyz, dst_port, True, None)        
 ### End

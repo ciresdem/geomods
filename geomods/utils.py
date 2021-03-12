@@ -1,6 +1,6 @@
 ### utils.py
 ##
-## Copyright (c) 2010 - 2020 CIRES Coastal DEM Team
+## Copyright (c) 2010 - 2021 CIRES Coastal DEM Team
 ##
 ## Permission is hereby granted, free of charge, to any person obtaining a copy 
 ## of this software and associated documentation files (the "Software"), to deal 
@@ -29,12 +29,15 @@ import math
 import zipfile
 import gzip
 import datetime
+
+import ogr
+import gdal
 import numpy as np
 
 ## ==============================================
 ## General utility functions - utils.py
 ## ==============================================
-_version = '0.4.0'
+_version = '0.4.1'
 
 def inc2str_inc(inc):
     '''convert a WGS84 geographic increment to a str_inc (e.g. 0.0000925 ==> `13`)
@@ -92,29 +95,9 @@ def int_or(val, or_val = None):
         return(int(val))
     except: return(or_val)
 
-def euc_dst(pnt0, pnt1):
-    '''return the distance between pnt0 and pnt1,
-    using the euclidean formula.
-    `pnts` are geographic and result is in meters.'''
-    rad_m = 637100
-    distance = math.sqrt(sum([(a - b) ** 2 for a, b in zip(pnt0, pnt1)]))
-    return(rad_m * distance)
-    
-def hav_dst(pnt0, pnt1):
-    '''return the distance between pnt0 and pnt1,
-    using the haversine formula.
-    `pnts` are geographic and result is in meters.'''
-    x0 = float(pnt0[0])
-    y0 = float(pnt0[1])
-    x1 = float(pnt1[0])
-    y1 = float(pnt1[1])
-    rad_m = 637100
-    dx = math.radians(x1 - x0)
-    dy = math.radians(y1 - y0)
-    a = math.sin(dx / 2) * math.sin(dx / 2) + math.cos(math.radians(x0)) * math.cos(math.radians(x1)) * math.sin(dy / 2) * math.sin(dy / 2)
-    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
-    return(rad_m * c)
-
+## ==============================================
+## Archives (zip/gzip/etc.)
+## ==============================================
 def _clean_zips(zip_files):
     '''remove all files\directories in `zip_files`'''
     for i in zip_files:
@@ -189,7 +172,7 @@ def p_unzip(src_file, exts = None):
     
 def procs_unzip(src_file, exts):
     '''unzip/gunzip src_file based on `exts`
-    
+    this function is depreciated, use p_unzip instead.
     return the file associated with `exts`'''
     zips = []
     src_proc = None
@@ -219,6 +202,78 @@ def procs_unzip(src_file, exts):
                 break
     return([src_proc, zips])
 
+## ==============================================
+## spatial and raster functions
+## ==============================================
+def euc_dst(pnt0, pnt1):
+    '''return the distance between pnt0 and pnt1,
+    using the euclidean formula.
+    `pnts` are geographic and result is in meters.'''
+    rad_m = 637100
+    distance = math.sqrt(sum([(a - b) ** 2 for a, b in zip(pnt0, pnt1)]))
+    return(rad_m * distance)
+    
+def hav_dst(pnt0, pnt1):
+    '''return the distance between pnt0 and pnt1,
+    using the haversine formula.
+    `pnts` are geographic and result is in meters.'''
+    x0 = float(pnt0[0])
+    y0 = float(pnt0[1])
+    x1 = float(pnt1[0])
+    y1 = float(pnt1[1])
+    rad_m = 637100
+    dx = math.radians(x1 - x0)
+    dy = math.radians(y1 - y0)
+    a = math.sin(dx / 2) * math.sin(dx / 2) + math.cos(math.radians(x0)) * math.cos(math.radians(x1)) * math.sin(dy / 2) * math.sin(dy / 2)
+    c = 2 * math.atan2(math.sqrt(a), math.sqrt(1-a))
+    return(rad_m * c)
+    
+def _geo2pixel(geo_x, geo_y, geoTransform):
+   '''convert a geographic x,y value to a pixel location of geoTransform'''
+   if geoTransform[2] + geoTransform[4] == 0:
+       pixel_x = ((geo_x - geoTransform[0]) / geoTransform[1]) + .5
+       pixel_y = ((geo_y - geoTransform[3]) / geoTransform[5]) + .5
+   else: pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt(geoTransform))
+   return(int(pixel_x), int(pixel_y))
+
+def _geo2pixel_affine(geo_x, geo_y, geoTransform):
+    '''convert a geographic x,y value to a pixel location of geoTransform'''
+    import affine
+    forward_transform = affine.Affine.from_gdal(*geoTransform)
+    reverse_transform = ~forward_transform
+    pixel_x, pixel_y = reverse_transform * (geo_x, geo_y)
+    pixel_x, pixel_y = int(pixel_x + 0.5), int(pixel_y + 0.5)
+    return(pixel_x, pixel_y)
+
+def _pixel2geo(pixel_x, pixel_y, geoTransform):
+    '''convert a pixel location to geographic coordinates given geoTransform'''
+    geo_x, geo_y = _apply_gt(pixel_x, pixel_y, geoTransform)
+    return(geo_x, geo_y)
+
+def _apply_gt(in_x, in_y, geoTransform):
+    '''apply geotransform to in_x,in_y'''
+    out_x = geoTransform[0] + int(in_x + 0.5) * geoTransform[1] + int(in_y + 0.5) * geoTransform[2]
+    out_y = geoTransform[3] + int(in_x + 0.5) * geoTransform[4] + int(in_y + 0.5) * geoTransform[5]
+
+    return(out_x, out_y)
+
+def _invert_gt(geoTransform):
+    '''invert the geotransform'''
+    det = geoTransform[1] * geoTransform[5] - geoTransform[2] * geoTransform[4]
+    if abs(det) < 0.000000000000001: return
+    invDet = 1.0 / det
+    outGeoTransform = [0, 0, 0, 0, 0, 0]
+    outGeoTransform[1] = geoTransform[5] * invDet
+    outGeoTransform[4] = -geoTransform[4] * invDet
+    outGeoTransform[2] = -geoTransform[2] * invDet
+    outGeoTransfrom[5] = geoTransform[1] * invDet
+    outGeoTransform[0] = (geoTransform[2] * geoTransform[3] - geoTransform[0] * geoTransform[5]) * invDet
+    outGeoTransform[3] = (-geoTransform[1] * geoTransform[3] + geoTransform[0] * geoTransform[4]) * invDet
+    return(outGeoTransform)
+
+## ==============================================
+## error plots and calculations
+## ==============================================
 def err_fit_plot(xdata, ydata, out, fitfunc, dst_name = 'unc', xa = 'distance'):
     '''plot a best fit plot'''
     try:
