@@ -111,6 +111,8 @@ Examples:
  - transform the vertical datum of an xyz data file:
    % vdatum_cmd.py elev_data.xyz -i lmsl:ft:sounding -o navd88:ft:height
 
+Waffles CLI:
+
 waffles [OPTIONS] <datalist/entry>
 
 Generate DEMs and derivatives and process datalists.
@@ -179,5 +181,46 @@ Supported datalist formats:
 
 Modules (see waffles --modules <module-name> for more info):
   surface, triangulate, cudem, nearest, num, vdatum, mbgrid, invdst, average, linear, spat-meta, coastline, uncertainty
+
+CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
+
+Fetches CLI:
+
+fetches [OPTIONS] <module[:parameter=value]* ...>
+
+Fetch geographic elevation data.
+
+General Options:
+  -R, --region		Specifies the desired region to search;
+			This can either be a GMT-style region ( -R xmin/xmax/ymin/ymax )
+			or an OGR-compatible vector file with regional polygons. 
+			If a vector file is supplied it will search each region found therein.
+  -W, --where		restricted_where: Attribute query (like SQL WHERE)
+  -E, --increment	Blockmedian/mean CELL-SIZE in native units or GMT-style increments.
+  -Z, --z-region		Restrict data processing to records that fall within the z-region
+			Use '-' to indicate no bounding range; e.g. -Z-/0 will restrict processing to data
+			records whose z value is below zero.
+  -F, --fg-config	A fetches config JSON file. If supplied, will overwrite all other options.
+			generate a fetches_config JSON file using the --config flag.
+
+  -l, --list		Return a list of fetch URLs in the given region.
+  -d, --dump		Dump the XYZ elevation data in WGS84 to stdout.
+  -p, --process		Process fetched elevation data to ASCII XYZ format in WGS84.
+			If -E or -Z are set, processing will use those switches in data processing.
+  -u, --update		Update the Fetches Remote Elevation Datalist.
+  -i, --index		Print the fetch FRED results in the given region.
+
+  --help		Print the usage text
+  --config		Save the fetches config JSON
+  --version		Print the version information
+
+Modules (see fetches --modules <module-name> for more info):
+  dc nos charts ncei_thredds usace tnm gmrt mb mar_grav srtm_plus emodnet ngs chs hrdem
+
+Examples:
+ % fetches -R -90.75/-88.1/28.7/31.25 nos --where "Date > 2000"
+ % fetches -R region.shp -p dc nos:datatype=bag charts:datatype=enc
+ % fetches -R region.shp dc:datatype=lidar -l > dc_lidar.urls
+ % fetches -R -89.75/-89.5/30.25/30.5 tnm:ds=4:formats=IMG gmrt:res=max:fmt=geotiff
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
