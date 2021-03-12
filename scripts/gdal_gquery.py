@@ -28,7 +28,11 @@ import os
 import sys
 import gdal
 
+## ==============================================
+## import geomods
+## ==============================================
 from geomods import utils
+from geomods import regions
 from geomods import gdalfun
 
 _version = '0.0.2'
@@ -90,7 +94,7 @@ if __name__ == '__main__':
 
     ds = gdal.Open(i_ds)
     ds_config = gdalfun.gdal_gather_infos(ds)
-    ds_region = gdalfun.gdal_gt2region(ds_config)
+    ds_region = regions.gt2region(ds_config)
     ds_inc = ds_config['geoT'][1]
 
     gp = gdalfun.gdal_parse(ds)

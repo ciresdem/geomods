@@ -26,10 +26,18 @@
 
 import sys
 import os
-import numpy as np
-import gdal
 
+## ==============================================
+## import gdal/numpy
+## ==============================================
+import gdal
+import numpy as np
+
+## ==============================================
+## import geomods
+## ==============================================
 from geomods import utils
+from geomods import regions
 from geomods import gdalfun
 
 _version = '0.1.9'
@@ -66,7 +74,7 @@ def createNullCopy(srcfile, outfile, nodata, outformat, verbose, overwrite):
     
 def createGrid(outfile, extent, cellsize, nodata, outformat, verbose, overwrite):
     '''create a nodata grid'''
-    xcount, ycount, gt = gdalfun.gdal_region2gt(extent, cellsize)
+    xcount, ycount, gt = regions.region2gt(extent, cellsize)
     ds_config = gdalfun.gdal_set_infos(xcount, ycount, xcount * ycount, gt, gdalfun.gdal_sr_wkt(4326), gdal.GDT_Float32, nodata, outformat)
     nullArray = np.zeros( (ycount, xcount) )
     nullArray[nullArray==0]=nodata
