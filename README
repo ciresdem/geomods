@@ -21,16 +21,20 @@ External Dependencies for DEM generation and data processing:
 
 * required
 
-Install via git:
+Install via git and pip:
+
+ % git clone https:/github.com/ciresdem/geomods.git
+ % cd geomods
+ % pip install --user --upgrade ./
+
+Install via git and setup.py:
 
  % git clone https://github.com/ciresdem/geomods.git
  % cd geomods
  % python setup.py build
  % sudo python setup.py install --record geomods.install
 
-Install via pip:
-
-Install via zip:
+Install via zip and setup.py:
 
  % wget https://github.com/ciresdem/geomods/archive/master.zip
  % unzip master.zip
@@ -38,12 +42,12 @@ Install via zip:
  % python setup.py build
  % sudo python setup.py install --record geomods.install
 
-Uninstall:
+Uninstall from setup.py:
  
  % sudo python setup.py clean
  % sudo xargs rm -r < geomods.install
 
-Update:
+Update with setup.py:
 
  % git pull
  % sudo python setup.py clean
@@ -75,7 +79,7 @@ Console Scripts:
 Examples:
 
  - fetch and process lidar data from NOAA's Digital Coast for all the regions found in tiles.shp 
-   % fetches dc -R tiles.shp -p -f 'Datatype LIKE "lidar%"'
+   % fetches dc -R tiles.shp -p --where 'Datatype LIKE "lidar%"'
 
  - list all the NOS hydrographic data urls in the given region
    % fetches nos -R -90/-89/29/30 -l > nos.urls
@@ -90,7 +94,7 @@ Examples:
    % waffles -R -90/-89/29/30 -E 0.00083333 -M vdatum:ivert=navd88:o_vert=mhw
 
  - generate a 'bathymetry surface' DEM:
-   % waffles -R region.shp -E 1s -M surface:upper_limit=0 -C coast_ply.shp:invert=True
+   % waffles -R region.shp -E 1s:.3333333s -X6 -M surface:upper_limit=0 -C coast_ply.shp:invert=True
 
  - generate a nearest-neighbor DEM using all the .tif grid files in the current directory:
    % waffles -R region.shp -E1s -Mnearneighbor:radius=3s *.tif
@@ -124,10 +128,11 @@ General Options:
 			Available filters:
 			1: perform a Gaussian filter at -T1:<factor>.
 			2: use a Cosine Arch Filter at -T2:<dist(km)> search distance.
+			3: Spike Filter at -T3:<stand-dev. threshhold>.
 			The -T switch may be set multiple times to perform multiple filters.
 			Append :split_value=<num> to only filter values below z-value <num>.
 			e.g. -T1:10:split_value=0 to smooth bathymetry using Gaussian filter
-  -Z --z-region		Restrict data processing to records that fall within the z-region
+  -Z, --z-region		Restrict data processing to records that fall within the z-region
 			Use '-' to indicate no bounding range; e.g. -Z-/0 will restrict processing to data
 			records whose z value is below zero.
   -C, --clip		CLIP the output to the clip polygon -C<clip_ply.shp:invert=False>
@@ -146,6 +151,7 @@ General Options:
   -m, --mask		Generate a data mask raster.
   -u, --uncert		Generate an associated uncertainty grid.
   -c, --continue	Don't clobber existing files.
+  -q, --quiet		Lower verbosity to a quiet. (overrides --verbose)
 
   --help		Print the usage text
   --config		Save the waffles config JSON and major datalist
@@ -158,13 +164,14 @@ Datalists and data formats:
   `/path/to/data format weight data,meta,data`
 
 Supported datalist formats: 
+  -1	['datalist', 'mb-1']
+  -2	['zip', 'gz']
+  -4	['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs', 'hrdem', 'cudem']
   168	['xyz', 'csv', 'dat', 'ascii']
   200	['tif', 'img', 'grd', 'nc', 'vrt', 'bag']
-  400	['nos', 'dc', 'gmrt', 'srtm_cgiar', 'srtm_plus', 'mar_grav', 'charts', 'mb', 'tnm', 'emodnet', 'chs', 'hrdem']
   300	['las', 'laz']
-  -1	['datalist', 'mb-1']
 
 Modules (see waffles --modules <module-name> for more info):
-  nearest, linear, update, surface, num, coastline, invdst, spat-meta, mbgrid, average, triangulate, cudem, vdatum
+  surface, triangulate, cudem, nearest, num, vdatum, mbgrid, invdst, average, linear, spat-meta, coastline, uncertainty
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
