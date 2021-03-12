@@ -65,6 +65,7 @@ setuptools.setup(
         'scripts/gdal_gquery.py',
         'scripts/gdal_perspective.py',
         'scripts/colortable.py',
+        'scripts/hillshade.sh',
         'scripts/vdatum_cmd.py',
         'scripts/smooth_dem_bathy.py',
         'scripts/xyz_clip.py',
