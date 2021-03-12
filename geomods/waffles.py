@@ -28,10 +28,11 @@
 ## - VDatum (US/NOAA)
 ## - LASTools (Non-Free) - data processing
 ##
-## see/set `_waffles_grid_info` dictionary to run a grid, or run waffles_config()
+## run waffles_config() to generate a waffles config dictionary to run a grid with waffle()
 ##
 ## Current DEM modules:
-## surface (GMT), triangulate (GMT/GDAL), nearest (GMT/GDAL), mbgrid (MBSYSTEM), num (waffles), average (GDAL), invdst (GDAL), linear (GDAL), spat-meta, vdatum, coastline
+## surface (GMT), triangulate (GMT/GDAL), nearest (GMT/GDAL), mbgrid (MBSYSTEM), num (waffles),
+## average (GDAL), invdst (GDAL), linear (GDAL), spat-meta, vdatum, coastline, uncertainty
 ##
 ## optionally, clip, filter, buffer the resulting DEM.
 ##
@@ -41,10 +42,11 @@
 ## ~path ~format ~weight ~metadata,list ~etc
 ##
 ## a format of -1 represents a datalist
+## a format of -2 represents an archived dataset
+## a format of -4 represents a FETCHES module - e.g. `nos:datatype=bag`
 ## a format of 168 represents XYZ data
 ## a format of 200 represents GDAL data
 ## a format of 300 represents LAS/LAZ data <not implemented>
-## a format of 400 represents a FETCHES module - e.g. `nos:datatype=bag`
 ##
 ## each xyz file in a datalist should have an associated '*.inf' file for faster processing
 ##
