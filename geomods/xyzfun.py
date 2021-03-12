@@ -49,9 +49,9 @@ _xyz_config = {
     'name': '<xyz-data-stream>',
     'upper_limit': None,
     'lower_limit': None,
-    'verbose': False,
     'epsg': 4326,
     'warp': None,
+    'verbose': False,
 }
 
 #_known_delims = [',', ' ', '\t', '/', ':']
@@ -59,6 +59,7 @@ _known_delims = [',', '/', ':']
 _known_xyz_fmts = ['xyz', 'csv', 'dat', 'ascii']
 
 def xyz_line_delim(xyz):
+    '''guess a line delimiter'''
     for delim in _known_delims:
         this_xyz = xyz.split(delim)
         if len(this_xyz) > 1: return(delim)
@@ -66,9 +67,7 @@ def xyz_line_delim(xyz):
 
 def xyz_warp(xyz, dst_trans):
     '''transform the x/y using the dst_trans'''
-    
     if dst_trans is None: return(xyz)
-    #if xyz is None: return(xyz)
     point = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(xyz[0], xyz[1]))
     point.Transform(dst_trans)
     return([point.GetX(), point.GetY(), xyz[2]])
@@ -77,8 +76,14 @@ def xyz_parse_line(xyz, xyz_c = _xyz_config):
     '''parse an xyz line-string, using _xyz_config
 
     returns [x, y, z]'''
-
-    this_line = xyz.strip()
+    try:
+        this_line = xyz.strip()
+    except AttributeError as e:
+        utils.echo_error_msg('input is list, should be xyz-line: {}'.format(e))
+        return(None)
+    except Exception as e:
+        utils.echo_error_msg(e)
+        return(None)
     if xyz_c['delim'] is None:
         xyz_c['delim'] = xyz_line_delim(this_line)
     this_xyz = this_line.split(xyz_c['delim'])
@@ -94,18 +99,12 @@ def xyz_parse_line(xyz, xyz_c = _xyz_config):
    
 def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
     '''xyz file parsing generator
-    `src_xyz` is a file object or list of xyz data.
+    `src_xyz` is a file object or list/generator of xyz data.
 
-    yields each xyz line as a list [x, y, z, ...]'''
-    
+    yields each xyz line as a list [x, y, z, ...]'''    
     ln = 0
     skip = int(xyz_c['skip'])
-    xpos = xyz_c['xpos']
-    ypos = xyz_c['ypos']
-    zpos = xyz_c['zpos']
-    #verbose = xyz_c['verbose']
     pass_d = True
-    #if verbose: progress = utils._progress('parsing xyz data from {}'.format(xyz_c['name']))
     
     if xyz_c['epsg'] == xyz_c['warp'] or xyz_c['epsg'] is None: xyz_c['warp'] = None
     if xyz_c['warp'] is not None:
@@ -121,7 +120,6 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
         dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
     else: src_srs = dst_srs = dst_trans = None
     
-    #if verbose: utils.echo_msg('parsing xyz data from {}...'.format(xyz_c['name']))
     for xyz in src_xyz:
         pass_d = True
         if ln >= skip:
@@ -136,14 +134,12 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
             else: pass_d = False
             if pass_d:
                 ln += 1
-                #if verbose: progress.update()
                 yield(this_xyz)
         else: skip -= 1
     if verbose:
         if ln == 0: status = -1
         else: status = 0
         utils.echo_msg('parsed {} data records from {}'.format(ln, xyz_c['name']))
-        #progress.end(status, 'parsed {} data records from {}'.format(ln, xyz_c['name']))
 
 def xyz_dump(src_xyz, xyz_c = _xyz_config, region = None, verbose = False, dst_port = sys.stdout):
     '''dump the xyz data from the xyz datalist entry to dst_port'''    
@@ -159,8 +155,7 @@ def xyz2py(src_xyz):
 def xyz_block(src_xyz, region, inc, weights = False, verbose = False):
     '''block the src_xyz data to the mean block value
 
-    yields the xyz value for each block with data'''
-    
+    yields the xyz value for each block with data'''    
     xcount, ycount, dst_gt = gdalfun.gdal_region2gt(region, inc)
     sumArray = np.zeros((ycount, xcount))
     gdt = gdal.GDT_Float32
@@ -210,8 +205,7 @@ def xyz_line(line, dst_port = sys.stdout, encode = False):
     dst_port.write(l)
 
 def xyz_in_region_p(src_xy, src_region):
-    '''return True if point [x, y] is inside region [w, e, s, n], else False.'''
-    
+    '''return True if point [x, y] is inside region [w, e, s, n], else False.'''    
     if src_xy[0] < src_region[0]: return(False)
     elif src_xy[0] > src_region[1]: return(False)
     elif src_xy[1] < src_region[2]: return(False)
@@ -219,14 +213,12 @@ def xyz_in_region_p(src_xy, src_region):
     else: return(True)
 
 def xyz_inf(src_xyz):
-
+    '''generate and return or read and return an xyz inf file. '''
     pts = []
     xyzi = {}
     xyzi['name'] = src_xyz.name
     xyzi['numpts'] = 0
     xyzi['minmax'] = [0, 0, 0, 0, 0, 0]
-    
-    #utils.echo_msg('generating inf file for {}'.format(src_xyz.name))
     
     for i, l in enumerate(xyz_parse(src_xyz)):
         if i == 0:
@@ -269,7 +261,6 @@ def xyz_yield_entry(entry, region = None, verbose = False, z_region = None, epsg
     '''yield the xyz data from the xyz datalist entry
 
     yields [x, y, z, <w, ...>]'''
-
     xyzc = copy.deepcopy(_xyz_config)
     xyzc['name'] = entry[0]
     if z_region is not None and len(z_region) >= 2:
@@ -282,13 +273,11 @@ def xyz_yield_entry(entry, region = None, verbose = False, z_region = None, epsg
     
 def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, z_region = None):
     '''dump the xyz data from the xyz datalist entry to dst_port'''
-    
     for xyz in xyz_yield_entry(entry, region, verbose, z_region):
         xyz_line(xyz, dst_port, True, None)
 
 def gdal_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, epsg = None, z_region = None):
     '''dump the xyz data from the gdal entry to dst_port'''
-    
     for xyz in gdalfun.gdal_yield_entry(entry, region, verbose, epsg, z_region):
         xyz_line(xyz, dst_port, True)
         
