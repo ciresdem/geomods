@@ -61,6 +61,12 @@ Python Modules:
  - waffles - DEM generation and processing
  - datalists - datalist processing
  - regions - region processing
+ - xyzfun - xyz data functions
+ - gdalfun - gdal functions
+ - gmtfun - gmt functions
+ - mbsfun - mb-system functions
+ - vdatumfun - vdatum functions
+ - utils - general utilities and processing
 
 Console Scripts:
  
