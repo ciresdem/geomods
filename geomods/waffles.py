@@ -1627,7 +1627,7 @@ General Options:
 \t\t\tThe -T switch may be set multiple times to perform multiple filters.
 \t\t\tAppend :split_value=<num> to only filter values below z-value <num>.
 \t\t\te.g. -T1:10:split_value=0 to smooth bathymetry using Gaussian filter
-  -Z --z-region\t\tRestrict data processing to records that fall within the z-region
+  -Z, --z-region\t\tRestrict data processing to records that fall within the z-region
 \t\t\tUse '-' to indicate no bounding range; e.g. -Z-/0 will restrict processing to data
 \t\t\trecords whose z value is below zero.
   -C, --clip\t\tCLIP the output to the clip polygon -C<clip_ply.shp:invert=False>

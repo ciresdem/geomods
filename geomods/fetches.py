@@ -2852,12 +2852,17 @@ General Options:
 \t\t\tor an OGR-compatible vector file with regional polygons. 
 \t\t\tIf a vector file is supplied it will search each region found therein.
   -W, --where\t\trestricted_where: Attribute query (like SQL WHERE)
+  -E, --increment\tBlockmedian/mean CELL-SIZE in native units or GMT-style increments.
+  -Z, --z-region\t\tRestrict data processing to records that fall within the z-region
+\t\t\tUse '-' to indicate no bounding range; e.g. -Z-/0 will restrict processing to data
+\t\t\trecords whose z value is below zero.
   -F, --fg-config\tA fetches config JSON file. If supplied, will overwrite all other options.
 \t\t\tgenerate a fetches_config JSON file using the --config flag.
 
   -l, --list\t\tReturn a list of fetch URLs in the given region.
-  -p, --process\t\tProcess fetched elevation data to ASCII XYZ format in WGS84.
   -d, --dump\t\tDump the XYZ elevation data in WGS84 to stdout.
+  -p, --process\t\tProcess fetched elevation data to ASCII XYZ format in WGS84.
+\t\t\tIf -E or -Z are set, processing will use those switches in data processing.
   -u, --update\t\tUpdate the Fetches Remote Elevation Datalist.
   -i, --index\t\tPrint the fetch FRED results in the given region.
 
