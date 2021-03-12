@@ -30,13 +30,14 @@ _usage = '''colortable.py ({}): generate an ETOPO1 colortable
 usage: colortable.py [OPTIONS]
 
 Options:
-  -n, --min\t\tmin elevation value of colortable
-  -x, --max\t\tmax elevation value of colortable
+  -n, --min\tmin elevation value of colortable
+  -x, --max\tmax elevation value of colortable
 
   --help\tprint the usage text
+  --version\tPrint the version information
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
-'''
+'''.format(_version)
 
 trs = (-11000, -10500, -10000, -9500, -9000, -8500,
        -8000, -7500, -7000, -6500, -6000, -5500,
