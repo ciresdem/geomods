@@ -81,6 +81,7 @@ Console Scripts:
  - gdal_split.py - Split a gdal grid based on z value.
  - gdal_query.py - Query the z value of a gdal grid with x/y coordinates.
  - vdatum_cmd.py - Use NOAA's VDatum via command-line.
+ - hillshade.sh - Generate an ETOPO1 style hillshade image.
 
 Examples:
 
