@@ -88,7 +88,7 @@ Python Modules:
 Console Scripts:
 ==============================================
  
- - waffles - Generate a Digital Elevation Model.
+ - waffles - Generate a Digital Elevation Model and derivatives.
  - fetches - Fetch elevation data from various sources.
  - datalists - process and analyze datalists.
  - gdal_chunk.py - Split a gdal grid into chunks.
