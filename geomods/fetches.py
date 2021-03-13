@@ -273,7 +273,7 @@ class iso_xml:
         if polygon is not None:
             nodes = polygon.findall('.//{*}pos', namespaces = self.namespaces)
             [opoly.append([float(x) for x in node.text.split()]) for node in nodes]
-            if geom: return(gdalfun.gdal_wkt2geom(utils.create_wkt_polygon(opoly)))
+            if geom: return(regions.wkt2geom(utils.create_wkt_polygon(opoly)))
             else: return(opoly)
         else: return(None)
         
@@ -2286,7 +2286,7 @@ class hrdem():
         v_shp = None
         for v in v_shps:
             if '.shp' in v: v_shp = v
-        shp_regions = gdalfun.gdal_ogr_regions(v_shp)
+        shp_regions = regions.gdal_ogr_regions(v_shp)
         shp_region = []
         for this_region in shp_regions:
             if len(shp_region) > 0:
@@ -3011,7 +3011,7 @@ def fetches_cli(argv = sys.argv):
     if region is not None:
         try:
             these_regions = [[float(x) for x in region.split('/')]]
-        except ValueError: these_regions = gdalfun.gdal_ogr_regions(region)
+        except ValueError: these_regions = regions.gdal_ogr_regions(region)
         if len(these_regions) == 0: status = -1
         for this_region in these_regions:
             if not regions.region_valid_p(this_region): status = -1

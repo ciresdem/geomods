@@ -18,6 +18,9 @@
 ## ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ##
 ### Commentary:
+##
+## nothing in utils shall depend on other geomods modules...
+##
 ### Code:
 
 import os
@@ -30,6 +33,9 @@ import zipfile
 import gzip
 import datetime
 
+## ==============================================
+## import gdal/numpy
+## ==============================================
 import ogr
 import gdal
 import numpy as np
@@ -40,22 +46,46 @@ import numpy as np
 _version = '0.4.1'
 
 def inc2str_inc(inc):
-    '''convert a WGS84 geographic increment to a str_inc (e.g. 0.0000925 ==> `13`)
+    """convert a WGS84 geographic increment to a str_inc (e.g. 0.0000925 ==> `13`)
 
-    returns a str representation of float(inc)'''
+    Args:
+      inc (float): a gridding increment
+
+    Returns:
+      str: a str representation of float(inc)
+    """
+    
     import fractions
     return(str(fractions.Fraction(str(inc * 3600)).limit_denominator(10)).replace('/', ''))
 
 def this_date():
-    '''return the current date'''
+    """get current data
+
+    Returns:
+      str: the current date
+    """
+    
     return(datetime.datetime.now().strftime('%Y%m%d%H%M%S'))
 
 def this_year():
-    '''return the current year'''
+    """get the current year
+    
+    Returns
+      str: the current year
+    """
+    
     return(datetime.datetime.now().strftime('%Y'))
 
 def rm_f(f_str):
-    '''os.remove f_str, pass if error'''
+    """os.remove f_str, pass if error
+
+    Args:
+      f_str (str): a pathname string
+
+    Returns:
+      int: 0
+    """
+    
     try:
         if os.path.exists(f_str):
             os.remove(f_str)
@@ -63,7 +93,15 @@ def rm_f(f_str):
     return(0)
         
 def remove_glob(*args):
-    '''glob `glob_str` and os.remove results, pass if error'''
+    """glob `glob_str` and os.remove results, pass if error
+    
+    Args:
+      *args (str): any number of pathname or dirname strings
+
+    Returns:
+      int: 0
+    """
+    
     for glob_str in args:
         try:
             globs = glob.glob(glob_str)
@@ -76,21 +114,45 @@ def remove_glob(*args):
     return(0)
 
 def base_name(instr, extension):
-    '''Return the basename of a file-string'''
+    """get the filename basename
+
+    Args:
+      instr (str): the pathname string
+      extension (str): the pathname extension
+
+    Returns:
+      str: the basename of a file-string
+    """
+    
     return(instr[:-len(extension)])
 
 def args2dict(args, dict_args = {}):
-    '''convert list of arg strings to dict.
-    args are a list of ['key=val'] pairs
+    """convert list of arg strings to dict.
+    
+    Args:
+      args (list): a list of ['key=val'] pairs
+      dict_args (dict): a dict to append to
 
-    returns a dictionary of the key/values'''
+    Returns:
+      dict: a dictionary of the key/values
+    """
+    
     for arg in args:
         p_arg = arg.split('=')
         dict_args[p_arg[0]] = False if p_arg[1].lower() == 'false' else True if p_arg[1].lower() == 'true' else None if p_arg[1].lower() == 'none' else p_arg[1]
     return(dict_args)
 
 def int_or(val, or_val = None):
-    '''returns val as int otherwise returns or_val'''
+    """return val if val is integer
+
+    Args:
+      val (?): input value to test
+      or_val (?): value to return if val is not an int
+
+    Returns:
+      ?: val as int otherwise returns or_val
+    """
+    
     try:
         return(int(val))
     except: return(or_val)
@@ -99,7 +161,15 @@ def int_or(val, or_val = None):
 ## Archives (zip/gzip/etc.)
 ## ==============================================
 def _clean_zips(zip_files):
-    '''remove all files\directories in `zip_files`'''
+    """remove all files\directories in `zip_files`
+    
+    Args:
+      zip_files (list): a list of files pathname strings.
+
+    Returns:
+      int: 0
+    """
+    
     for i in zip_files:
         if os.path.isfile(i):
             os.remove(i)
@@ -113,9 +183,15 @@ def _clean_zips(zip_files):
     return(0)
 
 def unzip(zip_file):
-    '''unzip (extract) `zip_file`
+    """unzip (extract) `zip_file`
 
-    return a list of extracted file names.'''
+    Args:
+      zip_file (str): a zip file pathname string
+
+    Returns:
+      list: a list of extracted file names.
+    """
+    
     zip_ref = zipfile.ZipFile(zip_file)
     zip_files = zip_ref.namelist()
     zip_ref.extractall()
@@ -123,9 +199,15 @@ def unzip(zip_file):
     return(zip_files)
 
 def gunzip(gz_file):
-    '''gunzip `gz_file`
+    """gunzip `gz_file`
 
-    return the extracted file name.'''
+    Args:
+      gz_file (str): a gzip file pathname string.
+
+    Returns:
+      str: the extracted file name.
+    """
+    
     if os.path.exists(gz_file):
         gz_split = gz_file.split('.')[:-1]
         guz_file = '{}.{}'.format(gz_split[0], gz_split[1])
@@ -142,7 +224,16 @@ def gunzip(gz_file):
     return(guz_file)
 
 def p_unzip(src_file, exts = None):
-    '''unzip/gunzip src_file based on `exts`'''
+    """unzip/gunzip src_file based on `exts`
+    
+    Args:
+      src_file (str): a zip/gzip filename string
+      exts (list): a list of extensions to extract
+
+    Returns:
+      list: a list of the extracted files
+    """
+    
     src_procs = []
     if src_file.split('.')[-1].lower() == 'zip':
         with zipfile.ZipFile(src_file) as z:
@@ -171,9 +262,18 @@ def p_unzip(src_file, exts = None):
     return(src_procs)
     
 def procs_unzip(src_file, exts):
-    '''unzip/gunzip src_file based on `exts`
+    """unzip/gunzip src_file based on `exts`
+
     this function is depreciated, use p_unzip instead.
-    return the file associated with `exts`'''
+
+    Args:
+      src_file (str): a zip/gzip filename string
+      exts (list): a list of extensions to extract
+
+    Returns:
+      list: a list of the extracted files
+    """
+    
     zips = []
     src_proc = None
     if src_file.split('.')[-1].lower() == 'zip':
@@ -206,17 +306,37 @@ def procs_unzip(src_file, exts):
 ## spatial and raster functions
 ## ==============================================
 def euc_dst(pnt0, pnt1):
-    '''return the distance between pnt0 and pnt1,
+    """return the distance between pnt0 and pnt1,
     using the euclidean formula.
-    `pnts` are geographic and result is in meters.'''
+
+    `pnts` are geographic and result is in meters.
+
+    Args:
+      pnt0 (list): an xyz data list
+      pnt1 (list): an xyz data list
+
+    Returns:
+      float: the distance beteween pnt0 and pnt1
+    """
+    
     rad_m = 637100
     distance = math.sqrt(sum([(a - b) ** 2 for a, b in zip(pnt0, pnt1)]))
     return(rad_m * distance)
     
 def hav_dst(pnt0, pnt1):
-    '''return the distance between pnt0 and pnt1,
+    """return the distance between pnt0 and pnt1,
     using the haversine formula.
-    `pnts` are geographic and result is in meters.'''
+
+    `pnts` are geographic and result is in meters.
+
+    Args:
+      pnt0 (list): an xyz data list
+      pnt1 (list): an xyz data list
+
+    Returns:
+      float: the distance beteween pnt0 and pnt1
+    """
+    
     x0 = float(pnt0[0])
     y0 = float(pnt0[1])
     x1 = float(pnt1[0])
@@ -229,15 +349,37 @@ def hav_dst(pnt0, pnt1):
     return(rad_m * c)
     
 def _geo2pixel(geo_x, geo_y, geoTransform):
-   '''convert a geographic x,y value to a pixel location of geoTransform'''
-   if geoTransform[2] + geoTransform[4] == 0:
-       pixel_x = ((geo_x - geoTransform[0]) / geoTransform[1]) + .5
-       pixel_y = ((geo_y - geoTransform[3]) / geoTransform[5]) + .5
-   else: pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt(geoTransform))
-   return(int(pixel_x), int(pixel_y))
+    """convert a geographic x,y value to a pixel location of geoTransform
+
+    Args:
+      geo_x (float): geographic x coordinate
+      geo_y (float): geographic y coordinate
+      geoTransform (list): a geo-transform list describing a raster
+
+    Returns:
+      list: a list of the pixel values [pixel-x, pixel-y]
+    """
+    
+    if geoTransform[2] + geoTransform[4] == 0:
+        pixel_x = ((geo_x - geoTransform[0]) / geoTransform[1]) + .5
+        pixel_y = ((geo_y - geoTransform[3]) / geoTransform[5]) + .5
+    else: pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt(geoTransform))
+    return(int(pixel_x), int(pixel_y))
 
 def _geo2pixel_affine(geo_x, geo_y, geoTransform):
-    '''convert a geographic x,y value to a pixel location of geoTransform'''
+    """convert a geographic x,y value to a pixel location of geoTransform
+
+    note: use _geo2pixel instead
+
+    Args:
+      geo_x (float): geographic x coordinate
+      geo_y (float): geographic y coordinate
+      geoTransform (list): a geo-transform list describing a raster
+
+    Returns:
+      list: a list of the pixel values [pixel-x, pixel-y]
+    """
+    
     import affine
     forward_transform = affine.Affine.from_gdal(*geoTransform)
     reverse_transform = ~forward_transform
@@ -246,19 +388,47 @@ def _geo2pixel_affine(geo_x, geo_y, geoTransform):
     return(pixel_x, pixel_y)
 
 def _pixel2geo(pixel_x, pixel_y, geoTransform):
-    '''convert a pixel location to geographic coordinates given geoTransform'''
+    """convert a pixel location to geographic coordinates given geoTransform
+
+    Args:
+      pixel_x (int): the x pixel value
+      pixel_y (int): the y pixel value
+      geoTransform (list): a geo-transform list describing a raster
+    
+    Returns:
+      list: [geographic-x, geographic-y]
+    """
+    
     geo_x, geo_y = _apply_gt(pixel_x, pixel_y, geoTransform)
     return(geo_x, geo_y)
 
 def _apply_gt(in_x, in_y, geoTransform):
-    '''apply geotransform to in_x,in_y'''
+    """apply geotransform to in_x,in_y
+    
+    Args:
+      in_x (int): the x pixel value
+      in_y (int): the y pixel value
+      geoTransform (list): a geo-transform list describing a raster
+
+    Returns:
+      list: [geographic-x, geographic-y]
+    """
+    
     out_x = geoTransform[0] + int(in_x + 0.5) * geoTransform[1] + int(in_y + 0.5) * geoTransform[2]
     out_y = geoTransform[3] + int(in_x + 0.5) * geoTransform[4] + int(in_y + 0.5) * geoTransform[5]
 
     return(out_x, out_y)
 
 def _invert_gt(geoTransform):
-    '''invert the geotransform'''
+    """invert the geotransform
+    
+    Args:
+      geoTransform (list): a geo-transform list describing a raster
+
+    Returns:
+      list: a geo-transform list describing a raster
+    """
+    
     det = geoTransform[1] * geoTransform[5] - geoTransform[2] * geoTransform[4]
     if abs(det) < 0.000000000000001: return
     invDet = 1.0 / det
@@ -275,7 +445,14 @@ def _invert_gt(geoTransform):
 ## error plots and calculations
 ## ==============================================
 def err_fit_plot(xdata, ydata, out, fitfunc, dst_name = 'unc', xa = 'distance'):
-    '''plot a best fit plot'''
+    """plot a best fit plot with matplotlib
+    
+    Args:
+      xdata (list): list of x-axis data
+      ydata (list): list of y-axis data
+
+    """
+    
     try:
         import matplotlib
         matplotlib.use('Agg')
@@ -293,7 +470,10 @@ def err_fit_plot(xdata, ydata, out, fitfunc, dst_name = 'unc', xa = 'distance'):
     except: echo_error_msg('you need to install matplotlib to run uncertainty plots...')
 
 def err_scatter_plot(error_arr, dist_arr, dst_name = 'unc', xa = 'distance'):
-    '''plot a scatter plot'''
+    """plot a scatter plot with matplotlib
+    
+    """
+    
     try:
         import matplotlib
         matplotlib.use('Agg')

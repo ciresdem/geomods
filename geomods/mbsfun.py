@@ -41,14 +41,29 @@ from geomods import gdalfun
 ## these functions and commands.
 ## ==============================================
 def mb_inf(src_xyz, src_fmt = 168):
-    '''generate an info (.inf) file from a src_xyz file using MBSystem.
+    """generate an info (.inf) file from a src_xyz file using MBSystem.
 
-    return mb_inf_parse(inf_file)'''
+    Args:
+      src_xyz (port): an open xyz port or generator
+      src_fmt (int): the datalists format of the source data
+
+    Returns:
+      dict: xyz infos dictionary mb_inf_parse(inf_file)
+    """
 
     utils.run_cmd('mbdatalist -O -F{} -I{}'.format(src_fmt, src_xyz.name), verbose = False)
     return(mb_inf_parse('{}.inf'.format(src_xyz.name)))
 
 def mb_inf_data_format(src_inf):
+    """extract the data format from the mbsystem inf file.
+    
+    Args:
+      stc_inf (str): the source mbsystem .inf file pathname
+
+    Returns:
+      str: the mbsystem datalist format number
+    """
+    
     with open(src_inf) as iob:
         for il in iob:
             til = il.split()
@@ -56,8 +71,16 @@ def mb_inf_data_format(src_inf):
                 if til[0] == 'MBIO':
                     return(til[4])
                     
-
 def mb_inf_parse(src_inf):
+    """parse an mbsystem .inf file
+
+    Args:
+      stc_inf (str): the source mbsystem .inf file pathname
+
+    Returns:
+      dict: xyz infos dictionary
+    """
+    
     xyzi = {'name': src_inf, 'numpts': 0, 'minmax': [0,0,0,0,0,0], 'wkt': regions.region2wkt([0,0,0,0,0,0])}
     dims = []
     this_row = 0
@@ -118,4 +141,5 @@ def mb_inf_parse(src_inf):
     
     xyzi['wkt'] = wkt
     return(xyzi)
+
 ### End

@@ -64,26 +64,50 @@ _xyz_config = {
 _known_delims = [',', '/', ':']
 _known_xyz_fmts = ['xyz', 'csv', 'dat', 'ascii']
 
-def xyz_line_delim(xyz):
-    '''guess a line delimiter'''
+def xyz_line_delim(xyz_line):
+    """guess a line delimiter
+
+    Args:
+      xyz_line (str): a string representing delimited data.
+    
+    Returns:
+      str: delimiter (or None)
+    """
+    
     for delim in _known_delims:
-        this_xyz = xyz.split(delim)
+        this_xyz = xyz_line.split(delim)
         if len(this_xyz) > 1: return(delim)
     return(None)
 
 def xyz_warp(xyz, dst_trans):
-    '''transform the x/y using the dst_trans'''
+    """transform the x/y using the dst_trans
+
+    Args:
+      xyz (list): xyz data
+      dst_trans (srs-trans): srs transformation object
+
+    Returns:
+      list: xyz data; [x, y, z]
+    """
+    
     if dst_trans is None: return(xyz)
     point = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(xyz[0], xyz[1]))
     point.Transform(dst_trans)
     return([point.GetX(), point.GetY(), xyz[2]])
 
-def xyz_parse_line(xyz, xyz_c = _xyz_config):
-    '''parse an xyz line-string, using _xyz_config
+def xyz_parse_line(xyz_line, xyz_c = _xyz_config):
+    """parse an xyz line-string, using _xyz_config
 
-    returns [x, y, z]'''
+    Args:
+      xyz_line (str): a string representing delimited data.
+      xyz_c (dict): xyz config dictionary
+
+    Returns:
+      list: xyz data; [x, y, z]
+    """
+    
     try:
-        this_line = xyz.strip()
+        this_line = xyz_line.strip()
     except AttributeError as e:
         utils.echo_error_msg('input is list, should be xyz-line: {}'.format(e))
         return(None)
@@ -94,7 +118,9 @@ def xyz_parse_line(xyz, xyz_c = _xyz_config):
         xyz_c['delim'] = xyz_line_delim(this_line)
     this_xyz = this_line.split(xyz_c['delim'])
     try:
-        o_xyz = [float(this_xyz[xyz_c['xpos']]) + float(xyz_c['x-off']), float(this_xyz[xyz_c['ypos']]), float(this_xyz[xyz_c['zpos']]) * float(xyz_c['z-scale'])]
+        o_xyz = [float(this_xyz[xyz_c['xpos']]) + float(xyz_c['x-off']),
+                 float(this_xyz[xyz_c['ypos']]),
+                 float(this_xyz[xyz_c['zpos']]) * float(xyz_c['z-scale'])]
     except IndexError as e:
         if xyz_c['verbose']: utils.echo_error_msg(e)
         return(None)
@@ -104,10 +130,18 @@ def xyz_parse_line(xyz, xyz_c = _xyz_config):
     return(o_xyz)
    
 def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
-    '''xyz file parsing generator
-    `src_xyz` is a file object or list/generator of xyz data.
+    """xyz file parsing generator
 
-    yields each xyz line as a list [x, y, z, ...]'''    
+    Args:
+      src_xyz (generataor): list/generator of xyz data
+      xyz_c (dict): xyz config dictionary
+      region (list): a `region` list [xmin, xmax, ymin, ymax]
+      verbose (bool): increase verbosity
+
+    Yields:
+      list: xyz data [x, y, z, ...]
+    """
+    
     ln = 0
     skip = int(xyz_c['skip'])
     pass_d = True
@@ -136,7 +170,8 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
                 if region is not None:
                     if not xyz_in_region_p(this_xyz, region): pass_d = False
                 if xyz_c['upper_limit'] is not None or xyz_c['lower_limit'] is not None:
-                    if not regions.z_pass(this_xyz[2], upper_limit = xyz_c['upper_limit'], lower_limit = xyz_c['lower_limit']): pass_d = False
+                    if not regions.z_pass(this_xyz[2], upper_limit = xyz_c['upper_limit'], lower_limit = xyz_c['lower_limit']):
+                        pass_d = False
             else: pass_d = False
             if pass_d:
                 ln += 1
@@ -148,19 +183,46 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
         utils.echo_msg('parsed {} data records from {}'.format(ln, xyz_c['name']))
 
 def xyz_dump(src_xyz, xyz_c = _xyz_config, region = None, verbose = False, dst_port = sys.stdout):
-    '''dump the xyz data from the xyz datalist entry to dst_port'''    
+    """dump the xyz data from the xyz datalist entry to dst_port
+
+    Args:
+      src_xyz (generataor): list/generator of xyz data
+      xyz_c (dict): xyz config dictionary
+      region (list): a `region` list [xmin, xmax, ymin, ymax]
+      verbose (bool): increase verbosity    
+      dst_port (port): an open destination port
+    """
+    
     for xyz in xyz_parse(src_xyz, xyz_c, region, verbose):
         xyz_line(xyz, dst_port, True)
         
 def xyz2py(src_xyz):
-    '''return src_xyz as a python list'''
+    """return src_xyz as a python list
+
+    Args:
+      src_xyz (generataor): list/generator of xyz data
+
+    Returns:
+      list: list of xyz data
+    """
+    
     xyzpy = []
     return([xyzpy.append(xyz) for xyz in xyz_parse(src_xyz)])
 
 def xyz_block(src_xyz, region, inc, weights = False, verbose = False):
-    '''block the src_xyz data to the mean block value
+    """block the src_xyz data to the mean block value
 
-    yields the xyz value for each block with data'''    
+    Args:
+      src_xyz (generataor): list/generator of xyz data
+      region (list): a `region` list [xmin, xmax, ymin, ymax]
+      inc (float): blocking increment, in native units
+      weights (bool): block using weights
+      verbose (bool): increase verbosity    
+
+    Yields:
+      list: xyz data for each block with data
+    """
+    
     xcount, ycount, dst_gt = regions.region2gt(region, inc)
     sumArray = np.zeros((ycount, xcount))
     gdt = gdal.GDT_Float32
@@ -200,25 +262,51 @@ def xyz_block(src_xyz, region, inc, weights = False, verbose = False):
             if z != -9999:
                 yield([geo_x, geo_y, z])
     
-def xyz_line(line, dst_port = sys.stdout, encode = False):
-    '''write "xyz" `line` to `dst_port`
-    `line` should be a list of xyz values [x, y, z, ...].'''
+def xyz_line(xyz_line, dst_port = sys.stdout, encode = False):
+    """write "xyz" `line` to `dst_port`
+    `line` should be a list of xyz values [x, y, z, ...].
+    
+    Args:
+      xyz_line (str): a string representing delimited data.
+      dst_port (port): an open destination port
+      encode (bool): encode the output
+        sys.stdout, etc prefer encoded data, while
+        files usually like unencoded...
+    """
+    
     delim = _xyz_config['delim'] if _xyz_config['delim'] is not None else ' '
     
-    l = '{}\n'.format(delim.join([str(x) for x in line]))
+    l = '{}\n'.format(delim.join([str(x) for x in xyz_line]))
     if encode: l = l.encode('utf-8')
     dst_port.write(l)
 
-def xyz_in_region_p(src_xy, src_region):
-    '''return True if point [x, y] is inside region [w, e, s, n], else False.'''    
-    if src_xy[0] < src_region[0]: return(False)
-    elif src_xy[0] > src_region[1]: return(False)
-    elif src_xy[1] < src_region[2]: return(False)
-    elif src_xy[1] > src_region[3]: return(False)
+def xyz_in_region_p(xyz, region):
+    """check if xyz point in inside the given region
+
+    Args:
+      xyz (list): an xyz data list
+      region (list): a `region` list [xmin, xmax, ymin, ymax]
+
+    Returns:
+      bool: True if xyz point inside region else False
+    """
+    
+    if xyz[0] < region[0]: return(False)
+    elif xyz[0] > region[1]: return(False)
+    elif xyz[1] < region[2]: return(False)
+    elif xyz[1] > region[3]: return(False)
     else: return(True)
 
 def xyz_inf(src_xyz):
-    '''generate and return or read and return an xyz inf file. '''
+    """generate and return or read and return an xyz inf file.
+
+    Args:
+      src_xyz (generataor): list/generator of xyz data
+
+    Returns:
+      dict: an xyz infos dictionary
+    """
+    
     pts = []
     xyzi = {}
     xyzi['name'] = src_xyz.name
@@ -252,9 +340,15 @@ def xyz_inf(src_xyz):
     return(xyzi)
             
 def xyz_inf_entry(entry):
-    '''find the region of the xyz datalist entry
+    """find the region of the xyz datalist entry.
     
-    returns the region [xmin, xmax, ymin, ymax, zmin, zmax] of the xyz entry'''
+    Args:
+      entry (list): a datalist entry [path, fmt, weight, ...]
+
+    Returns:
+      list: the region [xmin, xmax, ymin, ymax, zmin, zmax] of the xyz entry
+    """
+    
     with open(entry[0]) as infile:
         try:
             minmax = mbsfun.mb_inf(infile)
@@ -262,9 +356,19 @@ def xyz_inf_entry(entry):
     return(minmax)        
 
 def xyz_yield_entry(entry, region = None, verbose = False, z_region = None, epsg = None):
-    '''yield the xyz data from the xyz datalist entry
+    """yield the xyz data from the xyz datalist entry
 
-    yields [x, y, z, <w, ...>]'''
+    Args:
+      entry (list): a datalist entry [path, fmt, weight, ...]
+      region (list): a `region` list [xmin, xmax, ymin, ymax]
+      verbose (bool): increase verbosity
+      z_region (str): 'min-z/max-z'
+      epsg (int): an output EPSG for xyz data
+
+    Yields:
+      list: xyz data list [x, y, z, <w, ...>]
+    """
+    
     xyzc = copy.deepcopy(_xyz_config)
     xyzc['name'] = entry[0]
     if z_region is not None and len(z_region) >= 2:
@@ -275,8 +379,17 @@ def xyz_yield_entry(entry, region = None, verbose = False, z_region = None, epsg
         for line in xyz_parse(infile, xyz_c = xyzc, region = region, verbose = verbose):
             yield(line + [entry[2]] if entry[2] is not None else line)
     
-def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, z_region = None):
-    '''dump the xyz data from the xyz datalist entry to dst_port'''
-    for xyz in xyz_yield_entry(entry, region, verbose, z_region):
+def xyz_dump_entry(entry, dst_port = sys.stdout, region = None, verbose = False, z_region = None, epsg = None):
+    """dump the xyz data from the xyz datalist entry to dst_port
+
+    Args:
+      entry (list): a datalist entry [path, fmt, weight, ...]
+      region (list): a `region` list [xmin, xmax, ymin, ymax]
+      verbose (bool): increase verbosity
+      z_region (str): 'min-z/max-z'
+      epsg (int): an output EPSG for xyz data
+    """
+    
+    for xyz in xyz_yield_entry(entry, region, verbose, z_region, epsg):
         xyz_line(xyz, dst_port, True, None)        
 ### End
