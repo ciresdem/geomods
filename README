@@ -2,7 +2,9 @@
 
 Geomods is a set of Python modules and console scripts for utilizing elevation data and Digital Elevation Models.
 
+==============================================
 Python Dependencies:
+==============================================
 
  - GDAL *
  - numpy *
@@ -10,8 +12,10 @@ Python Dependencies:
  - lxml *
  - requests *
  - matplotlib
- 
+
+==============================================
 External Dependencies for DEM generation and data processing:
+==============================================
 
  - GDAL *
  - GMT
@@ -21,20 +25,26 @@ External Dependencies for DEM generation and data processing:
 
 * required
 
+==============================================
 Install via git and pip:
+==============================================
 
  % git clone https:/github.com/ciresdem/geomods.git
  % cd geomods
  % pip install --user --upgrade ./
 
+==============================================
 Install via git and setup.py:
+==============================================
 
  % git clone https://github.com/ciresdem/geomods.git
  % cd geomods
  % python setup.py build
  % sudo python setup.py install --record geomods.install
 
+==============================================
 Install via zip and setup.py:
+==============================================
 
  % wget https://github.com/ciresdem/geomods/archive/master.zip
  % unzip master.zip
@@ -42,12 +52,16 @@ Install via zip and setup.py:
  % python setup.py build
  % sudo python setup.py install --record geomods.install
 
+==============================================
 Uninstall from setup.py:
+==============================================
  
  % sudo python setup.py clean
  % sudo xargs rm -r < geomods.install
 
+==============================================
 Update with setup.py:
+==============================================
 
  % git pull
  % sudo python setup.py clean
@@ -55,7 +69,9 @@ Update with setup.py:
  % python setup.py build
  % sudo python setup.py install --record geomods.install
 
+==============================================
 Python Modules:
+==============================================
 
  - fetches - Data fetching
  - waffles - DEM generation and processing
@@ -68,7 +84,9 @@ Python Modules:
  - vdatumfun - vdatum functions
  - utils - general utilities and processing
 
+==============================================
 Console Scripts:
+==============================================
  
  - waffles - Generate a Digital Elevation Model.
  - fetches - Fetch elevation data from various sources.
@@ -83,7 +101,9 @@ Console Scripts:
  - vdatum_cmd.py - Use NOAA's VDatum via command-line.
  - hillshade.sh - Generate an ETOPO1 style hillshade image.
 
+==============================================
 Examples:
+==============================================
 
  - fetch and process lidar data from NOAA's Digital Coast for all the regions found in tiles.shp 
    % fetches dc -R tiles.shp -p --where 'Datatype LIKE "lidar%"'
@@ -112,7 +132,9 @@ Examples:
  - transform the vertical datum of an xyz data file:
    % vdatum_cmd.py elev_data.xyz -i lmsl:ft:sounding -o navd88:ft:height
 
+==============================================
 Waffles CLI:
+==============================================
 
 waffles [OPTIONS] <datalist/entry>
 
@@ -185,7 +207,9 @@ Modules (see waffles --modules <module-name> for more info):
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
 
+==============================================
 Fetches CLI:
+==============================================
 
 fetches [OPTIONS] <module[:parameter=value]* ...>
 
