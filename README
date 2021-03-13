@@ -205,8 +205,6 @@ Supported datalist formats:
 Modules (see waffles --modules <module-name> for more info):
   surface, triangulate, cudem, nearest, num, vdatum, mbgrid, invdst, average, linear, spat-meta, coastline, uncertainty
 
-CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
-
 ==============================================
 Fetches CLI:
 ==============================================
@@ -248,4 +246,3 @@ Examples:
  % fetches -R region.shp dc:datatype=lidar -l > dc_lidar.urls
  % fetches -R -89.75/-89.5/30.25/30.5 tnm:ds=4:formats=IMG gmrt:res=max:fmt=geotiff
 
-CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
