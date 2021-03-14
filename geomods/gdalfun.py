@@ -18,7 +18,7 @@
 ## ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 ##
 ### Commentary:
-## General GDAL functions and processing
+## GDAL Wrappers and Functions - gdalfun.py
 ##
 ### Code:
 
@@ -40,32 +40,10 @@ import numpy as np
 from geomods import xyzfun
 from geomods import utils
 
-## ==============================================
-## GDAL Wrappers and Functions - gdalfun.py
-## ==============================================
 gdal.PushErrorHandler('CPLQuietErrorHandler')
 gdal.UseExceptions()
 _gdal_progress = gdal.TermProgress #crashes on osgeo4w
 _gdal_progress_nocb = gdal.TermProgress_nocb
-
-def gdal_fext(src_drv_name):
-    '''find the common file extention given a GDAL driver name
-    older versions of gdal can't do this, so fallback to known standards.
-
-    returns list of known file extentions or None'''    
-    fexts = None
-    try:
-        drv = gdal.GetDriverByName(src_drv_name)
-        if drv.GetMetadataItem(gdal.DCAP_RASTER): fexts = drv.GetMetadataItem(gdal.DMD_EXTENSIONS)
-        if fexts is not None: return(fexts.split()[0])
-        else: return(None)
-    except:
-        if src_drv_name == 'GTiff': fext = 'tif'
-        elif src_drv_name == 'HFA': fext = 'img'
-        elif src_drv_name == 'GMT': fext = 'grd'
-        elif src_drv_name.lower() == 'netcdf': fext = 'nc'
-        else: fext = 'gdal'
-        return(fext)
     
 ## ==============================================
 ## GDAL projections metadata and regions
@@ -554,7 +532,7 @@ def gdal_gdal2gdal(src_grd, dst_fmt = 'GTiff', epsg = 4326, dst_gdal = None, co 
     
     if os.path.exists(src_grd):
         if dst_gdal is None:
-            dst_gdal = '{}.{}'.format(os.path.basename(src_grd).split('.')[0], gdal_fext(dst_fmt))
+            dst_gdal = '{}.{}'.format(os.path.basename(src_grd).split('.')[0], utils.gdal_fext(dst_fmt))
         if not co:
             gdal2gdal_cmd = ('gdal_translate {} {} -f {}'.format(src_grd, dst_gdal, dst_fmt))
         else:

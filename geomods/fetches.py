@@ -1943,7 +1943,7 @@ the global and coastal oceans.'''
                     except: url_enc = urllib.parse.urlencode(opts)
                     this_url = '{}?{}'.format(url_base, url_enc)
                     url_region = [float(opts['west']), float(opts['east']), float(opts['south']), float(opts['north'])]
-                    outf = 'gmrt_{}_{}.{}'.format(opts['layer'], regions.region_format(url_region, 'fn'), gdalfun.gdal_fext(opts['format']))
+                    outf = 'gmrt_{}_{}.{}'.format(opts['layer'], regions.region_format(url_region, 'fn'), utils.gdal_fext(opts['format']))
                     yield([this_url, outf, 'gmrt'])
 
     ## ==============================================

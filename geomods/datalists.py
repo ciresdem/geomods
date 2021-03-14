@@ -478,10 +478,11 @@ def datalist2py(dl, region = None):
             with open(this_entry[0], 'r') as op:
                 for this_line in op:
                     if this_line[0] != '#' and this_line[0] != '\n' and this_line[0].rstrip() != '':
-                        for n, x in enumerate(entry2py(this_line.rstrip())):
-                            if n == 0:
-                                these_entries.append(os.path.join(this_dir, x))
-                            else: these_entries.append(x)
+                        these_entries.append([os.path.join(this_dir, x) if n == 0 else x for n,x in enumerate(entry2py(this_line.rstrip()))])
+                        # for n, x in enumerate(entry2py(this_line.rstrip())):
+                        #     if n == 0:
+                        #         these_entries.append(os.path.join(this_dir, x))
+                        #     else: these_entries.append(x)
         else: utils.echo_error_msg('could not open datalist/entry {}'.format(this_entry[0]))
                 
     else: these_entries.append(this_entry)
@@ -602,13 +603,14 @@ def datalist_yield_xyz(dl, wt = None, pass_h = _dl_pass_h, region = None, archiv
     Yields:
       list: xyz data [x, y, z, ...]
     """
-    
+
     for this_entry in datalist(dl, wt = wt, pass_h = pass_h, verbose = verbose):
         dly = datalist_yield_entry(this_entry, region, verbose = verbose, z_region = z_region, epsg = epsg)
         if archive: dly = datalist_archive_yield_entry(this_entry, dirname = 'archive', region = region,
                                                        weight = wt, verbose = verbose, z_region = z_region,
                                                        epsg = None)
-        for xyz in dly: yield(xyz)
+        for xyz in dly:
+            yield(xyz)
 
 def datalist_dump_xyz(dl, wt = None,  pass_h = _dl_pass_h,
                       region = None, archive = False, mask = False,
@@ -627,7 +629,6 @@ def datalist_dump_xyz(dl, wt = None,  pass_h = _dl_pass_h,
       z_region (list): pass data within z_region [zmin, zmax]
       epsg (int): an EPSG code to warp the data to
     """
-    
     for xyz in datalist_yield_xyz(dl, wt, pass_h, region, archive, mask, verbose, z_region, epsg):
         xyzfun.xyz_line(xyz, dst_port, verbose)
 

@@ -22,7 +22,6 @@
 ## nothing in utils shall depend on other geomods modules...
 ##
 ### Code:
-
 import os
 import sys
 import time
@@ -157,6 +156,46 @@ def int_or(val, or_val = None):
         return(int(val))
     except: return(or_val)
 
+def float_or(val, or_val = None):
+    """return val if val is integer
+
+    Args:
+      val (?): input value to test
+      or_val (?): value to return if val is not an int
+
+    Returns:
+      ?: val as int otherwise returns or_val
+    """
+    
+    try:
+        return(float(val))
+    except: return(or_val)
+
+def gdal_fext(src_drv_name):
+    """find the common file extention given a GDAL driver name
+    older versions of gdal can't do this, so fallback to known standards.
+
+    Args:
+      src_drv_name (str): a source GDAL driver name
+
+    Returns:
+      list: a list of known file extentions or None
+    """
+    
+    fexts = None
+    try:
+        drv = gdal.GetDriverByName(src_drv_name)
+        if drv.GetMetadataItem(gdal.DCAP_RASTER): fexts = drv.GetMetadataItem(gdal.DMD_EXTENSIONS)
+        if fexts is not None: return(fexts.split()[0])
+        else: return(None)
+    except:
+        if src_drv_name.lower() == 'gtiff': fext = 'tif'
+        elif src_drv_name == 'HFA': fext = 'img'
+        elif src_drv_name == 'GMT': fext = 'grd'
+        elif src_drv_name.lower() == 'netcdf': fext = 'nc'
+        else: fext = 'gdal'
+        return(fext)
+    
 ## ==============================================
 ## Archives (zip/gzip/etc.)
 ## ==============================================
@@ -441,6 +480,55 @@ def _invert_gt(geoTransform):
     outGeoTransform[3] = (-geoTransform[1] * geoTransform[3] + geoTransform[0] * geoTransform[4]) * invDet
     return(outGeoTransform)
 
+def geoms_intersect_p(geom_a, geom_b):
+    """check if OGR geometries `geom_a` and `geom_b` intersect
+
+    Args:
+      geom_a (ogr-geom): an ogr geometry
+      geom_b (ogr-geom): an ogr geometry
+
+    Returns:
+      bool: True for intersection
+    """
+    
+    if geom_a is not None and geom_b is not None:
+        if geom_a.Intersects(geom_b):
+            return(True)
+        else: return(False)
+    else: return(True)
+
+def create_wkt_polygon(coords, xpos = 1, ypos = 0):
+    """convert coords to Wkt
+
+    Args:
+      coords (list): x/y geographic coords
+      xpos (int): the position of the x value in coords
+      ypos (int): the position of the y value in corrds
+
+    Returns:
+      wkt: polygon as wkt
+    """
+    
+    ring = ogr.Geometry(ogr.wkbLinearRing)
+    for coord in coords: ring.AddPoint(coord[xpos], coord[ypos])
+    poly = ogr.Geometry(ogr.wkbPolygon)
+    poly.AddGeometry(ring)
+    poly_wkt = poly.ExportToWkt()
+    poly = None
+    return(poly_wkt)
+
+def wkt2geom(wkt):
+    """transform a wkt to an ogr geometry
+    
+    Args:
+      wkt (wkt): a wkt geometry
+
+    Returns:
+      ogr-geom: the ogr geometry
+    """
+    
+    return(ogr.CreateGeometryFromWkt(wkt))
+
 ## ==============================================
 ## error plots and calculations
 ## ==============================================
@@ -472,6 +560,10 @@ def err_fit_plot(xdata, ydata, out, fitfunc, dst_name = 'unc', xa = 'distance'):
 def err_scatter_plot(error_arr, dist_arr, dst_name = 'unc', xa = 'distance'):
     """plot a scatter plot with matplotlib
     
+    Args:
+      error_arr (array): an array of errors
+      dist_arr (array): an array of distances
+
     """
     
     try:
@@ -491,8 +583,16 @@ def err_scatter_plot(error_arr, dist_arr, dst_name = 'unc', xa = 'distance'):
     except: echo_error_msg('you need to install matplotlib to run uncertainty plots...')
 
 def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'distance'):
-    '''calculate and plot the error coefficient given err_arr which is 
-    a 2 col array with `err dist`'''
+    """calculate and plot the error coefficient given err_arr which is 
+    a 2 col array with `err dist
+    
+    Args:
+      error_arr (array): an array of errors and distances
+
+    Returns:
+      list: [coefficient-list]
+    """
+    
     from scipy import optimize
     error = err_arr[:,0]
     distance = err_arr[:,1]
@@ -510,20 +610,10 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
     ydata = np.insert(std, 0, 0)
     bins_orig=(_[1:] + _[:-1]) / 2
     xdata = np.insert(bins_orig, 0, 0)
-    #print(xdata)
     xdata[xdata - 0 < 0.0001] = 0.0001
-    #print(xdata)
     fitfunc = lambda p, x: p[0] + p[1] * (x ** p[2])
     errfunc = lambda p, x, y: y - fitfunc(p, x)
-    #f = lambda x, a, b, c: a/1+b*x**c
-    #g = lambda x, a, b, c: b/a*x**c+1/a
     out, cov, infodict, mesg, ier = optimize.leastsq(errfunc, coeff_guess, args = (xdata, ydata), full_output = True)
-    #if out[2]<0.001: out[2]=0.001
-    #try:
-    #popt, pcov = optimize.curve_fit(f, xdata, ydata, p0=optimize.curve_fit(g, xdata, 1/ydata)[0])
-    #except: popt = coeff_guess
-    #print(popt, np.sqrt(np.diag(pcov)))
-    
     try:
         err_fit_plot(xdata, ydata, out, fitfunc, dst_name, xa)
         err_scatter_plot(error, distance, dst_name, xa)
@@ -542,14 +632,21 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
 cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ['PATH'].split(os.pathsep))
 
 def run_cmd(cmd, data_fun = None, verbose = False):
-    '''Run a system command while optionally passing data.
+    """Run a system command while optionally passing data.
+
     `data_fun` should be a function to write to a file-port:
     >> data_fun = lambda p: datalist_dump(wg, dst_port = p, ...)
 
-    returns [command-output, command-return-code]'''
-    if verbose:
-        #echo_msg('running cmd: {}...'.format(cmd.rstrip()))
-        _prog = _progress('running cmd: {}...'.format(cmd.rstrip()[:20]))
+    Args:
+      cmd (str): a system command to run
+      data_fun (lambda): a lambda function taking an output port as arg.
+      verbose (bool): increase verbosity
+
+    Returns:
+      list: [command-output, command-return-code]
+    """
+    
+    if verbose: _prog = _progress('running cmd: {}...'.format(cmd.rstrip()[:20]))
     if data_fun is not None:
         pipe_stdin = subprocess.PIPE
     else: pipe_stdin = None
@@ -564,12 +661,8 @@ def run_cmd(cmd, data_fun = None, verbose = False):
     
     while p.poll() is None:
         if verbose:
-            #rl = p.stderr.readline()
             time.sleep(2)
-            #sys.stderr.write('\x1b[2K\r')
-            #sys.stderr.write(rl.decode('utf-8'))
             _prog.update()
-    #if verbose: sys.stderr.write(p.stderr.read().decode('utf-8'))
 
     out = p.stdout.read()
     if not verbose: p.stderr.close()
@@ -578,11 +671,19 @@ def run_cmd(cmd, data_fun = None, verbose = False):
     return(out, p.returncode)
 
 def yield_cmd(cmd, data_fun = None, verbose = False):
-    '''Run a system command while optionally passing data.
+    """Run a system command while optionally passing data.
+
     `data_fun` should be a function to write to a file-port:
     >> data_fun = lambda p: datalist_dump(wg, dst_port = p, ...)
 
-    returns [command-output, command-return-code]'''
+    Args:
+      cmd (str): a system command to run
+      data_fun (lambda): a lambda function taking an output port as arg.
+      verbose (bool): increase verbosity
+
+    Yields:
+      str: each line of output from the cmd
+    """
     
     if verbose: echo_msg('running cmd: {}...'.format(cmd.rstrip()))    
     if data_fun is not None:
@@ -596,19 +697,23 @@ def yield_cmd(cmd, data_fun = None, verbose = False):
         p.stdin.close()
 
     while p.poll() is None:
-        #while True:
         line = p.stdout.readline().decode('utf-8')
         if not line: break
         else: yield(line)
     line = p.stdout.read().decode('utf-8')
-    #yield(line)
     p.stdout.close()
     if verbose: echo_msg('ran cmd: {} and returned {}.'.format(cmd.rstrip(), p.returncode))
 
 def cmd_check(cmd_str, cmd_vers_str):
-    '''check system for availability of 'cmd_str' 
+    """check system for availability of 'cmd_str' 
 
-    returns the commands version or None'''
+    Args:
+      cmd_str (str): a command string to run
+      cmd_vers_str (str): a command that returns a version
+
+    Returns:
+      str: the commands version or None
+    """
     
     if cmd_exists(cmd_str): 
         cmd_vers, status = run_cmd('{}'.format(cmd_vers_str))
@@ -616,12 +721,19 @@ def cmd_check(cmd_str, cmd_vers_str):
     else: return(None)
 
 def config_check(chk_vdatum = False, verbose = False):
-    '''check for needed waffles external software.
+    """check for needed waffles external software.
+
     waffles external software: gdal, gmt, mbsystem
     also checks python version and host OS and 
     records waffles version
 
-    returns a dictionary of gathered results.'''
+    Args:
+      chk_vdatum (bool): check for vdatum
+      verbose (bool): increase verbosity
+
+    Returns:
+      dict: a dictionary of gathered results.
+    """
     
     _waff_co = {}
     py_vers = str(sys.version_info[0]),
@@ -642,27 +754,46 @@ def config_check(chk_vdatum = False, verbose = False):
 ## stderr messaging
 ## ==============================================
 def echo_warning_msg2(msg, prefix = 'waffles'):
-    '''echo warning msg to stderr using `prefix`
+    """echo warning msg to stderr using `prefix`
+
     >> echo_warning_msg2('message', 'test')
-    test: warning, message'''
+    test: warning, message
+    
+    Args:
+      msg (str): a message
+      prefix (str): a prefix for the message
+    """
     
     sys.stderr.flush()
     sys.stderr.write('\x1b[2K\r')
     sys.stderr.write('{}: \033[31m\033[1mwarining\033[m, {}\n'.format(prefix, msg))
 
 def echo_error_msg2(msg, prefix = 'waffles'):
-    '''echo error msg to stderr using `prefix`
+    """echo error msg to stderr using `prefix`
+
     >> echo_error_msg2('message', 'test')
-    test: error, message'''
+    test: error, message
+
+    Args:
+      msg (str): a message
+      prefix (str): a prefix for the message
+    """
     
     sys.stderr.flush()
     sys.stderr.write('\x1b[2K\r')
     sys.stderr.write('{}: \033[31m\033[1merror\033[m, {}\n'.format(prefix, msg))
 
 def echo_msg2(msg, prefix = 'waffles', nl = True):
-    '''echo `msg` to stderr using `prefix`
+    """echo `msg` to stderr using `prefix`
+
     >> echo_msg2('message', 'test')
-    test: message'''
+    test: message
+    
+    Args:
+      msg (str): a message
+      prefix (str): a prefix for the message
+      nl (bool): append a newline to the message
+    """
     
     sys.stderr.flush()
     sys.stderr.write('\x1b[2K\r')
@@ -685,7 +816,7 @@ echo_error_msg = lambda m: echo_error_msg2(m, prefix = os.path.basename(sys.argv
 echo_warning_msg = lambda m: echo_warning_msg2(m, prefix = os.path.basename(sys.argv[0]))
 
 class _progress:
-    '''geomods minimal progress indicator'''
+    """geomods minimal progress indicator"""
 
     def __init__(self, message = None):
         self.tw = 7
