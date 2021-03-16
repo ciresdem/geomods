@@ -1693,7 +1693,7 @@ _datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, xyz_datase
 datalists_version = '0.1.0'
 datalists_usage = '''{} ({}): DataLists IMproved; Process and generate datalists
 
-usage: {} [ -aghirvFPR [ args ] ] DATALIST ...
+usage: {} [ -hiqwPRW [ args ] ] DATALIST ...
 
 Options:
   -R, --region\t\tSpecifies the desired REGION;
