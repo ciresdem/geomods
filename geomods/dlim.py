@@ -1,4 +1,4 @@
-### dlim.py - datalists improved
+### dlim.py - DataLists IMproved
 ##
 ## Copyright (c) 2010 - 2021 CIRES Coastal DEM Team
 ##
@@ -1303,7 +1303,7 @@ class raster_parser:
 
         if self.ds_open_p:
             gt = self.src_ds.GetGeoTransform()
-            if self.region is not None:
+            if self.region is not None and self.region._valid_p():
                 self.srcwin = self.region.srcwin(gt, self.src_ds.RasterXSize, self.src_ds.RasterYSize)
             else: self.srcwin = (0, 0, self.src_ds.RasterXSize, self.src_ds.RasterYSize)
             src_band = self.src_ds.GetRasterBand(1)
@@ -1346,7 +1346,7 @@ class raster_parser:
         Yields:
           xyz: the parsed xyz data
         """
-        
+
         self._open_ds()
         out_xyz = xyz_point()
         if self.src_ds is not None:
@@ -1655,6 +1655,7 @@ class xyz_dataset:
             if self.parent != 'top-level':
                 remove_glob('{}.inf'.format(self.parent.fn))
                 self.parent.infos = {}
+            self.infos['epsg'] = self.epsg
         self.infos['format'] = self.data_format
         return(self.infos)
         
@@ -1690,7 +1691,7 @@ _datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, xyz_datase
 ## dadtalists cli
 ## ==============================================    
 datalists_version = '0.1.0'
-datalists_usage = '''{} ({}): Process and generate datalists
+datalists_usage = '''{} ({}): DataLists IMproved; Process and generate datalists
 
 usage: {} [ -aghirvFPR [ args ] ] DATALIST ...
 
@@ -1758,14 +1759,14 @@ def datalists_cli(argv = sys.argv):
             want_inf = True
         elif arg == '--list' or arg == '-l':
             want_list = True
+        elif arg == '--quiet' or arg == '-q':
+            want_verbose = False
         elif arg == '--help' or arg == '-h':
             print(datalists_usage)
             sys.exit(1)
         elif arg == '--version' or arg == '-v':
             print('{}, version {}'.format(os.path.basename(sys.argv[0]), datalists_version))
             sys.exit(1)
-        elif arg == '--quiet' or arg == '-q':
-            want_verbose = False
         elif arg[0] == '-':
             print(datalists_usage)
             sys.exit(0)
@@ -1776,6 +1777,9 @@ def datalists_cli(argv = sys.argv):
         this_region = region().from_string(i_region)
     else: this_region = None
 
+    if len(dls) == 0:
+        print(datalists_usage)
+        echo_error_msg("you must specify some data")
     xdls = [xyz_dataset().from_string(" ".join(["-" if x == "" else x for x in dl.split(":")])) for dl in dls]
     for xdl in xdls:
         if xdl.valid_p():
@@ -1783,7 +1787,4 @@ def datalists_cli(argv = sys.argv):
             if want_inf: print(xdl.inf())
             elif want_list: xdl.echo(src_region = this_region, verbose = want_verbose)
             else: xdl.dump(src_region = this_region, verbose = want_verbose, epsg = epsg, warp = warp)
-
-datalists_cli()
-    
 ### End

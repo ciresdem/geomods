@@ -32,7 +32,6 @@ import numpy as np
 ## ==============================================
 from geomods import utils
 from geomods import regions
-from geomods import gdalfun
 
 ## ==============================================
 ## MB-System Wrapper Functions - mbsfun.py
@@ -70,7 +69,13 @@ def mb_inf_data_format(src_inf):
             if len(til) > 1:
                 if til[0] == 'MBIO':
                     return(til[4])
-                    
+
+def gdal_set_infos(nx, ny, nb, geoT, proj, dt, ndv, fmt):
+    '''set a datasource config dictionary
+
+    returns gdal_config dict.'''
+    return({'nx': nx, 'ny': ny, 'nb': nb, 'geoT': geoT, 'proj': proj, 'dt': dt, 'ndv': ndv, 'fmt': fmt})
+                
 def mb_inf_parse(src_inf):
     """parse an mbsystem .inf file
 
@@ -117,7 +122,7 @@ def mb_inf_parse(src_inf):
     xinc = (xyzi['minmax'][1] - xyzi['minmax'][0]) / dims[0]
     yinc = (xyzi['minmax'][2] - xyzi['minmax'][3]) / dims[1]
     xcount, ycount, dst_gt = regions.region2gt(xyzi['minmax'], xinc, y_inc = yinc)
-    ds_config = gdalfun.gdal_set_infos(dims[0], dims[1], dims[1] * dims[0], dst_gt, gdalfun.gdal_sr_wkt(4326), gdal.GDT_Float32, 0, 'GTiff')
+    ds_config = gdal_set_infos(dims[0], dims[1], dims[1] * dims[0], dst_gt, gdalfun.gdal_sr_wkt(4326), gdal.GDT_Float32, 0, 'GTiff')
 
     driver = gdal.GetDriverByName('MEM')
     ds = driver.Create('tmp', ds_config['nx'], ds_config['ny'], 1, ds_config['dt'])
