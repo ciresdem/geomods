@@ -712,7 +712,6 @@ def gdal_filter_outliers(src_gdal, dst_gdal, threshhold = None, slp_threshhold =
                     slp_upper_limit = slp_srcwin_perc75 + slp_iqr_p
                     slp_lower_limit = slp_srcwin_perc25 - slp_iqr_p
 
-
                     for i in range(0, srcwin[2]):
                         for j in range(0, srcwin[3]):
                             bandz = band_data[j][i]
@@ -1112,7 +1111,39 @@ def gdal2xyz_chunks(src_fn, chunk_value = 1000, inc  = None, epsg = None, vdatum
             mbsfun.mb_inf(xyz_chunk_final)
             datalist_append_entry([os.path.basename(xyz_chunk_final), 168, 1], datalist)
             if verbose: utils.echo_msg('appended xyz chunk {} to datalist {}'.format(xyz_chunk_final, datalist))
+
+def gdal_region(src_ds, warp = None):
+    '''return the extent of the src_fn gdal file.
+    warp should be an epsg to warp the region to.
+    returns the region of the gdal data-source'''
     
+    ds_config = gdal_gather_infos(src_ds)
+    ds_region = gdal_gt2region(ds_config)
+    src_srs = osr.SpatialReference()
+    try:
+        src_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+    except: pass
+    src_srs.ImportFromWkt(ds_config['proj'])
+    src_srs.AutoIdentifyEPSG()
+    srs_auth = src_srs.GetAuthorityCode(None)
+    
+    if srs_auth is None or srs_auth == warp: warp = None
+
+    if warp is not None:
+        dst_srs = osr.SpatialReference()
+        dst_srs.ImportFromEPSG(int(warp))
+        try:
+            dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
+        except: pass
+        dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
+
+        pointA = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(ds_region[0], ds_region[2]))
+        pointB = ogr.CreateGeometryFromWkt('POINT ({} {})'.format(ds_region[1], ds_region[3]))
+        pointA.Transform(dst_trans)
+        pointB.Transform(dst_trans)
+        ds_region = [pointA.GetX(), pointB.GetX(), pointA.GetY(), pointB.GetY()]
+    return(ds_region)
+            
 def gdal_inf(src_ds, warp = None, overwrite = False):
     '''generate an info (.inf) file from a src_gdal file using gdal
 
@@ -1186,7 +1217,7 @@ def gdal_yield_entry(entry, region = None, verbose = False, z_region = None, eps
     except: ds = None
     if ds is not None:
         if region is not None:
-            srcwin = gdal_srcwin(ds, gdal_region_warp(region, s_warp = epsg, t_warp = gdal_get_epsg(ds)))
+            srcwin = gdal_srcwin(ds, regions.gdal_region_warp(region, s_warp = epsg, t_warp = gdal_get_epsg(ds)))
         else: srcwin = None
         for xyz in gdal_parse(ds, dump_nodata = False, srcwin = srcwin, warp = epsg, verbose = verbose, z_region = z_region):
             yield(xyz + [entry[2]] if entry[2] is not None else xyz)

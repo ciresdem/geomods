@@ -479,10 +479,6 @@ def datalist2py(dl, region = None):
                 for this_line in op:
                     if this_line[0] != '#' and this_line[0] != '\n' and this_line[0].rstrip() != '':
                         these_entries.append([os.path.join(this_dir, x) if n == 0 else x for n,x in enumerate(entry2py(this_line.rstrip()))])
-                        # for n, x in enumerate(entry2py(this_line.rstrip())):
-                        #     if n == 0:
-                        #         these_entries.append(os.path.join(this_dir, x))
-                        #     else: these_entries.append(x)
         else: utils.echo_error_msg('could not open datalist/entry {}'.format(this_entry[0]))
                 
     else: these_entries.append(this_entry)
@@ -630,7 +626,7 @@ def datalist_dump_xyz(dl, wt = None,  pass_h = _dl_pass_h,
       epsg (int): an EPSG code to warp the data to
     """
     for xyz in datalist_yield_xyz(dl, wt, pass_h, region, archive, mask, verbose, z_region, epsg):
-        xyzfun.xyz_line(xyz, dst_port, verbose)
+        xyzfun.xyz_line(xyz, dst_port, False)
 
 ## ==============================================
 ## dadtalists cli
@@ -827,6 +823,6 @@ def datalists_cli(argv = sys.argv):
                 print(' '.join([','.join(x) if i == 3 else os.path.abspath(str(x)) if i == 0 else str(x) for i,x in enumerate(this_entry[:-1])]))
         elif want_mask: pass
         else:
-            datalist_dump_xyz(dl_m, wt = 1 if want_weights else None, pass_h = dlp_hooks, region = this_region, epsg = epsg)
+            datalist_dump_xyz(dl_m, wt = 1 if want_weights else None, pass_h = dlp_hooks, region = this_region, epsg = epsg, verbose = want_verbose)
         utils.remove_glob(dl_m)        
 ### End
