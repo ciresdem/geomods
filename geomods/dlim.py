@@ -1693,17 +1693,20 @@ _datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, xyz_datase
 datalists_version = '0.1.0'
 datalists_usage = '''{} ({}): DataLists IMproved; Process and generate datalists
 
-usage: {} [ -hiqwPRW [ args ] ] DATALIST ...
+usage: {} [ -ghiqwPRW [ args ] ] DATALIST ...
 
 Options:
-  -R, --region\t\tSpecifies the desired REGION;
-  -P, --s_epsg\t\tset the projection of the datalist
-  -W, --t_epsg\t\tset the output warp projection
+  -R, --region\t\tRestrict processing to the desired REGION 
+\t\t\tWhere a REGION is [ xmin/xmax/ymin/ymax/[ zmin/zmax/[ wmin/wmax ] ] ]
+\t\t\tUse '-' to indicate no bounding range; e.g. -R -/-/-/-/-10/10/1/-
+  -P, --s_epsg\t\tSet the projection EPSG code of the datalist
+  -W, --t_epsg\t\tSet the output warp projection EPSG code
 
-  --info\t\treturn the info dictionary of the dataset
-  --weights\t\toutput weight values along with xyz
+  --glob\t\tGlob the datasets in the current directory into a DATALIST
+  --info\t\tGenerate and return an info dictionary of the dataset
+  --weights\t\tOutput weight values along with xyz
+  --quiet\t\tLower the verbosity to a quiet
 
-  --quiet\t\tquiet the verbosity
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
   --verbose\t\tIncrease the verbosity
@@ -1713,13 +1716,17 @@ Supported datalist formats:
 
  Examples:
  % {} my_data.datalist -R -90/-89/30/31
+ % {} -R-90/-89/30/31/-100/100 *.tif -l -w > tifs_in_region.datalist
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
-'''.format( os.path.basename(sys.argv[0]), 
-            datalists_version, 
-            os.path.basename(sys.argv[0]),
-            _datalist_fmts_short_desc(),
-            os.path.basename(sys.argv[0]))
+'''.format(
+    os.path.basename(sys.argv[0]), 
+    datalists_version, 
+    os.path.basename(sys.argv[0]),
+    _datalist_fmts_short_desc(),
+    os.path.basename(sys.argv[0]),
+    os.path.basename(sys.argv[0]),
+)
 
 def datalists_cli(argv = sys.argv):
     """run datalists from command-line
@@ -1734,6 +1741,7 @@ def datalists_cli(argv = sys.argv):
     want_weights = False
     want_inf = False
     want_list = False
+    want_glob = False
     want_verbose = True
     
     ## ==============================================
@@ -1759,6 +1767,8 @@ def datalists_cli(argv = sys.argv):
             want_inf = True
         elif arg == '--list' or arg == '-l':
             want_list = True
+        elif arg == '--glob' or arg == '-g':
+            want_glob = True
         elif arg == '--quiet' or arg == '-q':
             want_verbose = False
         elif arg == '--help' or arg == '-h':
@@ -1773,6 +1783,14 @@ def datalists_cli(argv = sys.argv):
         else: dls.append(arg)
         i = i + 1
 
+    if want_glob:
+        for key in xyz_dataset().data_types.keys():
+            if key != -1:
+                for f in xyz_dataset().data_types[key]['fmts']:
+                    globs = glob.glob('*.{}'.format(f))
+                    [sys.stdout.write('{}\n'.format(' '.join([x, str(key), '1']))) for x in globs]
+        sys.exit(0)
+        
     if i_region is not None:
         this_region = region().from_string(i_region)
     else: this_region = None

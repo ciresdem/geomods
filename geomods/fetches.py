@@ -2853,7 +2853,7 @@ General Options:
 \t\t\tIf a vector file is supplied it will search each region found therein.
   -W, --where\t\trestricted_where: Attribute query (like SQL WHERE)
   -E, --increment\tBlockmedian/mean CELL-SIZE in native units or GMT-style increments.
-  -Z, --z-region\t\tRestrict data processing to records that fall within the z-region
+  -Z, --z-region\tRestrict data processing to records that fall within the z-region
 \t\t\tUse '-' to indicate no bounding range; e.g. -Z-/0 will restrict processing to data
 \t\t\trecords whose z value is below zero.
   -F, --fg-config\tA fetches config JSON file. If supplied, will overwrite all other options.
