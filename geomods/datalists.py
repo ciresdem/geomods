@@ -770,7 +770,7 @@ def datalists_cli(argv = sys.argv):
         elif arg == '--weights' or arg == '-w':
             want_weights = True
         elif arg == '--help' or arg == '-h':
-            print(_usage)
+            print(datalists_usage)
             sys.exit(1)
 
         elif arg == '--version' or arg == '-v':
@@ -781,7 +781,7 @@ def datalists_cli(argv = sys.argv):
             want_verbose = True
 
         elif arg[0] == '-':
-            print(_usage)
+            print(datalists_usage)
             sys.exit(0)
 
         else:
