@@ -913,6 +913,94 @@ def gdal_ogr_regions(src_ds):
     return(these_regions)
 
 ## ==============================================
+## mbs inf
+## ==============================================
+def sr_wkt(epsg, esri = False):
+    '''convert an epsg code to wkt
+
+    returns the sr Wkt or None'''
+    try:
+        sr = osr.SpatialReference()
+        sr.ImportFromEPSG(int(epsg))
+        if esri: sr.MorphToESRI()
+        return(sr.ExportToWkt())
+    except: return(None)
+
+def mbs_inf_parse(src_inf):
+    """parse an mbsystem .inf file
+
+    Args:
+      stc_inf (str): the source mbsystem .inf file pathname
+
+    Returns:
+      dict: xyz infos dictionary
+    """
+    
+    xyzi = {'name': src_inf, 'minmax': [0,0,0,0,0,0]}
+    xyzi['hash'] = None
+    dims = []
+    this_row = 0
+    
+    with open(src_inf) as iob:
+        for il in iob:
+            til = il.split()
+            if len(til) > 1:
+                if til[0] == 'Swath':
+                    if til[2] == 'File:':
+                        xyzi['name'] = til[3]
+                if til[0] == 'Number':
+                    if til[2] == 'Records:':
+                        xyzi['numpts'] = int(til[3])
+                if til[0] == 'Minimum':
+                    if til[1] == 'Longitude:':
+                        xyzi['minmax'][0] = float(til[2])
+                        xyzi['minmax'][1] = float(til[5])
+                    elif til[1] == 'Latitude:':
+                        xyzi['minmax'][2] = float(til[2])
+                        xyzi['minmax'][3] = float(til[5])
+                    elif til[1] == 'Depth:':
+                        xyzi['minmax'][4] = float(til[5]) * -1
+                        xyzi['minmax'][5] = float(til[2]) * -1
+                if til[0] == 'CM':
+                    if til[1] == 'dimensions:':
+                        dims = [int(til[2]), int(til[3])]
+                        cm_array = np.zeros((dims[0], dims[1]))
+                if til[0] == 'CM:':
+                    for j in range(0, dims[0]):
+                        cm_array[this_row][j] = int(til[j+1])
+                    this_row += 1
+
+    xinc = (xyzi['minmax'][1] - xyzi['minmax'][0]) / dims[0]
+    yinc = (xyzi['minmax'][2] - xyzi['minmax'][3]) / dims[1]
+    mbs_region = region().from_list(xyzi['minmax'])
+    xcount, ycount, dst_gt = mbs_region.geo_transform(x_inc = xinc, y_inc = yinc)
+    ds_config = {'nx': dims[0], 'ny': dims[1], 'nb': dims[1] * dims[0],
+                 'geoT': dst_gt, 'proj': sr_wkt(4326),
+                 'dt': gdal.GDT_Float32, 'ndv': 0, 'fmt': 'GTiff'}
+    driver = gdal.GetDriverByName('MEM')
+    ds = driver.Create('tmp', ds_config['nx'], ds_config['ny'], 1, ds_config['dt'])
+    ds.SetGeoTransform(ds_config['geoT'])
+    ds.SetProjection(ds_config['proj'])
+    ds_band = ds.GetRasterBand(1)
+    ds_band.SetNoDataValue(ds_config['ndv'])
+    ds_band.WriteArray(cm_array)
+    
+    tmp_ds = ogr.GetDriverByName('Memory').CreateDataSource('tmp_poly')
+    tmp_layer = tmp_ds.CreateLayer('tmp_poly', None, ogr.wkbMultiPolygon)
+    tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
+    
+    gdal.Polygonize(ds_band, ds_band, tmp_layer, 0)
+
+    ## TODO: scan all features
+    feat = tmp_layer.GetFeature(0)
+    geom = feat.GetGeometryRef()
+    wkt = geom.ExportToWkt()
+    tmp_ds = ds = None
+    
+    xyzi['wkt'] = wkt
+    return(xyzi)
+
+## ==============================================
 ## xyz processing (datalists fmt:168)
 ## ==============================================
 class xyz_point:
@@ -1672,11 +1760,13 @@ class xyz_dataset:
         """
         
         inf_path = '{}.inf'.format(self.fn)
-        try:
-            if os.path.exists(inf_path):
+        if os.path.exists(inf_path):
+            try:
                 with open(inf_path) as i_ob:
                     self.infos = json.load(i_ob)
-        except: self.infos = {}
+            except:
+                self.infos = mbs_inf_parse(inf_path)
+        else: self.infos = {}
         #if 'hash' not in self.infos.keys() or self._hash() != self.infos['hash']:
         if 'hash' not in self.infos.keys():
             echo_msg("generating inf for {}".format(self.fn))

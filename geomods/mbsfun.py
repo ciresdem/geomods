@@ -122,8 +122,9 @@ def mb_inf_parse(src_inf):
     xinc = (xyzi['minmax'][1] - xyzi['minmax'][0]) / dims[0]
     yinc = (xyzi['minmax'][2] - xyzi['minmax'][3]) / dims[1]
     xcount, ycount, dst_gt = regions.region2gt(xyzi['minmax'], xinc, y_inc = yinc)
-    ds_config = gdal_set_infos(dims[0], dims[1], dims[1] * dims[0], dst_gt, gdalfun.gdal_sr_wkt(4326), gdal.GDT_Float32, 0, 'GTiff')
-
+    ds_config = {'nx': dims[0], 'ny': dims[1], 'nb': dims[1] * dims[0],
+                 'geoT': dst_gt, 'proj': gdalfun.gdal_sr_wkt(4326),
+                 'dt': gdal.GDT_Float32, 'ndv': 0, 'fmt': 'GTiff'})
     driver = gdal.GetDriverByName('MEM')
     ds = driver.Create('tmp', ds_config['nx'], ds_config['ny'], 1, ds_config['dt'])
     ds.SetGeoTransform(ds_config['geoT'])
