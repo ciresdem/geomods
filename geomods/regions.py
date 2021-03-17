@@ -353,6 +353,21 @@ def gdal_ogr_regions(src_ds):
         poly = None
     return(these_regions)
 
+def gdal_ogr_polys(src_ds):
+    '''return the region(s) of the ogr dataset'''
+    these_regions = []
+    if os.path.exists(src_ds):
+        poly = ogr.Open(src_ds)
+        if poly is not None:
+            p_layer = poly.GetLayer(0)
+            for pf in p_layer:
+                pgeom = pf.GetGeometryRef()
+                #pwkt = pgeom.ExportToWkt()
+                #penv = ogr.CreateGeometryFromWkt(pwkt).GetEnvelope()
+                these_regions.append(pgeom)
+        poly = None
+    return(these_regions)
+
 def gdal_region_warp(region, s_warp = 4326, t_warp = 4326):
     '''warp region from source `s_warp` to target `t_warp`, using EPSG keys
 

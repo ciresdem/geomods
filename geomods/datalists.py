@@ -792,7 +792,13 @@ def datalists_cli(argv = sys.argv):
     if i_region is not None:
         try:
             these_regions = [[float(x) for x in i_region.split('/')]]
-        except ValueError: these_regions = regions.gdal_ogr_regions(i_region)
+        except ValueError:
+            ogr_v_l = i_region.split(':')
+            if len(ogr_v_l) > 1:
+                if ogr_v_l[1] == 'geom':
+                    these_regions = regions.gdal_ogr_polys(i_region)
+                else: these_regions = regions.gdal_ogr_regions(i_region)
+            else: these_regions = regions.gdal_ogr_regions(i_region)
         except Exception as e:
             utils.echo_error_msg('failed to parse region(s), {}'.format(e))
         #else: these_regions = [[-180,180,-90,90]]

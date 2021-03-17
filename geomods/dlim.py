@@ -22,7 +22,6 @@
 
 import os
 import sys
-import copy
 import json
 import glob
 import hashlib
@@ -1445,8 +1444,7 @@ class datalist_parser:
                             dls = data_set.data_types[data_set.data_format]['parser'](
                                 data_set,
                                 {'src_region': self.region, 'verbose': self.verbose, 'epsg': self.epsg, 'warp': self.warp}
-                            )
-                            
+                            )                           
                             for entry in dls.data_entries:
                                 these_entries.append(entry)
                         else: echo_warning_msg('invalid dataset: `{}`'.format(data_set.fn))
@@ -1465,7 +1463,7 @@ class datalist_parser:
         if self.verbose: _prog = _progress('parsing data from {}'.format(self.fn))
         for i, this_entry in enumerate(self.data_entries):
             if self.verbose: _prog.update_perc((i, len(self.data_entries)))
-            for xyz in this_entry.parse(src_region = self.region, verbose = self.verbose, epsg = self.epsg, warp = self.warp):
+            for xyz in this_entry.yield_xyz(src_region = self.region, verbose = self.verbose, epsg = self.epsg, warp = self.warp):
                 yield(xyz)
         if self.verbose: _prog.end(0, 'parsed data from {}'.format(self.fn))
         
@@ -1487,7 +1485,6 @@ class datalist_parser:
         self.infos['name'] = self.fn
         self.infos['numpts'] = 0
         self.infos['hash'] = dl_hash(self.fn)
-        #self.parse()
         for entry in self.data_entries:
             entry.inf()
             out_regions.append(entry.infos['minmax'])
@@ -1659,7 +1656,7 @@ class xyz_dataset:
         self.infos['format'] = self.data_format
         return(self.infos)
         
-    def parse(self, **kwargs):
+    def yield_xyz(self, **kwargs):
         """parse the xyz data from the xyz-dataset, yield results
 
         Args:
@@ -1682,7 +1679,7 @@ class xyz_dataset:
           kwargs (dict): any arguments to pass to the dataset parser
         """
         
-        for this_xyz in self.parse(**kwargs):
+        for this_xyz in self.yield_xyz(**kwargs):
             this_xyz.dump(include_w = True if self.weight is not None else False, dst_port = dst_port, encode = False)
             
 _datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, xyz_dataset().data_types[key]['fmts']) for key in xyz_dataset().data_types])
@@ -1702,14 +1699,13 @@ Options:
   -P, --s_epsg\t\tSet the projection EPSG code of the datalist
   -W, --t_epsg\t\tSet the output warp projection EPSG code
 
-  --glob\t\tGlob the datasets in the current directory into a DATALIST
+  --glob\t\tGlob the datasets in the current directory to stdout
   --info\t\tGenerate and return an info dictionary of the dataset
   --weights\t\tOutput weight values along with xyz
   --quiet\t\tLower the verbosity to a quiet
 
   --help\t\tPrint the usage text
   --version\t\tPrint the version information
-  --verbose\t\tIncrease the verbosity
 
 Supported datalist formats: 
   {}
