@@ -362,9 +362,9 @@ def gdal_ogr_polys(src_ds):
             p_layer = poly.GetLayer(0)
             for pf in p_layer:
                 pgeom = pf.GetGeometryRef()
-                #pwkt = pgeom.ExportToWkt()
+                pwkt = pgeom.ExportToWkt()
                 #penv = ogr.CreateGeometryFromWkt(pwkt).GetEnvelope()
-                these_regions.append(pgeom)
+                these_regions.append(pwkt)
         poly = None
     return(these_regions)
 

@@ -136,6 +136,28 @@ def intersect_p(r, e, p = None):
         return(regions.geoms_intersect_p(r_geom, e_geom))
     else: return(False)
 
+def intersect_wkt_p(r, e, p = None):
+    """check if entry and region intersect
+
+    return True if region r intersects with the wkt found in the
+    inf file for datalist entry e
+
+    Args:
+      r (wkt): region list
+      e (list): datalist entry list
+      p (int): epsg code of the region
+
+    Returns:
+      bool: True if entry (e) intersect with region (r)
+    """
+    
+    if entry_exists_p(e[0]) or e[1] == -4:
+        dl_i = inf_entry(e, epsg = p)
+        r_geom = regions.wkt2geom(r)
+        e_geom = regions.wkt2geom(dl_i['wkt']) if 'wkt' in dl_i.keys() else r_geom
+        return(regions.geoms_intersect_p(r_geom, e_geom))
+    else: return(False)
+    
 def datalist_default_hooks():
     """the defaullt datalist pass hooks
 
@@ -789,6 +811,7 @@ def datalists_cli(argv = sys.argv):
     ## ==============================================
     ## process input region(s) and loop
     ## ==============================================
+    region_is_geom = False
     if i_region is not None:
         try:
             these_regions = [[float(x) for x in i_region.split('/')]]
@@ -796,8 +819,9 @@ def datalists_cli(argv = sys.argv):
             ogr_v_l = i_region.split(':')
             if len(ogr_v_l) > 1:
                 if ogr_v_l[1] == 'geom':
-                    these_regions = regions.gdal_ogr_polys(i_region)
-                else: these_regions = regions.gdal_ogr_regions(i_region)
+                    these_regions = regions.gdal_ogr_polys(ogr_v_l[0])
+                    region_is_geom = True
+                else: these_regions = regions.gdal_ogr_regions(ogr_v_l[0])
             else: these_regions = regions.gdal_ogr_regions(i_region)
         except Exception as e:
             utils.echo_error_msg('failed to parse region(s), {}'.format(e))
@@ -813,8 +837,12 @@ def datalists_cli(argv = sys.argv):
         dl_m = datalist_major(dls, region = this_region)
         utils.echo_msg('processed datalist')
         dlp_hooks = datalist_default_hooks()
+        #try: 
         if regions.region_valid_p(this_region):
             dlp_hooks.append(lambda e: intersect_p(this_region, e, epsg))
+        else:
+            if region_is_geom:
+                dlp_hooks.append(lambda e: intersect_wkt_p(this_region, e, epsg))
         if z_region is not None:
             dlp_hooks.append(lambda e: regions.z_region_pass(inf_entry(e)['minmax'], upper_limit = z_region[1], lower_limit = z_region[0]))
         if w_region is not None:
