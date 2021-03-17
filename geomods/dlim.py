@@ -184,7 +184,7 @@ def create_wkt_polygon(coords, xpos = 1, ypos = 0):
     Returns:
       wkt: polygon as wkt
     """
-    
+
     ring = ogr.Geometry(ogr.wkbLinearRing)
     for coord in coords: ring.AddPoint(coord[xpos], coord[ypos])
     poly = ogr.Geometry(ogr.wkbPolygon)
@@ -345,6 +345,7 @@ class region:
       zmax (float): the maximum z(elev) value
       wmin (float): the minimum w(weight) value
       wmax (float): the maximum w(weight) value
+      wkt (str): the wkt representation of the region
       epsg (int): the EPSG code representing the regions projection
 
     Methods:
@@ -360,7 +361,7 @@ class region:
     
     def __init__(self, xmin = None, xmax = None, ymin = None, ymax = None,
                  zmin = None, zmax = None, wmin = None, wmax = None,
-                 epsg = 4326):
+                 epsg = 4326, wkt = None):
         """
         Args:
           xmin (float): the minimum x(long) value
@@ -384,6 +385,7 @@ class region:
         self.wmax = float_or(wmax)
 
         self.epsg = int_or(epsg)
+        self.wkt = wkt
         
     def _valid_p(self):
         """check the validity of a region
@@ -416,16 +418,19 @@ class region:
         """
         
         if len(region_list) >= 4:
-            self.xmin = region_list[0]
-            self.xmax = region_list[1]
-            self.ymin = region_list[2]
-            self.ymax = region_list[3]
+            self.xmin = float_or(region_list[0])
+            self.xmax = float_or(region_list[1])
+            self.ymin = float_or(region_list[2])
+            self.ymax = float_or(region_list[3])
             if len(region_list) >= 6:
-                self.zmin = region_list[4]
-                self.zmax = region_list[5]
+                self.zmin = float_or(region_list[4])
+                self.zmax = float_or(region_list[5])
                 if len(region_list) >= 8:
-                    self.wmin = region_list[6]
-                    self.wmax = region_list[7]
+                    self.wmin = float_or(region_list[6])
+                    self.wmax = float_or(region_list[7])
+            if self.wkt is None:
+                if self._valid_p():
+                    self.wkt = self.export_as_wkt()
         return(self)
         
     def from_string(self, region_str):
@@ -442,10 +447,14 @@ class region:
             region_str = region_str[2:]
             
         str_list = region_str.strip().split('/')
-        r_list = [float_or(x) for x in str_list]
-        
-        return(self.from_list(r_list))
-
+        if len(str_list) >= 4:
+            r_list = [float_or(x) for x in str_list]
+            self.from_list(r_list)
+        elif region_str.split()[0] == "POLYGON":
+            self.wkt = region_str
+            self.from_list(ogr.CreateGeometryFromWkt(region_str).GetEnvelope())
+        return(self)
+    
     def from_geo_transform(self, geoT = None, x_count = None, y_count = None):
         """import a region from a region string 
 
@@ -463,6 +472,8 @@ class region:
             self.xmax = geoT[0] + geoT[1] * x_count
             self.ymin = geoT[3] + geoT[5] * y_count
             self.ymax = geoT[3]
+        if self.wkt is None:
+            self.wkt = self.export_as_wkt()
         return(self)
     
     def format(self, t = 'gmt'):
@@ -558,8 +569,8 @@ class region:
           ogr-geom: an ogr polygon geometry
         """
 
-        wkt = self.export_as_wkt()
-        return(ogr.CreateGeometryFromWkt(wkt))
+        #wkt = self.export_as_wkt()
+        return(ogr.CreateGeometryFromWkt(self.wkt))
 
     def export_as_ogr(self, dst_ogr, dst_fmt = 'ESRI Shapefile', append = False):
         """convert a region string to an OGR vector
@@ -720,6 +731,22 @@ class region:
         self.epsg = warp_epsg
         return(self)
 
+def ogr_wkts(src_ds):
+    """return the wkt(s) of the ogr dataset
+    """
+    
+    these_regions = []
+    if os.path.exists(src_ds):
+        poly = ogr.Open(src_ds)
+        if poly is not None:
+            p_layer = poly.GetLayer(0)
+            for pf in p_layer:
+                pgeom = pf.GetGeometryRef()
+                pwkt = pgeom.ExportToWkt()
+                these_regions.append(region().from_string(pwkt))
+        poly = None
+    return(these_regions)
+    
 ## ==============================================
 ## do things to and with regions 
 ## ==============================================
@@ -844,16 +871,22 @@ def xyz_in_region_p(xyz, this_region):
     Returns:
       bool: True if xyz point inside region else False
     """
-    
-    if xyz.x < this_region.xmin: return(False)
-    elif xyz.x > this_region.xmax: return(False)
-    elif xyz.y < this_region.ymin: return(False)
-    elif xyz.y > this_region.ymax: return(False)
-    if this_region.zmin is not None:
-        if xyz.z < this_region.zmin: return(False)
-    if this_region.zmax is not None:
-        if xyz.z > this_region.zmax: return(False)
-    return(True)
+
+    xyz_wkt = xyz.export_as_wkt()
+    p_geom = ogr.CreateGeometryFromWkt(xyz_wkt)
+    r_geom = this_region.export_as_geom()
+
+    return(p_geom.Within(r_geom))
+        
+    # if xyz.x < this_region.xmin: return(False)
+    # elif xyz.x > this_region.xmax: return(False)
+    # elif xyz.y < this_region.ymin: return(False)
+    # elif xyz.y > this_region.ymax: return(False)
+    # if this_region.zmin is not None:
+    #     if xyz.z < this_region.zmin: return(False)
+    # if this_region.zmax is not None:
+    #     if xyz.z > this_region.zmax: return(False)
+    # return(True)
 
 def gdal_ogr_regions(src_ds):
     """return the region(s) of the ogr dataset
@@ -982,6 +1015,9 @@ class xyz_point:
 
         l = self.export_as_list(include_z = include_z, include_w = include_w)
         return('{}\n'.format(delim.join([str(x) for x in l])))
+
+    def export_as_wkt(self):
+        return('POINT ({} {})'.format(self.x, self.y))
     
     def dump(self, delim = ' ', include_z = True, include_w = False, encode = False, dst_port = sys.stdout):
         """dump xyz as a string to dst_port
@@ -1733,7 +1769,8 @@ def datalists_cli(argv = sys.argv):
     dls = []
     epsg = None
     warp = None
-    i_region = None
+    i_regions = []
+    these_regions = []
     want_weights = False
     want_inf = False
     want_list = False
@@ -1747,10 +1784,10 @@ def datalists_cli(argv = sys.argv):
     while i < len(argv):
         arg = argv[i]
         if arg == '--region' or arg == '-R':
-            i_region = str(argv[i + 1])
+            i_regions.append(str(argv[i + 1]))
             i = i + 1
         elif arg[:2] == '-R':
-            i_region = str(arg[2:])
+            i_region.append(str(arg[2:]))
         elif arg == '-s_epsg' or arg == '--s_epsg' or arg == '-P':
             epsg = argv[i + 1]
             i = i + 1
@@ -1786,19 +1823,25 @@ def datalists_cli(argv = sys.argv):
                     globs = glob.glob('*.{}'.format(f))
                     [sys.stdout.write('{}\n'.format(' '.join([x, str(key), '1']))) for x in globs]
         sys.exit(0)
-        
-    if i_region is not None:
-        this_region = region().from_string(i_region)
-    else: this_region = None
 
-    if len(dls) == 0:
-        print(datalists_usage)
-        echo_error_msg("you must specify some data")
-    xdls = [xyz_dataset().from_string(" ".join(["-" if x == "" else x for x in dl.split(":")])) for dl in dls]
-    for xdl in xdls:
-        if xdl.valid_p():
-            if not want_weights: xdl.weight = None
-            if want_inf: print(xdl.inf())
-            elif want_list: xdl.echo(src_region = this_region, verbose = want_verbose)
-            else: xdl.dump(src_region = this_region, verbose = want_verbose, epsg = epsg, warp = warp)
+    for i_region in i_regions:
+        tmp_region = region().from_string(i_region)
+        if tmp_region._valid_p():
+            these_regions.append(tmp_region)
+        else:
+            tmp_region = ogr_wkts(i_region)
+            for i in tmp_region:
+                if i._valid_p():
+                    these_regions.append(i)
+    for rn, this_region in enumerate(these_regions):
+        if len(dls) == 0:
+            print(datalists_usage)
+            echo_error_msg("you must specify some data")
+        xdls = [xyz_dataset().from_string(" ".join(["-" if x == "" else x for x in dl.split(":")])) for dl in dls]
+        for xdl in xdls:
+            if xdl.valid_p():
+                if not want_weights: xdl.weight = None
+                if want_inf: print(xdl.inf())
+                elif want_list: xdl.echo(src_region = this_region, verbose = want_verbose)
+                else: xdl.dump(src_region = this_region, verbose = want_verbose, epsg = epsg, warp = warp)
 ### End
