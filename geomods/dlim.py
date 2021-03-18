@@ -1696,14 +1696,22 @@ class datalist_parser:
                     if this_line[0] != '#' and this_line[0] != '\n' and this_line[0].rstrip() != '':
                         data_set = xyz_dataset(parent = self.ds, weight = self.weight).from_string(this_line, this_dir)
                         if data_set.valid_p():
-                            #inf_region = region().from_string(self.ds.infos['wkt'])
-                            #if regions_intersect_p(inf_region, self.region):
-                            dls = data_set.data_types[data_set.data_format]['parser'](
-                                data_set,
-                                {'src_region': self.region, 'verbose': self.verbose, 'epsg': self.epsg, 'warp': self.warp}
-                            )                           
-                            for entry in dls.data_entries:
-                                these_entries.append(entry)
+                            if self.region is not None:
+                                inf_region = region().from_string(data_set.infos['wkt'])
+                                if regions_intersect_p(inf_region, self.region):
+                                    dls = data_set.data_types[data_set.data_format]['parser'](
+                                        data_set,
+                                        {'src_region': self.region, 'verbose': self.verbose, 'epsg': self.epsg, 'warp': self.warp}
+                                    )                           
+                                    for entry in dls.data_entries:
+                                        these_entries.append(entry)
+                            else:
+                                dls = data_set.data_types[data_set.data_format]['parser'](
+                                    data_set,
+                                    {'src_region': self.region, 'verbose': self.verbose, 'epsg': self.epsg, 'warp': self.warp}
+                                )                           
+                                for entry in dls.data_entries:
+                                    these_entries.append(entry)
                         #else: echo_warning_msg('invalid dataset: `{}`'.format(data_set.fn))
         else: echo_warning_msg('could not open datalist/entry {}'.format(self.fn))
         self.data_entries = these_entries
@@ -1743,7 +1751,7 @@ class datalist_parser:
         self.infos['numpts'] = 0
         self.infos['hash'] = dl_hash(self.fn)
         for entry in self.data_entries:
-            entry.inf()
+            #entry.inf()
             out_regions.append(entry.infos['minmax'])
             self.infos['numpts'] += entry.infos['numpts']
 
@@ -1884,6 +1892,8 @@ class xyz_dataset:
         
         if self.weight is not None:
             self.weight *= entry[2]
+
+        if self.valid_p(): self.inf()
         return(self)
         
     def inf(self, **kwargs):
