@@ -2877,7 +2877,6 @@ Examples:
  % {} -R -90.75/-88.1/28.7/31.25 nos --where "Date > 2000"
  % {} -R region.shp -p dc nos:datatype=bag charts:datatype=enc
  % {} -R region.shp dc:datatype=lidar -l > dc_lidar.urls
- % {} -R -89.75/-89.5/30.25/30.5 tnm:ds=4:formats=IMG gmrt:res=max:fmt=geotiff
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>
 '''.format(os.path.basename(sys.argv[0]),

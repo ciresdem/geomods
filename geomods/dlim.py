@@ -26,6 +26,9 @@ import json
 import glob
 import hashlib
 
+import urllib
+import requests
+
 ## ==============================================
 ## import gdal/numpy
 ## ==============================================
@@ -34,6 +37,8 @@ import ogr
 import osr
 import numpy as np
 from scipy import spatial
+
+datalists_version = '0.1.0'
 
 def dl_hash(fn, sha1 = False):
 
@@ -344,6 +349,47 @@ class _progress:
             sys.stderr.write('\r[\033[31m\033[1m{:^6}\033[m] {:40}\n'.format('fail', end_msg))
         else: sys.stderr.write('\r[\033[32m\033[1m{:^6}\033[m] {:40}\n'.format('ok', end_msg))
 
+r_headers = { 'User-Agent': 'GeoMods: DLIM v%s' %(datalists_version) }
+        
+def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatype = None, overwrite = False, verbose = False, timeout = 140, read_timeout = 320):
+    '''fetch src_url and save to dst_fn'''
+    status = 0
+    req = None
+    halt = callback
+
+    if verbose: progress = _progress('fetching remote file: {}...'.format(os.path.basename(src_url)[:20]))
+    if not os.path.exists(os.path.dirname(dst_fn)):
+        try:
+            os.makedirs(os.path.dirname(dst_fn))
+        except: pass 
+    if not os.path.exists(dst_fn) or overwrite:
+        try:
+            with requests.get(src_url, stream = True, params = params, headers = r_headers, timeout=(timeout,read_timeout)) as req:
+                req_h = req.headers
+                if req.status_code == 200:
+                    curr_chunk = 0
+                    with open(dst_fn, 'wb') as local_file:
+                        for chunk in req.iter_content(chunk_size = 8196):
+                            if halt(): break
+                            if verbose: progress.update()
+                            if chunk: local_file.write(chunk)
+                else: echo_error_msg('server returned: {}'.format(req.status_code))
+        except Exception as e:
+            echo_error_msg(e)
+            status = -1
+    if not os.path.exists(dst_fn) or os.stat(dst_fn).st_size ==  0: status = -1
+    if verbose: progress.end(status, 'fetched remote file: {}.'.format(os.path.basename(dst_fn)[:20]))
+    return(status)
+
+def fetch_req(src_url, params = None, tries = 5, timeout = 2, read_timeout = 10):
+    '''fetch src_url and return the requests object'''
+    if tries <= 0:
+        echo_error_msg('max-tries exhausted')
+        return(None)
+    try:
+        return(requests.get(src_url, stream = True, params = params, timeout = (timeout,read_timeout), headers = r_headers))
+    except: return(fetch_req(src_url, params = params, tries = tries - 1, timeout = timeout + 1, read_timeout = read_timeout + 10))
+        
 ## ==============================================
 ## regions
 ## ==============================================
@@ -470,7 +516,7 @@ class region:
         if len(str_list) >= 4:
             r_list = [float_or(x) for x in str_list]
             self.from_list(r_list)
-        elif region_str.split()[0] == "POLYGON":
+        elif region_str.split()[0] == "POLYGON" or region_str.split()[0] == "MULTIPOLYGON":
             self.wkt = region_str
             self.from_list(ogr.CreateGeometryFromWkt(region_str).GetEnvelope())
         return(self)
@@ -525,9 +571,8 @@ class region:
             elif t == 'fn':
                 ns = 's' if self.ymax < 0 else 'n'
                 ew = 'e' if self.xmin > 0 else 'w'
-                return('{}{:02d}x{:02d}_{}{:03d}x{:02d}\
-                '.format(ns, abs(int(self.ymax)), abs(int(self.ymax * 100)) % 100, 
-                         ew, abs(int(self.xmin)), abs(int(self.xmin * 100)) % 100))
+                return('{}{:02d}x{:02d}_{}{:03d}x{:02d}'.format(ns, abs(int(self.ymax)), abs(int(self.ymax * 100)) % 100, 
+                                                                ew, abs(int(self.xmin)), abs(int(self.xmin * 100)) % 100))
             elif t == 'inf': return(' '.join([str(x) for x in self.region]))
             else: return('/'.join([str(x) for x in self.region[:4]]))
         else: return(None)
@@ -823,10 +868,25 @@ def regions_intersect_p(region_a, region_b):
     Returns:
       bool: True if `region_a` and `region_b` intersect else False
     """
-    
+
     if region_a._valid_p() and region_b._valid_p():
-        return(regions_reduce(region_a, region_b)._valid_p())
-    return(False)
+        tmp_a = region()
+        tmp_b = region()
+        tmp_a.zmin = region_a.zmin
+        tmp_a.zmax = region_a.zmax
+        tmp_a.wmin = region_a.wmin
+        tmp_a.wmax = region_a.wmax
+        tmp_b.zmin = region_b.zmin
+        tmp_b.zmax = region_b.zmax
+        tmp_b.wmin = region_b.wmin
+        tmp_b.wmax = region_b.wmax
+
+        tmp_c = regions_reduce(tmp_a, tmp_b)
+        if any(tmp_c.full_region()):
+            if not tmp_c._valid_p(): return(False)
+        if not regions_intersect_ogr_p(region_a, region_b): return(False)
+        
+    return(True)
     
 def regions_intersect_ogr_p(region_a, region_b):
     """check if two regions intersect using ogr
@@ -945,6 +1005,31 @@ def ogr_wkts(src_ds):
         poly = None
     return(these_regions)
 
+def gdal_fext(src_drv_name):
+    """find the common file extention given a GDAL driver name
+    older versions of gdal can't do this, so fallback to known standards.
+
+    Args:
+      src_drv_name (str): a source GDAL driver name
+
+    Returns:
+      list: a list of known file extentions or None
+    """
+    
+    fexts = None
+    try:
+        drv = gdal.GetDriverByName(src_drv_name)
+        if drv.GetMetadataItem(gdal.DCAP_RASTER): fexts = drv.GetMetadataItem(gdal.DMD_EXTENSIONS)
+        if fexts is not None: return(fexts.split()[0])
+        else: return(None)
+    except:
+        if src_drv_name.lower() == 'gtiff': fext = 'tif'
+        elif src_drv_name == 'HFA': fext = 'img'
+        elif src_drv_name == 'GMT': fext = 'grd'
+        elif src_drv_name.lower() == 'netcdf': fext = 'nc'
+        else: fext = 'gdal'
+        return(fext)
+
 ## ==============================================
 ## mbsystem parser
 ## ==============================================
@@ -1004,10 +1089,10 @@ class mbs_parser:
                         this_row += 1
 
         mbs_region = region().from_list(self.infos['minmax'])
-        xinc = (self.infos['minmax'][1] - self.infos['minmax'][0]) / dims[0]
-        yinc = (self.infos['minmax'][2] - self.infos['minmax'][3]) / dims[1]
+        xinc = (mbs_region.xmax - mbs_region.xmin) / dims[0]
+        yinc = (mbs_region.ymin - mbs_region.ymax) / dims[1]
 
-        if xinc >= 0 and yinc > 0:
+        if abs(xinc) > 0 and abs(yinc) > 0:
             xcount, ycount, dst_gt = mbs_region.geo_transform(x_inc = xinc, y_inc = yinc)
 
             ds_config = {'nx': dims[0], 'ny': dims[1], 'nb': dims[1] * dims[0],
@@ -1029,10 +1114,18 @@ class mbs_parser:
             gdal.Polygonize(ds_band, ds_band, tmp_layer, 0)
 
             ## TODO: scan all features
-            feat = tmp_layer.GetFeature(0)
-            geom = feat.GetGeometryRef()
-            wkt = geom.ExportToWkt()
+            multi = ogr.Geometry(ogr.wkbMultiPolygon)
+            for feat in tmp_layer:
+                feat.geometry().CloseRings()
+                wkt = feat.geometry().ExportToWkt()
+                multi.AddGeometryDirectly(ogr.CreateGeometryFromWkt(wkt))
+            wkt = multi.ExportToWkt()
+            #echo_msg(wkt)
+            # feat = tmp_layer.GetFeature(0)
+            # geom = feat.GetGeometryRef()
+            # wkt = geom.ExportToWkt()
             tmp_ds = ds = None
+
         else: wkt = mbs_region.export_as_wkt()
 
         self.infos['wkt'] = wkt
@@ -1289,8 +1382,7 @@ class xyz_parser:
             try:
                 out_hull = [pts[i] for i in spatial.ConvexHull(pts, qhull_options='Qt').vertices]
                 out_hull.append(out_hull[0])
-                self.infos['wkt'] = regions.create_wkt_polygon(out_hull, xpos = 0, ypos = 1)
-
+                self.infos['wkt'] = create_wkt_polygon(out_hull, xpos = 0, ypos = 1)
             except: self.infos['wkt'] = this_region.export_as_wkt()
         return(self.infos)
         
@@ -1311,7 +1403,8 @@ class xyz_parser:
     def parse(self):
         if self.region is not None:
             self.ds.inf()
-            inf_region = region().from_list(self.ds.infos['minmax'])
+            #inf_region = region().from_list(self.ds.infos['minmax'])
+            inf_region = region().from_string(self.ds.infos['wkt'])
             if regions_intersect_p(inf_region, self.region):
                 self.data_entries = [self.ds]
         else: self.data_entries = [self.ds]
@@ -1603,6 +1696,8 @@ class datalist_parser:
                     if this_line[0] != '#' and this_line[0] != '\n' and this_line[0].rstrip() != '':
                         data_set = xyz_dataset(parent = self.ds, weight = self.weight).from_string(this_line, this_dir)
                         if data_set.valid_p():
+                            #inf_region = region().from_string(self.ds.infos['wkt'])
+                            #if regions_intersect_p(inf_region, self.region):
                             dls = data_set.data_types[data_set.data_format]['parser'](
                                 data_set,
                                 {'src_region': self.region, 'verbose': self.verbose, 'epsg': self.epsg, 'warp': self.warp}
@@ -1721,8 +1816,9 @@ class xyz_dataset:
         if self.fn is None: return(False)
         if self.data_format is None: return(False)
         if self.fn is not None:
-            if not os.path.exists(self.fn): return (False)
-            if os.stat(self.fn).st_size == 0: return(False)
+            if self.fn not in self.data_types[self.data_format]['fmts']:
+                if not os.path.exists(self.fn): return (False)
+                if os.stat(self.fn).st_size == 0: return(False)
         return(True)
 
     def _hash(self, sha1 = False):
@@ -1836,7 +1932,7 @@ class xyz_dataset:
         Yields:
           xyz: xyz data
         """
-        
+
         for xyz in self.data_types[self.data_format]['parser'](self, kwargs).yield_xyz():
             xyz.w = self.weight
             yield(xyz)
@@ -1849,7 +1945,7 @@ class xyz_dataset:
           encode (bool): True to encode the output
           kwargs (dict): any arguments to pass to the dataset parser
         """
-        
+
         for this_xyz in self.yield_xyz(**kwargs):
             this_xyz.dump(include_w = True if self.weight is not None else False, dst_port = dst_port, encode = False)
             
@@ -1858,7 +1954,6 @@ _datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, xyz_datase
 ## ==============================================
 ## dadtalists cli
 ## ==============================================    
-datalists_version = '0.1.0'
 datalists_usage = '''{cmd} ({dl_version}): DataLists IMproved; Process and generate datalists
 
 usage: {cmd} [ -ghiqwPRW [ args ] ] DATALIST ...
