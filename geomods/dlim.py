@@ -751,31 +751,6 @@ class region:
         self.ymax = pointB.GetY()
         self.epsg = warp_epsg
         return(self)
-
-def ogr_wkts(src_ds):
-    """return the wkt(s) of the ogr dataset
-    """
-    
-    these_regions = []
-    src_s = src_ds.split(':')
-    if os.path.exists(src_s[0]):
-        poly = ogr.Open(src_s[0])
-        if poly is not None:
-            p_layer = poly.GetLayer(0)
-            for pf in p_layer:
-                pgeom = pf.GetGeometryRef()
-                pwkt = pgeom.ExportToWkt()
-                r = region().from_string(pwkt)
-                if len(src_s) > 1:
-                    src_r = src_s[1].split('/')
-                    if len(src_r) > 0: r.zmin = float_or(src_r[0])
-                    if len(src_r) > 1: r.zmax = float_or(src_r[1])
-                    if len(src_r) > 2: r.wmin = float_or(src_r[2])
-                    if len(src_r) > 3:  r.wmax = float_or(src_r[3])
-                these_regions.append(r)
-
-        poly = None
-    return(these_regions)
     
 ## ==============================================
 ## do things to and with regions 
@@ -945,8 +920,30 @@ def gdal_ogr_regions(src_ds):
         poly = None
     return(these_regions)
 
-def isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
-    return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
+def ogr_wkts(src_ds):
+    """return the wkt(s) of the ogr dataset
+    """
+    
+    these_regions = []
+    src_s = src_ds.split(':')
+    if os.path.exists(src_s[0]):
+        poly = ogr.Open(src_s[0])
+        if poly is not None:
+            p_layer = poly.GetLayer(0)
+            for pf in p_layer:
+                pgeom = pf.GetGeometryRef()
+                pwkt = pgeom.ExportToWkt()
+                r = region().from_string(pwkt)
+                if len(src_s) > 1:
+                    src_r = src_s[1].split('/')
+                    if len(src_r) > 0: r.zmin = float_or(src_r[0])
+                    if len(src_r) > 1: r.zmax = float_or(src_r[1])
+                    if len(src_r) > 2: r.wmin = float_or(src_r[2])
+                    if len(src_r) > 3:  r.wmax = float_or(src_r[3])
+                these_regions.append(r)
+
+        poly = None
+    return(these_regions)
 
 ## ==============================================
 ## mbsystem parser
@@ -1910,7 +1907,7 @@ def datalists_cli(argv = sys.argv):
     want_inf = False
     want_list = False
     want_glob = False
-    want_verbose = True
+    want_verbose = True    
     
     ## ==============================================
     ## parse command line arguments.
