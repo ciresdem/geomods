@@ -111,7 +111,7 @@ def fetch_ftp_file(src_url, dst_fn, params = None, callback = None, datatype = N
     f = None
     halt = callback
     
-    if verbose: utils.echo_msg('fetching remote ftp file: {}...'.format(src_url))
+    if verbose: utils.echo_msg('fetching remote ftp file: {}...'.format(src_url[:20]))
     if not os.path.exists(os.path.dirname(dst_fn)):
         try:
             os.makedirs(os.path.dirname(dst_fn))
@@ -132,7 +132,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
     req = None
     halt = callback
 
-    if verbose: progress = utils._progress('fetching remote file: {}...'.format(os.path.basename(src_url)))
+    if verbose: progress = utils._progress('fetching remote file: {}...'.format(os.path.basename(src_url)[:20]))
     if not os.path.exists(os.path.dirname(dst_fn)):
         try:
             os.makedirs(os.path.dirname(dst_fn))
@@ -153,7 +153,7 @@ def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatyp
             utils.echo_error_msg(e)
             status = -1
     if not os.path.exists(dst_fn) or os.stat(dst_fn).st_size ==  0: status = -1
-    if verbose: progress.end(status, 'fetched remote file: {}.'.format(os.path.basename(dst_fn)))
+    if verbose: progress.end(status, 'fetched remote file: {}.'.format(os.path.basename(dst_fn)[:20]))
     return(status)
 
 def fetch_req(src_url, params = None, tries = 5, timeout = 2, read_timeout = 10):
@@ -2497,8 +2497,8 @@ class chs:
             if d is not None:
                 ds_region = chs_wcs._get_coverage_region(d)
                 if regions.regions_intersect_ogr_p(self.region, ds_region):
-                    chs_url = chs_wcs._get_coverage_url(surv['ID'], region = self.region)
-                    outf = 'chs_{}.tif'.format(regions.region_format(self.region, 'fn'))
+                    chs_url = chs_wcs._get_coverage_url(chs_wcs.fix_coverage_id(surv['ID']), region = self.region)
+                    outf = '{}_{}.tif'.format(surv['ID'].replace(' ', '_').replace('caris__', 'chs_'), regions.region_format(self.region, 'fn'))
                     yield([chs_url, outf, surv['DataType']])
 
     ## ==============================================
