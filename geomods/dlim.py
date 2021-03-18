@@ -945,6 +945,9 @@ def gdal_ogr_regions(src_ds):
         poly = None
     return(these_regions)
 
+def isclose(a, b, rel_tol=1e-09, abs_tol=0.0):
+    return abs(a-b) <= max(rel_tol * max(abs(a), abs(b)), abs_tol)
+
 ## ==============================================
 ## mbsystem parser
 ## ==============================================
@@ -952,7 +955,7 @@ class mbs_parser:
     """providing an mbsystem parser
     """
 
-    def __init__(self, fn, epsg):
+    def __init__(self, fn = None, epsg = None):
         self.fn = fn
         self.epsg = int_or(epsg)
         self.infos = {}
@@ -1003,35 +1006,37 @@ class mbs_parser:
                             cm_array[this_row][j] = int_or(til[j+1])
                         this_row += 1
 
+        mbs_region = region().from_list(self.infos['minmax'])
         xinc = (self.infos['minmax'][1] - self.infos['minmax'][0]) / dims[0]
         yinc = (self.infos['minmax'][2] - self.infos['minmax'][3]) / dims[1]
-        
-        mbs_region = region().from_list(self.infos['minmax'])
-        xcount, ycount, dst_gt = mbs_region.geo_transform(x_inc = xinc, y_inc = yinc)
-        
-        ds_config = {'nx': dims[0], 'ny': dims[1], 'nb': dims[1] * dims[0],
-                     'geoT': dst_gt, 'proj': sr_wkt(self.epsg),
-                     'dt': gdal.GDT_Float32, 'ndv': 0, 'fmt': 'GTiff'}
-        
-        driver = gdal.GetDriverByName('MEM')
-        ds = driver.Create('tmp', ds_config['nx'], ds_config['ny'], 1, ds_config['dt'])
-        ds.SetGeoTransform(ds_config['geoT'])
-        ds.SetProjection(ds_config['proj'])
-        ds_band = ds.GetRasterBand(1)
-        ds_band.SetNoDataValue(ds_config['ndv'])
-        ds_band.WriteArray(cm_array)
 
-        tmp_ds = ogr.GetDriverByName('Memory').CreateDataSource('tmp_poly')
-        tmp_layer = tmp_ds.CreateLayer('tmp_poly', None, ogr.wkbMultiPolygon)
-        tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
+        if xinc >= 0 and yinc > 0:
+            xcount, ycount, dst_gt = mbs_region.geo_transform(x_inc = xinc, y_inc = yinc)
 
-        gdal.Polygonize(ds_band, ds_band, tmp_layer, 0)
+            ds_config = {'nx': dims[0], 'ny': dims[1], 'nb': dims[1] * dims[0],
+                         'geoT': dst_gt, 'proj': sr_wkt(self.epsg),
+                         'dt': gdal.GDT_Float32, 'ndv': 0, 'fmt': 'GTiff'}
 
-        ## TODO: scan all features
-        feat = tmp_layer.GetFeature(0)
-        geom = feat.GetGeometryRef()
-        wkt = geom.ExportToWkt()
-        tmp_ds = ds = None
+            driver = gdal.GetDriverByName('MEM')
+            ds = driver.Create('tmp', ds_config['nx'], ds_config['ny'], 1, ds_config['dt'])
+            ds.SetGeoTransform(ds_config['geoT'])
+            ds.SetProjection(ds_config['proj'])
+            ds_band = ds.GetRasterBand(1)
+            ds_band.SetNoDataValue(ds_config['ndv'])
+            ds_band.WriteArray(cm_array)
+
+            tmp_ds = ogr.GetDriverByName('Memory').CreateDataSource('tmp_poly')
+            tmp_layer = tmp_ds.CreateLayer('tmp_poly', None, ogr.wkbMultiPolygon)
+            tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
+
+            gdal.Polygonize(ds_band, ds_band, tmp_layer, 0)
+
+            ## TODO: scan all features
+            feat = tmp_layer.GetFeature(0)
+            geom = feat.GetGeometryRef()
+            wkt = geom.ExportToWkt()
+            tmp_ds = ds = None
+        else: wkt = mbs_region.export_as_wkt()
 
         self.infos['wkt'] = wkt
         return(self)    
@@ -1806,7 +1811,6 @@ class xyz_dataset:
                     self.infos = mbs_parser(fn = inf_path, epsg = self.epsg).inf_parse().infos
                 except:
                     echo_error_msg('failed to parse inf {}'.format(inf_path))
-                    sys.exit()
             except: echo_error_msg('failed to parse inf {}'.format(inf_path))
         else: self.infos = {}
         #if 'hash' not in self.infos.keys() or self._hash() != self.infos['hash']:
