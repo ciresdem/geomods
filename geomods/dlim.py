@@ -1850,9 +1850,9 @@ _datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, xyz_datase
 ## dadtalists cli
 ## ==============================================    
 datalists_version = '0.1.0'
-datalists_usage = '''{} ({}): DataLists IMproved; Process and generate datalists
+datalists_usage = '''{cmd} ({dl_version}): DataLists IMproved; Process and generate datalists
 
-usage: {} [ -ghiqwPRW [ args ] ] DATALIST ...
+usage: {cmd} [ -ghiqwPRW [ args ] ] DATALIST ...
 
 Options:
   -R, --region\t\tRestrict processing to the desired REGION 
@@ -1873,21 +1873,17 @@ Options:
   --version\t\tPrint the version information
 
 Supported datalist formats: 
-  {}
+  {dl_formats}
 
  Examples:
- % {} my_data.datalist -R -90/-89/30/31
- % {} -R-90/-89/30/31/-100/100 *.tif -l -w > tifs_in_region.datalist
+ % {cmd} my_data.datalist -R -90/-89/30/31
+ % {cmd} -R-90/-89/30/31/-100/100 *.tif -l -w > tifs_in_region.datalist
+ % {cmd} -R-90/-89/30/31/-100/100 *.tif -l -w > tifs_in_region.datalist
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
-'''.format(
-    os.path.basename(sys.argv[0]), 
-    datalists_version, 
-    os.path.basename(sys.argv[0]),
-    _datalist_fmts_short_desc(),
-    os.path.basename(sys.argv[0]),
-    os.path.basename(sys.argv[0]),
-)
+'''.format(cmd =  os.path.basename(sys.argv[0]), 
+           dl_version = datalists_version,
+           dl_formats =  _datalist_fmts_short_desc())
 
 def datalists_cli(argv = sys.argv):
     """run datalists from command-line
