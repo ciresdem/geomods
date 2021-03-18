@@ -1964,7 +1964,6 @@ def datalists_cli(argv = sys.argv):
                     these_regions.append(i)
                     
     if len(these_regions) == 0:
-        echo_error_msg('failed to parse region(s), {}'.format(i_regions))
         these_regions = [None]
     else:
         if want_verbose: echo_msg('parsed {} region(s)'.format(len(these_regions)))
