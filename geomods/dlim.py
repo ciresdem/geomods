@@ -1967,7 +1967,7 @@ def datalists_cli(argv = sys.argv):
     for rn, this_region in enumerate(these_regions):
         if len(dls) == 0:
             print(datalists_usage)
-            echo_error_msg("you must specify some data")
+            echo_error_msg("you must specify some type of data")
         xdls = [xyz_dataset().from_string(" ".join(["-" if x == "" else x for x in dl.split(":")])) for dl in dls]
         for xdl in xdls:
             if xdl.valid_p():
