@@ -1878,7 +1878,7 @@ Supported datalist formats:
  Examples:
  % {cmd} my_data.datalist -R -90/-89/30/31
  % {cmd} -R-90/-89/30/31/-100/100 *.tif -l -w > tifs_in_region.datalist
- % {cmd} -R-90/-89/30/31/-100/100 *.tif -l -w > tifs_in_region.datalist
+ % {cmd} -R my_region.shp my_data.xyz -w -s_epsg 4326 -t_epsg 3565 > my_data_3565.xyz
 
 CIRES DEM home page: <http://ciresgroups.colorado.edu/coastalDEM>\
 '''.format(cmd =  os.path.basename(sys.argv[0]), 
