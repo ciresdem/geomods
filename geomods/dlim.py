@@ -1751,7 +1751,9 @@ class xyz_dataset:
 
         dls = self.data_types[self.data_format]['parser'](self, kwargs)
         for entry in dls.data_entries:
-            print('{} {} {}'.format(entry.fn, entry.data_format, entry.weight))
+            l = [entry.fn, entry.data_format]
+            if entry.weight is not None: l.append(entry.weight)
+            print('{}'.format(" ".join([str(x) for x in l])))
                     
     def from_string(self, dl_e, directory = None):
         """import a datalist entry string 'fn fmt wt' to an xyz-dataset object
