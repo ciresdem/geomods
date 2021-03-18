@@ -1005,6 +1005,7 @@ class mbs_parser:
 
         xinc = (self.infos['minmax'][1] - self.infos['minmax'][0]) / dims[0]
         yinc = (self.infos['minmax'][2] - self.infos['minmax'][3]) / dims[1]
+        
         mbs_region = region().from_list(self.infos['minmax'])
         xcount, ycount, dst_gt = mbs_region.geo_transform(x_inc = xinc, y_inc = yinc)
         
@@ -1800,8 +1801,13 @@ class xyz_dataset:
             try:
                 with open(inf_path) as i_ob:
                     self.infos = json.load(i_ob)
-            except:
-                self.infos = mbs_parser(fn = inf_path, epsg = self.epsg).inf_parse().infos
+            except ValueError:
+                try:
+                    self.infos = mbs_parser(fn = inf_path, epsg = self.epsg).inf_parse().infos
+                except:
+                    echo_error_msg('failed to parse inf {}'.format(inf_path))
+                    sys.exit()
+            except: echo_error_msg('failed to parse inf {}'.format(inf_path))
         else: self.infos = {}
         #if 'hash' not in self.infos.keys() or self._hash() != self.infos['hash']:
         if 'hash' not in self.infos.keys():
