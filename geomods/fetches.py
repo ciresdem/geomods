@@ -2466,9 +2466,9 @@ class chs:
         if self._verbose: _prog = utils._progress('Scanning {} WCS coverages from {}...'.format(len(contents), self._chs_url))
         for i, layer in enumerate(contents):
             if self._verbose: _prog.update_perc((i, len(contents)))
-            self.FRED._attribute_filter(["ID = '{}'".format(layer['CoverageId'][0])])
-            if self.FRED.layer is None or len(self.FRED.layer) == 0:
-                
+            if 'Tiles' not in layer['CoverageId'][0]:
+                self.FRED._attribute_filter(["ID = '{}'".format(layer['CoverageId'][0])])
+            if self.FRED.layer is None or len(self.FRED.layer) == 0:                
                 d = chs_wcs._describe_coverage(layer['CoverageId'][0])
                 if d is not None:
                     ds_region = chs_wcs._get_coverage_region(d)
