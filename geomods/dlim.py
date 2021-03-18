@@ -1461,7 +1461,7 @@ class raster_parser:
 
         if self.ds_open_p:
             gt = self.src_ds.GetGeoTransform()
-            if self.region is not None and self.region._valid_p():
+            if self.region is not None and self.region._valid_p(check_xy = True):
                 self.srcwin = self.region.srcwin(gt, self.src_ds.RasterXSize, self.src_ds.RasterYSize)
             else: self.srcwin = (0, 0, self.src_ds.RasterXSize, self.src_ds.RasterYSize)
             src_band = self.src_ds.GetRasterBand(1)
