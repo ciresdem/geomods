@@ -1858,6 +1858,9 @@ Options:
   -R, --region\t\tRestrict processing to the desired REGION 
 \t\t\tWhere a REGION is [ xmin/xmax/ymin/ymax/[ zmin/zmax/[ wmin/wmax ] ] ]
 \t\t\tUse '-' to indicate no bounding range; e.g. -R -/-/-/-/-10/10/1/-
+\t\t\tor an OGR-compatible vector file with regional polygons. 
+\t\t\tIf a vector file is supplied it will search each region found therein.
+\t\t\tAppend :zmin/zmax/[ wmin/wmax ] to the file path to extended region.
   -P, --s_epsg\t\tSet the projection EPSG code of the datalist
   -W, --t_epsg\t\tSet the output warp projection EPSG code
 
