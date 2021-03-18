@@ -1939,6 +1939,10 @@ def datalists_cli(argv = sys.argv):
             for i in tmp_region:
                 if i._valid_p():
                     these_regions.append(i)
+                    
+    if len(these_regions) == 0: echo_error_msg('failed to parse region(s), {}'.format(i_regions))
+    else: if verbose: echo_msg('parsed {} region(s)'.format(len(these_regions)))
+    
     for rn, this_region in enumerate(these_regions):
         if len(dls) == 0:
             print(datalists_usage)
