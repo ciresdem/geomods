@@ -1913,7 +1913,7 @@ def datalists_cli(argv = sys.argv):
             i_regions.append(str(argv[i + 1]))
             i = i + 1
         elif arg[:2] == '-R':
-            i_region.append(str(arg[2:]))
+            i_regions.append(str(arg[2:]))
         elif arg == '-s_epsg' or arg == '--s_epsg' or arg == '-P':
             epsg = argv[i + 1]
             i = i + 1
