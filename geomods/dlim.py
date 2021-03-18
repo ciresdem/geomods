@@ -401,24 +401,29 @@ class region:
         self.epsg = int_or(epsg)
         self.wkt = wkt
         
-    def _valid_p(self):
+    def _valid_p(self, check_xy = False):
         """check the validity of a region
     
         Returns:
           bool: True if region  appears to be valid else False
         """
+        
+        if check_xy:
+            if self.xmin is None: return(False)
+            if self.xmax is None: return(False)
+            if self.ymin is None: return(False)
+            if self.ymax is None: return(False)
 
-        if self.xmin is None: return(False)
-        if self.xmax is None: return(False)
-        if self.ymin is None: return(False)
-        if self.ymax is None: return(False)
-
-        if self.xmin > self.xmax: return(False)
-        if self.ymin > self.ymax: return(False)
+        if self.xmin is not None and self.xmax is not None:
+            if self.xmin > self.xmax: return(False)
+        if self.ymin is not None and self.ymax is not None:
+            if self.ymin > self.ymax: return(False)
         if self.zmin is not None and self.zmax is not None:
             if self.zmin > self.zmax: return(False)
         if self.wmin is not None and self.wmax is not None:
             if self.wmin > self.wmax: return(False)
+
+        if not any(self.full_region()): return(False)
         return(True)
 
     def from_list(self, region_list):
@@ -443,8 +448,9 @@ class region:
                     self.wmin = float_or(region_list[6])
                     self.wmax = float_or(region_list[7])
             if self.wkt is None:
-                if self._valid_p():
+                if self._valid_p(check_xy = True):
                     self.wkt = self.export_as_wkt()
+                else: self.wkt = None
         return(self)
         
     def from_string(self, region_str):
@@ -583,8 +589,9 @@ class region:
           ogr-geom: an ogr polygon geometry
         """
 
-        #wkt = self.export_as_wkt()
-        return(ogr.CreateGeometryFromWkt(self.wkt))
+        if self.wkt is not None:
+            return(ogr.CreateGeometryFromWkt(self.wkt))
+        else: return(None)
 
     def export_as_ogr(self, dst_ogr, dst_fmt = 'ESRI Shapefile', append = False):
         """convert a region string to an OGR vector
@@ -750,14 +757,23 @@ def ogr_wkts(src_ds):
     """
     
     these_regions = []
-    if os.path.exists(src_ds):
-        poly = ogr.Open(src_ds)
+    src_s = src_ds.split(':')
+    if os.path.exists(src_s[0]):
+        poly = ogr.Open(src_s[0])
         if poly is not None:
             p_layer = poly.GetLayer(0)
             for pf in p_layer:
                 pgeom = pf.GetGeometryRef()
                 pwkt = pgeom.ExportToWkt()
-                these_regions.append(region().from_string(pwkt))
+                r = region().from_string(pwkt)
+                if len(src_s) > 1:
+                    src_r = src_s[1].split('/')
+                    if len(src_r) > 0: r.zmin = float_or(src_r[0])
+                    if len(src_r) > 1: r.zmax = float_or(src_r[1])
+                    if len(src_r) > 2: r.wmin = float_or(src_r[2])
+                    if len(src_r) > 3:  r.wmax = float_or(src_r[3])
+                these_regions.append(r)
+
         poly = None
     return(these_regions)
     
@@ -779,10 +795,14 @@ def regions_reduce(region_a, region_b):
     """
     region_c = region()
     if region_a._valid_p() and region_b._valid_p():
-        region_c.xmin = region_a.xmin if region_a.xmin > region_b.xmin else region_b.xmin
-        region_c.xmax = region_a.xmax if region_a.xmax < region_b.xmax else region_b.xmax
-        region_c.ymin = region_a.ymin if region_a.ymin > region_b.ymin else region_b.ymin
-        region_c.ymax = region_a.ymax if region_a.ymax < region_b.ymax else region_b.ymax
+        if region_a.xmin is not None and region_b.xmin is not None:
+            region_c.xmin = region_a.xmin if region_a.xmin > region_b.xmin else region_b.xmin
+        if region_a.xmax is not None and region_b.xmax is not None:
+            region_c.xmax = region_a.xmax if region_a.xmax < region_b.xmax else region_b.xmax
+        if region_a.ymin is not None and region_b.ymin is not None:
+            region_c.ymin = region_a.ymin if region_a.ymin > region_b.ymin else region_b.ymin
+        if region_a.ymax is not None and region_b.ymax is not None:
+            region_c.ymax = region_a.ymax if region_a.ymax < region_b.ymax else region_b.ymax
         if region_a.zmin is not None and region_b.zmin is not None:
             region_c.zmin = region_a.zmin if region_a.zmin > region_b.zmin else region_b.zmin
         if region_a.zmax is not None and region_b.zmax is not None:
@@ -886,21 +906,20 @@ def xyz_in_region_p(xyz, this_region):
       bool: True if xyz point inside region else False
     """
 
+    pass_d = True
     xyz_wkt = xyz.export_as_wkt()
     p_geom = ogr.CreateGeometryFromWkt(xyz_wkt)
     r_geom = this_region.export_as_geom()
+    if r_geom is not None:
+        pass_d = p_geom.Within(r_geom)
 
-    return(p_geom.Within(r_geom))
-        
-    # if xyz.x < this_region.xmin: return(False)
-    # elif xyz.x > this_region.xmax: return(False)
-    # elif xyz.y < this_region.ymin: return(False)
-    # elif xyz.y > this_region.ymax: return(False)
-    # if this_region.zmin is not None:
-    #     if xyz.z < this_region.zmin: return(False)
-    # if this_region.zmax is not None:
-    #     if xyz.z > this_region.zmax: return(False)
-    # return(True)
+    if pass_d:
+        if this_region.zmin is not None:
+            if xyz.z < this_region.zmin: pass_d = False
+        if this_region.zmax is not None:
+            if xyz.z > this_region.zmax: pass_d = False
+
+    return(pass_d)
 
 def gdal_ogr_regions(src_ds):
     """return the region(s) of the ogr dataset
@@ -1587,7 +1606,7 @@ class datalist_parser:
                             )                           
                             for entry in dls.data_entries:
                                 these_entries.append(entry)
-                        else: echo_warning_msg('invalid dataset: `{}`'.format(data_set.fn))
+                        #else: echo_warning_msg('invalid dataset: `{}`'.format(data_set.fn))
         else: echo_warning_msg('could not open datalist/entry {}'.format(self.fn))
         self.data_entries = these_entries
         _prog.end(0, "parsed datalist {}".format(self.fn))
@@ -1700,6 +1719,7 @@ class xyz_dataset:
         if self.data_format is None: return(False)
         if self.fn is not None:
             if not os.path.exists(self.fn): return (False)
+            if os.stat(self.fn).st_size == 0: return(False)
         return(True)
 
     def _hash(self, sha1 = False):
@@ -1940,8 +1960,11 @@ def datalists_cli(argv = sys.argv):
                 if i._valid_p():
                     these_regions.append(i)
                     
-    if len(these_regions) == 0: echo_error_msg('failed to parse region(s), {}'.format(i_regions))
-    else: if verbose: echo_msg('parsed {} region(s)'.format(len(these_regions)))
+    if len(these_regions) == 0:
+        echo_error_msg('failed to parse region(s), {}'.format(i_regions))
+        these_regions = [None]
+    else:
+        if want_verbose: echo_msg('parsed {} region(s)'.format(len(these_regions)))
     
     for rn, this_region in enumerate(these_regions):
         if len(dls) == 0:
