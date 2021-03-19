@@ -559,8 +559,7 @@ def waffles_spatial_metadata(wg, geojson = False):
             defn = None if layer is None else layer.GetLayerDefn()            
             twg = waffles_config_copy(wg)
             twg['datalist'] = this_entry[0]
-            twg['name'] = '{}_{}_msk'.format(os.path.basename(this_entry[0]).split('.')[0].split(':')[0],
-                                             regions.region_format(twg['region'], 'fn'))
+            twg['name'] = '{}_{}_msk'.format(os.path.basename(this_entry[0]).split('.')[0].split(':')[0], regions.region_format(twg['region'], 'fn'))
             if twg['inc'] < gmtfun.gmt_inc2inc('.3333333s'):
                 twg['inc'] = gmtfun.gmt_inc2inc('.3333333s')
                 twg['extend'] = twg['extend'] / 3
@@ -1662,18 +1661,18 @@ def waffle(wg):
         ## ==============================================
         ## gererate the DEM (run the module)
         ## ==============================================
-        try:
-            waffles_out, status = _waffles_modules[this_wg['mod']]['run'](args_d)
-            if wg['mask']: waffles_out['msk'] = ['{}_msk.tif'.format(this_wg['name']), 'raster']
-            chunks.append(waffles_out)
-        except KeyboardInterrupt as e:
-            utils.echo_error_msg('killed by user, {}'.format(e))
-            sys.exit(-1)
-        except Exception as e:
-            utils.echo_error_msg('{}'.format(e))
-            [utils.remove_glob('{}.*'.format(waffles_out[x][0].split('.')[0])) for x in waffles_out.keys()]
-            status = -1
-            continue
+        #try:
+        waffles_out, status = _waffles_modules[this_wg['mod']]['run'](args_d)
+        if wg['mask']: waffles_out['msk'] = ['{}_msk.tif'.format(this_wg['name']), 'raster']
+        chunks.append(waffles_out)
+        #except KeyboardInterrupt as e:
+        #    utils.echo_error_msg('killed by user, {}'.format(e))
+        #    sys.exit(-1)
+        #except Exception as e:
+        #    utils.echo_error_msg('{}'.format(e))
+        #    [utils.remove_glob('{}.*'.format(waffles_out[x][0].split('.')[0])) for x in waffles_out.keys()]
+        ##    status = -1
+        #    continue
         
         for out_key in waffles_out.keys():
             if waffles_out[out_key][1] == 'raster':

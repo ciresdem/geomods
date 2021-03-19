@@ -297,8 +297,8 @@ def region2gt(region, inc, y_inc = None):
     returns a list [xcount, ycount, geot]'''
     if y_inc is None: y_inc = inc * -1.
     dst_gt = (region[0], inc, 0, region[3], 0, y_inc)    
-    this_origin = _geo2pixel(region[0], region[3], dst_gt)
-    this_end = _geo2pixel(region[1], region[2], dst_gt)
+    this_origin = utils._geo2pixel(region[0], region[3], dst_gt)
+    this_end = utils._geo2pixel(region[1], region[2], dst_gt)
     this_size = (this_end[0] - this_origin[0], this_end[1] - this_origin[1])
     return(this_size[0], this_size[1], dst_gt)
 

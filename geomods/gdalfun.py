@@ -39,6 +39,7 @@ import numpy as np
 ## ==============================================
 from geomods import xyzfun
 from geomods import utils
+from geomods import regions
 
 gdal.PushErrorHandler('CPLQuietErrorHandler')
 gdal.UseExceptions()

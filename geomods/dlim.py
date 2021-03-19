@@ -25,6 +25,7 @@ import sys
 import json
 import glob
 import hashlib
+import optparse
 
 import urllib
 import requests
@@ -40,8 +41,21 @@ from scipy import spatial
 
 datalists_version = '0.1.0'
 
+## ==============================================
+##
+## General Utility Functions, etc.
+##
+## ==============================================
 def dl_hash(fn, sha1 = False):
+    """calculate a hash of a file
 
+    Args:
+      fn (str): input filename path
+    
+    Returns:
+      str: hexdigest
+    """
+    
     BUF_SIZE = 65536  # lets read stuff in 64kbchunks!
     if sha1: this_hash = hashlib.sha1()
     else: this_hash = hashlib.md5()
@@ -54,6 +68,27 @@ def dl_hash(fn, sha1 = False):
             this_hash.update(data)
             
     return(this_hash.hexdigest())
+
+def remove_glob(*args):
+    """glob `glob_str` and os.remove results, pass if error
+    
+    Args:
+      *args (str): any number of pathname or dirname strings
+
+    Returns:
+      int: 0
+    """
+    
+    for glob_str in args:
+        try:
+            globs = glob.glob(glob_str)
+            for g in globs:
+                if os.path.isdir(g):
+                    remove_globs('{}/*'.format(g))
+                    os.removedirs(g)
+                else: os.remove(g)
+        except: pass
+    return(0)
 
 def int_or(val, or_val = None):
     """return val if val is integer
@@ -178,47 +213,6 @@ def _invert_gt(geoTransform):
     outGeoTransform[3] = (-geoTransform[1] * geoTransform[3] + geoTransform[0] * geoTransform[4]) * invDet
     return(outGeoTransform)
 
-def create_wkt_polygon(coords, xpos = 1, ypos = 0):
-    """convert coords to Wkt
-
-    Args:
-      coords (list): x/y geographic coords
-      xpos (int): the position of the x value in coords
-      ypos (int): the position of the y value in corrds
-
-    Returns:
-      wkt: polygon as wkt
-    """
-
-    ring = ogr.Geometry(ogr.wkbLinearRing)
-    for coord in coords: ring.AddPoint(coord[xpos], coord[ypos])
-    poly = ogr.Geometry(ogr.wkbPolygon)
-    poly.AddGeometry(ring)
-    poly_wkt = poly.ExportToWkt()
-    poly = None
-    return(poly_wkt)
-
-def remove_glob(*args):
-    """glob `glob_str` and os.remove results, pass if error
-    
-    Args:
-      *args (str): any number of pathname or dirname strings
-
-    Returns:
-      int: 0
-    """
-    
-    for glob_str in args:
-        try:
-            globs = glob.glob(glob_str)
-            for g in globs:
-                if os.path.isdir(g):
-                    remove_globs('{}/*'.format(g))
-                    os.removedirs(g)
-                else: os.remove(g)
-        except: pass
-    return(0)
-
 def sr_wkt(epsg, esri = False):
     """convert an epsg code to wkt
 
@@ -232,9 +226,36 @@ def sr_wkt(epsg, esri = False):
         if esri: sr.MorphToESRI()
         return(sr.ExportToWkt())
     except: return(None)
+
+def gdal_fext(src_drv_name):
+    """find the common file extention given a GDAL driver name
+    older versions of gdal can't do this, so fallback to known standards.
+
+    Args:
+      src_drv_name (str): a source GDAL driver name
+
+    Returns:
+      list: a list of known file extentions or None
+    """
+    
+    fexts = None
+    try:
+        drv = gdal.GetDriverByName(src_drv_name)
+        if drv.GetMetadataItem(gdal.DCAP_RASTER): fexts = drv.GetMetadataItem(gdal.DMD_EXTENSIONS)
+        if fexts is not None: return(fexts.split()[0])
+        else: return(None)
+    except:
+        if src_drv_name.lower() == 'gtiff': fext = 'tif'
+        elif src_drv_name == 'HFA': fext = 'img'
+        elif src_drv_name == 'GMT': fext = 'grd'
+        elif src_drv_name.lower() == 'netcdf': fext = 'nc'
+        else: fext = 'gdal'
+        return(fext)
     
 ## ==============================================
+##
 ## verbosity functions
+##
 ## ==============================================
 def echo_warning_msg2(msg, prefix = 'waffles'):
     """echo warning msg to stderr using `prefix`
@@ -299,7 +320,8 @@ echo_error_msg = lambda m: echo_error_msg2(m, prefix = os.path.basename(sys.argv
 echo_warning_msg = lambda m: echo_warning_msg2(m, prefix = os.path.basename(sys.argv[0]))
 
 class _progress:
-    """geomods minimal progress indicator"""
+    """geomods minimal progress indicator
+    """
 
     def __init__(self, message = None):
         self.tw = 7
@@ -349,6 +371,11 @@ class _progress:
             sys.stderr.write('\r[\033[31m\033[1m{:^6}\033[m] {:40}\n'.format('fail', end_msg))
         else: sys.stderr.write('\r[\033[32m\033[1m{:^6}\033[m] {:40}\n'.format('ok', end_msg))
 
+## ==============================================
+##
+## Fetching functions
+##
+## ==============================================        
 r_headers = { 'User-Agent': 'GeoMods: DLIM v%s' %(datalists_version) }
         
 def fetch_file(src_url, dst_fn, params = None, callback = lambda: False, datatype = None, overwrite = False, verbose = False, timeout = 140, read_timeout = 320):
@@ -391,7 +418,10 @@ def fetch_req(src_url, params = None, tries = 5, timeout = 2, read_timeout = 10)
     except: return(fetch_req(src_url, params = params, tries = tries - 1, timeout = timeout + 1, read_timeout = read_timeout + 10))
         
 ## ==============================================
+##
 ## regions
+## the region class and associated functions.
+##
 ## ==============================================
 class region:
     """Representing a geographic region.
@@ -980,6 +1010,26 @@ def gdal_ogr_regions(src_ds):
         poly = None
     return(these_regions)
 
+def create_wkt_polygon(coords, xpos = 1, ypos = 0):
+    """convert coords to Wkt
+
+    Args:
+      coords (list): x/y geographic coords
+      xpos (int): the position of the x value in coords
+      ypos (int): the position of the y value in corrds
+
+    Returns:
+      wkt: polygon as wkt
+    """
+
+    ring = ogr.Geometry(ogr.wkbLinearRing)
+    for coord in coords: ring.AddPoint(coord[xpos], coord[ypos])
+    poly = ogr.Geometry(ogr.wkbPolygon)
+    poly.AddGeometry(ring)
+    poly_wkt = poly.ExportToWkt()
+    poly = None
+    return(poly_wkt)
+
 def ogr_wkts(src_ds):
     """return the wkt(s) of the ogr dataset
     """
@@ -1005,33 +1055,11 @@ def ogr_wkts(src_ds):
         poly = None
     return(these_regions)
 
-def gdal_fext(src_drv_name):
-    """find the common file extention given a GDAL driver name
-    older versions of gdal can't do this, so fallback to known standards.
-
-    Args:
-      src_drv_name (str): a source GDAL driver name
-
-    Returns:
-      list: a list of known file extentions or None
-    """
-    
-    fexts = None
-    try:
-        drv = gdal.GetDriverByName(src_drv_name)
-        if drv.GetMetadataItem(gdal.DCAP_RASTER): fexts = drv.GetMetadataItem(gdal.DMD_EXTENSIONS)
-        if fexts is not None: return(fexts.split()[0])
-        else: return(None)
-    except:
-        if src_drv_name.lower() == 'gtiff': fext = 'tif'
-        elif src_drv_name == 'HFA': fext = 'img'
-        elif src_drv_name == 'GMT': fext = 'grd'
-        elif src_drv_name.lower() == 'netcdf': fext = 'nc'
-        else: fext = 'gdal'
-        return(fext)
-
 ## ==============================================
+##
 ## mbsystem parser
+## Parse multibeam data and mbsystem .inf files.
+##
 ## ==============================================
 class mbs_parser:
     """providing an mbsystem parser
@@ -1132,7 +1160,11 @@ class mbs_parser:
         return(self)    
 
 ## ==============================================
+##
 ## xyz processing (datalists fmt:168)
+## Process XYZ ascii table data
+## xyz_point and xyz_parser classes and associated functions.
+##
 ## ==============================================
 class xyz_point:
     """represnting an xyz data point
@@ -1358,7 +1390,7 @@ class xyz_parser:
                 
         pts = []
         self.infos['name'] = self.fn
-        self.infos['hash'] = dl_hash(self.fn)
+        self.infos['hash'] = self.ds.hash()#dl_hash(self.fn)
         self.infos['numpts'] = 0
         this_region = region()
 
@@ -1424,7 +1456,7 @@ class xyz_parser:
         else: self.src_data = sys.stdin
         
         sk = self.skip
-        this_xyz = xyz_point()
+        this_xyz = xyz_point(w = 1)
         if self.region is not None:
             if self.region.epsg != self.epsg:
                 if self.warp is not None:
@@ -1454,6 +1486,8 @@ class xyz_parser:
                     this_xyz.x = (this_xyz.x + self.x_offset) * self.x_scale
                     this_xyz.y = (this_xyz.y + self.y_offset) * self.y_scale
                     this_xyz.z *= self.z_scale
+                    #echo_msg(this_xyz.w)
+                    this_xyz.w = self.ds.weight
                     if self.region is not None and self.region._valid_p():
                         if xyz_in_region_p(this_xyz, self.region):
                             if dst_trans is not None:
@@ -1470,7 +1504,11 @@ class xyz_parser:
         self.src_data.close()
 
 ## ==============================================
+##
 ## raster processing (fmt: 200)
+## Process raster data with GDAL
+## raster_parser class
+##
 ## ==============================================
 class raster_parser:
     """providing a raster parser
@@ -1533,7 +1571,7 @@ class raster_parser:
         """
 
         self.infos['name'] = self.fn
-        self.infos['hash'] = dl_hash(self.fn)
+        self.infos['hash'] = self.ds.hash()#dl_hash(self.fn)
         self._open_ds()
         if self.ds_open_p:
             
@@ -1602,7 +1640,7 @@ class raster_parser:
         """
 
         self._open_ds()
-        out_xyz = xyz_point()
+        out_xyz = xyz_point(w = 1)
         if self.src_ds is not None:
             ln = 0
             band = self.src_ds.GetRasterBand(1)
@@ -1648,6 +1686,7 @@ class raster_parser:
                         ln += 1
                         out_xyz.x, out_xyz.y = _pixel2geo(x, y, gt)
                         out_xyz.z = z
+                        this_xyz.w = self.ds.weight
                         if dst_trans is not None: out_xyz.transform(dst_trans)
                         yield(out_xyz)
             band = None
@@ -1657,7 +1696,11 @@ class raster_parser:
         self._close_ds()
 
 ## ==============================================
+##
 ## datalist processing (fmt: -1)
+## Process datalist files (mbsystem style)
+## datalist_parser class
+##
 ## ==============================================        
 class datalist_parser:
     """representing a datalist parser
@@ -1749,7 +1792,7 @@ class datalist_parser:
         out_regions = []
         self.infos['name'] = self.fn
         self.infos['numpts'] = 0
-        self.infos['hash'] = dl_hash(self.fn)
+        self.infos['hash'] = self.ds.hash()#dl_hash(self.fn)
         for entry in self.data_entries:
             #entry.inf()
             out_regions.append(entry.infos['minmax'])
@@ -1771,10 +1814,33 @@ class datalist_parser:
         return(self.infos)
 
 ## ==============================================
-## datalist dataset
+##
+## xyz dataset
+## the xyz_dataset class is for xyz-able elevation data
+##
 ## ==============================================
 class xyz_dataset:
     """representing an xyz-able parser or a data-list entry
+
+    Attributes:
+      fn (str): dataset filename path
+      data_format (int): the datalists data format of the dataset
+      weight (float): the relative weight of the dataset
+      epsg (int): the EPSG code representing the datasets projection
+      name (str): the name of the dataset
+      parent (xyz_dataset): the datasets parent
+      verbose (bool): increase verbosity
+      infos (dict): informational dictionary about the dataset
+
+    Methods:
+      guess_data_format(): guess the data format of the dataset
+      valid_p(): True if the dataset appears valid
+      hash(): Generate a hash of the xyz dataset
+      echo(): Print the dataset as a datalist entry
+      from_string(dl_e, directory = None): import a dataset from a datalist entry string
+      inf(): generate/read a datasets associated inf file
+      yield_xyz(): yield the xyz data from the dataset
+      dump(dst_port = sys.stdout, encode = False): dump the xyz data from the dataset to file
     """
 
     data_types = {
@@ -1807,13 +1873,6 @@ class xyz_dataset:
         self.weight = weight
         self.verbose = verbose
 
-    def guess_data_format(self):
-        if self.fn is not None:
-            for key in self.data_types.keys():
-                if self.fn.split('.')[-1] in self.data_types[key]['fmts']:
-                    self.data_format = key
-                    break
-                
     def valid_p(self):
         """check if self is a valid datalist entry
 
@@ -1828,8 +1887,15 @@ class xyz_dataset:
                 if not os.path.exists(self.fn): return (False)
                 if os.stat(self.fn).st_size == 0: return(False)
         return(True)
+        
+    def guess_data_format(self):
+        if self.fn is not None:
+            for key in self.data_types.keys():
+                if self.fn.split('.')[-1] in self.data_types[key]['fmts']:
+                    self.data_format = key
+                    break
 
-    def _hash(self, sha1 = False):
+    def hash(self, sha1 = False):
         """generate a hash of the xyz-dataset source file
 
         Returns:
@@ -1893,10 +1959,11 @@ class xyz_dataset:
         if self.weight is not None:
             self.weight *= entry[2]
 
-        if self.valid_p(): self.inf()
+        #if self.valid_p(): self.inf(check_hash = True)
+        if self.valid_p(): self.inf(check_hash = False)
         return(self)
         
-    def inf(self, **kwargs):
+    def inf(self, check_hash = False, **kwargs):
         """read/write an inf file
 
         Args:
@@ -1918,8 +1985,14 @@ class xyz_dataset:
                     echo_error_msg('failed to parse inf {}'.format(inf_path))
             except: echo_error_msg('failed to parse inf {}'.format(inf_path))
         else: self.infos = {}
-        #if 'hash' not in self.infos.keys() or self._hash() != self.infos['hash']:
-        if 'hash' not in self.infos.keys():
+        
+        if check_hash:
+            if 'hash' in self.infos.keys():
+                gen_inf = self.hash() != self.infos['hash']
+            else: gen_inf = True
+        else: gen_inf = 'hash' not in self.infos.keys()
+        
+        if gen_inf:
             echo_msg("generating inf for {}".format(self.fn))
             self.infos = self.data_types[self.data_format]['parser'](self, kwargs).inf()
             self.infos['format'] = self.data_format
@@ -1944,10 +2017,9 @@ class xyz_dataset:
         """
 
         for xyz in self.data_types[self.data_format]['parser'](self, kwargs).yield_xyz():
-            xyz.w = self.weight
             yield(xyz)
 
-    def dump(self, dst_port = sys.stdout, encode = False, **kwargs):
+    def dump_xyz(self, dst_port = sys.stdout, encode = False, **kwargs):
         """dump the xyz-dataset to dst_port
         
         Args:
@@ -1957,13 +2029,14 @@ class xyz_dataset:
         """
 
         for this_xyz in self.yield_xyz(**kwargs):
-            this_xyz.dump(include_w = True if self.weight is not None else False, dst_port = dst_port, encode = False)
-            
-_datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, xyz_dataset().data_types[key]['fmts']) for key in xyz_dataset().data_types])
+            this_xyz.dump(include_w = True if self.weight is not None else False, dst_port = dst_port, encode = False)            
     
 ## ==============================================
-## dadtalists cli
-## ==============================================    
+##
+## datalists cli
+##
+## ==============================================
+_datalist_fmts_short_desc = lambda: '\n  '.join(['{}\t{}'.format(key, xyz_dataset().data_types[key]['fmts']) for key in xyz_dataset().data_types])
 datalists_usage = '''{cmd} ({dl_version}): DataLists IMproved; Process and generate datalists
 
 usage: {cmd} [ -ghiqwPRW [ args ] ] DATALIST ...
@@ -1974,13 +2047,13 @@ Options:
 \t\t\tUse '-' to indicate no bounding range; e.g. -R -/-/-/-/-10/10/1/-
 \t\t\tOR an OGR-compatible vector file with regional polygons. 
 \t\t\tIf a vector file is supplied, will use each region found therein.
-\t\t\tAppend :zmin/zmax/[ wmin/wmax ] to the file path to extended region.
+\t\t\tAppend :zmin/zmax/[ wmin/wmax ] to the file path to extended REGION.
   -P, --s_epsg\t\tSet the projection EPSG code of the datalist
   -W, --t_epsg\t\tSet the output warp projection EPSG code
 
-  --glob\t\tGlob the datasets in the current directory to stdout
-  --info\t\tGenerate and return an info dictionary of the dataset
-  --weights\t\tOutput weight values along with xyz
+  --glob\t\tGLOB the datasets in the current directory to stdout
+  --info\t\tGenerate and return an INFO dictionary of the dataset
+  --weights\t\tOutput WEIGHT values along with xyz
   --quiet\t\tLower the verbosity to a quiet
 
   --help\t\tPrint the usage text
@@ -2086,7 +2159,7 @@ def datalists_cli(argv = sys.argv):
         for xdl in xdls:
             if xdl.valid_p():
                 if not want_weights: xdl.weight = None
-                if want_inf: print(xdl.inf())
+                if want_inf: print(xdl.inf(want_hash = True))
                 elif want_list: xdl.echo(src_region = this_region, verbose = want_verbose)
-                else: xdl.dump(src_region = this_region, verbose = want_verbose, epsg = epsg, warp = warp)
+                else: xdl.dump_xyz(src_region = this_region, verbose = want_verbose, epsg = epsg, warp = warp)
 ### End
