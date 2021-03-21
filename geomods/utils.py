@@ -40,7 +40,9 @@ import gdal
 import numpy as np
 
 ## ==============================================
+##
 ## General utility functions - utils.py
+##
 ## ==============================================
 _version = '0.4.1'
 
@@ -197,7 +199,9 @@ def gdal_fext(src_drv_name):
         return(fext)
     
 ## ==============================================
+##
 ## Archives (zip/gzip/etc.)
+##
 ## ==============================================
 def _clean_zips(zip_files):
     """remove all files\directories in `zip_files`
@@ -342,7 +346,9 @@ def procs_unzip(src_file, exts):
     return([src_proc, zips])
 
 ## ==============================================
+##
 ## spatial and raster functions
+##
 ## ==============================================
 def euc_dst(pnt0, pnt1):
     """return the distance between pnt0 and pnt1,
@@ -530,7 +536,9 @@ def wkt2geom(wkt):
     return(ogr.CreateGeometryFromWkt(wkt))
 
 ## ==============================================
+##
 ## error plots and calculations
+##
 ## ==============================================
 def err_fit_plot(xdata, ydata, out, fitfunc, dst_name = 'unc', xa = 'distance'):
     """plot a best fit plot with matplotlib
@@ -621,6 +629,7 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
     return(out)
 
 ## ==============================================
+##
 ## system cmd verification and configs.
 ##
 ## run_cmd - run a system command as a subprocess
@@ -628,6 +637,7 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
 ##
 ## yield_cmd - run a system command as a subprocess
 ## and yield the output
+##
 ## ==============================================
 cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ['PATH'].split(os.pathsep))
 
@@ -751,7 +761,9 @@ def config_check(chk_vdatum = False, verbose = False):
     return(_waff_co)
     
 ## ==============================================
-## stderr messaging
+##
+## stderr messaging and simple progress indicator
+##
 ## ==============================================
 def echo_warning_msg2(msg, prefix = 'waffles'):
     """echo warning msg to stderr using `prefix`

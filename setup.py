@@ -52,7 +52,6 @@ setuptools.setup(
             'waffles = geomods.waffles:waffles_cli',
             'datalists = geomods.datalists:datalists_cli',
             'fetches = geomods.fetches:fetches_cli',
-            'dlim = geomods.dlim:datalists_cli',
         ],
     },
     scripts = [

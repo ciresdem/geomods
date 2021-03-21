@@ -111,7 +111,7 @@ def path_exists_or_url(src_str):
             return(True)
     if src_str[:4] == 'http': return(True)
     if src_str.split(':')[0] in _dl_dl_h[-4]['fmts']: return(True)
-    utils.echo_warning_msg('invalid datafile/datalist: {}'.format(src_str))
+    #utils.echo_warning_msg('invalid datafile/datalist: {}'.format(src_str))
     return(False)
 
 def intersect_p(r, e, p = None):
