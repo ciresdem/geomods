@@ -1378,31 +1378,6 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
         xyzc = copy.deepcopy(xyzfun._xyz_config)
         src_mb = os.path.basename(entry[1])
 
-        # split_entry = entry[0].split('/')
-        # ship = split_entry[6]
-        # survey = split_entry[7]
-        # survey_html = '{}ships/{}/{}_mb.html'.format(self._mb_html, ship, survey)
-        # surv_ = fetch_html(survey_html)
-
-        # #print(surv_.xpath("//t[@id == 'summary']"))
-        
-        # for i in surv_.get_element_by_id('summary'):
-        #     if i.text == 'Multibeam Bathymetry':
-        #         for j in i.find_class('content'):
-        #             print(j)
-        #         #content = i.find_class('content')
-        #         #print(content)
-        #         #if len(content) > 0:
-        #         #print(content)
-        #         #tr = i.xpath('//table')[0].xpath('.//tr')
-        #         #if len(tr) > 0:
-        #         #    print(tr[0].text)
-        
-        #     #tr = page.xpath('//table')[0].xpath('.//tr')
-        # #if len(tr) <= 0: continue
-
-        # #[cols.append(i.text_content()) for i in tr[0]]
-
         if fetch_file(entry[0], src_mb, callback = self._stop, verbose = self._verbose) == 0:
             #src_xyz = os.path.basename(src_mb).split('.')[0] + '.xyz'
             src_xyz = os.path.basename(src_mb) + '.xyz'
@@ -1614,7 +1589,6 @@ class tnm:
         self._info = '''Various datasets from USGS's National Map. The National Map is a 
 collaborative effort among the USGS and other Federal, State, and local partners to improve
 and deliver topographic information for the Nation.'''
-        ## \nDatasets: {}'''.format(self._fred_datasets())
         self._title = '''The National Map (TNM) from USGS'''
         self._usage = '''< tnm:formats=fmt,fmt:extents=ext,ext >'''
         self._urls = [self._tnm_api_url]
