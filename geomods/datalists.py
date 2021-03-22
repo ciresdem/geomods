@@ -211,7 +211,8 @@ def inf_parse(src_inf):
         except:
             try:
                 xyzi = mbsfun.mb_inf_parse(src_inf)
-            except: pass
+            except:
+                utils.echo_error_msg('could not parse inf file {}'.format(src_inf))
     return(xyzi)
 
 def inf_entry(src_entry, overwrite=False, epsg=None):
@@ -238,7 +239,10 @@ def inf_entry(src_entry, overwrite=False, epsg=None):
             ei = _dl_dl_h[src_entry[1]]['inf'](src_entry, epsg)
         else:
             ei = inf_parse(path_i)
+        if regions.region_is_zeros(ei['minmax']):
+            ei = inf_entry(src_entry, overwrite=True, epsg=epsg)
         if not regions.region_valid_p(ei['minmax']):
+            utils.echo_error_msg('invalid inf file {}'.format(path_i))
             return({})
     return(ei)
     
@@ -500,7 +504,7 @@ def datalist2py(dl, region=None):
         else:
             utils.echo_error_msg('could not open datalist/entry {}'.format(this_entry[0]))
     else:
-        yield([this_entry])
+        yield(this_entry)
 
 def datalist(dl, wt=None, pass_h=dl_pass_hooks, yield_dl_entry_p=False, verbose=False):
     """recurse a datalist/entry
@@ -519,10 +523,12 @@ def datalist(dl, wt=None, pass_h=dl_pass_hooks, yield_dl_entry_p=False, verbose=
     """
     
     status = 0
+    if verbose: progress = utils._progress('processing datalist {} @ W{}...'.format(dl, wt))
     for i, this_entry in enumerate(datalist2py(dl)):
         #status = 0
-        #if verbose:
-        #    progress.update_perc((i, len(these_entries)))
+        if verbose:
+            #progress.update_perc((i, len(these_entries)))
+            progress.update()
         if this_entry is not None:
             this_entry[2] = wt if wt is None else wt * this_entry[2] 
             this_entry = this_entry[:3] + [' '.join(this_entry[3:]).split(',')] + [os.path.basename(dl).split('.')[0]]
@@ -530,15 +536,16 @@ def datalist(dl, wt=None, pass_h=dl_pass_hooks, yield_dl_entry_p=False, verbose=
                 if this_entry[1] == -1:
                     if yield_dl_entry_p:
                         yield(this_entry)
-                    for entry in datalist(this_entry[0], wt=this_entry[2], pass_h=pass_h,
-                                          yield_dl_entry_p=yield_dl_entry_p, verbose=verbose):
-                        yield(entry)
+                    else:
+                        for entry in datalist(this_entry[0], wt=this_entry[2], pass_h=pass_h,
+                                              yield_dl_entry_p=yield_dl_entry_p, verbose=verbose):
+                            yield(entry)
                 else:
                     yield(this_entry)
-        #else:
-        #    status = -1
-    #if verbose:
-    #    progress.end(status, 'processed datalist {} @ W{}'.format(dl, wt))
+        else:
+            status = -1
+    if verbose:
+        progress.end(status, 'processed datalist {} @ W{}'.format(dl, wt))
 
 def datalist_archive_yield_entry(entry, dirname='archive', region=None, inc=1,
                                  weight=None, verbose=None, z_region=None, epsg=None):

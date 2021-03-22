@@ -89,7 +89,7 @@ def mb_inf_parse(src_inf):
     xyzi = {'name': src_inf, 'numpts': 0, 'minmax': [0,0,0,0,0,0], 'wkt': regions.region2wkt([0,0,0,0,0,0])}
     dims = []
     this_row = 0
-    
+
     with open(src_inf) as iob:
         for il in iob:
             til = il.split()
@@ -121,29 +121,33 @@ def mb_inf_parse(src_inf):
 
     xinc = (xyzi['minmax'][1] - xyzi['minmax'][0]) / dims[0]
     yinc = (xyzi['minmax'][2] - xyzi['minmax'][3]) / dims[1]
-    xcount, ycount, dst_gt = regions.region2gt(xyzi['minmax'], xinc, y_inc = yinc)
-    ds_config = {'nx': dims[0], 'ny': dims[1], 'nb': dims[1] * dims[0],
-                 'geoT': dst_gt, 'proj': gdalfun.gdal_sr_wkt(4326),
-                 'dt': gdal.GDT_Float32, 'ndv': 0, 'fmt': 'GTiff'}
-    driver = gdal.GetDriverByName('MEM')
-    ds = driver.Create('tmp', ds_config['nx'], ds_config['ny'], 1, ds_config['dt'])
-    ds.SetGeoTransform(ds_config['geoT'])
-    ds.SetProjection(ds_config['proj'])
-    ds_band = ds.GetRasterBand(1)
-    ds_band.SetNoDataValue(ds_config['ndv'])
-    ds_band.WriteArray(cm_array)
-    
-    tmp_ds = ogr.GetDriverByName('Memory').CreateDataSource('tmp_poly')
-    tmp_layer = tmp_ds.CreateLayer('tmp_poly', None, ogr.wkbMultiPolygon)
-    tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
-    
-    gdal.Polygonize(ds_band, ds_band, tmp_layer, 0)
 
-    ## TODO: scan all features
-    feat = tmp_layer.GetFeature(0)
-    geom = feat.GetGeometryRef()
-    wkt = geom.ExportToWkt()
-    tmp_ds = ds = None
+    if abs(xinc) > 0 and abs(yinc) > 0:
+        xcount, ycount, dst_gt = regions.region2gt(xyzi['minmax'], xinc, y_inc = yinc)
+        ds_config = {'nx': dims[0], 'ny': dims[1], 'nb': dims[1] * dims[0],
+                     'geoT': dst_gt, 'proj': utils.sr_wkt(4326),
+                     'dt': gdal.GDT_Float32, 'ndv': 0, 'fmt': 'GTiff'}
+        driver = gdal.GetDriverByName('MEM')
+        ds = driver.Create('tmp', ds_config['nx'], ds_config['ny'], 1, ds_config['dt'])
+
+        ds.SetGeoTransform(ds_config['geoT'])
+        ds.SetProjection(ds_config['proj'])
+        ds_band = ds.GetRasterBand(1)
+        ds_band.SetNoDataValue(ds_config['ndv'])
+        ds_band.WriteArray(cm_array)
+    
+        tmp_ds = ogr.GetDriverByName('Memory').CreateDataSource('tmp_poly')
+        tmp_layer = tmp_ds.CreateLayer('tmp_poly', None, ogr.wkbMultiPolygon)
+        tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
+    
+        gdal.Polygonize(ds_band, ds_band, tmp_layer, 0)
+        
+        ## TODO: scan all features
+        feat = tmp_layer.GetFeature(0)
+        geom = feat.GetGeometryRef()
+        wkt = geom.ExportToWkt()
+        tmp_ds = ds = None
+    else: wkt = regions.region2wkt(xyzi['minmax'])
     
     xyzi['wkt'] = wkt
     return(xyzi)

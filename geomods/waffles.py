@@ -363,8 +363,8 @@ def waffles_dlp_hooks(wg):
     """
     
     region = waffles_proc_region(wg)
-    dlp_hooks = datalists.datalist_default_hooks()
-    
+    #dlp_hooks = datalists.datalist_default_hooks()
+    dlp_hooks = []    
     if region is not None:
         dlp_hooks.append(lambda e: datalists.intersect_p(region, e))
     if wg['z_region'] is not None:
@@ -563,6 +563,7 @@ def waffles_spatial_metadata(wg, geojson = False):
             if twg['inc'] < gmtfun.gmt_inc2inc('.3333333s'):
                 twg['inc'] = gmtfun.gmt_inc2inc('.3333333s')
                 twg['extend'] = twg['extend'] / 3
+            twg['verbose'] = True
             twg = waffles_config(**twg)
 
             if len(this_entry[3]) == 8:

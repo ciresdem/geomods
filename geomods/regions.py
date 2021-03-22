@@ -59,6 +59,11 @@ def region_valid_p(region):
     else:
         return(False)
 
+def region_is_zeros(region):
+    if region[0] == 0 and region[1] == 0 and region[2] == 0 and region[3] == 0:
+        return(True)
+    else: return(False)
+                    
 def region_wkt_p(region):
     
     try:

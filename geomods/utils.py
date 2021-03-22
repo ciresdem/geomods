@@ -36,6 +36,7 @@ import datetime
 ## import gdal/numpy
 ## ==============================================
 import ogr
+import osr
 import gdal
 import numpy as np
 
@@ -533,6 +534,20 @@ def wkt2geom(wkt):
     """
     
     return(ogr.CreateGeometryFromWkt(wkt))
+
+def sr_wkt(epsg, esri = False):
+    """convert an epsg code to wkt
+
+    Returns:
+      (str): wkt or None
+    """
+    
+    try:
+        sr = osr.SpatialReference()
+        sr.ImportFromEPSG(int(epsg))
+        if esri: sr.MorphToESRI()
+        return(sr.ExportToWkt())
+    except: return(None)
 
 ## ==============================================
 ##
