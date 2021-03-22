@@ -589,8 +589,11 @@ def waffles_spatial_metadata(wg, geojson = False):
                 utils.remove_glob('{}_poly.*'.format(twg['name']), ng)
                 #utils.remove_glob(ng)
     ds = None
-    utils.run_cmd('ogrinfo -dialect SQLITE -sql "UPDATE {} SET geometry = ST_MakeValid(geometry)" {}\
-    '.format(dst_layer, dst_vector))
+
+    gdal_v = utils.int_or(wg['gc']['GDAL'].split('.')[0])
+    if gdal_v is not None and gdal_v >= 3:
+        utils.run_cmd('ogrinfo -dialect SQLITE -sql "UPDATE {} SET geometry = ST_MakeValid(geometry)" {}\
+        '.format(dst_layer, dst_vector))
     sm_out = {'sm': [dst_vector, 'vector']}
     if geojson:
         dst_gj = '{}_sm.inf'.format(wg['name'])
@@ -1827,6 +1830,7 @@ def waffle(wg):
                     dems[out_key] = [out_dem, 'raster']
                 elif chunks[0][out_key][1] == 'vector':
                     if gdalfun.ogr_empty_p(out_dem):
+                        utils.echo_error_msg('{} is empty, something may have gone wrong...'.format(out_dem))
                         utils.remove_glob('{}.*'.format(out_dem.split('.')[0]))
                     else: dems[out_key] = [out_dem, 'vector']
                 else: dems[out_key] = [out_dem, chunks[0][out_key][1]]
@@ -2115,15 +2119,21 @@ def waffles_cli(argv = sys.argv):
     ## ==============================================
     ## reformat and set the region
     ## ==============================================
-    if region is not None:
-        try:
-            these_regions = [[float(x) for x in region.split('/')]]
-        except ValueError: these_regions = regions.gdal_ogr_regions(region)
-        except Exception as e:
-            utils.echo_error_msg('failed to parse region(s), {}'.format(e))
-    else: these_regions = [None]
-    if len(these_regions) == 0: utils.echo_error_msg('failed to parse region(s), {}'.format(region))
+    # if region is not None:
+    #     try:
+    #         these_regions = [[float(x) for x in region.split('/')]]
+    #     except ValueError: these_regions = regions.gdal_ogr_regions(region)
+    #     except Exception as e:
+    #         utils.echo_error_msg('failed to parse region(s), {}'.format(e))
+    # else: these_regions = [None]
+    # if len(these_regions) == 0: utils.echo_error_msg('failed to parse region(s), {}'.format(region))
 
+    if region is not None:
+        this_region = regions.str2region(region)
+        these_regions = [this_region]
+    else: these_regions = []
+    if len(these_regions) == 0: utils.echo_error_msg('failed to parse region(s), {}'.format(region))
+        
     ## ==============================================
     ## run waffles for each input region.
     ## ==============================================
@@ -2131,6 +2141,7 @@ def waffles_cli(argv = sys.argv):
     if want_threads:
         _prog = utils._progress('Amassing WAFFLES config info for {} regions...'.format(len(these_regions)))
     for i, this_region in enumerate(these_regions):
+        this_region = regions.region_region(this_region)
         twg = waffles_config_copy(wg)
         twg['region'] = this_region
         if want_prefix or len(these_regions) > 1:
