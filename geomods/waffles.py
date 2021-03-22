@@ -2043,6 +2043,10 @@ def waffles_cli(argv = sys.argv):
         elif arg == '--version' or arg == '-v':
             sys.stdout.write('{}\n'.format(_version))
             sys.exit(0)
+        elif arg[0] == '-':
+            print(waffles_cli_usage)
+            utils.echo_error_msg('{} is not a valid waffles cli switch'.format(arg))
+            sys.exit(0)
         else: dls.append(arg)
         i += 1
 
