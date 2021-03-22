@@ -553,7 +553,7 @@ def waffles_spatial_metadata(wg, geojson = False):
     else: layer = None
 
     for this_entry in datalists.datalist(wg['datalist'], wt = 1 if wg['weights'] else None,
-                                         pass_h = waffles_dlp_hooks(wg), yield_dl_entry = True,
+                                         pass_h = waffles_dlp_hooks(wg), yield_dl_entry_p = True,
                                          verbose = wg['verbose']):
         if this_entry[1] == -1 or this_entry[-1] == wg['datalist'].split('.')[0]:
             defn = None if layer is None else layer.GetLayerDefn()            

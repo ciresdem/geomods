@@ -127,7 +127,7 @@ def base_name(instr, extension):
     
     return(instr[:-len(extension)])
 
-def args2dict(args, dict_args = {}):
+def args2dict(args, dict_args={}):
     """convert list of arg strings to dict.
     
     Args:
@@ -266,7 +266,7 @@ def gunzip(gz_file):
         guz_file = None
     return(guz_file)
 
-def p_unzip(src_file, exts = None):
+def p_unzip(src_file, exts=None):
     """unzip/gunzip src_file based on `exts`
     
     Args:
@@ -301,7 +301,6 @@ def p_unzip(src_file, exts = None):
             if ext == src_file.split('.')[-1]:
                 src_procs.append(src_file)
                 break
-        
     return(src_procs)
     
 def procs_unzip(src_file, exts):
@@ -365,7 +364,7 @@ def euc_dst(pnt0, pnt1):
     """
     
     rad_m = 637100
-    distance = math.sqrt(sum([(a - b) ** 2 for a, b in zip(pnt0, pnt1)]))
+    distance = math.sqrt(sum([(a-b) ** 2 for a, b in zip(pnt0, pnt1)]))
     return(rad_m * distance)
     
 def hav_dst(pnt0, pnt1):
@@ -406,8 +405,8 @@ def _geo2pixel(geo_x, geo_y, geoTransform):
     """
     
     if geoTransform[2] + geoTransform[4] == 0:
-        pixel_x = ((geo_x - geoTransform[0]) / geoTransform[1]) + .5
-        pixel_y = ((geo_y - geoTransform[3]) / geoTransform[5]) + .5
+        pixel_x = ((geo_x-geoTransform[0]) / geoTransform[1]) + .5
+        pixel_y = ((geo_y-geoTransform[3]) / geoTransform[5]) + .5
     else: pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt(geoTransform))
     return(int(pixel_x), int(pixel_y))
 
@@ -459,8 +458,8 @@ def _apply_gt(in_x, in_y, geoTransform):
       list: [geographic-x, geographic-y]
     """
     
-    out_x = geoTransform[0] + int(in_x + 0.5) * geoTransform[1] + int(in_y + 0.5) * geoTransform[2]
-    out_y = geoTransform[3] + int(in_x + 0.5) * geoTransform[4] + int(in_y + 0.5) * geoTransform[5]
+    out_x = geoTransform[0] + (int(in_x + 0.5)*geoTransform[1]) + (int(in_y + 0.5)*geoTransform[2])
+    out_y = geoTransform[3] + (int(in_x + 0.5)*geoTransform[4]) + (int(in_y + 0.5)*geoTransform[5])
 
     return(out_x, out_y)
 
@@ -474,7 +473,7 @@ def _invert_gt(geoTransform):
       list: a geo-transform list describing a raster
     """
     
-    det = geoTransform[1] * geoTransform[5] - geoTransform[2] * geoTransform[4]
+    det = (geoTransform[1]*geoTransform[5]) - (geoTransform[2]*geoTransform[4])
     if abs(det) < 0.000000000000001: return
     invDet = 1.0 / det
     outGeoTransform = [0, 0, 0, 0, 0, 0]
@@ -503,7 +502,7 @@ def geoms_intersect_p(geom_a, geom_b):
         else: return(False)
     else: return(True)
 
-def create_wkt_polygon(coords, xpos = 1, ypos = 0):
+def create_wkt_polygon(coords, xpos=1, ypos=0):
     """convert coords to Wkt
 
     Args:
@@ -540,7 +539,7 @@ def wkt2geom(wkt):
 ## error plots and calculations
 ##
 ## ==============================================
-def err_fit_plot(xdata, ydata, out, fitfunc, dst_name = 'unc', xa = 'distance'):
+def err_fit_plot(xdata, ydata, out, fitfunc, dst_name='unc', xa='distance'):
     """plot a best fit plot with matplotlib
     
     Args:
@@ -565,7 +564,7 @@ def err_fit_plot(xdata, ydata, out, fitfunc, dst_name = 'unc', xa = 'distance'):
         
     except: echo_error_msg('you need to install matplotlib to run uncertainty plots...')
 
-def err_scatter_plot(error_arr, dist_arr, dst_name = 'unc', xa = 'distance'):
+def err_scatter_plot(error_arr, dist_arr, dst_name='unc', xa='distance'):
     """plot a scatter plot with matplotlib
     
     Args:
@@ -590,7 +589,7 @@ def err_scatter_plot(error_arr, dist_arr, dst_name = 'unc', xa = 'distance'):
         
     except: echo_error_msg('you need to install matplotlib to run uncertainty plots...')
 
-def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'distance'):
+def err2coeff(err_arr, coeff_guess=[0, 0.1, 0.2], dst_name='unc', xa='distance'):
     """calculate and plot the error coefficient given err_arr which is 
     a 2 col array with `err dist
     
@@ -610,9 +609,9 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
     n, _ = np.histogram(distance, bins = nbins)
     while 0 in n:
         nbins -= 1
-        n, _ = np.histogram(distance, bins = nbins)
-    serror, _ = np.histogram(distance, bins = nbins, weights = error)
-    serror2, _ = np.histogram(distance, bins = nbins, weights = error**2)
+        n, _ = np.histogram(distance, bins=nbins)
+    serror, _ = np.histogram(distance, bins=nbins, weights=error)
+    serror2, _ = np.histogram(distance, bins=nbins, weights=error**2)
     mean = serror / n
     std = np.sqrt(serror2 / n - mean * mean)
     ydata = np.insert(std, 0, 0)
@@ -621,7 +620,7 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
     xdata[xdata - 0 < 0.0001] = 0.0001
     fitfunc = lambda p, x: p[0] + p[1] * (x ** p[2])
     errfunc = lambda p, x, y: y - fitfunc(p, x)
-    out, cov, infodict, mesg, ier = optimize.leastsq(errfunc, coeff_guess, args = (xdata, ydata), full_output = True)
+    out, cov, infodict, mesg, ier = optimize.leastsq(errfunc, coeff_guess, args=(xdata, ydata), full_output=True)
     try:
         err_fit_plot(xdata, ydata, out, fitfunc, dst_name, xa)
         err_scatter_plot(error, distance, dst_name, xa)
@@ -641,7 +640,7 @@ def err2coeff(err_arr, coeff_guess = [0, 0.1, 0.2], dst_name = 'unc', xa = 'dist
 ## ==============================================
 cmd_exists = lambda x: any(os.access(os.path.join(path, x), os.X_OK) for path in os.environ['PATH'].split(os.pathsep))
 
-def run_cmd(cmd, data_fun = None, verbose = False):
+def run_cmd(cmd, data_fun=None, verbose=False):
     """Run a system command while optionally passing data.
 
     `data_fun` should be a function to write to a file-port:
@@ -661,8 +660,8 @@ def run_cmd(cmd, data_fun = None, verbose = False):
         pipe_stdin = subprocess.PIPE
     else: pipe_stdin = None
     if verbose:
-        p = subprocess.Popen(cmd, shell = True, stdin = pipe_stdin, stdout = subprocess.PIPE, close_fds = True)
-    else: p = subprocess.Popen(cmd, shell = True, stdin = pipe_stdin, stdout = subprocess.PIPE, stderr = subprocess.PIPE, close_fds = True)
+        p = subprocess.Popen(cmd, shell=True, stdin=pipe_stdin, stdout=subprocess.PIPE, close_fds=True)
+    else: p = subprocess.Popen(cmd, shell=True, stdin=pipe_stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True)
 
     if data_fun is not None:
         if verbose: echo_msg('piping data to cmd subprocess...')
@@ -680,7 +679,7 @@ def run_cmd(cmd, data_fun = None, verbose = False):
     if verbose: _prog.end(p.returncode, 'ran cmd: {}... and returned {}.'.format(cmd.rstrip()[:20], p.returncode))
     return(out, p.returncode)
 
-def yield_cmd(cmd, data_fun = None, verbose = False):
+def yield_cmd(cmd, data_fun=None, verbose=False):
     """Run a system command while optionally passing data.
 
     `data_fun` should be a function to write to a file-port:
@@ -699,7 +698,7 @@ def yield_cmd(cmd, data_fun = None, verbose = False):
     if data_fun is not None:
         pipe_stdin = subprocess.PIPE
     else: pipe_stdin = None
-    p = subprocess.Popen(cmd, shell = True, stdin = pipe_stdin, stdout = subprocess.PIPE, close_fds = True)
+    p = subprocess.Popen(cmd, shell=True, stdin=pipe_stdin, stdout=subprocess.PIPE, close_fds=True)
     
     if data_fun is not None:
         if verbose: echo_msg('piping data to cmd subprocess...')
@@ -730,7 +729,7 @@ def cmd_check(cmd_str, cmd_vers_str):
         return(cmd_vers.rstrip())
     else: return("0")
 
-def config_check(chk_vdatum = False, verbose = False):
+def config_check(chk_vdatum=False, verbose=False):
     """check for needed waffles external software.
 
     waffles external software: gdal, gmt, mbsystem
@@ -765,7 +764,7 @@ def config_check(chk_vdatum = False, verbose = False):
 ## stderr messaging and simple progress indicator
 ##
 ## ==============================================
-def echo_warning_msg2(msg, prefix = 'waffles'):
+def echo_warning_msg2(msg, prefix='waffles'):
     """echo warning msg to stderr using `prefix`
 
     >> echo_warning_msg2('message', 'test')
@@ -780,7 +779,7 @@ def echo_warning_msg2(msg, prefix = 'waffles'):
     sys.stderr.write('\x1b[2K\r')
     sys.stderr.write('{}: \033[31m\033[1mwarining\033[m, {}\n'.format(prefix, msg))
 
-def echo_error_msg2(msg, prefix = 'waffles'):
+def echo_error_msg2(msg, prefix='waffles'):
     """echo error msg to stderr using `prefix`
 
     >> echo_error_msg2('message', 'test')
@@ -795,7 +794,7 @@ def echo_error_msg2(msg, prefix = 'waffles'):
     sys.stderr.write('\x1b[2K\r')
     sys.stderr.write('{}: \033[31m\033[1merror\033[m, {}\n'.format(prefix, msg))
 
-def echo_msg2(msg, prefix = 'waffles', nl = True):
+def echo_msg2(msg, prefix='waffles', nl=True):
     """echo `msg` to stderr using `prefix`
 
     >> echo_msg2('message', 'test')
@@ -817,20 +816,20 @@ def echo_msg2(msg, prefix = 'waffles', nl = True):
 ## auto-generated prefix
 ## lambda runs: echo_msg2(m, prefix = os.path.basename(sys.argv[0]))
 ## ==============================================
-echo_msg = lambda m: echo_msg2(m, prefix = os.path.basename(sys.argv[0]))
-echo_msg_inline = lambda m: echo_msg2(m, prefix = os.path.basename(sys.argv[0]), nl = False)
+echo_msg = lambda m: echo_msg2(m, prefix=os.path.basename(sys.argv[0]))
+echo_msg_inline = lambda m: echo_msg2(m, prefix=os.path.basename(sys.argv[0]), nl = False)
 
 ## ==============================================
 ## echo error message `m` to sys.stderr using
 ## auto-generated prefix
 ## ==============================================
-echo_error_msg = lambda m: echo_error_msg2(m, prefix = os.path.basename(sys.argv[0]))
-echo_warning_msg = lambda m: echo_warning_msg2(m, prefix = os.path.basename(sys.argv[0]))
+echo_error_msg = lambda m: echo_error_msg2(m, prefix=os.path.basename(sys.argv[0]))
+echo_warning_msg = lambda m: echo_warning_msg2(m, prefix=os.path.basename(sys.argv[0]))
 
 class _progress:
     """geomods minimal progress indicator"""
 
-    def __init__(self, message = None):
+    def __init__(self, message=None):
         self.tw = 7
         self.count = 0
         self.pc = self.count % self.tw
@@ -853,13 +852,13 @@ class _progress:
         sys.stderr.write('\x1b[2K\r')
         sys.stderr.flush()
 
-    def update_perc(self, p, msg = None):
+    def update_perc(self, p, msg=None):
         if len(p) == 2:
             self._clear_stderr()
             sys.stderr.write('\r[\033[36m{:^5.2f}%\033[m] {:40}\r'.format(self.perc(p), msg if msg is not None else self.opm))
         else: self.update()
         
-    def update(self, msg = None):
+    def update(self, msg=None):
 
         self.pc = (self.count % self.tw)
         self.sc = (self.count % (self.tw + 1))
@@ -871,7 +870,7 @@ class _progress:
         if self.count == 0: self.spin_way = self.add_one
         self.count = self.spin_way(self.count)
 
-    def end(self, status, end_msg = None):
+    def end(self, status, end_msg=None):
         self._clear_stderr()
         if end_msg is None: end_msg = self.opm
         if status != 0:

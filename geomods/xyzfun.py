@@ -319,11 +319,16 @@ def xyz_in_region_p(xyz, region):
 
         return(p_geom.Within(r_geom))
     
-    if xyz[0] < region[0]: return(False)
-    elif xyz[0] > region[1]: return(False)
-    elif xyz[1] < region[2]: return(False)
-    elif xyz[1] > region[3]: return(False)
-    else: return(True)
+    if xyz[0] < region[0]:
+        return(False)
+    elif xyz[0] > region[1]:
+        return(False)
+    elif xyz[1] < region[2]:
+        return(False)
+    elif xyz[1] > region[3]:
+        return(False)
+    else:
+        return(True)
 
 def xyz_inf(src_xyz):
     """generate and return or read and return an xyz inf file.

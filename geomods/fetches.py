@@ -2700,6 +2700,10 @@ def fetch_yield_entry(entry = ['nos:datatype=xyz'], region = None, warp = None, 
     if region is None:
         region = _fetch_modules[fetch_mod](None, [], None, False).FRED._get_region([], [fetch_mod])
 
+    else:
+        region = regions.region_region(region)
+
+    print(region)
     region = regions.region_warp(region, src_epsg = warp, dst_epsg = 4326)
     fl = _fetch_modules[fetch_mod](regions.region_buffer(region, 5, pct = True), [], lambda: False, verbose)
     args_d = utils.args2dict(fetch_args, {})
