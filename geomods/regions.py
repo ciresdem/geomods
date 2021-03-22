@@ -38,12 +38,60 @@ import numpy as np
 from geomods import utils
 
 def region_valid_p(region):
-    '''return True if `region` [xmin, xmax, ymin, ymax] appears to be valid'''
-    if region is not None:
-        if region[0] <= region[1] and region[2] <= region[3]: return(True)
-        else: return(False)
-    else: return(False)
+    """return True if `region` [xmin, xmax, ymin, ymax] appears to be valid
 
+    Arguments:
+      region(list): a region list
+
+    """
+    
+    if region is not None:
+        try:
+            if region[0] <= region[1] and region[2] <= region[3]:
+                return(True)
+            else:
+                return(False)
+        except:
+            return(False)
+        
+    else:
+        return(False)
+
+def region_wkt_p(region):
+    try:
+        if region.split()[0] == "POLYGON" or region.split()[0] == "MULTIPOLYGON":
+            wkt_p = True
+        else:
+            wkt_p = False
+    except:
+        wkt_p = False
+        
+    return(wkt_p)
+    
+def str2region(region_str):
+    """attempt to convert a string into a region
+
+    Arguments:
+      region(str): a region string
+
+    Returns:
+      region(list/wkt): a region list or a polygon wkt
+    """
+    
+    try:
+        this_region = [float(x) for x in region_str.split('/')]
+    except ValueError:
+        this_region = gdal_ogr_multi_poly(region_str)
+    except Exception as e:
+        utils.echo_error_msg('failed to parse region(s), {}'.format(e))
+        this_region = None
+
+    if this_region is None:
+        if region_wkt_p(regions_str):
+            this_region = region_str
+            
+    return(this_region)
+    
 def region_center(region):
     '''find the center point [xc, yc] of the `region` [xmin, xmax, ymin, ymax]
 
@@ -312,13 +360,21 @@ def region2wkt(region):
     return(create_wkt_polygon(eg))
     
 def region2geom(region):
-    '''convert an extent [west, east, south, north] to an OGR geometry
+    """convert an extent [west, east, south, north] to an OGR geometry
 
-    returns ogr geometry'''
-    eg = [[region[2], region[0]], [region[2], region[1]],
-          [region[3], region[1]], [region[3], region[0]],
-          [region[2], region[0]]]
-    geom = ogr.CreateGeometryFromWkt(create_wkt_polygon(eg))
+    Return: 
+      ogr geometry
+    """
+
+    if region_wkt_p(region):
+        geom = ogr.CreateGeometryFromWkt(region)
+
+    else:
+        eg = [[region[2], region[0]], [region[2], region[1]],
+              [region[3], region[1]], [region[3], region[0]],
+              [region[2], region[0]]]
+        geom = ogr.CreateGeometryFromWkt(create_wkt_polygon(eg))
+    
     return(geom)
 
 def region2ogr(region, dst_ogr, append = False):
@@ -355,6 +411,7 @@ def gdal_ogr_regions(src_ds):
 
 def gdal_ogr_polys(src_ds):
     '''return the region(s) of the ogr dataset'''
+    
     these_regions = []
     if os.path.exists(src_ds):
         poly = ogr.Open(src_ds)
@@ -366,7 +423,27 @@ def gdal_ogr_polys(src_ds):
                 #penv = ogr.CreateGeometryFromWkt(pwkt).GetEnvelope()
                 these_regions.append(pwkt)
         poly = None
+        
     return(these_regions)
+
+def gdal_ogr_multi_poly(src_ds):
+    '''return the region(s) of the ogr dataset'''
+    
+    if os.path.exists(src_ds):
+        poly = ogr.Open(src_ds)
+        if poly is not None:
+            p_layer = poly.GetLayer(0)
+            multi = ogr.Geometry(ogr.wkbMultiPolygon)
+            for feat in p_layer:
+                feat.geometry().CloseRings()
+                wkt = feat.geometry().ExportToWkt()
+                multi.AddGeometryDirectly(ogr.CreateGeometryFromWkt(wkt))
+                
+            wkt = multi.ExportToWkt()
+        poly = None
+        
+    return(wkt)
+
 
 def gdal_region_warp(region, s_warp = 4326, t_warp = 4326):
     '''warp region from source `s_warp` to target `t_warp`, using EPSG keys

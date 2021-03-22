@@ -77,6 +77,7 @@ def xyz_line_delim(xyz_line):
     for delim in _known_delims:
         this_xyz = xyz_line.split(delim)
         if len(this_xyz) > 1: return(delim)
+        
     return(None)
 
 def xyz_warp(xyz, dst_trans):
@@ -143,10 +144,12 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
     """
     
     ln = 0
-    skip = int(xyz_c['skip'])
     pass_d = True
+    skip = int(xyz_c['skip'])
     
-    if xyz_c['epsg'] == xyz_c['warp'] or xyz_c['epsg'] is None: xyz_c['warp'] = None
+    if xyz_c['epsg'] == xyz_c['warp'] or xyz_c['epsg'] is None:
+        xyz_c['warp'] = None
+    
     if xyz_c['warp'] is not None:
         src_srs = osr.SpatialReference()
         src_srs.ImportFromEPSG(int(xyz_c['epsg']))
@@ -157,29 +160,44 @@ def xyz_parse(src_xyz, xyz_c = _xyz_config, region = None, verbose = False):
             src_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
             dst_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
         except: pass
+        
         dst_trans = osr.CoordinateTransformation(src_srs, dst_srs)
+        
     else: src_srs = dst_srs = dst_trans = None
     
     for xyz in src_xyz:
         pass_d = True
+        
         if ln >= skip:
             this_xyz = xyz_parse_line(xyz, xyz_c)
+            
             if this_xyz is not None:
                 if xyz_c['warp'] is not None:
                     this_xyz = xyz_warp(this_xyz, dst_trans)
+                    
                 if region is not None:
-                    if not xyz_in_region_p(this_xyz, region): pass_d = False
+                    if regions.region_valid_p:
+                        if not xyz_in_region_p(this_xyz, region):
+                            pass_d = False
+                    
                 if xyz_c['upper_limit'] is not None or xyz_c['lower_limit'] is not None:
                     if not regions.z_pass(this_xyz[2], upper_limit = xyz_c['upper_limit'], lower_limit = xyz_c['lower_limit']):
                         pass_d = False
+                        
             else: pass_d = False
+            
             if pass_d:
                 ln += 1
                 yield(this_xyz)
+                
         else: skip -= 1
+        
     if verbose:
-        if ln == 0: status = -1
-        else: status = 0
+        if ln == 0:
+            status = -1            
+        else:
+            status = 0
+            
         utils.echo_msg('parsed {} data records from {}'.format(ln, xyz_c['name']))
 
 def xyz_dump(src_xyz, xyz_c = _xyz_config, region = None, verbose = False, dst_port = sys.stdout):
@@ -280,6 +298,9 @@ def xyz_line(xyz_line, dst_port = sys.stdout, encode = False):
     if encode: l = l.encode('utf-8')
     dst_port.write(l)
 
+def xyz2wkt(xyz):
+    return('POINT ({} {})'.format(xyz[0], xyz[1]))
+    
 def xyz_in_region_p(xyz, region):
     """check if xyz point in inside the given region
 
@@ -290,6 +311,13 @@ def xyz_in_region_p(xyz, region):
     Returns:
       bool: True if xyz point inside region else False
     """
+    
+    if regions.region_wkt_p(region):
+        xyz_wkt = xyz2wkt(xyz)
+        p_geom = ogr.CreateGeometryFromWkt(xyz_wkt)
+        r_geom = ogr.CreateGeometryFromWkt(region)
+
+        return(p_geom.Within(r_geom))
     
     if xyz[0] < region[0]: return(False)
     elif xyz[0] > region[1]: return(False)
