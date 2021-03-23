@@ -1791,9 +1791,11 @@ def waffle(wg):
 
             if len(chunks) > 1:
                 if chunks[0][out_key][1] == 'raster':
+                    #print(chunks)
+                    
                     out, status = utils.run_cmd('gdal_merge.py -n -9999 -a_nodata -9999 \
-                    -ps {} -{} -ul_lr {} -o {} {} -co TILED=YES -co COMPRESS=DEFLATE -co PREDICTOR=3\
-                    '.format(wg['inc'], wg['inc'], waffles_dist_ul_lr(wg), out_dem, ' '.join([x[out_key] for x in chunks])),
+                    -ps {inc} -{inc} -ul_lr {ullr} -o {o_dem} {chunks} -co TILED=YES -co COMPRESS=DEFLATE -co PREDICTOR=3\
+                    '.format(inc=wg['inc'], ullr=waffles_dist_ul_lr(wg), o_dem=out_dem, chunks=' '.join([x[out_key][0] for x in chunks])),
                                                 verbose = True)
                 elif chunks[0][out_key][1] == 'vector':
                     out, status = utils.run_cmd('ogrmerge.py {} {}'.format(dem_vect, ' '.join(chunks_vect)))
