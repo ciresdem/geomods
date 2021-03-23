@@ -260,7 +260,7 @@ def region_warp(region, src_epsg=4326, dst_epsg=4326):
     ds_region = [pointA.GetX(), pointB.GetX(), pointA.GetY(), pointB.GetY()]
     return(ds_region)
     
-def region_chunk(region, inc, n_chunk=10):
+def region_chunk(region, inc, n_chunk=10, buff=0):
     """chunk the region [xmin, xmax, ymin, ymax] into 
     n_chunk by n_chunk cell regions, given inc.
 
@@ -290,7 +290,9 @@ def region_chunk(region, inc, n_chunk=10):
             if geo_y_o < region[2]: geo_y_o = region[2]
             if geo_x_t > region[1]: geo_x_t = region[1]
             if geo_x_o < region[0]: geo_x_o = region[0]
-            o_chunks.append([geo_x_o, geo_x_t, geo_y_o, geo_y_t])
+            chunkd_region = [geo_x_o, geo_x_t, geo_y_o, geo_y_t]
+            region_buffer(chunkd_region, buff)
+            o_chunks.append(chunkd_region)
         
             if y_chunk < ycount:
                 y_chunk += n_chunk

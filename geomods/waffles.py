@@ -1290,6 +1290,7 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
                                         epsg = wg['epsg'],
                                         verbose = False,
                                         mask = True,
+                                        chunk = None,
                                         clobber = True)
                     sub_dems = waffle(wc)
 
@@ -1651,7 +1652,7 @@ def waffle(wg):
     ## ==============================================
     if wg['chunk'] is not None:
         xcount, ycount, dst_gt = regions.region2gt(wg['region'], wg['inc'])
-        s_regions = regions.region_chunk(wg['region'], wg['inc'], (xcount/wg['chunk'])+1)
+        s_regions = regions.region_chunk(wg['region'], wg['inc'], n_chunk=(xcount/wg['chunk']) + 1, buff=100)
     else: s_regions = [wg['region']]
 
     chunks = []

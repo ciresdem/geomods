@@ -449,7 +449,7 @@ def datalist_major(dls, major='.mjr.datalist', region=None):
         utils.remove_glob(major)
         utils.echo_error_msg('bad datalist/entry, {}'.format(dls))
         return(None)
-    utils.echo_msg('processed datalist')
+    #utils.echo_msg('processed datalist')
     return(major)
 
 def entry2py(dl_e, w=1):
@@ -817,13 +817,13 @@ def datalists_cli(argv = sys.argv):
         #     region_is_geom_p = True
         # except Exception as e:
         #     utils.echo_error_msg('failed to parse region(s), {}'.format(e))            
-    else: these_regions = []
+    else: these_regions = [None]
     
     if len(these_regions) == 0:
         utils.echo_error_msg('failed to parse region(s), {}'.format(i_region))
 
     for rn, this_region in enumerate(these_regions):
-        #dl_m = datalist_major(dls, region = this_region)
+        dl = datalist_major(dls, region = this_region)
         dlp_hooks = []
 
         if regions.region_valid_p(this_region):
@@ -835,18 +835,18 @@ def datalists_cli(argv = sys.argv):
         if w_region is not None:
             dlp_hooks.append(lambda e: regions.z_pass(e[2], upper_limit=w_region[1], lower_limit=w_region[0]))
             
-        for dl in dls:
-            if want_inf:
-                #datalist_inf_entry([dl_m, -1, 1], epsg = epsg, overwrite = True)
-                datalist_inf_entry(dl, epsg=epsg, overwrite=True)
-            elif want_region:
-                #print(datalist_inf(dl_m, inf_file = False, epsg = epsg, overwrite = False))
-                print(datalist_inf(dl, inf_file=False, epsg=epsg, overwrite=False))
-            elif want_list:
-                for this_entry in datalist(dl, wt=1, pass_h=dlp_hooks, verbose=want_verbose):
-                    print(' '.join([','.join(x) if i == 3 else os.path.abspath(str(x)) if i == 0 else str(x) for i,x in enumerate(this_entry[:-1])]))
-            else:
-                datalist_dump_xyz(dl, wt=1 if want_weights else None, pass_h=dlp_hooks, region=this_region, epsg=epsg, verbose=want_verbose)
+        #for dl in dls:
+        if want_inf:
+            #datalist_inf_entry([dl_m, -1, 1], epsg = epsg, overwrite = True)
+            datalist_inf_entry(dl, epsg=epsg, overwrite=True)
+        elif want_region:
+            #print(datalist_inf(dl_m, inf_file = False, epsg = epsg, overwrite = False))
+            print(datalist_inf(dl, inf_file=False, epsg=epsg, overwrite=False))
+        elif want_list:
+            for this_entry in datalist(dl, wt=1, pass_h=dlp_hooks, verbose=want_verbose):
+                print(' '.join([','.join(x) if i == 3 else os.path.abspath(str(x)) if i == 0 else str(x) for i,x in enumerate(this_entry[:-1])]))
+        else:
+            datalist_dump_xyz(dl, wt=1 if want_weights else None, pass_h=dlp_hooks, region=this_region, epsg=epsg, verbose=want_verbose)
             
             #utils.remove_glob(dl_m)        
 ### End
