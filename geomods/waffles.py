@@ -829,6 +829,9 @@ def waffles_gmt_triangulate(wg):
     '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', waffles_proc_str(wg), wg['inc'], wg['name']))
     out, status = utils.run_cmd(dem_tri_cmd, verbose = wg['verbose'], data_fun = waffles_dl_func(wg))
     return({'dem': ['{}.tif'.format(wg['name']), 'raster']}, status)
+    #dem_tri_cmd = ('gmt triangulate {} -I{:.10f} -V -G{}.tif=gd:GTiff -r'.format(waffles_proc_str(wg), wg['inc'], wg['name']))
+    #out, status = utils.run_cmd(dem_tri_cmd, verbose = wg['verbose'], data_fun = waffles_dl_func(wg))
+    #return({'dem': ['{}.tif'.format(wg['name']), 'raster']}, status)
 
 ## ==============================================
 ## Waffles nearest neighbor module
@@ -1235,7 +1238,7 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
         utils.echo_msg_inline('performing SPLIT-SAMPLE simulation {} out of MAX {} [{:3}%]'.format(sim, sims, 0))
         status = 0
         sim += 1
-        trains = regions.regions_sort(trainers, verbose = False)
+        #trains = regions.regions_sort(trainers, verbose = False)
         for z, train in enumerate(trains):
             train_h = train[:25]
             ss_samp = s_5perc
@@ -1288,12 +1291,12 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
                                         mod = wg['mod'],
                                         mod_args = wg['mod_args'],
                                         epsg = wg['epsg'],
-                                        verbose = False,
+                                        verbose = True,
                                         mask = True,
                                         chunk = None,
                                         clobber = True)
                     sub_dems = waffle(wc)
-
+                    print(sub_dems)
                     if os.path.exists(sub_dems['dem'][0]) and os.path.exists(sub_dems['msk'][0]):
                         ## ==============================================
                         ## generate the random-sample data PROX and SLOPE
@@ -1668,8 +1671,10 @@ def waffle(wg):
         ## ==============================================
         #try:
         waffles_out, status = _waffles_modules[this_wg['mod']]['run'](args_d)
+        print(waffles_out)
         if wg['mask']: waffles_out['msk'] = ['{}_msk.tif'.format(this_wg['name']), 'raster']
         chunks.append(waffles_out)
+        print(chunks)
         #except KeyboardInterrupt as e:
         #    utils.echo_error_msg('killed by user, {}'.format(e))
         #    sys.exit(-1)
@@ -1683,7 +1688,7 @@ def waffle(wg):
             if waffles_out[out_key][1] == 'raster':
 
                 ## ==============================================
-                ## check DEM for content and set proection, etc.
+                ## check DEM for content and set projection, etc.
                 ## ==============================================
                 this_dem = waffles_out[out_key][0]
                 if not os.path.exists(this_dem): continue

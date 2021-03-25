@@ -406,8 +406,8 @@ def _geo2pixel(geo_x, geo_y, geoTransform):
     """
     
     if geoTransform[2] + geoTransform[4] == 0:
-        pixel_x = ((geo_x-geoTransform[0]) / geoTransform[1]) + .5
-        pixel_y = ((geo_y-geoTransform[3]) / geoTransform[5]) + .5
+        pixel_x = ((geo_x-geoTransform[0]) / geoTransform[1])#w + .5
+        pixel_y = ((geo_y-geoTransform[3]) / geoTransform[5])# + .5
     else: pixel_x, pixel_y = _apply_gt(geo_x, geo_y, _invert_gt(geoTransform))
     return(int(pixel_x), int(pixel_y))
 
@@ -670,7 +670,7 @@ def run_cmd(cmd, data_fun=None, verbose=False):
       list: [command-output, command-return-code]
     """
     
-    if verbose: _prog = _progress('running cmd: {}...'.format(cmd.rstrip()[:20]))
+    if verbose: _prog = _progress('running cmd: {}...'.format(cmd.rstrip()))
     if data_fun is not None:
         pipe_stdin = subprocess.PIPE
     else: pipe_stdin = None
@@ -691,7 +691,7 @@ def run_cmd(cmd, data_fun=None, verbose=False):
     out = p.stdout.read()
     if not verbose: p.stderr.close()
     p.stdout.close()
-    if verbose: _prog.end(p.returncode, 'ran cmd: {}... and returned {}.'.format(cmd.rstrip()[:20], p.returncode))
+    if verbose: _prog.end(p.returncode, 'ran cmd: {}... and returned {}.'.format(cmd.rstrip(), p.returncode))
     return(out, p.returncode)
 
 def yield_cmd(cmd, data_fun=None, verbose=False):
