@@ -67,7 +67,20 @@ def gdal_prj_file(dst_fn, epsg):
     with open(dst_fn, 'w') as out:
         out.write(gdal_sr_wkt(int(epsg), True))
     return(0)
+
+def gdal_set_nodata(src_fn, nodata=-9999):
+    """set the nodata value of gdal file src_fn
+        
+    returns 0
+    """
     
+    try:
+        ds = gdal.Open(src_fn, gdal.GA_Update)
+    except: ds = None
+    if ds is not None:
+        band = ds.GetRasterBand(1)
+        band.SetNoDataValue(nodata)
+
 def gdal_set_epsg(src_fn, epsg = 4326):
     '''set the projection of gdal file src_fn to epsg
 
@@ -84,7 +97,7 @@ def gdal_set_epsg(src_fn, epsg = 4326):
 def gdal_get_epsg(src_ds):
     '''returns the EPSG of the given gdal data-source'''
     ds_config = gdal_gather_infos(src_ds)
-    ds_region = gdal_gt2region(ds_config)
+    ds_region = regions.gt2region(ds_config)
     src_srs = osr.SpatialReference()
     try:
         src_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)
@@ -175,8 +188,8 @@ def gdal_gather_infos(src_ds, region = None, scan = False):
     if ds_config['ndv'] is None: ds_config['ndv'] = -9999
     if scan:
         src_arr = src_band.ReadAsArray(srcwin[0], srcwin[1], srcwin[2], srcwin[3])
-        ds_config['zr'] = (np.amin(src_arr), np.amax(src_arr))
-        #ds_config['zr'] = src_band.ComputeRasterMinMax()
+        #ds_config['zr'] = (np.amin(src_arr), np.amax(src_arr))
+        ds_config['zr'] = src_band.ComputeRasterMinMax()
         src_arr = None
     return(ds_config)
 
@@ -257,7 +270,7 @@ def gdal_clip(src_gdal, src_ply = None, invert = False):
 
     # clip src_ply to src_gdal extent
     gi = gdal_infos(src_gdal)
-    g_region = gdal_gt2region(gi)
+    g_region = regions.gt2region(gi)
     tmp_ply = 'tmp_clp_ply.shp'
     tmp_gdal = 'tmp_clp_gd.tif'
     utils.run_cmd('ogr2ogr {} {} -clipsrc {} {} {} {}'.format(tmp_ply, src_ply, g_region[0], g_region[3], g_region[1], g_region[2]), verbose = True)
@@ -515,7 +528,7 @@ def gdal_chunks(src_fn, n_chunk):
                 dst_config['nx'] = srcwin[2]
                 dst_config['ny'] = srcwin[3]
                 dst_config['geoT'] = dst_gt
-                this_region = gdal_gt2region(dst_config)
+                this_region = regions.gt2region(dst_config)
                 o_chunk = '{}_chnk{}.tif'.format(os.path.basename(src_fn).split('.')[0], c_n)
                 dst_fn = os.path.join(os.path.dirname(src_fn), o_chunk)
                 o_chunks.append(dst_fn)
@@ -1119,7 +1132,7 @@ def gdal_region(src_ds, warp = None):
     returns the region of the gdal data-source'''
     
     ds_config = gdal_gather_infos(src_ds)
-    ds_region = gdal_gt2region(ds_config)
+    ds_region = regions.gt2region(ds_config)
     src_srs = osr.SpatialReference()
     try:
         src_srs.SetAxisMappingStrategy(osr.OAMS_TRADITIONAL_GIS_ORDER)

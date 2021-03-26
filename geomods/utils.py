@@ -670,7 +670,7 @@ def run_cmd(cmd, data_fun=None, verbose=False):
       list: [command-output, command-return-code]
     """
     
-    if verbose: _prog = _progress('running cmd: {}...'.format(cmd.rstrip()))
+    if verbose: _prog = _progress('running cmd: {}...'.format(cmd.rstrip()[:72]))
     if data_fun is not None:
         pipe_stdin = subprocess.PIPE
     else: pipe_stdin = None
@@ -691,7 +691,7 @@ def run_cmd(cmd, data_fun=None, verbose=False):
     out = p.stdout.read()
     if not verbose: p.stderr.close()
     p.stdout.close()
-    if verbose: _prog.end(p.returncode, 'ran cmd: {}... and returned {}.'.format(cmd.rstrip(), p.returncode))
+    if verbose: _prog.end(p.returncode, 'ran cmd: {}... and returned {}.'.format(cmd.rstrip()[:72], p.returncode))
     return(out, p.returncode)
 
 def yield_cmd(cmd, data_fun=None, verbose=False):
@@ -792,7 +792,7 @@ def echo_warning_msg2(msg, prefix='waffles'):
     
     sys.stderr.flush()
     sys.stderr.write('\x1b[2K\r')
-    sys.stderr.write('{}: \033[31m\033[1mwarining\033[m, {}\n'.format(prefix, msg))
+    sys.stderr.write('{}: \033[31m\033[1mwarning\033[m, {}\n'.format(prefix, msg))
 
 def echo_error_msg2(msg, prefix='waffles'):
     """echo error msg to stderr using `prefix`

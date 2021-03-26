@@ -50,8 +50,8 @@ def mb_inf(src_xyz, src_fmt = 168):
       dict: xyz infos dictionary mb_inf_parse(inf_file)
     """
 
-    utils.run_cmd('mbdatalist -O -F{} -I{}'.format(src_fmt, src_xyz.name), verbose = False)
-    return(mb_inf_parse('{}.inf'.format(src_xyz.name)))
+    utils.run_cmd('mbdatalist -O -F{} -I{}'.format(src_fmt, src_xyz), verbose = False)
+    return(mb_inf_parse('{}.inf'.format(src_xyz)))
 
 def mb_inf_data_format(src_inf):
     """extract the data format from the mbsystem inf file.

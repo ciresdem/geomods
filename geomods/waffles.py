@@ -825,13 +825,10 @@ def waffles_gmt_triangulate(wg):
     if wg['gc']['GMT'] is None:
         utils.echo_error_msg('GMT must be installed to use the TRIANGULATE module')
         return(None, -1)
-    dem_tri_cmd = ('gmt blockmean {} -I{:.10f}{} -V -r | gmt triangulate {} -I{:.10f} -V -G{}.tif=gd+n-9999:GTiff -r\
+    dem_tri_cmd = ('gmt blockmean {} -I{:.10f}{} -V -r | gmt triangulate {} -I{:.10f} -V -G{}.tif=gd:GTiff -r\
     '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', waffles_proc_str(wg), wg['inc'], wg['name']))
     out, status = utils.run_cmd(dem_tri_cmd, verbose = wg['verbose'], data_fun = waffles_dl_func(wg))
     return({'dem': ['{}.tif'.format(wg['name']), 'raster']}, status)
-    #dem_tri_cmd = ('gmt triangulate {} -I{:.10f} -V -G{}.tif=gd:GTiff -r'.format(waffles_proc_str(wg), wg['inc'], wg['name']))
-    #out, status = utils.run_cmd(dem_tri_cmd, verbose = wg['verbose'], data_fun = waffles_dl_func(wg))
-    #return({'dem': ['{}.tif'.format(wg['name']), 'raster']}, status)
 
 ## ==============================================
 ## Waffles nearest neighbor module
@@ -1238,7 +1235,7 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
         utils.echo_msg_inline('performing SPLIT-SAMPLE simulation {} out of MAX {} [{:3}%]'.format(sim, sims, 0))
         status = 0
         sim += 1
-        #trains = regions.regions_sort(trainers, verbose = False)
+        trains = regions.regions_sort(trainers, verbose = False)
         for z, train in enumerate(trains):
             train_h = train[:25]
             ss_samp = s_5perc
@@ -1285,18 +1282,20 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
                     ## generate the random-sample DEM
                     ## ==============================================
                     wc = waffles_config(name = 'sub_{}'.format(n),
+                                        datalist = None,
                                         data = [s_outer, sub_xyz_head],
                                         region = this_region,
                                         inc = wg['inc'],
                                         mod = wg['mod'],
                                         mod_args = wg['mod_args'],
                                         epsg = wg['epsg'],
-                                        verbose = True,
+                                        verbose = False,
                                         mask = True,
                                         chunk = None,
                                         clobber = True)
                     sub_dems = waffle(wc)
-                    print(sub_dems)
+
+                    #if 'dem' in sub_dems.keys() and 'msk' in sub_dem.keys():
                     if os.path.exists(sub_dems['dem'][0]) and os.path.exists(sub_dems['msk'][0]):
                         ## ==============================================
                         ## generate the random-sample data PROX and SLOPE
@@ -1392,8 +1391,8 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
     #utils.remove_glob(slp)
 
     unc_out['prox_unc'] = ['{}_prox_unc.tif'.format(wg['name']), 'raster']
-    unc_out['prox_bf'] = ['{}_prox_bf.png'.format(wg['name']), 'image'],
-    unc_out['prox_scatter'] = ['{}_prox_scatter.png'.format(wg['name']), 'image'],
+    unc_out['prox_bf'] = ['{}_prox_bf.png'.format(wg['name']), 'image']
+    unc_out['prox_scatter'] = ['{}_prox_scatter.png'.format(wg['name']), 'image']
 
     return(unc_out, 0)
 
@@ -1671,10 +1670,8 @@ def waffle(wg):
         ## ==============================================
         #try:
         waffles_out, status = _waffles_modules[this_wg['mod']]['run'](args_d)
-        print(waffles_out)
         if wg['mask']: waffles_out['msk'] = ['{}_msk.tif'.format(this_wg['name']), 'raster']
         chunks.append(waffles_out)
-        print(chunks)
         #except KeyboardInterrupt as e:
         #    utils.echo_error_msg('killed by user, {}'.format(e))
         #    sys.exit(-1)
@@ -1685,17 +1682,22 @@ def waffle(wg):
         #    continue
         
         for out_key in waffles_out.keys():
+            #print(waffles_out[out_key])
             if waffles_out[out_key][1] == 'raster':
 
                 ## ==============================================
                 ## check DEM for content and set projection, etc.
                 ## ==============================================
                 this_dem = waffles_out[out_key][0]
+                #gdalfun.gdal_set_nodata(this_dem)
                 if not os.path.exists(this_dem): continue
                 gdi = gdalfun.gdal_infos(this_dem, scan = True)
-
+                #print(gdi)
                 if gdi is not None:
                     if np.isnan(gdi['zr'][0]):
+                        #print(gdi['zr'][0])
+                        utils.echo_warning_msg('no data found11 , skipping')
+                        #sys.exit()
                         utils.remove_glob(this_dem)
                         continue
                 else: continue
@@ -1769,6 +1771,7 @@ def waffle(wg):
                 gdi = gdalfun.gdal_infos(this_dem, scan = True)
                 if gdi is not None:
                     if np.isnan(gdi['zr'][0]):
+                        utils.echo_warning_msg('no data found, skipping')
                         utils.remove_glob(this_dem, this_dem_msk)
                         #if this_wg['mask']: utils.remove_glob(this_dem_msk)
                         continue
@@ -1818,7 +1821,9 @@ def waffle(wg):
                         #utils.remove_glob('{}.*'.format(chunks[0][out_key][0].split('.')[0]))
                     else: os.rename(chunks[0][out_key][0], '{}_{}.{}\
                     '.format(wg['name'], out_key, chunks[0][out_key][0].split('.')[-1]))
-                else: utils.echo_error_msg('{} not found.'.format(chunks[0][out_key][0]))
+                else:
+                    utils.echo_error_msg('{} not found.'.format(chunks[0][out_key][0]))
+                    #continue
 
             ## ==============================================
             ## convert to final format if not geotiff and

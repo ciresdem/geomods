@@ -1361,12 +1361,17 @@ hydrographic multibeam survey data from NOAA's National Ocean Service (NOS).'''
             else: utils.echo_error_msg('{}'.format(_req.reason))
                     
         for key in these_surveys.keys():
-            if '2' in these_surveys[key].keys():
-                for v2 in these_surveys[key]['2']:
-                    yield(v2)
+            if processed:
+                if '2' in these_surveys[key].keys():
+                    for v2 in these_surveys[key]['2']:
+                        yield(v2)
+                else:
+                    for v1 in these_surveys[key]['1']:
+                        yield(v1)
             else:
-                for v1 in these_surveys[key]['1']:
-                    yield(v1)
+                for keys in these_surveys[key].keys():
+                    for survs in these_surveys[key][keys]:
+                        yield(survs)
                     
     ## ==============================================
     ## Process results to xyz
