@@ -948,12 +948,14 @@ class nos:
                 utils.echo_msg('added {} surveys from {}'.format(len(surveys), nosdir))
             self.FRED._add_surveys(surveys)
         self.FRED._close_ds()
-    
+
     def _parse_results(self):
         '''Search the NOS reference vector and append the results
         to the results list.'''
         for surv in _filter_FRED(self):
-            yield([self._data_urls.append([i, i.split('/')[-1], surv['DataType']]) if i != '' else None for i in surv['DataLink'].split(',')])
+            for i in surv['DataLink'].split(','):
+                if i != '':
+                    yield([i, i.split('/')[-1], surv['DataType']])
             
     ## ==============================================
     ## Process results to xyz
@@ -1481,7 +1483,7 @@ may or may not be accurate.'''
             _data = {'geometry': regions.region_format(self.region, 'bbox'), 'inSR':4326, 'outSR':4326, 'f':'pjson'}
             _req = fetch_req(surv['DataLink'], params = _data)
             if _req is not None and _req.status_code == 200:
-                survey_list = self._req.json()
+                survey_list = _req.json()
                 for feature in survey_list['features']:
                     fetch_fn = feature['attributes']['SOURCEDATALOCATION']
                     if stype is not None:
@@ -1929,7 +1931,6 @@ the global and coastal oceans.'''
     ## Process results to xyz
     ## yield functions are used in waffles/datalists
     ## as well as for processing incoming fetched data.
-    ## `entry` is a an item from self._data_urls
     ## ==============================================    
     def _yield_xyz(self, entry, epsg = 4326, z_region = None, inc = None):
         src_gmrt = 'gmrt_tmp_{}.tif'.format(regions.region_format(self.region, 'fn'))

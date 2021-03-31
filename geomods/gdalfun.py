@@ -68,19 +68,6 @@ def gdal_prj_file(dst_fn, epsg):
         out.write(gdal_sr_wkt(int(epsg), True))
     return(0)
 
-def gdal_set_nodata(src_fn, nodata=-9999):
-    """set the nodata value of gdal file src_fn
-        
-    returns 0
-    """
-    
-    try:
-        ds = gdal.Open(src_fn, gdal.GA_Update)
-    except: ds = None
-    if ds is not None:
-        band = ds.GetRasterBand(1)
-        band.SetNoDataValue(nodata)
-
 def gdal_set_epsg(src_fn, epsg = 4326):
     '''set the projection of gdal file src_fn to epsg
 
