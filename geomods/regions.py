@@ -457,6 +457,15 @@ def region2ogr(region, dst_ogr, append=False):
     dst_feat = None
     dst_ds = None
 
+def region2srcwin(region, gt, x_count, y_count):
+
+    this_origin = [0 if x < 0 else x for x in utils._geo2pixel(region[0], region[3], gt)]
+    this_end = [0 if x < 0 else x for x in utils._geo2pixel(region[1], region[2], gt)]
+    this_size = [0 if x < 0 else x for x in ((this_end[0] - this_origin[0]), (this_end[1] - this_origin[1]))]
+    if this_size[0] > x_count - this_origin[0]: this_size[0] = x_count - this_origin[0]
+    if this_size[1] > y_count - this_origin[1]: this_size[1] = y_count - this_origin[1]
+    return(this_origin[0], this_origin[1], this_size[0], this_size[1])
+    
 def gdal_ogr_regions(src_ds):
     """return the region(s) of the ogr dataset"""
     

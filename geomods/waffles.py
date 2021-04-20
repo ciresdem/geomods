@@ -220,6 +220,14 @@ Generate a DEM using MBSystem's mbgrid command.
         'dem-p': True,
         'datalist-p': True,
     },
+    'IDW': {
+        'run': lambda args: waffles_idw(**args),
+        'description': '''INVERSE DISTANCE WEIGHTED DEM \n
+
+< IDW:power=2.0:radius=1s >''',
+        'dem-p': True,
+        'datalist-p': True,
+    },
     'invdst': {
         'run': lambda args: waffles_invdst(**args),
         'description': '''INVERSE DISTANCE DEM via gdal_grid\n
@@ -891,6 +899,78 @@ def waffles_num(wg, mode = 'n'):
         if wg['weights']: dly = xyzfun.xyz_block(dly, waffles_proc_region(wg), wg['inc'], weights = True)
         out, status = gdalfun.gdal_xyz2gdal(dly, '{}.tif'.format(wg['name']), waffles_proc_region(wg),
                                             wg['inc'], dst_format = wg['fmt'], mode = mode, verbose = wg['verbose'])
+    return({'dem': ['{}.tif'.format(wg['name']), 'raster']}, status)
+
+## ==============================================
+## Waffles IDW
+## with -w (weights) UIDW
+## ==============================================
+def waffles_idw(wg, radius='1s', power=2):
+    
+    def distance(self, pnt0, pnt1):
+        return(math.sqrt(sum([(a-b) ** 2 for a, b in zip(pnt0, pnt1)])))
+
+    radius = wg['inc'] * 2 if radius is None else gmtfun.gmt_inc2inc(radius)
+    xcount, ycount, dst_gt = regions.region2gt(waffles_proc_region(wg), wg['inc'])
+    ds_config = gdalfun.gdal_set_infos(xcount, ycount, xcount * ycount, dst_gt,
+                                       gdalfun.gdal_sr_wkt(wg['epsg']), gdal.GDT_Float32,
+                                       -9999, wg['fmt'])
+
+    outArray = np.empty((ycount, xcount))
+    outArray[:] = np.nan
+
+    if wg['verbose']:
+        progress = utils._progress('generating IDW grid @ {} and {}/{}'.format(radius, ycount, xcount))
+        i=0
+
+    hash_t, xyz_t = xyzfun.xyz_block_t(waffles_yield_datalist(wg), waffles_proc_region(wg), wg['inc'])
+
+    for y in range(0, ycount):
+        if wg['verbose']:
+            i+=1
+            progress.update_perc((i, ycount))
+
+        for x in range(0, xcount):
+            z_list = []
+            dw_list = []
+            if wg['weights']:
+                ww_list = []
+
+            xyz_bucket = []
+
+            xg, yg = utils._pixel2geo(x, y, dst_gt)
+            
+            block_region = [xg-radius, xg+radius, yg-radius, yg+radius]
+            srcwin = regions.region2srcwin(block_region, dst_gt, xcount, ycount)
+            
+            for y_i in range(srcwin[1], srcwin[1] + srcwin[3], 1):
+                for x_i in range(srcwin[0], srcwin[0] + srcwin[2], 1):
+                    xyz_s = hash_t[y_i, x_i]
+                    [xyz_bucket.append(xyz_t[b]) for b in xyz_s]
+
+            for this_xyz in xyz_bucket:
+                d = utils.euc_dst([this_xyz[0], this_xyz[1]], [xg, yg])
+                z_list.append(this_xyz[2])
+                dw_list.append(1./(d**power))
+
+                if wg['weights']:
+                    w = this_xyz[3]
+                    ww_list.append(1./(w**power))
+
+            if len(dw_list) > 0:
+                dwt = np.transpose(dw_list)
+                if wg['weights']:
+                    wwt = np.transpose(ww_list)
+                    outArray[y,x] = np.dot(z_list, (np.array(dwt)*np.array(wwt)))/sum(np.array(dw_list)*np.array(ww_list))
+                else: outArray[y,x] = np.dot(z_list, dwt)/sum(dw_list)
+    ds = None
+
+    if wg['verbose']:
+        progress.end(0, 'generated IDW grid {}/{}'.format(ycount, xcount))
+
+    outArray[np.isnan(outArray)] = -9999
+    out, status = gdalfun.gdal_write(outArray, '{}.tif'.format(wg['name']), ds_config)
+
     return({'dem': ['{}.tif'.format(wg['name']), 'raster']}, status)
 
 ## ==============================================

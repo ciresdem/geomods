@@ -279,7 +279,42 @@ def xyz_block(src_xyz, region, inc, weights = False, verbose = False):
             z = outarray[y,x]
             if z != -9999:
                 yield([geo_x, geo_y, z])
+
+def xyz_block_t(src_xyz, src_region, inc, verbose=False):
+    """block the src_xyz data to the mean block value
+
+    Args:
+      src_xyz (generataor): list/generator of xyz data
+      src_region (list): a `region` list [xmin, xmax, ymin, ymax]
+      inc (float): blocking increment, in native units
+      verbose (bool): increase verbosity    
+    """
+
+    xcount, ycount, dst_gt = regions.region2gt(src_region, inc)
+    blkArray = np.empty((ycount, xcount), dtype=object)
+    for y in range(0, ycount):
+        for x in range(0, xcount):
+            blkArray[y,x] = []
+    xyzArray = []
     
+    gdt = gdal.GDT_Float32
+
+    if verbose: utils.echo_msg('blocking data to {}/{} grid'.format(ycount, xcount))
+    it = 0
+    for this_xyz in src_xyz:
+        x = this_xyz[0]
+        y = this_xyz[1]
+        z = this_xyz[2]
+        if x > src_region[0] and x < src_region[1]:
+            if y > src_region[2] and y < src_region[3]:
+            
+                xpos, ypos = utils._geo2pixel(x, y, dst_gt)
+                if xpos < xcount and ypos < ycount:
+                    xyzArray.append(this_xyz)
+                    blkArray[ypos,xpos].append(it)
+                    it+=1            
+    return(blkArray, xyzArray)
+                
 def xyz_line(xyz_line, dst_port = sys.stdout, encode = False):
     """write "xyz" `line` to `dst_port`
     `line` should be a list of xyz values [x, y, z, ...].

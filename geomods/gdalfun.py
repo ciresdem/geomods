@@ -114,6 +114,7 @@ def gdal_srcwin(src_ds, region):
     output the appropriate gdal srcwin.
 
     returns the gdal srcwin'''
+    
     ds_config = gdal_gather_infos(src_ds)
     geoT = ds_config['geoT']
 
