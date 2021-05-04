@@ -589,7 +589,7 @@ def waffles_spatial_metadata(wg, geojson = False):
                     tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
                     gdalfun.gdal_polygonize(ng, tmp_layer, verbose = twg['verbose'])
 
-                    if len(tmp_layer) > 1:
+                    if len(tmp_layer) > 0:
                         if defn is None: defn = tmp_layer.GetLayerDefn()
                         out_feat = gdalfun.gdal_ogr_mask_union(tmp_layer, 'DN', defn)
                         [out_feat.SetField(f, o_v_fields[i]) for i, f in enumerate(v_fields)]
@@ -1374,39 +1374,39 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
                                         chunk = None,
                                         clobber = True)
                     sub_dems = waffle(wc)
+                    
+                    if 'dem' in sub_dems.keys() and 'msk' in sub_dem.keys():
+                        if os.path.exists(sub_dems['dem'][0]) and os.path.exists(sub_dems['msk'][0]):
+                            ## ==============================================
+                            ## generate the random-sample data PROX and SLOPE
+                            ## ==============================================        
+                            sub_prox = '{}_prox.tif'.format(wc['name'])
+                            gdalfun.gdal_proximity(sub_dems['msk'][0], sub_prox)
 
-                    #if 'dem' in sub_dems.keys() and 'msk' in sub_dem.keys():
-                    if os.path.exists(sub_dems['dem'][0]) and os.path.exists(sub_dems['msk'][0]):
-                        ## ==============================================
-                        ## generate the random-sample data PROX and SLOPE
-                        ## ==============================================        
-                        sub_prox = '{}_prox.tif'.format(wc['name'])
-                        gdalfun.gdal_proximity(sub_dems['msk'][0], sub_prox)
-                        
-                        # sub_slp = '{}_slp.tif'.format(wc['name'])
-                        # gdalfun.gdal_slope(sub_dem, sub_slp)
-                        
-                        ## ==============================================
-                        ## Calculate the random-sample errors
-                        ## ==============================================
-                        sub_xyd = gdalfun.gdal_query(sub_xyz[sx_cnt:], sub_dems['dem'][0], 'xyd')
-                        #sub_dp = gdalfun.gdal_query(sub_xyd, sub_prox, 'zg')
-                        sub_dp = gdalfun.gdal_query(sub_xyd, sub_prox, 'xyzg')
-                        # sub_ds = gdalfun.gdal_query(sub_dp, slp, 'g')
-                        
-                        # if len(sub_dp) > 0:
-                        #     if sub_dp.shape[0] == sub_ds.shape[0]:
-                        #         sub_dp = np.append(sub_dp, sub_ds, 1)
-                        #     else: sub_dp = []
-                    else: sub_dp = None
-                    utils.remove_glob(sub_xyz_head)
+                            # sub_slp = '{}_slp.tif'.format(wc['name'])
+                            # gdalfun.gdal_slope(sub_dem, sub_slp)
 
-                    if s_dp is not None: 
-                        if sub_dp is not None and len(sub_dp) > 0:
-                            try:
-                                s_dp = np.concatenate((s_dp, sub_dp), axis = 0)
-                            except: s_dp = sub_dp
-                    else: s_dp = sub_dp
+                            ## ==============================================
+                            ## Calculate the random-sample errors
+                            ## ==============================================
+                            sub_xyd = gdalfun.gdal_query(sub_xyz[sx_cnt:], sub_dems['dem'][0], 'xyd')
+                            #sub_dp = gdalfun.gdal_query(sub_xyd, sub_prox, 'zg')
+                            sub_dp = gdalfun.gdal_query(sub_xyd, sub_prox, 'xyzg')
+                            # sub_ds = gdalfun.gdal_query(sub_dp, slp, 'g')
+
+                            # if len(sub_dp) > 0:
+                            #     if sub_dp.shape[0] == sub_ds.shape[0]:
+                            #         sub_dp = np.append(sub_dp, sub_ds, 1)
+                            #     else: sub_dp = []
+                        else: sub_dp = None
+                        utils.remove_glob(sub_xyz_head)
+
+                        if s_dp is not None: 
+                            if sub_dp is not None and len(sub_dp) > 0:
+                                try:
+                                    s_dp = np.concatenate((s_dp, sub_dp), axis = 0)
+                                except: s_dp = sub_dp
+                        else: s_dp = sub_dp
                 utils.remove_glob(o_xyz, 'sub_{}*'.format(n))
 
         if len(s_dp) > 0:
