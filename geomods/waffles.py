@@ -1375,7 +1375,7 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
                                         clobber = True)
                     sub_dems = waffle(wc)
                     
-                    if 'dem' in sub_dems.keys() and 'msk' in sub_dem.keys():
+                    if 'dem' in sub_dems.keys() and 'msk' in sub_dems.keys():
                         if os.path.exists(sub_dems['dem'][0]) and os.path.exists(sub_dems['msk'][0]):
                             ## ==============================================
                             ## generate the random-sample data PROX and SLOPE
@@ -1432,11 +1432,18 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
             #utils.echo_msg('{}\t{}\t{}\t{}\t{}\t{}'.format(sim, len(s_dp), ec_d, ec_d[2] - ec_d[1], ec_s, ec_s[2] - ec_s[1]))
             utils.echo_msg('{}\t{}\t{}\t{}'.format(sim, len(s_dp), ec_d, ec_l_diff))
             
-            if ec_d[2] < 0.0001: continue
-            if abs(ec_d[2] - ec_d[1]) > 2: continue
-            if sim >= int(sims): break
-            if abs(last_ec_diff - ec_diff) < 0.001: break
-            if len(s_dp) >= int(region_info[wg['name']][1] / 10): break
+            #if ec_d[2] < 0.0001: continue
+            #if abs(ec_d[2] - ec_d[1]) > 2: continue
+            if ec_d[0] == 0 and ec_d[1] == 0.1 and ec_d[2] == 0.2:
+                    continue
+            if sim >= int(sims):
+                break
+            if abs(last_ec_diff - ec_diff) == 0:
+                break
+
+            #if sim >= int(sims): break
+            #if abs(last_ec_diff - ec_diff) < 0.001: break
+            #if len(s_dp) >= int(region_info[wg['name']][1] / 10): break
             last_ec_d = ec_d
             #else: utils.echo_msg('{}\t{}\t{}\t{}\t{}\t{}'.format(sim, len(s_dp), None, None, None, None))
         else: utils.echo_msg('{}\t{}\t{}\t{}'.format(sim, len(s_dp), None, None))
