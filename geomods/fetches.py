@@ -419,11 +419,11 @@ this_dir, this_filename = os.path.split(__file__)
 fetchdata = os.path.join(this_dir, 'data')
 
 class FRED:
-    def __init__(self, verbose = False, local = False):
+    def __init__(self, name='FRED', verbose = False, local = False):
         self._verbose = verbose
         self.fetchdata = os.path.join(this_dir, 'data')
         self.driver = ogr.GetDriverByName('GeoJSON')
-        self.fetch_v = 'FRED.geojson'
+        self.fetch_v = '{}.geojson'.format(name)
         if local:
             self.FREDloc = self.fetch_v
         elif os.path.exists(self.fetch_v):
@@ -892,7 +892,7 @@ class nos:
 
         self.where = where
         self.region = extent
-        self.FRED = FRED(verbose = self._verbose)
+        self.FRED = FRED(name = 'nos', verbose = self._verbose)
         self._stop = callback
 
         self._name = 'nos'
@@ -949,13 +949,34 @@ class nos:
             self.FRED._add_surveys(surveys)
         self.FRED._close_ds()
 
-    def _parse_results(self):
+    def _data_type(self, src_nos):
+        src_ext = os.path.basename(src_nos).split('.')
+        if len(src_ext) > 2:
+            if src_ext[-2] == 'bag': dt = 'grid_bag'
+            elif src_ext[-2] == 'xyz': dt = 'geodas_xyz'
+            else: dt = None
+        elif len(src_ext) == 2:
+            if src_ext[-1] == 'bag': dt = 'grid_bag'
+            elif src_ext[-1] == 'xyz': dt = 'geodas_xyz'
+            else: dt = None
+        else:
+            dt = None
+            #print(src_nos)
+            #print(dt)
+        return(dt)
+        
+    def _parse_results(self, datatype=None):
         '''Search the NOS reference vector and append the results
         to the results list.'''
         for surv in _filter_FRED(self):
             for i in surv['DataLink'].split(','):
                 if i != '':
-                    yield([i, i.split('/')[-1], surv['DataType']])
+                    dt = self._data_type(i)
+                    if datatype is not None:
+                        if datatype.lower() in dt:
+                            yield([i, i.split('/')[-1], surv['DataType']])
+                    else:
+                        yield([i, i.split('/')[-1], surv['DataType']])
             
     ## ==============================================
     ## Process results to xyz
@@ -1002,9 +1023,8 @@ class nos:
 
             elif dt == 'grid_bag':
                 src_bags = utils.p_unzip(src_nos, ['gdal', 'tif', 'img', 'bag', 'asc'])
-
-                nos_f = '{}.tmp'.format(os.path.basename(src_bag).split('.')[0])
                 for src_bag in src_bags:
+                    nos_f = '{}.tmp'.format(os.path.basename(src_bag).split('.')[0])
                     try:
                         src_ds = gdal.Open(src_bag)
                         srcwin = gdalfun.gdal_srcwin(src_ds, regions.region_warp(self.region, s_warp = epsg, t_warp = gdalfun.gdal_get_epsg(src_ds)))

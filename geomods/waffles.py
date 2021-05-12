@@ -1438,7 +1438,7 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
                     continue
             if sim >= int(sims):
                 break
-            if abs(last_ec_diff - ec_diff) == 0:
+            if abs(last_ec_diff - ec_diff) < 0.0001:
                 break
 
             #if sim >= int(sims): break
