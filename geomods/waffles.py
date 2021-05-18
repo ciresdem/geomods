@@ -1152,7 +1152,8 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
     
     s_dp = s_ds = None
     unc_out = {}
-    zones = ['low-dens','mid-dens','high-dens','low-slp','mid-slp','high-slp']
+    #zones = ['low-dens','mid-dens','high-dens','low-slp','mid-slp','high-slp']
+    zones = ['low-dens','mid-dens','high-dens']
     
     ## ==============================================
     ## set the module and input grids.
@@ -1258,16 +1259,19 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
         s_sum, s_g_max, s_perc = gdalfun.gdal_mask_analysis(msk_ds, region = sub_region)
         p_perc = gdalfun.gdal_prox_analysis(prox_ds, region = sub_region)
         #slp_perc = gdalfun.gdal_prox_analysis(slp_ds, region = sub_region)
-        slp_perc = 0
+        #slp_perc = 0
         s_dc = gdalfun.gdal_gather_infos(dem_ds, region = sub_region, scan = True)
-        if p_perc < prox_perc_33 or abs(p_perc - prox_perc_33) < 0.01: zone = zones[2]
-        elif p_perc < prox_perc_66 or abs(p_perc - prox_perc_66) < 0.01: zone = zones[1]
+        if p_perc < prox_perc_33 or abs(p_perc - prox_perc_33) < 0.01:
+            zone = zones[2]
+        elif p_perc < prox_perc_66 or abs(p_perc - prox_perc_66) < 0.01:
+            zone = zones[1]
         else: zone = zones[0]
         #if slp_perc < slp_perc_33 or abs(slp_perc - slp_perc_33) < 0.01: zone = zones[3]
         #elif slp_perc < slp_perc_66 or abs(slp_perc - slp_perc_66) < 0.01: zone = zones[4]
         #else: zone = zones[5]
 
-        sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, p_perc, slp_perc, s_dc['zr'][0], s_dc['zr'][1], zone]
+        #sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, p_perc, slp_perc, s_dc['zr'][0], s_dc['zr'][1], zone]
+        sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, p_perc, zone]
     dem_ds = msk_ds = prox_ds = slp_ds = None
     utils.echo_msg_inline('analyzing sub-regions [OK]\n')
     
@@ -1277,6 +1281,7 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
     s_dens = np.array([sub_zones[x][3] for x in sub_zones.keys()])
     s_5perc = np.percentile(s_dens, 5)
     s_dens = None
+    print(sub_zones)
     utils.echo_msg('Sampling density for region is: {:.16f}'.format(s_5perc))
 
     ## ==============================================
@@ -1287,7 +1292,7 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
     s_perc = 50
     
     for z, this_zone in enumerate(zones):
-        tile_set = [sub_zones[x] for x in sub_zones.keys() if sub_zones[x][8] == zones[z]]
+        tile_set = [sub_zones[x] for x in sub_zones.keys() if sub_zones[x][5] == zones[z]]
         if len(tile_set) > 0:
             d_50perc = np.percentile(np.array([x[3] for x in tile_set]), 50)
         else: continue
@@ -1305,7 +1310,8 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
     ## split-sample simulations and error calculations
     ## sims = max-simulations
     ## ==============================================
-    if sims is None: sims = int(len(sub_regions)/tot_trains)
+    if sims is None:
+        sims = int(len(sub_regions)/tot_trains)
     utils.echo_msg('performing MAX {} SPLIT-SAMPLE simulations...'.format(sims))
     utils.echo_msg('simulation\terrors\tproximity-coeff\tpc_delta')
     #utils.echo_msg('simulation\terrors\tproximity-coeff\tp_diff\tslp-coeff\tslp_diff')
@@ -1401,17 +1407,17 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
                         else: sub_dp = None
                         utils.remove_glob(sub_xyz_head)
 
-                        if s_dp is not None: 
-                            if sub_dp is not None and len(sub_dp) > 0:
-                                try:
-                                    s_dp = np.concatenate((s_dp, sub_dp), axis = 0)
-                                except: s_dp = sub_dp
-                        else: s_dp = sub_dp
+                        #if s_dp is not None: 
+                        if sub_dp is not None and len(sub_dp) > 0:
+                            try:
+                                s_dp = np.concatenate((s_dp, sub_dp), axis = 0)
+                            except: s_dp = sub_dp
+                        #else: s_dp = sub_dp
                 utils.remove_glob(o_xyz, 'sub_{}*'.format(n))
 
         if len(s_dp) > 0:
             d_max = region_info[wg['name']][4]
-            s_max = region_info[wg['name']][5]
+            #s_max = region_info[wg['name']][5]
             s_dp = s_dp[s_dp[:,3] < d_max,:]
             s_dp = s_dp[s_dp[:,3] > 0,:]
             prox_err = s_dp[:,[2,3]]
@@ -1422,7 +1428,7 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
             else: last_ec_diff = abs(last_ec_d[2] - last_ec_d[1])
 
             ec_d = utils.err2coeff(prox_err[:50000000], coeff_guess = last_ec_d, dst_name = wg['name'] + '_prox', xa = 'distance')
-            
+            print(ec_d)
             ec_diff = abs(ec_d[2] - ec_d[1])
             ec_l_diff = abs(last_ec_diff - ec_diff)
             
@@ -1434,10 +1440,10 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
             
             #if ec_d[2] < 0.0001: continue
             #if abs(ec_d[2] - ec_d[1]) > 2: continue
-            if ec_d[0] == 0 and ec_d[1] == 0.1 and ec_d[2] == 0.2:
-                    continue
             if sim >= int(sims):
                 break
+            if ec_d[0] == 0 and ec_d[1] == 0.1 and ec_d[2] == 0.2:
+                continue
             if abs(last_ec_diff - ec_diff) < 0.0001:
                 break
 
@@ -1581,7 +1587,7 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
                 '.format(gdb_bn, gdb, regions.region_format(wg['region'], 'ul_lr')), verbose = False)
                 if os.path.exists('{}_NHDWaterBody.shp'.format(gdb_bn)):
                     r_shp.append('{}_NHDWaterBody.shp'.format(gdb_bn))
-                utils.remove_glob(gbd)
+                utils.remove_glob(gdb)
             else: utils.echo_error_msg('unable to fetch {}'.format(result))
 
             [utils.run_cmd('ogr2ogr -skipfailures -update -append nhdArea_merge.shp {} 2>&1\
@@ -1777,6 +1783,7 @@ def waffle(wg):
                 ## ==============================================
                 this_dem = waffles_out[out_key][0]
                 #gdalfun.gdal_set_nodata(this_dem)
+                gdalfun.gdal_set_nodata(this_dem, -9999)
                 if not os.path.exists(this_dem): continue
                 gdi = gdalfun.gdal_infos(this_dem, scan = True)
                 #print(gdi)
@@ -1900,7 +1907,8 @@ def waffle(wg):
                 if os.path.exists(chunks[0][out_key][0]):
                     if chunks[0][out_key][1] == 'raster':
                         gdalfun.gdal_gdal2gdal(chunks[0][out_key][0], dst_fmt = wg['fmt'], dst_gdal = out_dem)
-                        utils.remove_glob(chunks[0][out_key][0])
+                        #utils.remove_glob(chunks[0][out_key][0])
+                        utils.remove_glob('{}*'.format(chunks[0][out_key][0]))
                     elif chunks[0][out_key][1] == 'vector':
                         out, status = utils.run_cmd('ogr2ogr {} {} -overwrite\
                         '.format(out_dem, chunks[0][out_key][0]), verbose = True)
