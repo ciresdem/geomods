@@ -1503,7 +1503,7 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
 ## GMT or GMRT will fill in the gaps where local-data and NHD can't fill;
 ## hopefully this is just to fill areas off-shore and far-inland.
 ## ==============================================
-def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
+def waffles_coastline(wg, wet = None, dry = None, want_nhd = True, want_gmrt = False):
     """Generate a coastline polygon from various sources.
     
     Args: 
@@ -1546,10 +1546,6 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
         ds = None
     else: return(-1, -1)
     utils.remove_glob('{}*'.format(w_mask))
-
-    ## ==============================================
-    ## Input coastline shapefile `coastpoly`
-    ## ==============================================
     
     ## ==============================================
     ## USGS NHD (HIGH-RES U.S. Only)
@@ -1612,11 +1608,53 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
         utils.remove_glob('{}*'.format(u_mask))
 
     ## ==============================================
+    ## Input wet/dry poly masks
+    ## ==============================================
+        
+    wp_mask = '{}_wp.tif'.format(wg['name'])
+    
+    if wet is not None:
+        xsize, ysize, gt = regions.region2gt(waffles_proc_region(wg), wg['inc'])
+        utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn 1 {} {}'.format(xsize, ysize, regions.region_format(waffles_dist_region(wg), 'te'), wet, wp_mask), verbose = True)
+
+        utils.echo_msg('filling the coast mask with input wet mask poly data...')
+        w_ds = gdal.Open(wp_mask)
+        w_ds_arr = w_ds.GetRasterBand(1).ReadAsArray()
+        for this_xyz in gdalfun.gdal_parse(w_ds):
+            xpos, ypos = utils._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
+            try:
+                if coast_array[ypos, xpos] == ds_config['ndv']:
+                    coast_array[ypos, xpos] = this_xyz[2]
+            except: pass
+        w_ds = None
+        utils.remove_glob('{}*'.format(wp_mask))
+
+    dp_mask = '{}_dp.tif'.format(wg['name'])
+    
+    if dry is not None:
+        xsize, ysize, gt = regions.region2gt(waffles_proc_region(wg), wg['inc'])
+        utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn 0 {} {}'.format(xsize, ysize, regions.region_format(waffles_dist_region(wg), 'te'), dry, cp_mask), verbose = True)
+
+        utils.echo_msg('filling the coast mask with input dry mask poly data...')
+        d_ds = gdal.Open(dp_mask)
+        d_ds_arr = d_ds.GetRasterBand(1).ReadAsArray()
+        for this_xyz in gdalfun.gdal_parse(d_ds):
+            xpos, ypos = utils._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
+            try:
+                if coast_array[ypos, xpos] == ds_config['ndv']:
+                    coast_array[ypos, xpos] = this_xyz[2]
+            except: pass
+        d_ds = None
+        utils.remove_glob('{}*'.format(dp_mask))        
+
+    ## ==============================================
     ## GSHHG/GMRT - Global low-res
     ## ==============================================
+        
     g_mask = '{}_g.tif'.format(wg['name'])
+        
     if wg['gc']['GMT'] is not None and not want_gmrt:
-        utils.run_cmd('gmt grdlandmask {} -I{} -r -Df -G{}=gd:GTiff -V -N1/0/1/0/1\
+        utils.run_cmd('gmt grdlandmask {} -I{} -r -Df -G{}=gd:GTiff -V -N1/0/0/0/0\
         '.format(regions.region_format(waffles_dist_region(wg), 'gmt'), wg['inc'], g_mask), verbose = wg['verbose'])
     else:
         fl = fetches._fetch_modules['gmrt'](regions.region_buffer(waffles_dist_region(wg), 5, pct = True), [], None, True)
@@ -1633,7 +1671,7 @@ def waffles_coastline(wg, want_nhd = True, want_gmrt = False):
     utils.echo_msg('filling the coast mask with gsshg/gmrt data...')
     c_ds = gdal.Open(g_mask)
     c_ds_arr = c_ds.GetRasterBand(1).ReadAsArray()
-    c_ds = gdal.Open(g_mask)
+    #c_ds = gdal.Open(g_mask)
     for this_xyz in gdalfun.gdal_parse(c_ds):
         xpos, ypos = utils._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
         try:
