@@ -1633,7 +1633,7 @@ def waffles_coastline(wg, wet = None, dry = None, want_nhd = True, want_gmrt = F
     
     if dry is not None:
         xsize, ysize, gt = regions.region2gt(waffles_proc_region(wg), wg['inc'])
-        utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn 0 {} {}'.format(xsize, ysize, regions.region_format(waffles_dist_region(wg), 'te'), dry, cp_mask), verbose = True)
+        utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn 0 {} {}'.format(xsize, ysize, regions.region_format(waffles_dist_region(wg), 'te'), dry, dp_mask), verbose = True)
 
         utils.echo_msg('filling the coast mask with input dry mask poly data...')
         d_ds = gdal.Open(dp_mask)
