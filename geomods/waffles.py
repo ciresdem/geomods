@@ -1591,7 +1591,8 @@ def waffles_coastline(wg, wet = None, dry = None, want_nhd = True, want_gmrt = F
             '.format(shp), verbose = False) for shp in r_shp]
             utils.run_cmd('gdal_rasterize -burn 1 nhdArea_merge.shp {}'.format(u_mask), verbose = True)
             utils.remove_glob('nhdArea_merge.*', 'NHD_*', *r_shp)
-        utils.remove_glob('NHD*', 'tnm')
+            [utils.remove_glob('{}.*'.format(shp[:-4])) for shp in r_shp]
+        #utils.remove_glob('NHD*', 'tnm')
         
         ## ==============================================
         ## update wet/dry mask with nhd data
@@ -1702,10 +1703,10 @@ def waffles_coastline(wg, wet = None, dry = None, want_nhd = True, want_gmrt = F
         tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
         gdalfun.gdal_polygonize('{}.tif'.format(wg['name']), tmp_layer, verbose = wg['verbose'])        
         tmp_ds = None
-    utils.run_cmd('ogr2ogr -dialect SQLITE -sql "SELECT * FROM tmp_c_{} WHERE DN=0 order by ST_AREA(geometry) desc limit 8"\
+    #utils.run_cmd('ogr2ogr -dialect SQLITE -sql "SELECT * FROM tmp_c_{} WHERE DN=0 order by ST_AREA(geometry) desc limit 8"\
+    #{}.shp tmp_c_{}.shp'.format(wg['name'], wg['name'], wg['name']), verbose = True)
+    utils.run_cmd('ogr2ogr -dialect SQLITE -sql "SELECT * FROM tmp_c_{} WHERE DN=1 order by ST_AREA(geometry) desc limit 8"\
     {}.shp tmp_c_{}.shp'.format(wg['name'], wg['name'], wg['name']), verbose = True)
-    # utils.run_cmd('ogr2ogr -dialect SQLITE -sql "SELECT * FROM tmp_c_{} WHERE DN=0 order by ST_AREA(geometry) desc limit 8"\
-    # {}.shp tmp_c_{}.shp'.format(wg['name'], wg['name'], wg['name']), verbose = True)
     utils.remove_glob('tmp_c_{}.*'.format(wg['name']))
     utils.run_cmd('ogrinfo -dialect SQLITE -sql "UPDATE {} SET geometry = ST_MakeValid(geometry)" {}.shp\
     '.format(wg['name'], wg['name']))
