@@ -1554,6 +1554,7 @@ def waffles_coastline(wg, wet = None, dry = None, want_nhd = True, want_gmrt = F
     ## varies by location...
     ## ==============================================
     if want_nhd:
+        utils.echo_msg('filling the coast mask with NHD data...')
         u_mask = '{}_u.tif'.format(wg['name'])
         regions.region2ogr(waffles_dist_region(wg), 'region_buff.shp')
         xsize, ysize, gt = regions.region2gt(waffles_proc_region(wg), wg['inc'])
@@ -1590,14 +1591,14 @@ def waffles_coastline(wg, wet = None, dry = None, want_nhd = True, want_gmrt = F
             '.format(shp), verbose = False) for shp in r_shp]
             utils.run_cmd('gdal_rasterize -burn 1 nhdArea_merge.shp {}'.format(u_mask), verbose = True)
             utils.remove_glob('nhdArea_merge.*', 'NHD_*', *r_shp)
-
+        utils.remove_glob('NHD*', 'tnm')
+        
         ## ==============================================
         ## update wet/dry mask with nhd data
         ## ==============================================
-        utils.echo_msg('filling the coast mask with NHD data...')
         c_ds = gdal.Open(u_mask)
-        c_ds_arr = c_ds.GetRasterBand(1).ReadAsArray()
-        c_ds = gdal.Open(u_mask)
+        #c_ds_arr = c_ds.GetRasterBand(1).ReadAsArray()
+        #c_ds = gdal.Open(u_mask)
         for this_xyz in gdalfun.gdal_parse(c_ds):
             xpos, ypos = utils._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
             try:
@@ -1614,38 +1615,41 @@ def waffles_coastline(wg, wet = None, dry = None, want_nhd = True, want_gmrt = F
     wp_mask = '{}_wp.tif'.format(wg['name'])
     
     if wet is not None:
-        xsize, ysize, gt = regions.region2gt(waffles_proc_region(wg), wg['inc'])
-        utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn 1 {} {}'.format(xsize, ysize, regions.region_format(waffles_dist_region(wg), 'te'), wet, wp_mask), verbose = True)
-
         utils.echo_msg('filling the coast mask with input wet mask poly data...')
+        gdalfun.ogr_clip(wet, 'tmp_wet.shp', clip_region = waffles_proc_region(wg), dn = "ESRI Shapefile")
+        xsize, ysize, gt = regions.region2gt(waffles_proc_region(wg), wg['inc'])
+        utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn 0 {} {}'.format(xsize, ysize, regions.region_format(waffles_proc_region(wg), 'te'), 'tmp_wet.shp', wp_mask), verbose = True)
         w_ds = gdal.Open(wp_mask)
-        w_ds_arr = w_ds.GetRasterBand(1).ReadAsArray()
+        #w_ds_arr = w_ds.GetRasterBand(1).ReadAsArray()
         for this_xyz in gdalfun.gdal_parse(w_ds):
             xpos, ypos = utils._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
             try:
                 if coast_array[ypos, xpos] == ds_config['ndv']:
-                    coast_array[ypos, xpos] = this_xyz[2]
+                    #coast_array[ypos, xpos] = this_xyz[2]
+                    if this_xyz[2] == 0:
+                        coast_array[ypos, xpos] = 0
             except: pass
         w_ds = None
-        utils.remove_glob('{}*'.format(wp_mask))
+        utils.remove_glob('{}*'.format(wp_mask), 'tmp_wet.*')
 
     dp_mask = '{}_dp.tif'.format(wg['name'])
     
     if dry is not None:
-        xsize, ysize, gt = regions.region2gt(waffles_proc_region(wg), wg['inc'])
-        utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn 0 {} {}'.format(xsize, ysize, regions.region_format(waffles_dist_region(wg), 'te'), dry, dp_mask), verbose = True)
-
         utils.echo_msg('filling the coast mask with input dry mask poly data...')
+        gdalfun.ogr_clip(dry, 'tmp_dry.shp', clip_region = waffles_proc_region(wg), dn = "ESRI Shapefile")
+        xsize, ysize, gt = regions.region2gt(waffles_proc_region(wg), wg['inc'])
+        utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn 1 {} {}'.format(xsize, ysize, regions.region_format(waffles_proc_region(wg), 'te'), 'tmp_dry.shp', dp_mask), verbose = True)
         d_ds = gdal.Open(dp_mask)
-        d_ds_arr = d_ds.GetRasterBand(1).ReadAsArray()
+        #d_ds_arr = d_ds.GetRasterBand(1).ReadAsArray()
         for this_xyz in gdalfun.gdal_parse(d_ds):
             xpos, ypos = utils._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
             try:
                 if coast_array[ypos, xpos] == ds_config['ndv']:
-                    coast_array[ypos, xpos] = this_xyz[2]
+                    if this_xyz[2] == 1:
+                        coast_array[ypos, xpos] = 1
             except: pass
         d_ds = None
-        utils.remove_glob('{}*'.format(dp_mask))        
+        utils.remove_glob('{}*'.format(dp_mask), 'tmp_dry.*')
 
     ## ==============================================
     ## GSHHG/GMRT - Global low-res
@@ -1655,9 +1659,9 @@ def waffles_coastline(wg, wet = None, dry = None, want_nhd = True, want_gmrt = F
         
     if wg['gc']['GMT'] is not None and not want_gmrt:
         utils.run_cmd('gmt grdlandmask {} -I{} -r -Df -G{}=gd:GTiff -V -N1/0/0/0/0\
-        '.format(regions.region_format(waffles_dist_region(wg), 'gmt'), wg['inc'], g_mask), verbose = wg['verbose'])
+        '.format(regions.region_format(waffles_proc_region(wg), 'gmt'), wg['inc'], g_mask), verbose = wg['verbose'])
     else:
-        fl = fetches._fetch_modules['gmrt'](regions.region_buffer(waffles_dist_region(wg), 5, pct = True), [], None, True)
+        fl = fetches._fetch_modules['gmrt'](regions.region_buffer(waffles_proc_region(wg), 5, pct = True), [], None, True)
         r = fl._parse_results(fl._filter_results(), layer = 'topo-mask')
         gmrt_tif = r[0][1]
         if fetches.fetch_file(r[0][0], gmrt_tif, verbose = True) == 0:
@@ -1700,6 +1704,8 @@ def waffles_coastline(wg, wet = None, dry = None, want_nhd = True, want_gmrt = F
         tmp_ds = None
     utils.run_cmd('ogr2ogr -dialect SQLITE -sql "SELECT * FROM tmp_c_{} WHERE DN=0 order by ST_AREA(geometry) desc limit 8"\
     {}.shp tmp_c_{}.shp'.format(wg['name'], wg['name'], wg['name']), verbose = True)
+    # utils.run_cmd('ogr2ogr -dialect SQLITE -sql "SELECT * FROM tmp_c_{} WHERE DN=0 order by ST_AREA(geometry) desc limit 8"\
+    # {}.shp tmp_c_{}.shp'.format(wg['name'], wg['name'], wg['name']), verbose = True)
     utils.remove_glob('tmp_c_{}.*'.format(wg['name']))
     utils.run_cmd('ogrinfo -dialect SQLITE -sql "UPDATE {} SET geometry = ST_MakeValid(geometry)" {}.shp\
     '.format(wg['name'], wg['name']))

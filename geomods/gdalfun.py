@@ -791,6 +791,7 @@ def ogr_clip(src_ogr, dst_ogr, clip_region = None, dn = "ESRI Shapefile"):
     layer.Clip(c_layer, dst_layer)
 
     ds = c_ds = dst_ds = None
+    utils.remove_glob('tmp_clip.*')
 
 def ogr_empty_p(src_ogr):
     driver = ogr.GetDriverByName('ESRI Shapefile')
