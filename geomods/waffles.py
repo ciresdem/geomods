@@ -1592,7 +1592,7 @@ def waffles_coastline(wg, wet = None, dry = None, want_nhd = True, want_gmrt = F
             utils.run_cmd('gdal_rasterize -burn 1 nhdArea_merge.shp {}'.format(u_mask), verbose = True)
             utils.remove_glob('nhdArea_merge.*', 'NHD_*', *r_shp)
             [utils.remove_glob('{}.*'.format(shp[:-4])) for shp in r_shp]
-        #utils.remove_glob('NHD*', 'tnm')
+        utils.remove_glob('NHD*', 'tnm')
         
         ## ==============================================
         ## update wet/dry mask with nhd data
