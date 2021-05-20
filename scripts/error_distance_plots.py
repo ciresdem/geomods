@@ -26,21 +26,21 @@ max_int_dist_tmp=(sys.argv[4])
 short_name="All Terrain"
 ss_samp_den=("%.3f" % ss_samp_den_tmp)
 max_int_dist=int(max_int_dist_tmp)
-print "Max int dist is", max_int_dist
+print("Max int dist is", max_int_dist)
 
 try:
-	print "starting data import into array"
+	print("starting data import into array")
 	my_data = np.loadtxt(data, delimiter=' ')
-	print "created array from data with no memory issues!"
+	print("created array from data with no memory issues!")
 except MemoryError:
-	print "Memory Error"
+	print("Memory Error")
 
 error=my_data[:,0]
 distance=my_data[:,1]
 x=distance
 y=error
 
-print "max distance of data is", np.max(distance)
+print("max distance of data is", np.max(distance))
 #print "maxout,cov,infodict,mesg,ier=optimize.leastsq interpolation distance is", int(max_int_dist)
 
 nbins = 10
@@ -115,9 +115,9 @@ plt.close()
 
 
 
-print "center of x bin distance is", (_[1:] + _[:-1])/2
-print "st. dev is", std
-print "sample size is", n
+print("center of x bin distance is", (_[1:] + _[:-1])/2)
+print("st. dev is", std)
+print("sample size is", n)
 
 #always keep the first three data points after 0,0
 std_final=[0]
@@ -161,8 +161,8 @@ for j in bins_orig[0:len(std_final)-1]:
 	bins_final.append(j)
 	
 
-print "LENGTH BINS", len(bins_final)
-print "LENGTH STD", len(std_final)
+print("LENGTH BINS", len(bins_final))
+print("LENGTH STD", len(std_final))
 
 fig = plt.figure()
 ax = plt.subplot(111)
@@ -171,9 +171,9 @@ plt_data=ax.scatter(bins_final,std_final, zorder=1, label='Error St. Dev.', mark
 plt.show
 #bins_final=bins_orig[0:len(std_final)]
 
-print "plotting data"
-print "distance is", bins_final
-print "st dev is", std_final
+print("plotting data")
+print("distance is", bins_final)
+print("st dev is", std_final)
 
 xdata=bins_final
 ydata=std_final
@@ -189,17 +189,17 @@ errfunc = lambda p, x, y: (y - fitfunc(p, x))
 
 #need 3 points to fit polynomial?
 if len(xdata)==2:
-	print "ONLY 2 POINTS -- Adding 3rd of 0,0 to make polyfit work"
+	print("ONLY 2 POINTS -- Adding 3rd of 0,0 to make polyfit work")
 	xdata=[0]+xdata
 	ydata=[0]+ydata
 
 
 coeff_guess=[0,0.5,0.5]
 
-print "xdata is", xdata
-print "ydata is", ydata
-print "errfunc is", errfunc
-print "coeff_guess is", coeff_guess
+print("xdata is", xdata)
+print("ydata is", ydata)
+print("errfunc is", errfunc)
+print("coeff_guess is", coeff_guess)
 
 out,cov,infodict,mesg,ier=optimize.leastsq(errfunc,coeff_guess,args=(xdata,ydata),full_output=True)
 
@@ -212,13 +212,13 @@ rsquared = 1-(ssErr/ssTot )
 if out[2]<0.001:
 	out[2]=0.001
 
-print "%g + %g*x^%g"%(out[0],out[1],out[2])
-print "coefficients are", out
+print("%g + %g*x^%g"%(out[0],out[1],out[2]))
+print("coefficients are", out)
 
 coeff1=float("{0:.3f}".format(out[1]))
 coeff2=float("{0:.3f}".format(out[2]))
-print "coeff1 is", coeff1
-print "coeff2 is", coeff2
+print("coeff1 is", coeff1)
+print("coeff2 is", coeff2)
 
 st_dev_fit=[]
 bins_fit=range(0,int(max_int_dist)+2)
@@ -228,8 +228,8 @@ for i in bins_fit:
 
 #print "log_coeff is", log_coeff
 #print "intercept is", intercept
-print "bins_fit are", bins_fit
-print "st_dev_fit are", st_dev_fit
+print("bins_fit are", bins_fit)
+print("st_dev_fit are", st_dev_fit)
 
 plt_best_fit,=ax.plot(bins_fit,st_dev_fit, zorder=1, linewidth=2.0)
 plt.show
@@ -287,7 +287,7 @@ plt.xlim(xmin=0)
 plt.xlim(xmax=int(max_int_dist)+1)
 plt.ylim(ymin=0)
 y_max=max(std_final)+(0.25*max(std_final))
-print "y_max is", y_max
+print("y_max is", y_max)
 plt.ylim(ymax=y_max)
 
 

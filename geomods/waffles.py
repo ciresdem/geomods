@@ -95,7 +95,7 @@ from geomods import gdalfun
 from geomods import xyzfun
 from geomods import vdatumfun
 
-_version = '0.7.0'
+_version = '0.7.1'
 
 ## ==============================================
 ## DEM module: generate a Digital Elevation Model using a variety of methods
@@ -833,7 +833,7 @@ def waffles_gmt_triangulate(wg):
     if wg['gc']['GMT'] is None:
         utils.echo_error_msg('GMT must be installed to use the TRIANGULATE module')
         return(None, -1)
-    dem_tri_cmd = ('gmt blockmean {} -I{:.10f}{} -V -r | gmt triangulate {} -I{:.10f} -V -G{}.tif=gd:GTiff -r\
+    dem_tri_cmd = ('gmt blockmean {} -I{:.10f}{} -V -r | gmt triangulate {} -I{:.10f} -V -G{}.tif=gd+n-9999:GTiff -r\
     '.format(waffles_proc_str(wg), wg['inc'], ' -Wi' if wg['weights'] else '', waffles_proc_str(wg), wg['inc'], wg['name']))
     out, status = utils.run_cmd(dem_tri_cmd, verbose = wg['verbose'], data_fun = waffles_dl_func(wg))
     return({'dem': ['{}.tif'.format(wg['name']), 'raster']}, status)
@@ -1259,7 +1259,7 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
         s_sum, s_g_max, s_perc = gdalfun.gdal_mask_analysis(msk_ds, region = sub_region)
         p_perc = gdalfun.gdal_prox_analysis(prox_ds, region = sub_region)
         #slp_perc = gdalfun.gdal_prox_analysis(slp_ds, region = sub_region)
-        #slp_perc = 0
+        slp_perc = 0
         s_dc = gdalfun.gdal_gather_infos(dem_ds, region = sub_region, scan = True)
         if p_perc < prox_perc_33 or abs(p_perc - prox_perc_33) < 0.01:
             zone = zones[2]
@@ -1270,8 +1270,8 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
         #elif slp_perc < slp_perc_66 or abs(slp_perc - slp_perc_66) < 0.01: zone = zones[4]
         #else: zone = zones[5]
 
-        #sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, p_perc, slp_perc, s_dc['zr'][0], s_dc['zr'][1], zone]
-        sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, p_perc, zone]
+        sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, p_perc, slp_perc, s_dc['zr'][0], s_dc['zr'][1], zone]
+        #sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, p_perc, zone]
     dem_ds = msk_ds = prox_ds = slp_ds = None
     utils.echo_msg_inline('analyzing sub-regions [OK]\n')
     
@@ -1281,7 +1281,7 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
     s_dens = np.array([sub_zones[x][3] for x in sub_zones.keys()])
     s_5perc = np.percentile(s_dens, 5)
     s_dens = None
-    print(sub_zones)
+    #print(sub_zones)
     utils.echo_msg('Sampling density for region is: {:.16f}'.format(s_5perc))
 
     ## ==============================================
@@ -1292,7 +1292,7 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
     s_perc = 50
     
     for z, this_zone in enumerate(zones):
-        tile_set = [sub_zones[x] for x in sub_zones.keys() if sub_zones[x][5] == zones[z]]
+        tile_set = [sub_zones[x] for x in sub_zones.keys() if sub_zones[x][8] == zones[z]]
         if len(tile_set) > 0:
             d_50perc = np.percentile(np.array([x[3] for x in tile_set]), 50)
         else: continue
@@ -1368,7 +1368,6 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
                     ## generate the random-sample DEM
                     ## ==============================================
                     wc = waffles_config(name = 'sub_{}'.format(n),
-                                        datalist = None,
                                         data = [s_outer, sub_xyz_head],
                                         region = this_region,
                                         inc = wg['inc'],
@@ -1380,44 +1379,44 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
                                         chunk = None,
                                         clobber = True)
                     sub_dems = waffle(wc)
-                    
+                    #print(sub_dems)
                     if 'dem' in sub_dems.keys() and 'msk' in sub_dems.keys():
-                        if os.path.exists(sub_dems['dem'][0]) and os.path.exists(sub_dems['msk'][0]):
-                            ## ==============================================
-                            ## generate the random-sample data PROX and SLOPE
-                            ## ==============================================        
-                            sub_prox = '{}_prox.tif'.format(wc['name'])
-                            gdalfun.gdal_proximity(sub_dems['msk'][0], sub_prox)
+                        #if os.path.exists(sub_dems['dem'][0]) and os.path.exists(sub_dems['msk'][0]):
+                        ## ==============================================
+                        ## generate the random-sample data PROX and SLOPE
+                        ## ==============================================        
+                        sub_prox = '{}_prox.tif'.format(wc['name'])
+                        gdalfun.gdal_proximity(sub_dems['msk'][0], sub_prox)
+                        
+                        # sub_slp = '{}_slp.tif'.format(wc['name'])
+                        # gdalfun.gdal_slope(sub_dem, sub_slp)
+                        
+                        ## ==============================================
+                        ## Calculate the random-sample errors
+                        ## ==============================================
+                        sub_xyd = gdalfun.gdal_query(sub_xyz[sx_cnt:], sub_dems['dem'][0], 'xyd')
+                        #sub_dp = gdalfun.gdal_query(sub_xyd, sub_prox, 'zg')
+                        sub_dp = gdalfun.gdal_query(sub_xyd, sub_prox, 'xyzg')
+                        # sub_ds = gdalfun.gdal_query(sub_dp, slp, 'g')
+                        
+                        # if len(sub_dp) > 0:
+                        #     if sub_dp.shape[0] == sub_ds.shape[0]:
+                        #         sub_dp = np.append(sub_dp, sub_ds, 1)
+                        #     else: sub_dp = []
+                    else: sub_dp = None
+                    utils.remove_glob(sub_xyz_head)
 
-                            # sub_slp = '{}_slp.tif'.format(wc['name'])
-                            # gdalfun.gdal_slope(sub_dem, sub_slp)
-
-                            ## ==============================================
-                            ## Calculate the random-sample errors
-                            ## ==============================================
-                            sub_xyd = gdalfun.gdal_query(sub_xyz[sx_cnt:], sub_dems['dem'][0], 'xyd')
-                            #sub_dp = gdalfun.gdal_query(sub_xyd, sub_prox, 'zg')
-                            sub_dp = gdalfun.gdal_query(sub_xyd, sub_prox, 'xyzg')
-                            # sub_ds = gdalfun.gdal_query(sub_dp, slp, 'g')
-
-                            # if len(sub_dp) > 0:
-                            #     if sub_dp.shape[0] == sub_ds.shape[0]:
-                            #         sub_dp = np.append(sub_dp, sub_ds, 1)
-                            #     else: sub_dp = []
-                        else: sub_dp = None
-                        utils.remove_glob(sub_xyz_head)
-
-                        #if s_dp is not None: 
+                    if s_dp is not None: 
                         if sub_dp is not None and len(sub_dp) > 0:
                             try:
                                 s_dp = np.concatenate((s_dp, sub_dp), axis = 0)
                             except: s_dp = sub_dp
-                        #else: s_dp = sub_dp
+                    else: s_dp = sub_dp
                 utils.remove_glob(o_xyz, 'sub_{}*'.format(n))
 
         if len(s_dp) > 0:
             d_max = region_info[wg['name']][4]
-            #s_max = region_info[wg['name']][5]
+            s_max = region_info[wg['name']][5]
             s_dp = s_dp[s_dp[:,3] < d_max,:]
             s_dp = s_dp[s_dp[:,3] > 0,:]
             prox_err = s_dp[:,[2,3]]
@@ -1428,7 +1427,8 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
             else: last_ec_diff = abs(last_ec_d[2] - last_ec_d[1])
 
             ec_d = utils.err2coeff(prox_err[:50000000], coeff_guess = last_ec_d, dst_name = wg['name'] + '_prox', xa = 'distance')
-            print(ec_d)
+            #print(ec_d)
+            #np.savetxt('prox_err.err', prox_err[:50000000], '%f', ' ')
             ec_diff = abs(ec_d[2] - ec_d[1])
             ec_l_diff = abs(last_ec_diff - ec_diff)
             
