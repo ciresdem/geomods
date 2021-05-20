@@ -1915,6 +1915,8 @@ def waffles_landmask(wg, wet = None, dry = None, want_nhd = True, want_gmrt = Fa
             try:
                 if this_xyz[2] == 0:
                     coast_array[ypos, xpos] += 1
+                if this_xyz[2] == 1:
+                    coast_array[ypos, xpos] -= 1
             except: pass
         c_ds = None            
         #utils.remove_glob('{}*'.format(wd_mask))
