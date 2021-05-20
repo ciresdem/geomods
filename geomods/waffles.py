@@ -1919,7 +1919,7 @@ def waffles_landmask(wg, wet = None, dry = None, want_nhd = True, want_gmrt = Fa
                     coast_array[ypos, xpos] -= 1
             except: pass
         c_ds = None            
-        #utils.remove_glob('{}*'.format(wd_mask))
+        utils.remove_glob('{}*'.format(wd_mask))
         
     ## ==============================================
     ## write coast_array to file
