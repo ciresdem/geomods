@@ -52,7 +52,7 @@ def las_inf(src_las):
     lasi['minmax'] = [0, 0, 0, 0, 0, 0]
     utils.echo_msg('generating inf file for {}'.format(src_las))
     
-    for i, l in enumerate(las_yield_entry([src_las])):
+    for i, l in enumerate(las_yield_entry([src_las, 400, None])):
         if i == 0:
             lasi['minmax'] = [l[0], l[0], l[1], l[1], l[2], l[2]]
         else:

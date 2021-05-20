@@ -279,6 +279,18 @@ Include a datalist to use in forming initial coastline.
         'dem-p': False,
         'datalist-p': False,
     },
+    'landmask': {
+        'run': lambda args: waffles_landmask(**args),
+        'description': '''generate a coastline (landmask)\n
+Generate a land/sea mask (coastline) based on various datasets.
+Include a datalist to use in forming initial coastline.
+
+< coastline:want_nhd=True:want_gmrt=False >
+ :want_nhd=[True/False] - Use the USGS NHD database (US Only)
+ :want_gmrt=[True/False] - USE the GMRT to fill unknown coastal areas.''',
+        'dem-p': False,
+        'datalist-p': False,
+    },
     'uncertainty': {
         'run': lambda args: waffles_interpolation_uncertainty(**args),
         'description': '''generate DEM UNCERTAINTY\n
@@ -1715,6 +1727,227 @@ def waffles_coastline(wg, wet = None, dry = None, want_nhd = True, want_gmrt = F
         'cst': ['{}.tif'.format(wg['name']), 'raster'],
         'cst_ply': ['{}.shp'.format(wg['name']), 'vector'],
     }
+    
+    return(coast_out, 0)
+
+def waffles_landmask(wg, wet = None, dry = None, want_nhd = True, want_gmrt = False):
+    """Generate a coastline polygon from various sources.
+    
+    Returns:
+      list: [{output-dictionary}, status]    
+    """
+
+    ## ==============================================
+    ## initialize empty mask raster
+    ## ==============================================
+    w_mask = '{}_w.tif'.format(wg['name'])
+    
+    regions.region2ogr(waffles_dist_region(wg), '_tmp_region_buff.shp')
+    xsize, ysize, gt = regions.region2gt(waffles_dist_region(wg), wg['inc'])
+    
+    utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn -9999 -a_nodata -9999 \
+    -ot Int32 -co COMPRESS=DEFLATE -a_srs EPSG:{} _tmp_region_buff.shp {}\
+    '.format(xsize, ysize, regions.region_format(waffles_dist_region(wg), 'te'), wg['epsg'], w_mask), verbose = wg['verbose'])
+
+    ds = gdal.Open(w_mask)
+    if ds is not None:
+        ds_config = gdalfun.gdal_gather_infos(ds)
+        region = regions.gt2region(ds_config)
+        dst_gt = ds_config['geoT']        
+        coast_array = ds.GetRasterBand(1).ReadAsArray(0, 0, ds_config['nx'], ds_config['ny'])
+        ds = None
+    else: return(-1, -1)
+    
+    utils.remove_glob('{}*'.format(w_mask))
+
+    ## ==============================================
+    ## Input wet/dry poly masks
+    ## ==============================================        
+    wp_mask = '{}_wp.tif'.format(wg['name'])
+    
+    if wet is not None:
+        utils.echo_msg('filling the coast mask with input wet mask poly data...')
+        
+        gdalfun.ogr_clip(wet, '_tmp_wet.shp', clip_region = waffles_proc_region(wg), dn = "ESRI Shapefile")
+        utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn 1 {} {}'.format(xsize, ysize, regions.region_format(waffles_proc_region(wg), 'te'), '_tmp_wet.shp', wp_mask), verbose = True)
+        w_ds = gdal.Open(wp_mask)
+
+        for this_xyz in gdalfun.gdal_parse(w_ds):
+            xpos, ypos = utils._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
+            try:
+                if coast_array[ypos, xpos] == ds_config['ndv']:
+                    if this_xyz[2] == 1:
+                        coast_array[ypos, xpos] = 1
+            except: pass
+        w_ds = None
+        utils.remove_glob('{}*'.format(wp_mask), '_tmp_wet.*')
+
+    dp_mask = '{}_dp.tif'.format(wg['name'])
+    
+    if dry is not None:
+        utils.echo_msg('filling the coast mask with input dry mask poly data...')
+        
+        gdalfun.ogr_clip(dry, '_tmp_dry.shp', clip_region = waffles_proc_region(wg), dn = "ESRI Shapefile")
+        utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn 1 {} {}'.format(xsize, ysize, regions.region_format(waffles_proc_region(wg), 'te'), '_tmp_dry.shp', dp_mask), verbose = True)
+        d_ds = gdal.Open(dp_mask)
+
+        for this_xyz in gdalfun.gdal_parse(d_ds):
+            xpos, ypos = utils._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
+            try:
+                if coast_array[ypos, xpos] == ds_config['ndv']:
+                    if this_xyz[2] == 1:
+                        coast_array[ypos, xpos] = 0
+            except: pass
+        d_ds = None
+        utils.remove_glob('{}*'.format(dp_mask), '_tmp_dry.*')
+    
+    ## ==============================================
+    ## GSHHG/GMRT - Global low-res
+    ## ==============================================
+    ## TODO: check if above filled raster (e.g. no nodata values)!
+    
+    utils.echo_msg('filling the coast mask with gsshg/gmrt data...')
+    
+    g_mask = '{}_g.tif'.format(wg['name'])
+        
+    if wg['gc']['GMT'] is not None and not want_gmrt:
+        utils.run_cmd('gmt grdlandmask {} -I{} -r -Df -G{}=gd:GTiff -V -N1/0/0/0/0\
+        '.format(regions.region_format(waffles_proc_region(wg), 'gmt'), wg['inc'], g_mask), verbose = wg['verbose'])
+    else:
+        fl = fetches._fetch_modules['gmrt'](regions.region_buffer(waffles_proc_region(wg), 5, pct = True), [], None, True)
+        r = fl._parse_results(fl._filter_results(), layer = 'topo-mask')
+        gmrt_tif = r[0][1]
+        if fetches.fetch_file(r[0][0], gmrt_tif, verbose = True) == 0:
+            utils.run_cmd('gdalwarp {} {} -tr {} {} -overwrite'.format(gmrt_tif, g_mask, wg['inc'], wg['inc']), verbose = wg['verbose'])
+            utils.remove_glob(gmrt_tif)
+
+    c_ds = gdal.Open(g_mask)
+    
+    for this_xyz in gdalfun.gdal_parse(c_ds):
+        xpos, ypos = utils._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
+        try:
+            if coast_array[ypos, xpos] == ds_config['ndv']:
+                if this_xyz[2] == 1: coast_array[ypos, xpos] = 1
+                elif this_xyz[2] == 0: coast_array[ypos, xpos] = 0
+        except: pass
+    c_ds = None
+    
+    utils.remove_glob('{}*'.format(g_mask))
+        
+    ## ==============================================
+    ## USGS NHD (HIGH-RES U.S. Only)
+    ## Fetch NHD (NHD High/Plus) data from TNM
+    ## to fill in near-shore areas. High resoultion data
+    ## varies by location...
+    ## ==============================================
+    if want_nhd:
+        utils.echo_msg('filling the coast mask with NHD data...')
+        
+        u_mask = '{}_u.tif'.format(wg['name'])
+        
+        utils.run_cmd('gdal_rasterize -ts {} {} -te {} -burn -9999 -a_nodata -9999 \
+        -ot Int32 -co COMPRESS=DEFLATE -a_srs EPSG:{} _tmp_region_buff.shp {}\
+        '.format(xsize, ysize, regions.region_format(waffles_dist_region(wg), 'te'), wg['epsg'], u_mask), verbose = wg['verbose'])
+        
+
+        fl = fetches._fetch_modules['tnm'](waffles_proc_region(wg), ["Name LIKE '%Hydro%'"], None, True)
+        r_shp = []
+        for result in fl._parse_results(e = 'HU-2 Region,HU-4 Subregion,HU-8 Subbasin'):
+            if fetches.fetch_file(result[0], os.path.join(result[2], result[1]), verbose = wg['verbose']) == 0:
+                gdb_zip = os.path.join(result[2], result[1])
+                gdb_files = utils.unzip(gdb_zip)
+                gdb_bn = os.path.basename('.'.join(gdb_zip.split('.')[:-1]))
+                gdb = gdb_bn + '.gdb'
+
+                utils.run_cmd('ogr2ogr {}_NHDArea.shp {} NHDArea -clipdst {} -overwrite 2>&1\
+                '.format(gdb_bn, gdb, regions.region_format(wg['region'], 'ul_lr')), verbose = False)
+                if os.path.exists('{}_NHDArea.shp'.format(gdb_bn)):
+                    r_shp.append('{}_NHDArea.shp'.format(gdb_bn))
+                utils.run_cmd('ogr2ogr {}_NHDPlusBurnWaterBody.shp {} NHDPlusBurnWaterBody -clipdst {} -overwrite 2>&1\
+                '.format(gdb_bn, gdb, regions.region_format(wg['region'], 'ul_lr')), verbose = False)
+                if os.path.exists('{}_NHDPlusBurnWaterBody.shp'.format(gdb_bn)):
+                    r_shp.append('{}_NHDPlusBurnWaterBody.shp'.format(gdb_bn))
+                utils.run_cmd('ogr2ogr {}_NHDWaterBody.shp {} NHDWaterBody -where "FType = 390" -clipdst {} -overwrite 2>&1\
+                '.format(gdb_bn, gdb, regions.region_format(wg['region'], 'ul_lr')), verbose = False)
+                if os.path.exists('{}_NHDWaterBody.shp'.format(gdb_bn)):
+                    r_shp.append('{}_NHDWaterBody.shp'.format(gdb_bn))
+                utils.remove_glob(gdb)
+            else: utils.echo_error_msg('unable to fetch {}'.format(result))
+
+            [utils.run_cmd('ogr2ogr -skipfailures -update -append nhdArea_merge.shp {} 2>&1\
+            '.format(shp), verbose = False) for shp in r_shp]
+            utils.run_cmd('gdal_rasterize -burn 1 nhdArea_merge.shp {}'.format(u_mask), verbose = wg['verbose'])
+            utils.remove_glob('nhdArea_merge.*', 'NHD_*', *r_shp)
+            [utils.remove_glob('{}.*'.format(shp[:-4])) for shp in r_shp]
+        utils.remove_glob('NHD*', 'tnm')
+        
+        c_ds = gdal.Open(u_mask)
+        for this_xyz in gdalfun.gdal_parse(c_ds):
+            xpos, ypos = utils._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
+            try:
+                if this_xyz[2] == 1:
+                    coast_array[ypos, xpos] += 1
+            except: pass
+        c_ds = None            
+        utils.remove_glob('{}*'.format(u_mask))
+        
+    utils.remove_glob('NHD*', 'tnm')
+    utils.remove_glob('_tmp_region_buff.*')
+
+    ## ==============================================
+    ## Input user data from datalist
+    ## ==============================================
+    wd_mask = '{}_wd.tif'.format(wg['name'])
+    
+    if wg['datalist'] is not None:
+        cwg = waffles_config_copy(wg)
+        cwg['z-region'] = [-1, 1]
+        dly = waffles_yield_datalist(cwg)
+        if wg['weights']:
+            dly = xyzfun.xyz_block(dly, waffles_dist_region(cwg), cwg['inc'], weights = True)
+            
+        gdalfun.gdal_xyz2gdal(dly, wd_mask, waffles_dist_region(cwg), cwg['inc'],
+                              dst_format = cwg['fmt'], mode = 'w', verbose = cwg['verbose'])
+
+        c_ds = gdal.Open(wd_mask)
+        for this_xyz in gdalfun.gdal_parse(c_ds):
+            xpos, ypos = utils._geo2pixel(this_xyz[0], this_xyz[1], dst_gt)
+            try:
+                if this_xyz[2] == 0:
+                    coast_array[ypos, xpos] += 1
+            except: pass
+        c_ds = None            
+        #utils.remove_glob('{}*'.format(wd_mask))
+        
+    ## ==============================================
+    ## write coast_array to file
+    ## 1 = land
+    ## 0 = water
+    ## ==============================================
+    gdalfun.gdal_write(coast_array, '{}.tif'.format(wg['name']), ds_config)
+
+    # ## ==============================================
+    # ## convert to vector
+    # ## ==============================================
+    # tmp_ds = ogr.GetDriverByName('ESRI Shapefile').CreateDataSource('tmp_c_{}.shp'.format(wg['name']))
+    # if tmp_ds is not None:
+    #     tmp_layer = tmp_ds.CreateLayer('tmp_c_{}'.format(wg['name']), None, ogr.wkbMultiPolygon)
+    #     tmp_layer.CreateField(ogr.FieldDefn('DN', ogr.OFTInteger))
+    #     gdalfun.gdal_polygonize('{}.tif'.format(wg['name']), tmp_layer, verbose = wg['verbose'])        
+    #     tmp_ds = None
+    # #utils.run_cmd('ogr2ogr -dialect SQLITE -sql "SELECT * FROM tmp_c_{} WHERE DN=0 order by ST_AREA(geometry) desc limit 8"\
+    # #{}.shp tmp_c_{}.shp'.format(wg['name'], wg['name'], wg['name']), verbose = True)
+    # utils.run_cmd('ogr2ogr -dialect SQLITE -sql "SELECT * FROM tmp_c_{} WHERE DN=1 order by ST_AREA(geometry) desc limit 8"\
+    # {}.shp tmp_c_{}.shp'.format(wg['name'], wg['name'], wg['name']), verbose = True)
+    # utils.remove_glob('tmp_c_{}.*'.format(wg['name']))
+    # utils.run_cmd('ogrinfo -dialect SQLITE -sql "UPDATE {} SET geometry = ST_MakeValid(geometry)" {}.shp\
+    # '.format(wg['name'], wg['name']))
+                      
+    coast_out = {
+        'cst': ['{}.tif'.format(wg['name']), 'raster'],
+    }
+
+    #'cst_ply': ['{}.shp'.format(wg['name']), 'vector'],
     
     return(coast_out, 0)
 
