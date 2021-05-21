@@ -1810,7 +1810,7 @@ def waffles_landmask(wg, wet = None, dry = None, want_nhd = True, want_gmrt = Fa
     
     g_mask = '{}_g.tif'.format(wg['name'])
         
-    if wg['gc']['GMT'] is not None and not want_gmrt:
+    if wg['gc']['GMT'] is not None or not want_gmrt:
         utils.run_cmd('gmt grdlandmask {} -I{} -r -Df -G{}=gd:GTiff -V -N1/0/0/0/0\
         '.format(regions.region_format(waffles_proc_region(wg), 'gmt'), wg['inc'], g_mask), verbose = wg['verbose'])
     else:
