@@ -1128,7 +1128,7 @@ class charts():
             xyzc['upper_limit'] = z_region[1]
             xyzc['lower_limit'] = z_region[0]
         src_zip = os.path.basename(entry[1])
-        
+
         if fetch_file(entry[0], src_zip, callback = self._stop, verbose = self._verbose) == 0:
             if entry[-1].lower() == 'enc':
                 src_encs = utils.p_unzip(src_zip, ['000'])
@@ -2747,7 +2747,7 @@ def fetch_dump_xyz(parsed_entry, module = None, epsg = 4326, z_region = None, in
     '''dump the parsed entry to xyz
     use <fetch_module>._parse_results() to generate parsed entry'''
     if module == None: module = _fetch_modules[parsed_entry[4]](None, [], None, False)
-    for xyz in module._yield_xyz([parsed_entry[0], parsed_entry[1], parsed_entry[-1]], epsg = epsg, z_region = z_region, inc = inc):
+    for xyz in module._yield_xyz([parsed_entry[0], parsed_entry[1], parsed_entry[4]], epsg = epsg, z_region = z_region, inc = inc):
         xyzfun.xyz_line(xyz, dst_port, False)
 
 def fetch_filter_results(region = None, where = None, mods = [], verbose = False):
