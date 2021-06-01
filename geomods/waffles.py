@@ -803,7 +803,7 @@ def waffles_mbgrid(wg, dist = '10/3', tension = 35, use_datalists = False):
 ## ==============================================
 ## Waffles GMT surface module
 ## ==============================================
-def waffles_gmt_surface(wg, tension = .35, relaxation = 1.2,
+def waffles_gmt_surface(wg, tension = .85i, relaxation = 1.2,
                         lower_limit = 'd', upper_limit = 'd'):
     """generate a DEM with GMT surface
     
@@ -1197,8 +1197,7 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
         tmp_wg = waffles_config(**tmp_wg)
         waffle(tmp_wg)
 
-    if msk is None:
-        
+    if msk is None:        
         if msk is None: msk = '{}_msk.tif'.format(wg['mod'])
         tmp_wg = waffles_config_copy(wg)
         tmp_wg['name'] = '{}_msk'.format(wg['name'])
@@ -1213,19 +1212,21 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
         utils.echo_msg('generating proximity grid {}...'.format(prox))
         gdalfun.gdal_proximity(msk, prox)
         if wg['epsg'] is not None: gdalfun.gdal_set_epsg(prox, wg['epsg'])
+        
     if slp is None:
          slp = '{}_slp.tif'.format(wg['name'])
          slp_msk = '{}_slp_msk.tif'.format(wg['name'])
          utils.echo_msg('generating slope grid {}...'.format(slp))
          gdalfun.gdal_slope(dem, slp, 1)
+         gdalfun.gdal_invert_mask(msk, '_tmp_msk_inverted.tif')
          #utils.run_cmd('gdal_calc.py -A {} -B {} --outfile {} --calc "(1/(A*B))*(A*B)"'.format(slp, msk, slp_msk))
-         # gdalfun.gdal_slope(dem, '_tmp_slp.tif', 1)
+         #gdalfun.gdal_slope(dem, '_tmp_slp.tif', 1)
          #utils.run_cmd('gdal_calc.py -A {} --outfile _tmp_msk.tif --calc "1/A"'.format(msk), verbose = True)
-         #gdalfun.gdal_mask('_tmp_msk.tif', '_tmp_msk_inverted.tif', invert = True)
-         #utils.run_cmd('gdal_calc.py -A {} -B {} --outfile {} --calc "A*B"'.format(slp, '_tmp_msk_inverted.tif', slp_msk), verbose = True)
-         #utils.remove_glob('_tmp*')
+         #gdalfun.gdal_mask(msk, '_tmp_msk_inverted.tif', invert = True)
+         utils.run_cmd('gdal_calc.py -A {} -B {} --outfile {} --calc "A*B"'.format(slp, '_tmp_msk_inverted.tif', slp_msk), verbose = True)
+         utils.remove_glob('_tmp*')
          if wg['epsg'] is not None: gdalfun.gdal_set_epsg(slp, wg['epsg'])
-         #if wg['epsg'] is not None: gdalfun.gdal_set_epsg(slp_msk, wg['epsg'])
+         if wg['epsg'] is not None: gdalfun.gdal_set_epsg(slp_msk, wg['epsg'])
 
     ## ==============================================
     ## region and der. analysis
@@ -1244,7 +1245,7 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
     slp_perc_33 = gdalfun.gdal_percentile(slp, 25)
     slp_perc_66 = gdalfun.gdal_percentile(slp, 75)
     slp_perc_100 = gdalfun.gdal_percentile(slp, 100)
-    slp_percentile = 0
+    #slp_percentile = 0
     
     region_info[wg['name']] = [wg['region'], g_max, num_sum, num_perc, prox_percentile, slp_percentile] 
     for x in region_info.keys():
@@ -1262,30 +1263,32 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
     ## ==============================================
     utils.echo_msg('analyzing {} sub-regions...'.format(len(sub_regions)))
     sub_zones = {}
-    dem_ds = gdal.Open(dem)
+    #dem_ds = gdal.Open(dem)
+    #s_dc = gdalfun.gdal_gather_infos(dem_ds, region = sub_region, scan = True)
+    #dem_ds = None
     msk_ds = gdal.Open(msk)
     prox_ds = gdal.Open(prox)
-    #slp_ds = gdal.Open(slp)
+    slp_ds = gdal.Open(slp)
     for sc, sub_region in enumerate(sub_regions):
         utils.echo_msg_inline('analyzing sub-regions [{}]'.format(sc))
         s_sum, s_g_max, s_perc = gdalfun.gdal_mask_analysis(msk_ds, region = sub_region)
         p_perc = gdalfun.gdal_prox_analysis(prox_ds, region = sub_region)
-        #slp_perc = gdalfun.gdal_prox_analysis(slp_ds, region = sub_region)
-        slp_perc = 0
-        s_dc = gdalfun.gdal_gather_infos(dem_ds, region = sub_region, scan = True)
+        slp_perc = gdalfun.gdal_prox_analysis(slp_ds, region = sub_region)
+        #slp_perc = 0
         if p_perc < prox_perc_33 or abs(p_perc - prox_perc_33) < 0.01:
             zone = zones[2]
         elif p_perc < prox_perc_66 or abs(p_perc - prox_perc_66) < 0.01:
             zone = zones[1]
         else: zone = zones[0]
         if slp_perc < slp_perc_33 or abs(slp_perc - slp_perc_33) < 0.01:
-            zone = zones[3]
+            szone = zones[3]
         elif slp_perc < slp_perc_66 or abs(slp_perc - slp_perc_66) < 0.01:
-            zone = zones[4]
+            szone = zones[4]
         else:
-            zone = zones[5]
+            szone = zones[5]
 
-        sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, p_perc, slp_perc, s_dc['zr'][0], s_dc['zr'][1], zone]
+        #sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, p_perc, slp_perc, s_dc['zr'][0], s_dc['zr'][1], zone, szone]
+        sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, p_perc, slp_perc, 0, 0, zone, szone]
         #sub_zones[sc + 1] = [sub_region, s_g_max, s_sum, s_perc, p_perc, zone]
     dem_ds = msk_ds = prox_ds = slp_ds = None
     utils.echo_msg_inline('analyzing sub-regions [OK]\n')
@@ -1308,12 +1311,18 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
     
     for z, this_zone in enumerate(zones):
         tile_set = [sub_zones[x] for x in sub_zones.keys() if sub_zones[x][8] == zones[z]]
+        tile_set_s = [sub_zones[x] for x in sub_zones.keys() if sub_zones[x][9] == zones[z]]
         if len(tile_set) > 0:
-            d_50perc = np.percentile(np.array([x[3] for x in tile_set]), 50)
-        else: continue
-        t_trainers = [x for x in tile_set if x[3] < d_50perc or abs(x[3] - d_50perc) < 0.01]
-        utils.echo_msg('possible {} training zones: {} @ MAX {}'.format(zones[z].upper(), len(t_trainers), d_50perc))
-        trainers.append(t_trainers)
+            d_50perc = np.nanpercentile(np.array([x[3] for x in tile_set]), 50)
+            t_trainers = [x for x in tile_set if x[3] < d_50perc or abs(x[3] - d_50perc) < 0.01]
+            utils.echo_msg('possible {} training zones: {} @ MAX {}'.format(zones[z].upper(), len(t_trainers), d_50perc))
+            trainers.append(t_trainers)
+        #else: continue
+        if len(tile_set_s) > 0:
+            s_50perc = np.nanpercentile(np.array([x[5] for x in tile_set_s]), 50)
+            s_trainers = [x for x in tile_set_s if x[5] < s_50perc or abs(x[5] - s_50perc) < 0.01]
+            utils.echo_msg('possible {} training zones: {} @ MAX {}'.format(zones[z].upper(), len(s_trainers), s_50perc))
+            trainers.append(s_trainers)
         
     utils.echo_msg('sorting training tiles by distance...')
     trains = regions.regions_sort(trainers, verbose = False)
@@ -1329,7 +1338,7 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
         sims = int(len(sub_regions)/tot_trains)
     utils.echo_msg('performing MAX {} SPLIT-SAMPLE simulations...'.format(sims))
     #utils.echo_msg('simulation\terrors\tproximity-coeff\tpc_delta')
-    utils.echo_msg('simulation\terrors\tproximity-coeff\tp_diff\tslp-coeff\tslp_diff')
+    utils.echo_msg('simulation\terrors\tprox-coeff\tprox-diff\tslp-coeff\tslp-diff')
     sim = 0
     last_ec_d = None
     while True:
@@ -1382,17 +1391,10 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
                     ## ==============================================
                     ## generate the random-sample DEM
                     ## ==============================================
-                    wc = waffles_config(name = 'sub_{}'.format(n),
-                                        data = [s_outer, sub_xyz_head],
-                                        region = this_region,
-                                        inc = wg['inc'],
-                                        mod = wg['mod'],
-                                        mod_args = wg['mod_args'],
-                                        epsg = wg['epsg'],
-                                        verbose = False,
-                                        mask = True,
-                                        chunk = None,
-                                        clobber = True)
+                    wc = waffles_config(
+                        name = 'sub_{}'.format(n), data=[s_outer, sub_xyz_head], region = this_region,
+                        inc = wg['inc'], mod = wg['mod'], mod_args = wg['mod_args'], epsg = wg['epsg'],
+                        verbose = False, mask = True, chunk = None, clobber = True)
                     sub_dems = waffle(wc)
                     #print(sub_dems)
                     if 'dem' in sub_dems.keys() and 'msk' in sub_dems.keys()\
@@ -1434,15 +1436,19 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
             d_max = region_info[wg['name']][4]
             s_max = region_info[wg['name']][5]
             
-            p_dp = s_dp[s_dp[:,3] < d_max,:]
-            p_dp = p_dp[p_dp[:,3] > 0,:]
-            prox_err = p_dp[:,[2,3]]
+            s_dp = s_dp[s_dp[:,3] < d_max,:]
+            s_dp = s_dp[s_dp[:,3] > 0,:]
+            s_dp = s_dp[s_dp[:,4] < s_max,:]
+            prox_err = s_dp[:,[2,3]]
 
             if last_ec_d is None:
                 last_ec_d = [0, 0.1, 0.2]
                 last_ec_diff = 10
+                last_ec_s = [0, 0.1, 0.2]
+                last_ec_sdiff = 10
             else:
                 last_ec_diff = abs(last_ec_d[2] - last_ec_d[1])
+                last_ec_sdiff = abs(last_ec_s[2] - last_ec_s[1])
 
             ec_d = utils.err2coeff(prox_err[:50000000], coeff_guess = last_ec_d, dst_name = wg['name'] + '_prox', xa = 'distance')
             #print(ec_d)
@@ -1450,26 +1456,29 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
             ec_diff = abs(ec_d[2] - ec_d[1])
             ec_l_diff = abs(last_ec_diff - ec_diff)
             
-            sl_dp = s_dp[s_dp[:,4] < s_max,:]
-            slp_err = sl_dp[:,[2,4]]
+            #s_dp = s_dp[s_dp[:,4] < s_max,:]
+            slp_err = s_dp[:,[2,4]]
+            ec_s = utils.err2coeff(slp_err[:50000000], coeff_guess = last_ec_s, dst_name = wg['name'] + '_slp', xa = 'slope')
 
-            ec_s = utils.err2coeff(slp_err[:50000000], dst_name = wg['name'] + '_slp', xa = 'slope')
-            utils.echo_msg('{}\t{}\t{}\t{}\t{}\t{}'.format(sim, len(s_dp), ec_d, ec_d[2] - ec_d[1], ec_s, ec_s[2] - ec_s[1]))
+            ec_sdiff = abs(ec_s[2] - ec_s[1])
+            ec_l_sdiff = abs(last_ec_sdiff - ec_sdiff)
+            
+            utils.echo_msg('{}\t{}\t{}\t{}\t{}\t{}'.format(sim, len(s_dp), ec_d, ec_l_diff, ec_s, ec_l_sdiff))
             #utils.echo_msg('{}\t{}\t{}\t{}'.format(sim, len(s_dp), ec_d, ec_l_diff))
             
-            #if ec_d[2] < 0.0001: continue
-            #if abs(ec_d[2] - ec_d[1]) > 2: continue
             if sim >= int(sims):
                 break
             if ec_d[0] == 0 and ec_d[1] == 0.1 and ec_d[2] == 0.2:
                 continue
             if abs(last_ec_diff - ec_diff) < 0.0001:
                 break
-
-            #if sim >= int(sims): break
+            if len(s_dp) >= int(region_info[wg['name']][1] / 10):
+                break
+            
             #if abs(last_ec_diff - ec_diff) < 0.001: break
-            #if len(s_dp) >= int(region_info[wg['name']][1] / 10): break
+            
             last_ec_d = ec_d
+            last_ec_s = ec_s
             #else: utils.echo_msg('{}\t{}\t{}\t{}\t{}\t{}'.format(sim, len(s_dp), None, None, None, None))
         else: utils.echo_msg('{}\t{}\t{}\t{}'.format(sim, len(s_dp), None, None))
 
@@ -1481,7 +1490,7 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
     utils.echo_msg('applying coefficient to proximity grid')
     ## USE numpy/gdal instead
     if wg['gc']['GMT'] is None:
-        utils.run_cmd('gdal_calc.py -A {} --outfile {}_prox_unc.tif --calc "{}+({}*(A**{}))"'.format(prox, wg['name'], 0, ec_d[1], ec_d[2]), verbose = True)
+        utils.run_cmd('gdal_calc.py -A {} --outfile {}_prox_unc.tif --calc "{}+({}*(A**{}))" --overwrite'.format(prox, wg['name'], 0, ec_d[1], ec_d[2]), verbose = True)
     else:
         math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_prox_unc.tif=gd+n-9999:GTiff\
         '.format(prox, ec_d[2], ec_d[1], 0, wg['name'])
@@ -1490,17 +1499,21 @@ def waffles_interpolation_uncertainty(wg, mod = 'surface', mod_args = (), \
     utils.echo_msg('applied coefficient {} to proximity grid'.format(ec_d))
 
     if wg['gc']['GMT'] is None:
-        utils.run_cmd('gdal_calc.py -A {} --outfile {}_slp_unc.tif --calc "{}+({}*(A**{}))"'.format(slp, wg['name'], 0, ec_s[1], ec_s[2]), verbose = True)
+        utils.run_cmd('gdal_calc.py -A {} --outfile {}_slp_unc.tif --calc "{}+({}*(A**{}))" --overwrite'.format(slp_msk, wg['name'], 0, ec_s[1], ec_s[2]), verbose = True)
     else:
         math_cmd = 'gmt grdmath {} 0 AND ABS {} POW {} MUL {} ADD = {}_slp_unc.tif=gd+n-9999:GTiff\
-        '.format(slp, ec_s[2], ec_s[1], 0, wg['name'])
+        '.format(slp_msk, ec_s[2], ec_s[1], 0, wg['name'])
         utils.run_cmd(math_cmd, verbose = wg['verbose'])
     if wg['epsg'] is not None: gdalfun.gdal_set_epsg('{}_slp_unc.tif'.format(wg['name']), epsg = wg['epsg'])
     utils.echo_msg('applied coefficient {} to slope grid'.format(ec_s))
-    utils.run_cmd('gdal_calc.py -A {}_prox_unc.tif -B {}_slp_unc.tif --outfile={}_unc.tif --calc="((A*A)+(B*B))**(1/2.0)" --overwrite'.format(wg['name'], wg['name'], wg['name']))
+    
+    #utils.run_cmd('gdal_calc.py -A {}_prox_unc.tif -B {}_slp_unc.tif --outfile={}_unc.tif --calc "((A*A)+(B*B))**(1/2.0)" --overwrite'.format(wg['name'], wg['name'], wg['name']))
+    utils.run_cmd('gdal_calc.py -A {}_prox_unc.tif -B {}_slp_unc.tif --outfile={}_unc.tif --calc "(A+B)/2" --overwrite'.format(wg['name'], wg['name'], wg['name']))
+    
 
     utils.remove_glob(prox)
     utils.remove_glob(slp)
+    utils.remove_glob(slp_msk)
 
     unc_out['prox_unc'] = ['{}_prox_unc.tif'.format(wg['name']), 'raster']
     unc_out['prox_bf'] = ['{}_prox_bf.png'.format(wg['name']), 'image']
@@ -2173,7 +2186,7 @@ def waffle(wg):
                     if out is not None: os.rename('tmp_cut.tif', this_dem)
                 except OSError as e:
                     utils.remove_glob('tmp_cut.tif')
-                    utils.echo_error_msg('cut failed, is the dem open somewhere, {}'.format(e)) 
+                    utils.echo_error_msg('cut failed, the dem may be open or in use...{}'.format(e)) 
 
     ## ==============================================
     ## merge the chunks and remove any remnants

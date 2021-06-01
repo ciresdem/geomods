@@ -1107,8 +1107,8 @@ class charts():
                 _prog.end(0, 'scanned {} surveys in {}'.format(len(charts), dt))
                 utils.echo_msg('added {} surveys from {}'.format(len(surveys), dt))
         self.FRED._close_ds()
-        
-    def _parse_results(self):
+
+    def _parse_results(self, datatype=None):
         '''Search for data in the reference vector file'''
         for surv in _filter_FRED(self):
             for i in surv['DataLink'].split(','):

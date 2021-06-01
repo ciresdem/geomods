@@ -361,6 +361,26 @@ def gdal_mask(src_gdal, dst_gdal, invert = False):
         return(gdal_write(ds_array, dst_gdal, ds_config))
     else: return(-1, -1)
 
+def gdal_invert_mask(src_gdal, dst_gdal):
+    '''transform src_gdal to a raster mask (1 = data; 0 = nodata)
+    if invert is True, 1 = nodata, 0 = data.'''
+    try:
+        ds = gdal.Open(src_gdal)
+    except: ds = None
+    if ds is not None:
+        ds_band = ds.GetRasterBand(1)
+        ds_array = ds_band.ReadAsArray()
+        ds_config = gdal_gather_infos(ds)
+        ds_config['dtn'] = 'Int32'
+        ndv = ds_band.GetNoDataValue()
+
+        ds_array[ds_array == 0] = -1
+        ds_array[ds_array == 1] = 0
+        ds_array[ds_array == -1] = 1
+        
+        return(gdal_write(ds_array, dst_gdal, ds_config))
+    else: return(-1, -1)
+
 def gdal_mask_analysis(src_gdal, region = None):
     ds_config = gdal_gather_infos(src_gdal)
     if region is not None:
@@ -598,7 +618,7 @@ def gdal_percentile(src_gdal, perc = 95):
         ds_array_flat = ds_array.flatten()
         ds_array = ds_array_flat[ds_array_flat != 0]
         if len(ds_array) > 0:
-            p = np.percentile(ds_array, perc)
+            p = np.nanpercentile(ds_array, perc)
             #percentile = 2 if p < 2 else p
         else: p = 2
         ds = ds_array = ds_array_flat = None
