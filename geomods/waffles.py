@@ -803,7 +803,7 @@ def waffles_mbgrid(wg, dist = '10/3', tension = 35, use_datalists = False):
 ## ==============================================
 ## Waffles GMT surface module
 ## ==============================================
-def waffles_gmt_surface(wg, tension = .85i, relaxation = 1.2,
+def waffles_gmt_surface(wg, tension = .85, relaxation = 1.2,
                         lower_limit = 'd', upper_limit = 'd'):
     """generate a DEM with GMT surface
     
